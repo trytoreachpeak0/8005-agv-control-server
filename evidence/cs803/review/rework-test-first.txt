@@ -1,0 +1,43 @@
+BAD   this self-check is registered as RunsAlways, never decided by the selector it checks -> 
+BAD   BuildInputs lists src/ -> 
+BAD   BuildInputs lists Directory.Packages.props -> 
+BAD   BuildInputs lists vendor/ -> 
+BAD   BuildInputs lists global.json -> 
+BAD   BuildInputs lists Directory.Build.props -> 
+BAD   BuildInputs lists NuGet.Config -> 
+BAD   self-check-scope diffs the merge commit against its first parent, without renames, unquoted ->       - name: Decide which self-checks this pull request runs
+        id: self-check-scope
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            $null = & ./scripts/Select-TestSelfCheckRun.ps1 -NotAPullRequest -GitHubOutput $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $changed = @()
+          git fetch --no-tags --quiet --depth=2 origin $env:GITHUB_SHA
+          if ($LASTEXITCODE -eq 0) {
+            $changed = @(git diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA)
+            if ($LASTEXITCODE -ne 0) { $changed = @() }
+          }
+          if ($changed.Count -eq 0) {
+            Write-Host "::warning title=Self-check scope::Could not read this pull request's changed paths; running every self-check."
+          }
+          $decision = & ./scripts/Select-TestSelfCheckRun.ps1 -ChangedPath $changed -GitHubOutput $env:GITHUB_OUTPUT -StepSummary $env:GITHUB_STEP_SUMMARY
+          $skipped = @($decision.Steps | Where-Object { -not $_.Run })
+          if ($skipped.Count -gt 0) {
+            Write-Host "::notice title=Self-checks skipped::? PR ??? $($skipped.Count) ???,?????????$($decision.Reason)"
+          }
+
+      # Seconds, pure input: the table above covers every step of this file, and a change to a registered input never
+      # skips its step (control-server#803).
+
+BAD   self-check-scope ends with exit 0, so an unreadable diff runs everything instead of failing the step ->           }
+BAD   test.yml runs on a push to fp/v2-impl -> branches: [ControlServer_MVP, main]
+swept 202 input paths over 40 steps
+BAD   closure: src/Lib/Gone.cs runs -> {"Reason":"skipped 1 of 1 self-checks: this pull request changes none of their inputs","Steps":[{"Key":"one","Name":"One","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Direct.psm1","scripts/l2/Test-One.ps1","scripts/Transitive.ps1","src/Lib/Deep/","src/Lib/Options.cs"]}]}
+BAD   closure: src/Lib/GoneDir/Inner.cs runs -> {"Reason":"skipped 1 of 1 self-checks: this pull request changes none of their inputs","Steps":[{"Key":"one","Name":"One","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Direct.psm1","scripts/l2/Test-One.ps1","scripts/Transitive.ps1","src/Lib/Deep/","src/Lib/Options.cs"]}]}
+inputs of the v3 check that are not inputs of the Scenario SQL check: 0
+999 case(s) passed
+TEST_SELF_CHECK_SCOPE_SELFTEST_FAILED: 12 case(s)
+exit=1

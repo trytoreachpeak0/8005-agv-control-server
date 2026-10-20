@@ -15,19 +15,32 @@ variable, no registry key and no real data root. Four parts:
 4. Install-ControlServerLocal.ps1 end to end (I1-I4).
 
 Parts 3 and 4 run a scratch copy of the real script in a child pwsh. The copy differs from the source in
-exactly two ways, both counted: its one top-level Assert-Administrator call is removed, and (Install only)
-[Environment]:: is redirected to a stub class so that the machine-scope credentials it reads exist. The
+at most three ways, each counted: its one top-level Assert-Administrator call is removed, (Install only)
+[Environment]:: is redirected to a stub class so that the machine-scope credentials it reads exist, and
+(the short copies only) the default of Wait-DataRootReleased's -Seconds, the scripts' real 30, is replaced
+by -LockWaitSeconds. The
 service control manager, New-Service, sc.exe, Set-Acl and the HTTP checks are replaced by functions, which
 win over cmdlets and executables. The registry key Install opens for its new service does not exist, so
 Install fails there and runs its own rollback -- which is the path under test. A "holder" is a child pwsh
 that opens <db>.instance-lock with FileShare.None, the way ControlServer.Host does since control-server#473;
 holders are stopped by PID, after checking the PID still names the process this script started.
 
-Exit code 0 when every check passes, 1 otherwise. About three minutes: four cases wait out the scripts'
-real 30-second limit.
+Exit code 0 when every check passes, 1 otherwise.
+
+Four cases wait out the limit, because a refusal only happens after it (control-server#803). U1 waits the
+scripts' real 30 seconds, read from their source and asserted, so that "it waited the full limit first"
+stays measured against the value the plant runs; it is the upgrade, which runs on factory01 far more often
+than an install. U4, I1 and I4 run a copy whose limit is -LockWaitSeconds (3 by default), and still assert
+the refusal, its wording and that the wait ran out first. About a minute and a half; -LockWaitSeconds 30 is
+the old three minutes. U2 and U5 let go of the lock after 4 seconds, inside the real limit, so they run the
+real copy; on a short copy they would turn into refusals.
 #>
 [CmdletBinding()]
-param()
+param(
+    # The limit the short copies wait out (control-server#803). Every second above the minimum is paid three times.
+    [ValidateRange(1, 30)]
+    [int]$LockWaitSeconds = 3
+)
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -201,7 +214,13 @@ try {
     Set-ItemProperty -LiteralPath $lock -Name IsReadOnly -Value $false
 
     # --- Scratch copies and the runner -------------------------------------------------------------
-    function New-ScriptCopy([string]$Source, [string]$Destination, [bool]$RedirectEnvironment) {
+    # The scripts' real limit, read from the source: U1 asserts it waited this long.
+    $realLimitPattern = '(?s)(function Wait-DataRootReleased\b.*?\[int\]\$Seconds = )(\d+)'
+    $realLimits = @($updatePath, $installPath | ForEach-Object { [int][regex]::Match([IO.File]::ReadAllText($_), $realLimitPattern).Groups[2].Value })
+    Write-Result (($realLimits -join ',') -eq '30,30') 'both scripts default Wait-DataRootReleased -Seconds to 30' ($realLimits -join ',')
+    $realLimit = $realLimits[0]
+
+    function New-ScriptCopy([string]$Source, [string]$Destination, [bool]$RedirectEnvironment, [int]$WaitSeconds = 0) {
         $lines = [IO.File]::ReadAllLines($Source)
         $calls = @(0..($lines.Count - 1) | Where-Object { $lines[$_] -ceq 'Assert-Administrator' })
         Write-Result ($calls.Count -eq 1) "$(Split-Path -Leaf $Source): exactly one top-level Assert-Administrator call to remove" "found=$($calls.Count)"
@@ -212,12 +231,19 @@ try {
             Write-Result ($count -ge 4) "$(Split-Path -Leaf $Source): [Environment]:: redirected to the stub" "occurrences=$count"
             $text = $text.Replace('[Environment]::', '[Cs503SelftestEnvironment]::')
         }
+        if ($WaitSeconds -gt 0) {
+            $count = ([regex]::Matches($text, $realLimitPattern)).Count
+            Write-Result ($count -eq 1) "$(Split-Path -Leaf $Source): the wait's default replaced by $WaitSeconds seconds" "occurrences=$count"
+            $text = ([regex]$realLimitPattern).Replace($text, "`${1}$WaitSeconds", 1)
+        }
         [IO.File]::WriteAllText($Destination, $text, [Text.UTF8Encoding]::new($false))
     }
     $updateCopy = Join-Path $scratch 'Update-ControlServerLocal.selftest.ps1'
-    $installCopy = Join-Path $scratch 'Install-ControlServerLocal.selftest.ps1'
+    $updateShortCopy = Join-Path $scratch 'Update-ControlServerLocal.short-wait.selftest.ps1'
+    $installCopy = Join-Path $scratch 'Install-ControlServerLocal.short-wait.selftest.ps1'
     New-ScriptCopy $updatePath $updateCopy $false
-    New-ScriptCopy $installPath $installCopy $true
+    New-ScriptCopy $updatePath $updateShortCopy $false $LockWaitSeconds
+    New-ScriptCopy $installPath $installCopy $true $LockWaitSeconds
 
     $runner = Join-Path $scratch 'runner.ps1'
     [IO.File]::WriteAllText($runner, @'
@@ -308,8 +334,9 @@ catch {
         return @{ Root = $case.FullName; Lock = $lock; Data = (Join-Path $case.FullName 'dataroot'); Install = (Join-Path $case.FullName 'install') }
     }
 
-    function Invoke-Case([string]$Kind, $Case, [string]$HolderLock = '', [int]$HolderSeconds = 0, [switch]$HealthFails, [switch]$FailBackupCopy) {
-        $script = if ($Kind -eq 'Update') { $updateCopy } else { $installCopy }
+    function Invoke-Case([string]$Kind, $Case, [string]$HolderLock = '', [int]$HolderSeconds = 0, [switch]$HealthFails, [switch]$FailBackupCopy,
+        [switch]$ShortWait) {
+        $script = if ($Kind -ne 'Update') { $installCopy } elseif ($ShortWait) { $updateShortCopy } else { $updateCopy }
         $arguments = @('-NoProfile', '-NonInteractive', '-File', $runner, '-Kind', $Kind, '-Script', $script, '-Case', $Case.Root)
         if ($HolderLock) { $arguments += @('-HolderLock', $HolderLock, '-HolderSeconds', $HolderSeconds) }
         if ($HealthFails) { $arguments += '-HealthFails' }
@@ -356,7 +383,9 @@ catch {
     Write-Result ($backups.Count -eq 0 -and $result.Diagnostic -notmatch 'backup-complete' -and $result.Diagnostic -notmatch 'replacement-installed') `
         'U1 held lock: nothing was backed up and the binary was not replaced' "backupFiles=$($backups.Count)"
     Write-Result ((Read-Text (Join-Path $case.Install 'ControlServer.Host.exe')) -eq 'old binary') 'U1 held lock: the old binary is still installed'
-    Write-Result ($result.Seconds -ge 30) 'U1 held lock: it waited the full 30 seconds first' "seconds=$($result.Seconds)"
+    # The one case that waits out the real limit (control-server#803): see the header.
+    Write-Result ($result.Seconds -ge $realLimit -and $result.Outcome.Contains("等了 $realLimit 秒")) `
+        "U1 held lock: it waited the full $realLimit seconds first, and says so" "seconds=$($result.Seconds)"
 
     # U2: the old process lets go a few seconds after Stop-Service.
     $case = New-Case 'u2-released' $true $true
@@ -391,10 +420,11 @@ catch {
     # touch neither the install directory nor the data root, and must say how to restore by hand.
     $case = New-Case 'u4-rollback-held' $true $true
     $dataBefore = Get-TreeFingerprint $case.Data
-    $result = Invoke-Case 'Update' $case -HolderLock $case.Lock -HolderSeconds 120 -HealthFails
+    $result = Invoke-Case 'Update' $case -HolderLock $case.Lock -HolderSeconds 120 -HealthFails -ShortWait
     Stop-Holders
-    Write-Result ($result.Outcome -like 'THREW: ControlServer upgrade and rollback both failed.*' -and $result.Outcome -match 'DATA_ROOT_IN_USE:') `
-        'U4 rollback under a live holder: refused with DATA_ROOT_IN_USE' $result.Outcome.Substring(0, [Math]::Min(120, $result.Outcome.Length))
+    Write-Result ($result.Outcome -like 'THREW: ControlServer upgrade and rollback both failed.*' -and $result.Outcome -match 'DATA_ROOT_IN_USE:' -and
+        $result.Outcome.Contains("等了 $LockWaitSeconds 秒") -and $result.Seconds -ge $LockWaitSeconds) `
+        "U4 rollback under a live holder: refused with DATA_ROOT_IN_USE after the $LockWaitSeconds-second wait" "seconds=$($result.Seconds) $($result.Outcome.Substring(0, [Math]::Min(120, $result.Outcome.Length)))"
     Write-Result ((Get-TreeFingerprint $case.Data) -eq $dataBefore) 'U4 rollback under a live holder: the data root was not deleted'
     Write-Result ((Read-Text (Join-Path $case.Install 'ControlServer.Host.exe')) -eq 'new binary' -and
         (Test-Path (Join-Path $case.Install 'appsettings.Production.json'))) `
@@ -424,7 +454,8 @@ catch {
     Start-Holder $case.Lock 120
     $result = Invoke-Case 'Install' $case
     Stop-Holders
-    Write-Result ($result.Outcome -like 'THREW: DATA_ROOT_IN_USE:*' -and $result.Seconds -ge 30) 'I1 preflight, held lock: refused with DATA_ROOT_IN_USE after the wait' "seconds=$($result.Seconds)"
+    Write-Result ($result.Outcome -like 'THREW: DATA_ROOT_IN_USE:*' -and $result.Seconds -ge $LockWaitSeconds -and $result.Outcome.Contains("等了 $LockWaitSeconds 秒")) `
+        "I1 preflight, held lock: refused with DATA_ROOT_IN_USE after the $LockWaitSeconds-second wait" "seconds=$($result.Seconds)"
     Write-Result (-not $result.Outcome.Contains('服务管理器') -and -not $result.Outcome.Contains('停服务后') -and
         $result.Outcome.Contains('不要按名字结束进程') -and $result.Outcome.Contains('本脚本还什么都没有做')) `
         'I1 preflight, held lock: the refusal does not speak of a stopped service and says nothing was done'
@@ -452,8 +483,9 @@ catch {
     $dataBefore = Get-TreeFingerprint $case.Data
     $result = Invoke-Case 'Install' $case -HolderLock $case.Lock -HolderSeconds 120
     Stop-Holders
-    Write-Result ($result.Outcome -like 'THREW: Deployment failed and rollback reported: *' -and $result.Outcome -match 'DATA_ROOT_IN_USE:') `
-        'I4 rollback under a live holder: refused with DATA_ROOT_IN_USE'
+    Write-Result ($result.Outcome -like 'THREW: Deployment failed and rollback reported: *' -and $result.Outcome -match 'DATA_ROOT_IN_USE:' -and
+        $result.Outcome.Contains("等了 $LockWaitSeconds 秒") -and $result.Seconds -ge $LockWaitSeconds) `
+        "I4 rollback under a live holder: refused with DATA_ROOT_IN_USE after the $LockWaitSeconds-second wait" "seconds=$($result.Seconds)"
     Write-Result ((Get-TreeFingerprint $case.Data) -eq $dataBefore) 'I4 rollback under a live holder: the data root was not touched'
     Write-Result ((Read-Text (Join-Path $case.Install 'ControlServer.Host.exe')) -eq 'new binary') `
         'I4 rollback under a live holder: the install directory was not deleted'
