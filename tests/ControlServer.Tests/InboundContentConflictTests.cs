@@ -218,31 +218,6 @@ public sealed class InboundContentConflictTests
         Assert.False(rig.SharesStateWith(read), "测试拿到的读库上下文与服务端处理器共用了上下文或连接。");
     }
 
-    // EVIDENCE ONLY (control-server#813): removed before the PR leaves draft. Reads the inbox from the test thread
-    // for 5 s, across two or three heartbeats, then expects the connection still to take the next message.
-    [Fact]
-    [Trait("IntegrationSlice", "FP-IS-06")]
-    public async Task Cs813EvidenceInboxReadsAcrossHeartbeats()
-    {
-        await using Rig rig = await Rig.StartAsync();
-        await rig.ConnectAsync();
-        long generation = rig.Generation;
-        string messageId = Guid.NewGuid().ToString("D");
-        Answer first = await rig.Relay.InjectAsync(
-            ManualChargingReturn(messageId, Guid.NewGuid().ToString("D"), generation, "first"), AnswerWithin);
-        Assert.Equal("ManualChargingReturnToServiceResult", first.MessageType);
-
-        int reads = 0;
-        DateTime until = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (DateTime.UtcNow < until)
-        {
-            await rig.InboxContentHashAsync(messageId);
-            reads++;
-        }
-        Console.WriteLine($"CS813-EVIDENCE reads={reads}");
-        await AssertNextMessageIsTakenAsync(rig, generation);
-    }
-
     private static string ManualChargingReturn(string messageId, string requestId, long generation, string reason) =>
         ProtocolEnvelope.Serialize(
             "ManualChargingReturnToServiceRequested",

@@ -373,29 +373,6 @@ public sealed class OnboardHandshakePushGateTests
         Assert.False(rig.SharesStateWith(read), "测试拿到的上下文与服务端处理器共用了连接。");
     }
 
-    // EVIDENCE ONLY (control-server#813): removed before the PR leaves draft. Uses test contexts for 5 s across two or
-    // three heartbeats, then expects the connection still to take a push.
-    [Fact]
-    [Trait("IntegrationSlice", "FP-IS-00")]
-    public async Task Cs813EvidenceTestContextsAcrossHeartbeats()
-    {
-        await using Rig rig = await Rig.StartAsync();
-        await rig.Onboard.StartAsync(rig.Lifetime.Token).WaitAsync(Guard, TestContext.Current.CancellationToken);
-        await rig.SendWhenRoutableAsync(Push("FaultCargoRecoveryCommand"));
-
-        DateTime until = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (DateTime.UtcNow < until)
-        {
-            await using ControlServerDbContext context = rig.NewContext();
-            await context.ProtocolInbox.AsNoTracking().CountAsync(TestContext.Current.CancellationToken);
-        }
-
-        await rig.SendWhenRoutableAsync(Push("FaultCargoRecoveryCommand"));
-        await rig.WaitForInboundCountAsync("FaultCargoRecoveryCommand", 2);
-        Assert.Equal("READY", rig.Engine.Snapshot().State.Readiness);
-        Assert.Equal(1L, rig.Engine.Snapshot().State.SessionGeneration);
-    }
-
     /// <summary>
     /// A new <c>SessionHello</c> on a connection whose handshake was done starts a new handshake, and the gate
     /// closes again before its answer goes out.
