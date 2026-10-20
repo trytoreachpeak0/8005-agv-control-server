@@ -219,6 +219,7 @@ if ($storeSource -eq 'FIELD_RUN') {
                'or pass -FieldRunRoot.')
     }
 }
+Assert-G3EvidenceOutsideStage -StageRoot $StageRoot -EvidenceRoot $EvidenceRoot
 $null = Assert-G3FreeDiskSpace -Path $StageRoot -MinFreeGiB $MinFreeGiB
 New-Item -ItemType Directory -Path $StageRoot, $EvidenceRoot | Out-Null
 # Absolute from here on. Unlike run-journey-g3.ps1, this runner does not hand an $EvidenceRoot-derived

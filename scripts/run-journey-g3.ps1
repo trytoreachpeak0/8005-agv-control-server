@@ -385,6 +385,7 @@ if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $
 
 if (Test-Path -LiteralPath $StageRoot) { throw "StageRoot must not already exist: $StageRoot" }
 if (Test-Path -LiteralPath $EvidenceRoot) { throw "EvidenceRoot must not already exist: $EvidenceRoot" }
+Assert-G3EvidenceOutsideStage -StageRoot $StageRoot -EvidenceRoot $EvidenceRoot
 $null = Assert-G3FreeDiskSpace -Path $StageRoot -MinFreeGiB $MinFreeGiB
 New-Item -ItemType Directory -Path $StageRoot, $EvidenceRoot | Out-Null
 # Absolute from here on, and this is the runner where a relative path actually bit (control-server#211).
@@ -545,7 +546,9 @@ try {
     }
 
     # Built once, here, and every scenario runs that output with -SkipBuild (control-server#585): each used to build
-    # the same clone again, about 240 seconds a round. The command is the rig's own build, from inside the clone so
+    # the same clone again. On vm01 that was 184 s a round (71 s for the first, ~6 s incremental for each of the other
+    # 19) against 146 s for this one build, so it saves ~40 s; the ticket's ~240 s did not hold. It also takes the
+    # compiler off every scenario's start. The command is the rig's own build, from inside the clone so
     # its global.json picks the SDK. A failed build throws, so the run is a runner error and no scenario starts.
     $null = Invoke-LoggedCommand -Name 'build-control-server' -WorkingDirectory $controlSource -FilePath 'dotnet' `
         -Arguments @('build', (Join-Path $controlSource 'ControlServer.sln'), '-c', 'Release', '--nologo') `

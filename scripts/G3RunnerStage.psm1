@@ -11,8 +11,9 @@
 #
 # Non-cone, since a cone names what to include and this names the one directory to leave out. Set between the
 # --no-checkout clone and the checkout, so the excluded files are never written. git status under it stays strict in
-# the way New-ExactClone needs: an excluded tracked file is skip-worktree and not reported, but an untracked file
-# under evidence/ is, and so is any change to a checked-out file.
+# the way New-ExactClone needs: an excluded tracked file is skip-worktree and, while absent, not reported; an untracked
+# file under evidence/ is reported, so is a file written at an excluded tracked path (' M' under git 2.56), and so is
+# any change to a checked-out file.
 #
 # Run it from pwsh. Git Bash rewrites '/*' and '!/evidence/' into Windows paths before git sees them, and the result
 # is a sparse checkout that leaves nothing out.
@@ -40,10 +41,67 @@ function Assert-G3FreeDiskSpace {
     return [double]$free
 }
 
+# Before a runner creates either root: the evidence root may not be the stage, inside it, or around it, since a passed
+# run's stage is removed and would take run-result.json with it (G3_EVIDENCE_IN_STAGE; review S2 of PR #806).
+function Assert-G3EvidenceOutsideStage {
+    param(
+        [Parameter(Mandatory)][string]$StageRoot,
+        [Parameter(Mandatory)][string]$EvidenceRoot
+    )
+
+    $resolve = { param($path)
+        [IO.Path]::GetFullPath($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path)).TrimEnd('\', '/') + '\' }
+    $stage = & $resolve $StageRoot
+    $evidence = & $resolve $EvidenceRoot
+    if ($evidence.StartsWith($stage, [StringComparison]::OrdinalIgnoreCase) -or $stage.StartsWith($evidence, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "G3_EVIDENCE_IN_STAGE: -EvidenceRoot $EvidenceRoot and -StageRoot $StageRoot overlap ($evidence, $stage). A passed run removes its stage; give the evidence a directory of its own."
+    }
+}
+
+# The hidden pwsh that removes a stage once the process that loaded files out of it has exited. It deletes only when
+# that process is gone: a process id that now names another process (a different start time), or a wait past
+# TimeoutSeconds, keeps the stage and says so in <stage>.removal.log beside it (G3_STAGE_REMOVAL_SKIPPED; review S1 of
+# PR #806). The command line is encoded, so g3.yml's leftover-process step finds no work-root path in it.
+function Start-G3StageRemovalAfterExit {
+    param(
+        [Parameter(Mandatory)][string]$StageRoot,
+        [Parameter(Mandatory)][int]$ProcessId,
+        [Parameter(Mandatory)][DateTime]$ProcessStartTimeUtc,
+        [int]$TimeoutSeconds = 3600
+    )
+
+    $quoted = $StageRoot.Replace("'", "''")
+    $script = @"
+`$stage = '$quoted'
+`$log = `$stage + '.removal.log'
+`$deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+while (`$true) {
+    `$process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (`$null -eq `$process) { break }
+    if (`$process.StartTime.ToUniversalTime().Ticks -ne $($ProcessStartTimeUtc.ToUniversalTime().Ticks)) {
+        "G3_STAGE_REMOVAL_SKIPPED: pid $ProcessId is now another process (started `$(`$process.StartTime.ToUniversalTime().ToString('o')), expected $($ProcessStartTimeUtc.ToUniversalTime().ToString('o'))); `$stage kept." | Add-Content -LiteralPath `$log
+        exit 1
+    }
+    if ([DateTime]::UtcNow -gt `$deadline) {
+        "G3_STAGE_REMOVAL_SKIPPED: pid $ProcessId still running after $TimeoutSeconds s; `$stage kept." | Add-Content -LiteralPath `$log
+        exit 1
+    }
+    Start-Sleep -Milliseconds 500
+}
+for (`$i = 0; `$i -lt 30 -and (Test-Path -LiteralPath `$stage); `$i++) {
+    Remove-Item -LiteralPath `$stage -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath `$stage) { Start-Sleep -Seconds 2 }
+}
+"@
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    return Start-Process -FilePath 'pwsh' -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded `
+        -WindowStyle Hidden -PassThru
+}
+
 # After a runner has written its run-result.json: a passed run's stage goes -- clones, builds, publishes, peers and
 # runtime, all rebuilt from the commits -- and a red run's stays for whoever reads the failure. The evidence root is
-# a different directory and is never touched. A stage that will not go (a file still held open) is a warning and
-# removed=false, never a change to the verdict; nothing here unlocks it with `dotnet build-server shutdown`, which would
+# a different directory (Assert-G3EvidenceOutsideStage) and is never touched. A stage that will not go (a file still
+# held open) is a warning and removed=false, never a change to the verdict; nothing here unlocks it with `dotnet build-server shutdown`, which would
 # stop every other session's builds on the machine.
 function Complete-G3RunnerStage {
     param(
@@ -53,6 +111,9 @@ function Complete-G3RunnerStage {
         [double]$RetrySeconds = 5
     )
 
+    # Every runner resolves its stage root before it gets here; a relative one would be removed relative to wherever
+    # this happens to be standing.
+    if (-not [IO.Path]::IsPathFullyQualified($StageRoot)) { throw "Complete-G3RunnerStage: -StageRoot $StageRoot is not an absolute path; nothing removed." }
     if (-not $Passed) {
         Write-Host "G3_STAGE_KEPT: $StageRoot (the run did not pass)"
         return [pscustomobject]@{ removed = $false; reason = 'NOT_PASSED' }
@@ -77,16 +138,11 @@ function Complete-G3RunnerStage {
     $loaded = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($module in [Diagnostics.Process]::GetCurrentProcess().Modules) { $null = $loaded.Add($module.FileName) }
     if ($left.Count -gt 0 -and @($left | Where-Object { -not $loaded.Contains($_.FullName) }).Count -eq 0) {
-        $quoted = $StageRoot.Replace("'", "''")
-        $script = "try { Wait-Process -Id $PID -Timeout 3600 -ErrorAction Stop } catch { }`n" +
-            "for (`$i = 0; `$i -lt 30 -and (Test-Path -LiteralPath '$quoted'); `$i++) {`n" +
-            "    Remove-Item -LiteralPath '$quoted' -Recurse -Force -ErrorAction SilentlyContinue`n" +
-            "    if (Test-Path -LiteralPath '$quoted') { Start-Sleep -Seconds 2 }`n}"
-        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
-        $remover = Start-Process -FilePath 'pwsh' -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded `
-            -WindowStyle Hidden -PassThru
+        $me = [Diagnostics.Process]::GetCurrentProcess()
+        $remover = Start-G3StageRemovalAfterExit -StageRoot $StageRoot -ProcessId $me.Id -ProcessStartTimeUtc $me.StartTime.ToUniversalTime()
         Write-Host ("G3_STAGE_REMOVED_AFTER_EXIT: $StageRoot -- all but $($left.Count) file(s) this process has loaded " +
-            "($(@($left | ForEach-Object Name) -join ', ')); pid $($remover.Id) removes the rest once pid $PID has exited.")
+            "($(@($left | ForEach-Object Name) -join ', ')); pid $($remover.Id) removes the rest once pid $($me.Id) has exited " +
+            "(or says why not in $StageRoot.removal.log).")
         return [pscustomobject]@{ removed = $false; reason = 'HELD_BY_THIS_PROCESS' }
     }
     $gib = [Math]::Round((($left | Measure-Object Length -Sum).Sum) / 1GB, 2)
@@ -94,4 +150,5 @@ function Complete-G3RunnerStage {
     return [pscustomobject]@{ removed = $false; reason = 'NOT_REMOVED' }
 }
 
-Export-ModuleMember -Function Get-G3EvidenceSparseCheckoutArguments, Assert-G3FreeDiskSpace, Complete-G3RunnerStage
+Export-ModuleMember -Function Get-G3EvidenceSparseCheckoutArguments, Assert-G3FreeDiskSpace, Assert-G3EvidenceOutsideStage,
+    Start-G3StageRemovalAfterExit, Complete-G3RunnerStage
