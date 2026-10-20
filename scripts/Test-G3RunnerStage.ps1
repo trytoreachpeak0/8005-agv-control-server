@@ -310,6 +310,38 @@ try {
     Check 'Complete-G3RunnerStage: a stage it cannot remove is a warning and removed=false, not a throw' `
         ($null -eq $thrown -and $result.removed -eq $false -and @($warnings | Where-Object { "$_" -match '^G3_STAGE_NOT_REMOVED: ' }).Count -eq 1) `
         "$thrown / removed $($result.removed) / warnings '$($warnings -join '; ')'"
+    # What staged, restart and demand-bearing do: Add-Type -Path a DLL out of their own publish directory, which a .NET
+    # process cannot unload (g3.yml run 39436562681: e_sqlite3.dll, "Access ... is denied"). In a child pwsh, which
+    # then exits: everything else goes at once, the held rest once that process has exited.
+    $stage = New-Stage 'stage-held-by-self'
+    $publish = Join-Path $stage 'publish\control-server'
+    New-Item -ItemType Directory -Path $publish | Out-Null
+    $child = Join-Path $scratch 'held-by-self.ps1'
+    Set-Content -LiteralPath $child -Value @'
+param([string]$ModulePath, [string]$Stage, [string]$Publish, [string]$ResultPath)
+$ErrorActionPreference = 'Stop'
+Import-Module $ModulePath -Force
+$dll = Join-Path $Publish 'G3SelfCheckHeld.dll'
+Add-Type -TypeDefinition 'public static class G3SelfCheckHeld { public static int Answer() { return 42; } }' -OutputAssembly $dll
+Add-Type -Path $dll
+$null = [G3SelfCheckHeld]::Answer()
+$result = Complete-G3RunnerStage -StageRoot $Stage -Passed $true -Attempts 2 -RetrySeconds 0
+[ordered]@{ removed = $result.removed; reason = $result.reason; sourcesLeft = (Test-Path -LiteralPath (Join-Path $Stage 'sources'));
+    runtimeLeft = (Test-Path -LiteralPath (Join-Path $Stage 'runtime')); dllLeft = (Test-Path -LiteralPath $dll) } |
+    ConvertTo-Json | Set-Content -LiteralPath $ResultPath
+'@
+    $childResult = Join-Path $scratch 'held-by-self.json'
+    $childOutput = & pwsh -NoProfile -File $child -ModulePath (Join-Path $ScriptRoot 'G3RunnerStage.psm1') -Stage $stage -Publish $publish -ResultPath $childResult *>&1 | Out-String
+    $held = if (Test-Path -LiteralPath $childResult) { Get-Content -Raw -LiteralPath $childResult | ConvertFrom-Json } else { $null }
+    Check 'Complete-G3RunnerStage: a DLL this process loaded from its stage -- the rest goes at once, the DLL stays while it runs' `
+        ($null -ne $held -and $held.reason -eq 'HELD_BY_THIS_PROCESS' -and -not $held.sourcesLeft -and -not $held.runtimeLeft -and $held.dllLeft -and
+         $childOutput -match 'G3_STAGE_REMOVED_AFTER_EXIT: ') `
+        "$($held | ConvertTo-Json -Compress) $childOutput"
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(60)
+    while ((Test-Path -LiteralPath $stage) -and [DateTimeOffset]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 500 }
+    Check 'Complete-G3RunnerStage: ... and once that process has exited, the stage is gone' (-not (Test-Path -LiteralPath $stage)) `
+        "still there after 60 s: $(@(Get-ChildItem -LiteralPath $stage -Recurse -Force -ErrorAction Ignore | ForEach-Object Name) -join ', ')"
+
     $moduleAst = Get-RunnerAst (Join-Path $ScriptRoot 'G3RunnerStage.psm1')
     $shutdown = @($moduleAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.Extent.Text -match 'build-server' }, $true))
     Check 'G3RunnerStage.psm1 never runs dotnet build-server shutdown (it would stop other sessions'' builds)' ($shutdown.Count -eq 0) "$($shutdown.Count) found"
