@@ -1,0 +1,13 @@
+diff --git a/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs b/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
+index 565d99068..1a926e488 100644
+--- a/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
++++ b/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
+@@ -153,7 +153,7 @@ public sealed class CompiledSchemaCache
+     /// <summary>The key of the entry for the schema registered under <paramref name="schemaId"/>.</summary>
+     public string KeyOf(string schemaId) => SchemaCacheKeyParts.Sha256Hex(Encoding.UTF8.GetBytes(
+         $"format={FormatVersion}\nschemaBundleSha256={keyParts.SchemaBundleSha256}\ntool={keyParts.ToolVersion}\n" +
+-        $"corvus={keyParts.CorvusVersion}\nschemaId={schemaId}\n"));
++        $"schemaId={schemaId}\n"));
+ 
+     /// <summary>The schema registered under <paramref name="schemaId"/>, from the cache when an entry checks out.</summary>
+     public CompiledSchema Get(string schemaId)

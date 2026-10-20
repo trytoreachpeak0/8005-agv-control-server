@@ -1,0 +1,13 @@
+diff --git a/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs b/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
+index 565d99068..a3f0ff24a 100644
+--- a/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
++++ b/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
+@@ -253,7 +253,7 @@ public sealed class CompiledSchemaCache
+             // A rename within one directory: whoever reads the path sees the old whole entry or the new whole entry.
+             // Overwriting is what replaces an entry that did not check out; when two writers race, the last rename wins
+             // and both wrote the same thing.
+-            File.Move(temporary, path, overwrite: true);
++            File.Copy(temporary, path, overwrite: true);
+             Prune();
+         }
+         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)

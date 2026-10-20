@@ -1,0 +1,13 @@
+diff --git a/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs b/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
+index 565d99068..4ff296737 100644
+--- a/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
++++ b/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
+@@ -222,8 +222,6 @@ public sealed class CompiledSchemaCache
+             Header? header = JsonSerializer.Deserialize<Header>(bytes.AsSpan(0, newline), JsonSerializerOptions.Web);
+             byte[] assembly = bytes[(newline + 1)..];
+             return header is not null && header.Format == FormatVersion && header.Key == key && header.SchemaId == schemaId &&
+-                header.AssemblyLength == assembly.Length &&
+-                header.AssemblySha256 == SchemaCacheKeyParts.Sha256Hex(assembly) &&
+                 !string.IsNullOrEmpty(header.RootTypeName)
+                 ? new Entry(assembly, header.RootTypeName)
+                 : null;

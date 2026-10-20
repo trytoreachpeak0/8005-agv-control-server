@@ -1,0 +1,83 @@
+{
+  "protocol": {
+    "tag": "protocol-v5.0.0",
+    "releaseVersion": "5.0.0",
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolVersion": 6,
+    "approvalStatus": "APPROVED_RELEASE",
+    "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+    "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+    "vendoredSchemaFiles": 73
+  },
+  "validator": "Corvus.Json.Validator 4.6.7",
+  "linesObserved": 7778,
+  "testAuthoredLinesSkipped": 0,
+  "linesChecked": 7778,
+  "distinctLinesChecked": 1484,
+  "linesInViolation": 0,
+  "linesInKnownViolation": 0,
+  "knownViolationsMatched": 0,
+  "knownViolationEntriesNotMatched": [],
+  "schemaCompilationMilliseconds": 34595,
+  "validationMilliseconds": 1199,
+  "schemaCompilationProcesses": 4,
+  "serverMessageTypesNotObserved": [
+    "CapabilitySnapshotRequested",
+    "CurrentStopDepartureResult",
+    "DemandSelectionResult",
+    "ExceptionRecoverySessionOpened",
+    "ExceptionRecoverySessionRejected",
+    "ExceptionRecoverySessionSnapshot",
+    "FaultCargoRecoveryCommand",
+    "ForcedMechanicalRecoveryCommand",
+    "HardwareRecoveryRecordResult",
+    "LoadCancellationAuthorization",
+    "LoadCompensationCommand",
+    "LoadCompensationRejected",
+    "LoadCorrectionCommand",
+    "LoadCorrectionRejected",
+    "ManualChargingReturnToServiceResult",
+    "RecoveryActionAccepted",
+    "RecoveryActionRejected",
+    "SafetyStateSnapshotRequested",
+    "SessionAccepted",
+    "SessionReadiness",
+    "SessionRejected",
+    "SlotConfigurationActivationCommand",
+    "SlotFaultDeclarationCommand",
+    "SlotOperationResumeCommand",
+    "SublotRejected"
+  ],
+  "byMessageType": {
+    "CurrentStopWorklistSnapshot": {
+      "product": 12
+    },
+    "HeartbeatAck": {
+      "product": 2
+    },
+    "ManualStationClearanceConfirmationResult": {
+      "product": 10
+    },
+    "PreDepartureSafetyCheck": {
+      "product": 4
+    },
+    "ProtocolProblem": {
+      "product": 2
+    },
+    "SlotOperationCommand": {
+      "product": 6
+    },
+    "SublotEntryRequested": {
+      "product": 7
+    },
+    "UnableToChargeFieldConfirmationResult": {
+      "product": 16
+    },
+    "UpcomingStopPlanSnapshot": {
+      "product": 3868
+    },
+    "VehicleBusinessStateSnapshot": {
+      "product": 3851
+    }
+  }
+}

@@ -352,7 +352,51 @@ public sealed class SchemaConformanceToolTests : IDisposable
         copy.Remove("schemaCompilationMilliseconds");
         copy.Remove("validationMilliseconds");
         copy.Remove("schemaCompilationProcesses");
+        // The second of two runs on one cache finds what the first compiled; that is how it was come by, not what it found.
+        copy.Remove("schemaCache");
         return copy.ToJsonString();
+    }
+
+    /// <summary>
+    /// The key the validator itself puts on its cache entries is built from what this process really runs with -- the
+    /// digest measured from the vendored tree, the validator's own assembly, the Corvus packages it loaded -- and a run
+    /// served from the cache reports exactly what the run that compiled reported (control-server#584). Which keys stay
+    /// apart when one of those moves is <see cref="SchemaCompilationCacheTests"/>'s.
+    /// </summary>
+    [Fact]
+    public async Task ARunServedFromTheCacheReportsWhatTheCompilingRunReportedUnderTheRealKey()
+    {
+        string[] records =
+        [
+            Record("DurableAck", DurableAckSite, DurableAckLine()),
+            Record("DurableAck", DurableAckSite, DurableAckLine(without: "durablyAcceptedAt")),
+            Record("HeartbeatAck", "Site.HeartbeatAck", DurableAckLine(messageType: "HeartbeatAck"))
+        ];
+
+        ToolRun cold = await RunToolAsync("cold", records, processes: 1);
+        ToolRun warm = await RunToolAsync("warm", records, processes: 1);
+
+        Assert.Equal(1, cold.ExitCode);
+        Assert.Equal(cold.ExitCode, warm.ExitCode);
+        JsonNode coldCache = Coverage(cold)["schemaCache"]!;
+        JsonNode warmCache = Coverage(warm)["schemaCache"]!;
+        Assert.Equal(0, coldCache["hits"]!.GetValue<int>());
+        Assert.Equal(3, coldCache["misses"]!.GetValue<int>());
+        Assert.Equal(3, warmCache["hits"]!.GetValue<int>());
+        Assert.Equal(0, warmCache["misses"]!.GetValue<int>());
+        Assert.Equal(WithoutTimings(Coverage(cold)), WithoutTimings(Coverage(warm)));
+        Assert.Equal(Violations(cold).ToJsonString(), Violations(warm).ToJsonString());
+
+        JsonNode key = warmCache["key"]!;
+        Assert.Equal(ProtocolCandidateIdentity.SchemaBundleSha256, key["schemaBundleSha256"]!.GetValue<string>());
+        Assert.Equal(
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(Path.ChangeExtension(ToolExecutable, ".dll")))).ToLowerInvariant(),
+            key["toolVersion"]!.GetValue<string>());
+        string corvus = key["corvusVersion"]!.GetValue<string>();
+        Assert.Contains("Corvus.Json.Validator/4.6.7", corvus, StringComparison.Ordinal);
+        Assert.Contains("Corvus.Json.CodeGeneration/4.6.7", corvus, StringComparison.Ordinal);
+        Assert.Contains("Corvus.Json.ExtendedTypes/4.6.7", corvus, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.CodeAnalysis.CSharp/", corvus, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -473,7 +517,8 @@ public sealed class SchemaConformanceToolTests : IDisposable
         string name, string linesPath, string? vendor = null, string? known = null, int? processes = null)
     {
         string reportDirectory = Path.Combine(_directory, name + "-report");
-        List<string> arguments = ["--lines", linesPath, "--report", reportDirectory];
+        // A cache of this test's own (control-server#584): nothing it writes outlives the test or is read by another.
+        List<string> arguments = ["--lines", linesPath, "--report", reportDirectory, "--cache", Path.Combine(_directory, "schema-cache")];
         if (vendor is not null)
         {
             arguments.AddRange(["--vendor", vendor]);

@@ -1,0 +1,18 @@
+
+slice    run                              commit    status selectedTestCount testsTotal testsPassed schemaConformance                                                                                       schemaCompilationMilliseconds schemaCache
+-----    ---                              ------    ------ ----------------- ---------- ----------- -----------------                                                                                       ----------------------------- -----------
+FP-IS-03 before-base-per-slice            1f31a4a49 PASS                  43         43          43 {"linesChecked":163,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                          63612 (no cache)
+FP-IS-03 same-commit-old-script-per-slice de2ab3cf4 PASS                  43         43          43 {"linesChecked":163,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                            383 15 hit / 0 miss
+FP-IS-03 after-cold-one-call              de2ab3cf4 PASS                  43         43          43 {"linesChecked":163,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                          52958 0 hit / 15 miss
+FP-IS-03 after-warm-one-call              de2ab3cf4 PASS                  43         43          43 {"linesChecked":163,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                            483 15 hit / 0 miss
+FP-IS-04 before-base-per-slice            1f31a4a49 PASS                  16         16          16 {"linesChecked":156,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                          31400 (no cache)
+FP-IS-04 same-commit-old-script-per-slice de2ab3cf4 PASS                  16         16          16 {"linesChecked":156,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                            522 11 hit / 0 miss
+FP-IS-04 after-cold-one-call              de2ab3cf4 PASS                  16         16          16 {"linesChecked":156,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                            303 11 hit / 0 miss
+FP-IS-04 after-warm-one-call              de2ab3cf4 PASS                  16         16          16 {"linesChecked":156,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                            510 11 hit / 0 miss
+FP-IS-13 before-base-per-slice            1f31a4a49 PASS                 309        309         309 {"linesChecked":7778,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                         34595 (no cache)
+FP-IS-13 same-commit-old-script-per-slice de2ab3cf4 PASS                 309        309         309 {"linesChecked":7778,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                           485 14 hit / 0 miss
+FP-IS-13 after-cold-one-call              de2ab3cf4 PASS                 309        309         309 {"linesChecked":7778,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                          8627 11 hit / 3 miss
+FP-IS-13 after-warm-one-call              de2ab3cf4 PASS                 309        309         309 {"linesChecked":7778,"linesInViolation":0,"knownViolationsMatched":0,"coverage":"schema-coverage.json"}                           574 14 hit / 0 miss
+
+
+All four runs agree on status, selected and executed test counts, passes and schemaConformance for every slice.
