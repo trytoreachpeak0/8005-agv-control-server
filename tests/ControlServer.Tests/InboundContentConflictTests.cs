@@ -200,6 +200,24 @@ public sealed class InboundContentConflictTests
         await rig.AssertConnectionStaysAsync();
     }
 
+    /// <summary>
+    /// 测试线程读库用自己的上下文和连接，不碰服务端处理器那一个（control-server#813）。
+    /// </summary>
+    /// <remarks>
+    /// <c>DbContext</c> 与 <c>SqliteConnection</c> 都不是线程安全的。合成车载端每 2 秒发一次心跳，服务端处理心跳要查写
+    /// 处理器的那个上下文；测试线程若也从它读 <c>ProtocolInbox</c>，两者撞上就抛
+    /// <c>A second operation was started on this context instance</c>（vm-win-01 run 39430304032）。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task TheTestReadsThroughAContextAndConnectionOfItsOwn()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        await using ControlServerDbContext read = await rig.OpenReadContextAsync();
+
+        Assert.False(rig.SharesStateWith(read), "测试拿到的读库上下文与服务端处理器共用了上下文或连接。");
+    }
+
     private static string ManualChargingReturn(string messageId, string requestId, long generation, string reason) =>
         ProtocolEnvelope.Serialize(
             "ManualChargingReturnToServiceRequested",
@@ -243,6 +261,11 @@ public sealed class InboundContentConflictTests
     private sealed class Rig : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
+
+        /// <summary>
+        /// The context the server's processor uses. Never read through it from the test thread; see
+        /// <see cref="OpenReadContextAsync"/>.
+        /// </summary>
         private readonly ControlServerDbContext _context;
         private readonly ServiceProvider _provider;
         private readonly OnboardTcpServer _server;
@@ -276,7 +299,10 @@ public sealed class InboundContentConflictTests
         public static async Task<Rig> StartAsync()
         {
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
-            SqliteConnection connection = new("Data Source=:memory:");
+            // Named and shared-cache so that OpenReadContextAsync can reach it on a second connection; this one stays
+            // open for the rig's lifetime, which is what keeps an in-memory database alive.
+            SqliteConnection connection = new(
+                $"Data Source=content-conflict-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             ControlServerDbContext context = new(
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
@@ -361,18 +387,41 @@ public sealed class InboundContentConflictTests
             Assert.Equal(closedBefore, Relay.ServerClosedConnections);
         }
 
+        /// <summary>Whether <paramref name="read"/> is, or shares a connection with, the server's own context.</summary>
+        public bool SharesStateWith(ControlServerDbContext read) =>
+            ReferenceEquals(read, _context) ||
+            ReferenceEquals(read.Database.GetDbConnection(), _context.Database.GetDbConnection());
+
+        /// <summary>
+        /// A context of the test's own, on a connection of its own, to the same database the server writes
+        /// (control-server#813). The caller disposes it, and with it its connection.
+        /// </summary>
+        /// <remarks>
+        /// Neither <see cref="DbContext"/> nor <see cref="SqliteConnection"/> is thread-safe, and the server's processor
+        /// uses <see cref="_context"/> on the listener's threads, for every heartbeat as well. The database is a named
+        /// shared-cache in-memory one, kept alive by the server's connection, so a second connection sees the same rows;
+        /// SQLite serialises the two connections itself. The same shape as OnboardSilentLivenessLossTests (#256).
+        /// </remarks>
+        public async Task<ControlServerDbContext> OpenReadContextAsync()
+        {
+            ControlServerDbContext read = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection.ConnectionString).Options);
+            await read.Database.OpenConnectionAsync(TestContext.Current.CancellationToken);
+            return read;
+        }
+
         public async Task<string> InboxContentHashAsync(string messageId)
         {
-            _context.ChangeTracker.Clear();
-            return (await _context.ProtocolInbox.AsNoTracking()
+            await using ControlServerDbContext read = await OpenReadContextAsync();
+            return (await read.ProtocolInbox.AsNoTracking()
                     .SingleAsync(row => row.MessageId == messageId, TestContext.Current.CancellationToken))
                 .ContentHash;
         }
 
         public async Task<bool> InboxHasAsync(string messageId)
         {
-            _context.ChangeTracker.Clear();
-            return await _context.ProtocolInbox.AsNoTracking()
+            await using ControlServerDbContext read = await OpenReadContextAsync();
+            return await read.ProtocolInbox.AsNoTracking()
                 .AnyAsync(row => row.MessageId == messageId, TestContext.Current.CancellationToken);
         }
 

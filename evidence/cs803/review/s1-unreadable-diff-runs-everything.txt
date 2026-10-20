@@ -1,0 +1,46 @@
+the run: block of 'Decide which self-checks this pull request runs', from test.yml, with GITHUB_EVENT_NAME=pull_request and GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 (no such commit)
+exit=0
+outputs: 39, true: 39, false: 0
+--- step log ---
+fatal: remote error: upload-pack: not our ref 0123456789abcdef0123456789abcdef01234567
+::warning title=Self-check scope::Could not read this pull request's changed paths; running every self-check.
+test.yml self-checks: runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (onboard handle after restart) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (HMI phrase watch) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (route evidence recompute) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (real-rig run ledger) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (probe closures resolve) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (second-leg intent wait) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (expected-action overdue) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (forced recovery confirm step) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (screen-state snapshot and pauses) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  G3 scenario self-check (journey UIA fixture reads) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  G3 runner self-check (content-conflict scope) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 self-check (scenario round scope) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (worklist station wait) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (double command refusal body) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (journey closure ids) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (multi-stop plan row parsing) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  G3 runner self-check (staged error path) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  G3 runner self-check (evidence honesty) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  G3 runner self-check (self-check override parameters) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  G3 runner self-check (nightly G3 decisions) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  Install and upgrade self-check (data root lock wait) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  Install and upgrade self-check (two-car safety projection, first readiness) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  G3 runner self-check (evidence location diagnostic) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (closure variable capture) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (whole-array readers not enumerated) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (single-row read) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (backlog acceptance) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  Script static checks (parse, helper properties, string-null) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  G3 runner self-check (runner claims) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (dispatch zone parameters) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (CI lane plan) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (real inbound reads) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (session continuity verdict) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (slot groups) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  L2 scenario self-check (task type stations) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  G3 runner self-check (demand-bearing claim record backfill) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  Scenario SQL self-check (literal SQL against the migrated schema) -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  Parallel instance self-check -- runs: the changed paths are unknown, so nothing can be ruled out
+  run  G3 scenario self-check (journey v3 script branches) -- runs: the changed paths are unknown, so nothing can be ruled out
