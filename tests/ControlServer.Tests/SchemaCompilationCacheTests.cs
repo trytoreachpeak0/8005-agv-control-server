@@ -208,11 +208,40 @@ public sealed class SchemaCompilationCacheTests : IDisposable
     }
 
     /// <summary>
-    /// Several validators writing the same key at once -- every G2 validator splits into four, and two slices can
-    /// overlap. Each writes a file of its own and renames it into place, so what is left is one whole entry.
+    /// <c>format</c> is asserted, as <c>JsonSchema.FromText</c> asserts it with the options the validator passes: the
+    /// envelope's <c>Id</c> and <c>Instant</c> are guarded by <c>format: uuid</c> and <c>format: date-time</c> alone
+    /// (common/types.schema.json, no pattern behind them), so this line fails on format and nothing else. The ported
+    /// compile spells <c>alwaysAssertFormat: true</c> by hand; this is what holds that line.
     /// </summary>
     [Fact]
-    public async Task ProcessesWritingTheSameKeyAtOnceLeaveOneWholeEntry()
+    public async Task AFormatViolationIsAViolationAsCorvusItselfJudgesIt()
+    {
+        string line = await WriteLineAsync(
+            "bad-format", DurableAckLine(messageId: "not-a-uuid", sentAt: "yesterday at noon"));
+
+        JsonNode cold = await ProbeAsync(line, compare: true);
+        JsonNode warm = await ProbeAsync(line, compare: true);
+
+        foreach (JsonNode run in (JsonNode[])[cold, warm])
+        {
+            Assert.False(run["valid"]!.GetValue<bool>(), run.ToJsonString());
+            Assert.False(run["corvusValid"]!.GetValue<bool>(), run.ToJsonString());
+            Assert.Equal(run["corvusErrors"]!.ToJsonString(), run["errors"]!.ToJsonString());
+            Assert.Contains("format", run["errors"]!.ToJsonString(), StringComparison.OrdinalIgnoreCase);
+        }
+        AssertCounts(warm, hits: 1, misses: 0, rejected: 0);
+    }
+
+    /// <summary>
+    /// Several validators compiling the same key at once -- every G2 validator splits into four, and slices can overlap.
+    /// What this holds: every one of them judges the line the same, and what they leave is one entry that checks out --
+    /// no temporary files, and the next run uses it. What it does not hold is the rename itself: six processes do not
+    /// hit the instant in which an entry written in place is half there (control-server#584 mutation M6, writing in
+    /// place, leaves this green). A half-written entry, should one be read, is rejected and compiled again; that is
+    /// <see cref="ATruncatedEntryIsCompiledAgainAndReplacedNeverTrusted"/>.
+    /// </summary>
+    [Fact]
+    public async Task ProcessesCompilingTheSameKeyAtOnceJudgeAlikeAndLeaveOneEntryThatChecksOut()
     {
         string line = await WriteLineAsync("line", DurableAckLine(without: "durablyAcceptedAt"));
 
@@ -277,7 +306,9 @@ public sealed class SchemaCompilationCacheTests : IDisposable
     }
 
     /// <summary>A DurableAck of the shape the product sends, identity fields read off <see cref="ProtocolCandidateIdentity"/>.</summary>
-    private static string DurableAckLine(string? without = null)
+    private static string DurableAckLine(
+        string? without = null, string messageId = "11111111-1111-4111-8111-111111111111",
+        string sentAt = "2026-09-17T08:00:00.000+00:00")
     {
         Dictionary<string, object?> payload = new(StringComparer.Ordinal)
         {
@@ -297,11 +328,11 @@ public sealed class SchemaCompilationCacheTests : IDisposable
             protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
             protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
             messageType = "DurableAck",
-            messageId = "11111111-1111-4111-8111-111111111111",
+            messageId,
             correlationId = "22222222-2222-4222-8222-222222222222",
             agvId = "AGV-8005-01",
             sessionGeneration = 1L,
-            sentAt = "2026-09-17T08:00:00.000+00:00",
+            sentAt,
             payload
         });
     }
