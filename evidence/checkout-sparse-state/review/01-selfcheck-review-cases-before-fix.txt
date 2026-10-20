@@ -1,0 +1,8 @@
+checkout: c06a6f810c4850750930140d625706431787e25b, with only the review cases added to scripts/Test-CheckoutSparseState.ps1 (S1, S3, S4)
+BAD   l2.yml scenarios: 'Check the checkout is the tree it asked for' has CHECKOUT_EXCLUDE evidence -> CHECKOUT_EXCLUDE ''
+BAD   l2.yml real-rig: 'Check the checkout is the tree it asked for' has CHECKOUT_EXCLUDE evidence -> CHECKOUT_EXCLUDE ''
+BAD   release.yml package: 'Check the checkout is the tree it asked for' has CHECKOUT_EXCLUDE evidence -> CHECKOUT_EXCLUDE ''
+BAD   assert: a top-level directory in HEAD neither listed nor excluded is red, by name -> CHECKOUT_TREE_OK: 18 tracked file(s), 5 left out as asked (the top level and .config, .github, docs, scripts, src, tests, tools, vendor)
+146 case(s) passed
+CHECKOUT_SPARSE_STATE_SELFTEST_FAILED: 4 case(s)
+exit=1

@@ -1,0 +1,113 @@
+# l2 run 39457961360 attempt 2, job 118799921289 (PR #817), runner vmwin01-control-server: the checkout step and the build. gh api .../actions/jobs/118799921289/logs, ANSI stripped, the PR body lines left out.
+2026-10-20T18:11:12.3279813Z ##[group]Run actions/checkout@v7
+2026-10-20T18:11:12.3280436Z with:
+2026-10-20T18:11:12.3280652Z   repository: trytoreachpeak0/8005-agv-control-server
+2026-10-20T18:11:12.3282450Z   token: ***
+2026-10-20T18:11:12.3282615Z   ssh-strict: true
+2026-10-20T18:11:12.3282771Z   ssh-user: git
+2026-10-20T18:11:12.3282937Z   persist-credentials: true
+2026-10-20T18:11:12.3283108Z   clean: true
+2026-10-20T18:11:12.3283276Z   sparse-checkout-cone-mode: true
+2026-10-20T18:11:12.3283526Z   fetch-depth: 1
+2026-10-20T18:11:12.3283685Z   fetch-tags: false
+2026-10-20T18:11:12.3283855Z   show-progress: true
+2026-10-20T18:11:12.3284032Z   lfs: false
+2026-10-20T18:11:12.3284175Z   submodules: false
+2026-10-20T18:11:12.3284489Z   set-safe-directory: true
+2026-10-20T18:11:12.3284732Z   allow-unsafe-pr-checkout: false
+2026-10-20T18:11:12.3285159Z env:
+2026-10-20T18:11:12.4881647Z Temporarily overriding HOME='C:\actions-runner\vmwin01-control-server\_work\_temp\47db49a7-60ba-43fe-8a4b-1232077685c6' before making global git config changes
+2026-10-20T18:11:12.4882438Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-20T18:11:12.4887945Z [command]"C:\Program Files\Git\cmd\git.exe" config --global --add safe.directory C:\actions-runner\vmwin01-control-server\_work\8005-agv-control-server\8005-agv-control-server
+2026-10-20T18:11:12.5227242Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --get remote.origin.url
+2026-10-20T18:11:12.5564953Z https://github.com/trytoreachpeak0/8005-agv-control-server
+2026-10-20T18:11:12.5617808Z ##[group]Removing previously created refs, to avoid conflicts
+2026-10-20T18:11:12.5625317Z [command]"C:\Program Files\Git\cmd\git.exe" rev-parse --symbolic-full-name --verify --quiet HEAD
+2026-10-20T18:11:12.5926950Z HEAD
+2026-10-20T18:11:12.6291947Z ##[endgroup]
+2026-10-20T18:11:12.6295928Z [command]"C:\Program Files\Git\cmd\git.exe" submodule status
+2026-10-20T18:11:13.1637230Z ##[group]Cleaning the repository
+2026-10-20T18:11:13.1643984Z [command]"C:\Program Files\Git\cmd\git.exe" clean -ffdx
+2026-10-20T18:11:13.2267540Z [command]"C:\Program Files\Git\cmd\git.exe" reset --hard HEAD
+2026-10-20T18:11:13.4348936Z HEAD is now at 5ea3d8a0e ci(test): run Test-G3RunnerPorts.ps1 after the stage self-check, scoped by TestSelfCheckScope.psd1 (cs#809)
+2026-10-20T18:11:13.4423135Z ##[endgroup]
+2026-10-20T18:11:13.4428080Z ##[group]Disabling automatic garbage collection
+2026-10-20T18:11:13.4433473Z [command]"C:\Program Files\Git\cmd\git.exe" config --local gc.auto 0
+2026-10-20T18:11:13.4769430Z ##[endgroup]
+2026-10-20T18:11:13.4769869Z ##[group]Setting up auth
+2026-10-20T18:11:13.4770271Z Removing SSH command configuration
+2026-10-20T18:11:13.4777568Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-10-20T18:11:13.5117124Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-10-20T18:11:14.0705912Z Removing HTTP extra header
+2026-10-20T18:11:14.0713213Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-20T18:11:14.1058963Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-10-20T18:11:14.6951242Z Removing includeIf entries pointing to credentials config files
+2026-10-20T18:11:14.6958875Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-20T18:11:14.7344386Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-10-20T18:11:15.3092570Z [command]"C:\Program Files\Git\cmd\git.exe" config --file C:\actions-runner\vmwin01-control-server\_work\_temp\git-credentials-2ac91c86-34cf-486b-a44e-0cfcb2ed5c51.config http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2026-10-20T18:11:15.3566717Z [command]"C:\Program Files\Git\cmd\git.exe" config --local includeIf.gitdir:C:/actions-runner/vmwin01-control-server/_work/8005-agv-control-server/8005-agv-control-server/.git.path C:\actions-runner\vmwin01-control-server\_work\_temp\git-credentials-2ac91c86-34cf-486b-a44e-0cfcb2ed5c51.config
+2026-10-20T18:11:15.3971119Z [command]"C:\Program Files\Git\cmd\git.exe" config --local includeIf.gitdir:C:/actions-runner/vmwin01-control-server/_work/8005-agv-control-server/8005-agv-control-server/.git/worktrees/*.path C:\actions-runner\vmwin01-control-server\_work\_temp\git-credentials-2ac91c86-34cf-486b-a44e-0cfcb2ed5c51.config
+2026-10-20T18:11:15.4387886Z [command]"C:\Program Files\Git\cmd\git.exe" config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-2ac91c86-34cf-486b-a44e-0cfcb2ed5c51.config
+2026-10-20T18:11:15.4845397Z [command]"C:\Program Files\Git\cmd\git.exe" config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-2ac91c86-34cf-486b-a44e-0cfcb2ed5c51.config
+2026-10-20T18:11:15.5254063Z ##[endgroup]
+2026-10-20T18:11:15.5254654Z ##[group]Fetching the repository
+2026-10-20T18:11:15.5263581Z [command]"C:\Program Files\Git\cmd\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +e552511963757af984acc1692775a1fdd6bc49f5:refs/remotes/pull/817/merge
+2026-10-20T18:11:16.9351149Z ##[endgroup]
+2026-10-20T18:11:16.9351905Z ##[group]Determining the checkout info
+2026-10-20T18:11:16.9352358Z ##[endgroup]
+2026-10-20T18:11:16.9359249Z [command]"C:\Program Files\Git\cmd\git.exe" sparse-checkout disable
+2026-10-20T18:12:07.8390050Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --unset-all extensions.worktreeConfig
+2026-10-20T18:12:07.8659669Z ##[group]Checking out the ref
+2026-10-20T18:12:07.8666693Z [command]"C:\Program Files\Git\cmd\git.exe" checkout --progress --force refs/remotes/pull/817/merge
+2026-10-20T18:12:09.5720946Z ##[error]error: Path 'evidence/cs803/dependency/01-v3-branches-without-any-host-build.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5726686Z ##[error]error: Path 'evidence/cs803/dependency/02-v3-branches-after-test-project-build-only.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5728035Z ##[error]error: Path 'evidence/cs803/dependency/03-v3-branches-after-host-build-only.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5729115Z ##[error]error: Path 'evidence/cs803/green/data-root-lock-wait-before.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5730138Z ##[error]error: Path 'evidence/cs803/green/data-root-lock-wait-short.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5731093Z ##[error]error: Path 'evidence/cs803/green/self-check-scope.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5732143Z ##[error]error: Path 'evidence/cs803/green/worklist-station-wait-before.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5733667Z ##[error]error: Path 'evidence/cs803/green/worklist-station-wait-short.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5734949Z ##[error]error: Path 'evidence/cs803/red/01-test-first-no-selector.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5736029Z ##[error]error: Path 'evidence/cs803/red/02-registration-removed.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5737022Z ##[error]error: Path 'evidence/cs803/red/03-explicit-inputs-ignored.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5737990Z ##[error]error: Path 'evidence/cs803/red/04-name-closure-ignored.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5738953Z ##[error]error: Path 'evidence/cs803/red/05-unregistered-step-added.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5739902Z ##[error]error: Path 'evidence/cs803/red/06-v3-needs-removed.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5740893Z ##[error]error: Path 'evidence/cs803/red/07-test-step-gated-on-scope.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5742835Z ##[error]error: Path 'evidence/cs803/red/08-selector-does-not-raise-needs.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5744014Z ##[error]error: Path 'evidence/cs803/review/m1-after-selector-mutated-check-is-red.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5745248Z ##[error]error: Path 'evidence/cs803/review/m1-before-selector-mutated-gates-its-own-check.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5746315Z ##[error]error: Path 'evidence/cs803/review/m2-after-deleted-test-file.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5747306Z ##[error]error: Path 'evidence/cs803/review/m2-after-renamed-workflow.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5748280Z ##[error]error: Path 'evidence/cs803/review/m2-before-deleted-test-file.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5749252Z ##[error]error: Path 'evidence/cs803/review/m2-before-renamed-workflow.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5750434Z ##[error]error: Path 'evidence/cs803/review/rework-test-first.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5752363Z ##[error]error: Path 'evidence/cs803/review/rework2-test-first.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5753525Z ##[error]error: Path 'evidence/cs803/review/s1-unreadable-diff-runs-everything.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5754520Z ##[error]error: Path 'evidence/cs803/review/s5-quotepath.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5755529Z ##[error]error: Path 'evidence/cs809/green/01-selfcheck-after-implementation.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5756519Z ##[error]error: Path 'evidence/cs809/green/02-honesty-after-settings.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5757491Z ##[error]error: Path 'evidence/cs809/green/03-selfcheck-after-settings.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:09.5758544Z ##[error]error: Path 'evidence/cs809/green/04-selfcheck-after-shadow-lock-fix.txt' not uptodate; will not remove from working tree.
+2026-10-20T18:12:29.9097908Z Updating files:  98% (91818/93691)
+2026-10-20T18:12:30.0839686Z Updating files:  99% (92755/93691)
+2026-10-20T18:12:30.1179188Z Updating files:  99% (93606/93691)
+2026-10-20T18:12:30.1179497Z Updating files: 100% (93691/93691)
+2026-10-20T18:12:30.1180578Z Updating files: 100% (93691/93691), done.
+2026-10-20T18:12:30.2092208Z Previous HEAD position was 5ea3d8a0e ci(test): run Test-G3RunnerPorts.ps1 after the stage self-check, scoped by TestSelfCheckScope.psd1 (cs#809)
+2026-10-20T18:12:30.2203681Z HEAD is now at e55251196 Merge ae2f313f0b01a5b72417cd793d9a26c7bb3ed256 into e094de3e7f22603efa624c5e1e2c46f8f1d4e29f
+2026-10-20T18:12:30.2357342Z ##[endgroup]
+2026-10-20T18:12:30.2931338Z [command]"C:\Program Files\Git\cmd\git.exe" log -1 --format=%H
+2026-10-20T18:12:30.3583724Z e552511963757af984acc1692775a1fdd6bc49f5
+2026-10-20T18:12:36.1641982Z L2 lane 4 (slot 4, about 1544s): same-direction-mixed-load-multi-drop, charging-interruption-isolates, starvation-threshold-escalation, same-direction-wire-to-nitrogen-journey, staging-to-wire-reversed-journey, charging-one-charger-three-vehicles-contend, blocked-journey-dashboard-projection, cargo-holding-timeout, charging-no-progress-isolates, slot-group-selection, charging-full-cycle, charging-unable-to-charge-pauses-charger, emergency-stop-single-trigger, area-assignment-import-rejects, waiting-journey-battery-watch, onboard-silent-liveness-loss, sublot-rejected-after-entry, onboard-alarm-snapshot-dashboard, load-command-never-answered, machine-departure-stale-worklist-after-cancel, same-direction-four-type-mixed-load-multi-drop, slot-configuration-activation-replay, staging-only-vehicle-returns-to-staging-origin, staging-side-full-departs, charging-thresholds-relation-refused, create-gate, three-synthetic-peers
+2026-10-20T18:12:36.1647662Z ##[group]Build
+2026-10-20T18:12:36.3015508Z MSBUILD : error MSB1009: Project file does not exist.
+2026-10-20T18:12:36.3016198Z Switch: ./ControlServer.sln
+2026-10-20T18:12:36.3479831Z ##[endgroup]
+2026-10-20T18:12:36.3519482Z ##[error]dotnet build ControlServer.sln -c Release exited with 1
+2026-10-20T18:12:36.4457285Z Exception: C:\actions-runner\vmwin01-control-server\_work\_temp\74cee42c-a3b5-4f1e-ac3f-ffda104c6eae.ps1:337
+2026-10-20T18:12:36.4457756Z Line |
+2026-10-20T18:12:36.4458024Z  337 |      throw $Message
+2026-10-20T18:12:36.4458338Z      |      ~~~~~~~~~~~~~~
+2026-10-20T18:12:36.4459926Z      | dotnet build ControlServer.sln -c Release exited with 1
+2026-10-20T18:12:36.5108364Z ##[error]Process completed with exit code 1.

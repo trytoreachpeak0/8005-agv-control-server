@@ -1,0 +1,35 @@
+## M1 l2.yml scenarios: the clear step no longer unsets core.sparseCheckout  (file: .github/workflows/l2.yml)
+exit=1  KILLED
+BAD   every 'Clear sparse-checkout state an earlier job left behind' step runs the same script -> 2 variants
+BAD   poisoned, l2.yml scenarios: 'Clear sparse-checkout state an earlier job left behind' succeeds -> ::notice title=Sparse-checkout state cleared::core.sparseCheckout=true in C:\Users\szy\AppData\Local\Temp\checkout-sparse-state-dbaf0d2d5b9442319dc7ada7d58d9a2d\poisoned-664351d8\.\.git\config, left by an earlier job | ::error::core.sparseCheckout is still set in C:\Users\szy\AppData\Local\Temp\checkout-sparse-state-dbaf0d2d5b9442319dc7ada7d58d9a2d\poisoned-664351d8\.\.git\config
+BAD   poisoned, l2.yml scenarios: the checkout is the tree it asked for -> HEAD 178d4bf09, 2 missing (ControlServer.sln, evidence/cs584/note.txt), 2 skip-worktree, core.sparseCheckout in .git/config 'true'; expected missing: 1
+BAD   poisoned, l2.yml scenarios: its own check passes -> ::error title=Checkout incomplete::core.sparseCheckout=true is set in .git/config. An earlier job's sparse-checkout state is in force, which actions/checkout's 'git sparse-checkout disable' cannot clear (the step before the checkout should have). | ::error title=Checkout incomplete::1 file(s) the checkout asked for (the top level and .config, .github, docs, scripts, src, tests, tools, vendor) are left out by sparse checkout: ControlServer.sln | CHECKOUT_TREE_INCOMPLETE: C:\Users\szy\AppData\Local\Temp\checkout-sparse-state-dbaf0d2d5b9442319dc7ada7d58d9a2d\poisoned-664351d8 at 178d4bf097aee1f487d3c20ce6f2adc3c3e05476. See scripts/Test-CheckoutSparseState.ps1.
+BAD   poisoned, l2.yml scenarios: a plain full checkout after it leaves the whole tree -> HEAD ee66b6cc1, 5 missing (ControlServer.sln, evidence/cs584/note.txt, evidence/cs803/red/01.txt), 5 skip-worktree, core.sparseCheckout in .git/config 'true'
+105 case(s) passed
+CHECKOUT_SPARSE_STATE_SELFTEST_FAILED: 5 case(s)
+
+## M2 Assert-CheckoutTree.ps1: a left-out file the checkout asked for is not reported  (file: scripts/Assert-CheckoutTree.ps1)
+exit=1  KILLED
+BAD   assert: the same checkout is red against a full checkout, naming a left-out file -> CHECKOUT_TREE_OK: 17 tracked file(s), 13 left out as asked (the whole tree)
+BAD   assert: the half tree of run 39457961360 is red, naming the stale setting and a left-out file -> ::error title=Checkout incomplete::core.sparseCheckout=true is set in .git/config. An earlier job's sparse-checkout state is in force, which actions/checkout's 'git sparse-checkout disable' cannot clear (the step before the checkout should have). | CHECKOUT_TREE_INCOMPLETE: C:\Users\szy\AppData\Local\Temp\checkout-sparse-state-87f09a1121b24fa193f9222c3d711203\assert-half at f81653c8a1b7afcb81d72aa217e965ef5ecdb071. See scripts/Test-CheckoutSparseState.ps1.
+108 case(s) passed
+CHECKOUT_SPARSE_STATE_SELFTEST_FAILED: 2 case(s)
+
+## M3 Assert-CheckoutTree.ps1: core.sparseCheckout in .git/config is not reported  (file: scripts/Assert-CheckoutTree.ps1)
+exit=1  KILLED
+BAD   assert: the half tree of run 39457961360 is red, naming the stale setting and a left-out file -> ::error title=Checkout incomplete::10 file(s) the checkout asked for (the whole tree) are left out by sparse checkout: .config/keep.txt, .github/keep.txt, ControlServer.sln, docs/keep.txt, evidence/cs584/note.txt, src/ControlServer.Host/Program.cs, src/keep.txt, tests/keep.txt, tools/keep.txt, vendor/keep.txt | CHECKOUT_TREE_INCOMPLETE: C:\Users\szy\AppData\Local\Temp\checkout-sparse-state-659080bbfdf74d009b3064ea57082877\assert-half at c4a0efcc3b07538e8ad6ca008c022155b15610f4. See scripts/Test-CheckoutSparseState.ps1.
+109 case(s) passed
+CHECKOUT_SPARSE_STATE_SELFTEST_FAILED: 1 case(s)
+
+## M4 release.yml: tools left out of the cone list, in the checkout and in its check alike  (file: .github/workflows/release.yml)
+exit=1  KILLED
+BAD   release.yml package: its cone list is every top-level directory but evidence/ -> listed: .config .github docs scripts src tests vendor; in the repository: .config .github docs scripts src tests tools vendor
+109 case(s) passed
+CHECKOUT_SPARSE_STATE_SELFTEST_FAILED: 1 case(s)
+
+## M5 g3.yml gate: the check step runs the script only when it is there, and passes otherwise  (file: .github/workflows/g3.yml)
+exit=1  KILLED
+BAD   every 'Check the checkout is the tree it asked for' step runs the same script -> 2 variants
+109 case(s) passed
+CHECKOUT_SPARSE_STATE_SELFTEST_FAILED: 1 case(s)
+

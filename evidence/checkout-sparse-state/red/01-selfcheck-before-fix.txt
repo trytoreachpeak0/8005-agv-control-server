@@ -1,0 +1,47 @@
+checkout: 1b1fa80d9c51ff276b1fa8676faaab20174eef5a (origin/fp/v2-impl, before the fix; only scripts/Test-CheckoutSparseState.ps1 copied in)
+BAD   l2.yml never uses sparse-checkout-cone-mode: false -> it writes core.sparseCheckout into .git/config, which the next job's sparse-checkout disable cannot clear
+BAD   release.yml never uses sparse-checkout-cone-mode: false -> it writes core.sparseCheckout into .git/config, which the next job's sparse-checkout disable cannot clear
+BAD   g3.yml gate: 'Clear sparse-checkout state an earlier job left behind' comes right before the checkout -> (none)
+BAD   g3.yml gate: 'Check the checkout is the tree it asked for' comes right after the checkout -> Commits and deadline
+BAD   g3.yml g3: 'Clear sparse-checkout state an earlier job left behind' comes right before the checkout -> Round start
+BAD   g3.yml g3: 'Check the checkout is the tree it asked for' comes right after the checkout -> Node and pnpm
+BAD   g3.yml report: 'Clear sparse-checkout state an earlier job left behind' comes right before the checkout -> (none)
+BAD   g3.yml report: 'Check the checkout is the tree it asked for' comes right after the checkout -> Comment the verdict
+BAD   l2.yml scenarios: 'Clear sparse-checkout state an earlier job left behind' comes right before the checkout -> (none)
+BAD   l2.yml scenarios: 'Check the checkout is the tree it asked for' comes right after the checkout -> Decide whether this pull request runs the L2 round
+BAD   l2.yml real-rig: 'Clear sparse-checkout state an earlier job left behind' comes right before the checkout -> (none)
+BAD   l2.yml real-rig: 'Check the checkout is the tree it asked for' comes right after the checkout -> (none)
+BAD   release.yml package: 'Clear sparse-checkout state an earlier job left behind' comes right before the checkout -> Validate the onboard commit
+BAD   release.yml package: 'Check the checkout is the tree it asked for' comes right after the checkout -> Mirror the onboard repository
+BAD   test.yml test: 'Clear sparse-checkout state an earlier job left behind' comes right before the checkout -> (none)
+BAD   test.yml test: 'Check the checkout is the tree it asked for' comes right after the checkout -> dotnet --info
+BAD   history: l2 scenarios, g3 gate, then a plain full checkout of an older commit leaves the whole tree -> HEAD d7cc5ecc9, 10 missing (.config/keep.txt, .github/keep.txt, ControlServer.sln), 10 skip-worktree, core.sparseCheckout in .git/config 'true'
+BAD   history: that checkout prints no "not uptodate; will not remove from working tree" -> 4 lines, the first: error: Path 'evidence/cs803/red/01.txt' not uptodate; will not remove from working tree.
+BAD   history: nothing is left in .git/config for a later job -> core.sparseCheckout 'true'
+BAD   poisoned, g3.yml gate: the checkout is the tree it asked for -> HEAD d7cc5ecc9, 10 missing (.config/keep.txt, .github/keep.txt, ControlServer.sln), 10 skip-worktree, core.sparseCheckout in .git/config 'true'; expected missing: 9
+BAD   poisoned, g3.yml gate: its own check passes -> no check step
+BAD   poisoned, g3.yml gate: a plain full checkout after it leaves the whole tree -> HEAD 208483f7b, 14 missing (.config/keep.txt, .github/keep.txt, ControlServer.sln), 14 skip-worktree, core.sparseCheckout in .git/config 'true'
+BAD   poisoned, g3.yml g3: the checkout is the tree it asked for -> HEAD d7cc5ecc9, 10 missing (.config/keep.txt, .github/keep.txt, ControlServer.sln), 10 skip-worktree, core.sparseCheckout in .git/config 'true'; expected missing: 0
+BAD   poisoned, g3.yml g3: its own check passes -> no check step
+BAD   poisoned, g3.yml g3: a plain full checkout after it leaves the whole tree -> HEAD 208483f7b, 14 missing (.config/keep.txt, .github/keep.txt, ControlServer.sln), 14 skip-worktree, core.sparseCheckout in .git/config 'true'
+BAD   poisoned, g3.yml report: the checkout is the tree it asked for -> HEAD d7cc5ecc9, 10 missing (.config/keep.txt, .github/keep.txt, ControlServer.sln), 10 skip-worktree, core.sparseCheckout in .git/config 'true'; expected missing: 9
+BAD   poisoned, g3.yml report: its own check passes -> no check step
+BAD   poisoned, g3.yml report: a plain full checkout after it leaves the whole tree -> HEAD 208483f7b, 14 missing (.config/keep.txt, .github/keep.txt, ControlServer.sln), 14 skip-worktree, core.sparseCheckout in .git/config 'true'
+BAD   poisoned, l2.yml scenarios: the checkout is the tree it asked for -> HEAD d7cc5ecc9, 1 missing (evidence/cs584/note.txt), 1 skip-worktree, core.sparseCheckout in .git/config 'true'; expected missing: 11
+BAD   poisoned, l2.yml scenarios: its own check passes -> no check step
+BAD   poisoned, l2.yml scenarios: a plain full checkout after it leaves the whole tree -> HEAD 208483f7b, 4 missing (evidence/cs584/note.txt, evidence/cs803/red/01.txt, evidence/cs803/red/02.txt), 4 skip-worktree, core.sparseCheckout in .git/config 'true'
+BAD   poisoned, l2.yml real-rig: the checkout is the tree it asked for -> HEAD d7cc5ecc9, 1 missing (evidence/cs584/note.txt), 1 skip-worktree, core.sparseCheckout in .git/config 'true'; expected missing: 11
+BAD   poisoned, l2.yml real-rig: its own check passes -> no check step
+BAD   poisoned, l2.yml real-rig: a plain full checkout after it leaves the whole tree -> HEAD 208483f7b, 4 missing (evidence/cs584/note.txt, evidence/cs803/red/01.txt, evidence/cs803/red/02.txt), 4 skip-worktree, core.sparseCheckout in .git/config 'true'
+BAD   poisoned, release.yml package: the checkout is the tree it asked for -> HEAD d7cc5ecc9, 1 missing (evidence/cs584/note.txt), 1 skip-worktree, core.sparseCheckout in .git/config 'true'; expected missing: 11
+BAD   poisoned, release.yml package: its own check passes -> no check step
+BAD   poisoned, release.yml package: a plain full checkout after it leaves the whole tree -> HEAD 208483f7b, 4 missing (evidence/cs584/note.txt, evidence/cs803/red/01.txt, evidence/cs803/red/02.txt), 4 skip-worktree, core.sparseCheckout in .git/config 'true'
+BAD   poisoned, test.yml test: the checkout is the tree it asked for -> HEAD d7cc5ecc9, 10 missing (.config/keep.txt, .github/keep.txt, ControlServer.sln), 10 skip-worktree, core.sparseCheckout in .git/config 'true'; expected missing: 0
+BAD   poisoned, test.yml test: its own check passes -> no check step
+BAD   poisoned, test.yml test: a plain full checkout after it leaves the whole tree -> HEAD 208483f7b, 14 missing (.config/keep.txt, .github/keep.txt, ControlServer.sln), 14 skip-worktree, core.sparseCheckout in .git/config 'true'
+BAD   a commit older than Assert-CheckoutTree.ps1: 'Check the checkout is the tree it asked for' warns and passes -> no check step
+BAD   a half tree without scripts/: 'Check the checkout is the tree it asked for' is red, not a warning -> no check step
+BAD   Assert-CheckoutTree.ps1 exists -> C:\work\8005-scratch\rig-checkout-sparse-red\scripts\Assert-CheckoutTree.ps1
+14 case(s) passed
+CHECKOUT_SPARSE_STATE_SELFTEST_FAILED: 43 case(s)
+exit=1

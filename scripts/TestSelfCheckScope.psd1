@@ -37,7 +37,11 @@
 
     # Steps of test.yml that this table does not decide, by name (or by 'uses' for an unnamed one), and why.
     NotSelfChecks = @(
+        @{ Step = 'Clear sparse-checkout state an earlier job left behind'; Why = 'part of the checkout: clears what an earlier job on the runner left in .git/config (Test-CheckoutSparseState.ps1)' }
         @{ Step = 'actions/checkout@v7'; Why = 'checkout' }
+        # Not decided by the selector: it checks the checkout the selector reads, and costs a second or two.
+        @{ Step = 'Check the checkout is the tree it asked for'; Why = 'part of the checkout: fails a job whose checkout left out files (Assert-CheckoutTree.ps1)'
+            RunsAlways = $true }
         @{ Step = 'dotnet --info'; Why = 'diagnostics, a second' }
         @{ Step = 'Decide which self-checks this pull request runs'; Why = 'the selector itself' }
         @{ Step = 'Test'; Why = 'the suite; control-server#803 leaves it alone' }
@@ -107,6 +111,11 @@
             # files under scripts/ they name, and checks l2.yml's wiring.
             # Its strings name src/ and docs/ paths as test data, not as reads.
             NameClosure = $false; Inputs = @('scripts/', '.github/workflows/') }
+        @{ Key = 'checkout_sparse_state'; Name = 'CI self-check (checkout sparse state)'
+            Script = 'scripts/Test-CheckoutSparseState.ps1'
+            # Reads every workflow, and runs the steps around each checkout and Assert-CheckoutTree.ps1. Its strings name
+            # paths of a throwaway repository as test data (src/..., evidence/...), not as reads.
+            NameClosure = $false; Inputs = @('.github/workflows/', 'scripts/Assert-CheckoutTree.ps1') }
         @{ Key = 'l2_worklist_station_wait'; Name = 'L2 scenario self-check (worklist station wait)'
             Script = 'scripts/l2/Test-L2WorklistStationWait.ps1'; Inputs = @() }
         @{ Key = 'l2_double_command_error'; Name = 'L2 scenario self-check (double command refusal body)'
