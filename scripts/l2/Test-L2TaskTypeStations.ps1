@@ -103,6 +103,22 @@ try {
             throw ($preset | ConvertTo-Json -Compress -Depth 4)
         }
     }
+    # control-server#812: the server's redirected console is UTF-8 now; logs from before it are GBK (every one of them
+    # came from a zh-CN machine, code page 936), and the same reader takes both, on any system locale.
+    $line = 'TASK_TYPE_STATION_REUSED Station 关卡/210 is bound to 2 task types'
+    Test-Case 'a UTF-8 server log reads as UTF-8' {
+        $path = Join-Path $directory 'utf8.out.log'
+        [IO.File]::WriteAllBytes($path, [Text.UTF8Encoding]::new($false).GetBytes($line))
+        $read = Read-L2ProcessLog -Path $path
+        if ($read.Text -cne $line -or $read.Encoding -cne 'utf-8') { throw "read '$($read.Text)' as $($read.Encoding)" }
+    }
+    Test-Case 'a GBK server log from before control-server#812 reads as GBK whatever this machine''s code page' {
+        [Text.Encoding]::RegisterProvider([Text.CodePagesEncodingProvider]::Instance)
+        $path = Join-Path $directory 'gbk.out.log'
+        [IO.File]::WriteAllBytes($path, [Text.Encoding]::GetEncoding(936).GetBytes($line))
+        $read = Read-L2ProcessLog -Path $path
+        if ($read.Text -cne $line -or $read.Encoding -cne 'gbk') { throw "read '$($read.Text)' as $($read.Encoding)" }
+    }
     Test-Case 'the protocol identity is read from the ProtocolCandidate block' {
         Set-Content -LiteralPath (Join-Path $directory 'appsettings.json') -Encoding utf8NoBOM -Value (@{
                 ProtocolCandidate = @{ releaseVersion = '2.0.0'; tag = 'protocol-v2.0.0'; repositoryCommit = 'abc'; protocolVersion = 3
