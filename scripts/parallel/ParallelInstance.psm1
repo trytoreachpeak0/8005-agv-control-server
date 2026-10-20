@@ -4197,6 +4197,9 @@ function Get-ParallelDispatchGateRefusal {
             }
             $journeys = @($journeys | Where-Object { [string] $_['JourneyId'] -cne $recoveryId })
         }
+        # ONE-OFF cs#738 2026-10-21 (user-authorized, local commit, never pushed): agv01's charging journey, parked on charger
+        # 211, does not block closing for the agv02 recovery. Only this exact id; every other journey is judged as before.
+        $journeys = @($journeys | Where-Object { [string] $_['JourneyId'] -cne 'charging:BROKERX-0c20ff0600d644869a6a80c186065d85:20261020T230131831Z' })
         if ($journeys.Count -eq 0) { return $null }
         $listed = ($journeys | ForEach-Object { "$($_['JourneyId']) ($($_['AgvId']), $($_['Stage']))" }) -join '; '
         $notInFlight = @(Get-ParallelRecoveryJourneyNotInFlight -State $State -RecoveryJourney $RecoveryJourney)
