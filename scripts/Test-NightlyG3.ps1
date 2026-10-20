@@ -210,6 +210,11 @@ try {
         @{ Name = 'past the deadline, without the trigger inputs: the deadline, and no lateness made up'; Args = @{ Trigger = 'schedule'; Verdicts = @()
                 StoppedBy = 'NOT_STARTED_DEADLINE'; DeadlineUtc = [DateTimeOffset]::Parse('2026-10-10T23:00:00Z') }
            Contains = @('未跑：NOT_STARTED_DEADLINE', '截止 07:00', '本轮开始 01:05'); NotContains = @('计划', '实际触发', '（晚') }
+        # Review S4 of PR #817: the comment names the night with the same night start the gate's deadline used. 20:30 CST
+        # on the 20th is the night into the 21st by default, the night into the 20th when nights start at 21:00.
+        @{ Name = 'the night is named with the gate''s night start'; Args = @{ Trigger = 'schedule'; Verdicts = $allPass; NightStartHourCst = 21
+                StartedAtUtc = [DateTimeOffset]::Parse('2026-10-20T12:30:00Z') }
+           Contains = @('每晚 G3 · 2026-10-20 ·'); NotContains = @('2026-10-21') }
     )
     foreach ($case in $commentCases) {
         $arguments = @{} + $common
@@ -298,14 +303,18 @@ try {
         @{ Name = 'a night starting at 21:00 CST puts 20:30 in the night before'; Event = 'schedule'; Start = '2026-10-20T12:30:00Z'; Deadline = '2026-10-19T23:00:00Z'; Extra = @{ NightStartHourCst = 21 } }
         @{ Name = 'a manual dispatch in the afternoon'; Event = 'workflow_dispatch'; Start = '2026-10-11T06:00:00Z'; Deadline = '2026-10-11T09:00:00Z' }
         @{ Name = 'a manual dispatch at 22:37 CST is not a night'; Event = 'workflow_dispatch'; Start = '2026-10-20T14:37:00Z'; Deadline = '2026-10-20T17:37:00Z' }
+        # Review S4 of PR #817: a deadline at or after the hour the next night starts would fall in that next night.
+        @{ Name = 'a deadline hour equal to the night start is refused'; Event = 'schedule'; Start = '2026-10-20T14:37:00Z'; Deadline = $null; Extra = @{ DeadlineHourCst = 19 } }
+        @{ Name = 'a deadline hour after the night start is refused'; Event = 'schedule'; Start = '2026-10-20T14:37:00Z'; Deadline = $null; Extra = @{ DeadlineHourCst = 22; NightStartHourCst = 20 } }
     )
     foreach ($case in $deadlineCases) {
         $deadline = $null
         $thrown = $null
         $extra = if ($case.Extra) { $case.Extra } else { @{} }
         try { $deadline = Get-NightlyG3StartDeadline -EventName $case.Event -StartedAtUtc ([DateTimeOffset]::Parse($case.Start)) @extra } catch { $thrown = $_.Exception.Message }
-        Check "start deadline, $($case.Name): $($case.Deadline)" ($null -eq $thrown -and $deadline -is [DateTimeOffset] -and $deadline -eq [DateTimeOffset]::Parse($case.Deadline)) `
-            "$thrown got $deadline"
+        $ok = if ($null -eq $case.Deadline) { $null -ne $thrown -and $null -eq $deadline } else {
+            $null -eq $thrown -and $deadline -is [DateTimeOffset] -and $deadline -eq [DateTimeOffset]::Parse($case.Deadline) }
+        Check "start deadline, $($case.Name): $(if ($null -eq $case.Deadline) { 'refused' } else { $case.Deadline })" $ok "$thrown got $deadline"
     }
 
     # How late GitHub fired main's trigger (control-server#807): the trigger passes its cron and the moment its own run
@@ -318,6 +327,9 @@ try {
         @{ Name = 'fired before the hour on the next UTC day'; Cron = '37 14 * * *'; At = '2026-10-21T02:10:00Z'; Scheduled = '2026-10-20T14:37:00Z'; Late = 693 }
         @{ Name = 'no cron: the trigger dispatched by hand'; Cron = ''; At = '2026-10-20T14:37:20Z'; Scheduled = $null }
         @{ Name = 'not a daily cron'; Cron = '*/15 * * * *'; At = '2026-10-20T14:37:20Z'; Scheduled = $null }
+        # Review M3 of PR #817: out of range would make the DateTimeOffset constructor throw, and that night no comment.
+        @{ Name = 'minute 60 is out of range'; Cron = '60 14 * * *'; At = '2026-10-20T14:37:20Z'; Scheduled = $null }
+        @{ Name = 'hour 24 is out of range'; Cron = '37 24 * * *'; At = '2026-10-20T14:37:20Z'; Scheduled = $null }
     )
     foreach ($case in $delayCases) {
         $delay = $null
@@ -479,6 +491,13 @@ if ([DateTimeOffset]::UtcNow -lt [DateTimeOffset]::Parse($env:NIGHTLY_G3_TEST_CO
         ($workflow -match '(?m)^      trigger_cron:\s*$' -and $workflow -match '(?m)^      triggered_at:\s*$' -and
          $reportJobText -match 'inputs\.trigger_cron' -and $reportJobText -match 'inputs\.triggered_at' -and $reportJobText -match 'needs\.gate\.outputs\.deadline' -and
          $reportJobText -match '-TriggerCron\b' -and $reportJobText -match '-TriggeredAtUtc\b' -and $reportJobText -match '-DeadlineUtc\b') 'see g3.yml'
+    # Review S4 of PR #817: the gate's deadline and the report's night name read the night start from one place, the
+    # workflow's env, so they cannot disagree; the deadline hour comes from there too.
+    $gateJobText = [regex]::Match($workflow, '(?ms)^  gate:\s*$.*?(?=^  \w[\w-]*:\s*$)').Value
+    Check 'g3.yml: one G3_NIGHT_START_HOUR_CST in env, used by the gate''s deadline and the report''s comment, and G3_DEADLINE_HOUR_CST by the gate' `
+        ($workflow -match "(?m)^  G3_NIGHT_START_HOUR_CST:\s*'\d+'\s*$" -and $workflow -match "(?m)^  G3_DEADLINE_HOUR_CST:\s*'\d+'\s*$" -and
+         $gateJobText -match '-NightStartHourCst\s+\$env:G3_NIGHT_START_HOUR_CST' -and $gateJobText -match '-DeadlineHourCst\s+\$env:G3_DEADLINE_HOUR_CST' -and
+         $reportJobText -match '-NightStartHourCst\s+\$env:G3_NIGHT_START_HOUR_CST') 'see g3.yml'
 
     # Review A, D, E of PR #591. A: this self-check runs in test.yml, beside the override one, as the documents say.
     # D: the report job runs whatever the other two did, or a red g3 job leaves no comment and "no comment = no run" lies.
