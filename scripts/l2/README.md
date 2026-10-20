@@ -387,8 +387,14 @@ control-server#581 下评论一条，全绿也写一行，**某晚没有评论�
 | `g3` | `cs-desktop` | `scripts/Invoke-NightlyG3.ps1`：按出口顺序 staged → restart → 需求承载 → journey 串行（staged 与 restart 都占 Modbus 1502，三个要桌面）。每个 runner 开跑前三道闸门，依次是：整机已提交内存（照真装置那套，超过 12 GiB 等最多 30 分钟）、截止时间（放在内存等待之后，等完再看一次）、C 盘剩余至少 4 GiB；任一不过，其余 runner 记 `NOT_STARTED_COMMIT_GUARD`／`NOT_STARTED_DEADLINE`／`NOT_STARTED_DISK`，不启动。处理某个 runner 时编排自己抛了异常，这一轮停下：`stoppedBy` 写 `ERROR_ROUND: <runner>: <报错>`，那个 runner 记 ERROR，其余记 `NOT_STARTED_ERROR`。跑完关掉本轮留在桌面上的残留进程和崩溃对话框，有就判作业失败。「本轮的」指可执行文件路径或命令行落在本作业的工作目录（`$RUNNER_TEMP\g3`）或检出目录下：staged、restart、需求承载都用 `dotnet <dll>` 起进程，路径是 `dotnet.exe`，只有命令行里才有 dll；崩溃对话框要是开跑后新出现的、且是为本轮进程弹的。L2 的对端缓存 `8005-l2-peers` 不算（G3 用不到它，有人手动跑 L2 时它的进程不能被误杀）。判定在 `Select-NightlyG3LeftoverProcess` 里，有离线自检 |
 | `report` | headless | `if: always()`：不管前两个作业怎样，都在 #581 下评论 |
 
-- **时间。** 夜间一轮（`nightly=true`）不在北京时间 04:00 之后开新 runner，避开 05:30 前后 mes-ingest 的黄金渲染 verify；GitHub 把定时触发
-  推迟到 04:00 之后时，那晚什么都不跑（评论写 `NOT_STARTED_DEADLINE`）。手动触发的截止是开跑后 180 分钟。
+- **时间。** 一晚从北京时间 19:00 算到次日 19:00；夜间一轮（`nightly=true`）不在这一晚次日早上 07:00 之后开新 runner，22:37 准时
+  开跑和被 GitHub 推迟到凌晨开跑都算同一晚、同一个 07:00。GitHub 把定时触发推迟到 07:00 之后时，那晚什么都不跑（评论写
+  `NOT_STARTED_DEADLINE`）。截止原先是 04:00，只为避开 05:30 前后 mes-ingest 的黄金渲染 verify；黄金渲染没迁到 vm-win-01，
+  而 01:00 的触发被 GitHub 推迟 2～6 小时，近四晚只跑完一晚，所以 control-server#807 改成 07:00（`Get-NightlyG3StartDeadline`
+  的 `-DeadlineHourCst`、`-NightStartHourCst` 可调）。手动触发的截止是开跑后 180 分钟。
+- **评论写晚点。** 每晚评论的第二行写触发器的计划时刻、GitHub 实际触发的时刻和晚了多少分钟、本轮开始时刻与截止时刻（都是
+  北京时间），没跑成的一晚一眼看出是晚点还是产品红。计划与实际触发由触发器经 `trigger_cron`、`triggered_at` 两个输入传来；
+  手动触发没有这两项，评论就不写晚点。
 - **不取消。** 本 workflow 里没有任何取消作业的动作，`cancel-in-progress: false`；作业超时给足，结束一轮的是截止时间，不是超时。
 - **磁盘。** vm01 的 C 盘 2026-10-11 只剩 7.9 GB，一个 runner 的暂存约 1.7 GB。PASS 的暂存跑完即删；红的只删 `sources/`、
   `publish/`、`peers/`（克隆与构建产物，按提交一分钟就能重建），运行时数据库、日志与日志簿留着上传，上传后整个工作目录删掉。
@@ -418,10 +424,12 @@ gh workflow run g3.yml -R trytoreachpeak0/8005-agv-control-server --ref <分支>
 
 **每晚由 `main` 上的触发器启动。** GitHub 只按默认分支（本仓是 `main`）上的 workflow 文件排 `schedule`，而 `fp/v2-impl` 不合入
 `main`，所以 `g3.yml` 自己不写 `schedule`（写了也永远不会触发）。用户 2026-10-11 定：`main` 上放一个只做触发的
-`.github/workflows/g3-nightly-trigger.yml`（control-server PR #592），每天 17:00 UTC（北京时间 01:00）对 `fp/v2-impl` 上的
-`g3.yml` 发一次 workflow dispatch，带 `ref=fp/v2-impl`、`nightly=true`。它不复制 `g3.yml` 的任何逻辑。
+`.github/workflows/g3-nightly-trigger.yml`（control-server PR #592），每天 14:37 UTC（北京时间 22:37，control-server#807
+从 01:00 提前并避开整点）对 `fp/v2-impl` 上的 `g3.yml` 发一次 workflow dispatch，带 `ref=fp/v2-impl`、`nightly=true`，以及
+`trigger_cron`、`triggered_at`（供评论算晚点）。它不复制 `g3.yml` 的任何逻辑。
 
-- `nightly=true` 才让一轮按夜间算：04:00 截止、评论写「定时触发」。手动触发别传它，截止按开跑后 180 分钟算、评论写「手动触发」。
+- `nightly=true` 才让一轮按夜间算：07:00 截止、评论写「定时触发」。手动触发别传它，截止按开跑后 180 分钟算、评论写「手动触发」。
+- 触发器传的输入 `g3.yml` 必须先声明，否则 GitHub 以 `Unexpected inputs provided` 拒绝 dispatch：改输入时先合 `fp/v2-impl`，再合 `main`。
 - 触发器依赖 `fp/v2-impl` 上已有 `g3.yml`：在那之前它的 dispatch 会被拒、触发运行变红，那晚就没有每晚 G3。
 - #581 下某晚没有评论，先看 `main` 上 `g3-nightly-trigger` 那晚有没有运行、是不是红的，再看 `g3` 运行。
 

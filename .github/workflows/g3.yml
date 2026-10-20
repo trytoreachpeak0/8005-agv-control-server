@@ -19,9 +19,11 @@ name: g3
 #                        desktop job could never finish while that job waited for it.
 #   g3      (cs-desktop) scripts/Invoke-NightlyG3.ps1: the four runners in a row (staged and restart both bind Modbus
 #                        1502; three put WPF windows on the one desktop), each behind l2.yml real-rig's commit guard,
-#                        the start deadline and a free-disk floor. A night (nightly=true) starts no runner after 04:00 CST,
-#                        clear of 8005-mes-ingest's golden-renderer verify near 05:30.
-#   report  (headless)   comments the verdict on control-server#581, whatever the other two did.
+#                        the start deadline and a free-disk floor. A night (nightly=true) starts no runner after 07:00 CST
+#                        of the morning it runs into (04:00 until control-server#807; that only kept clear of
+#                        8005-mes-ingest's golden-renderer verify, which did not move to vm-win-01).
+#   report  (headless)   comments the verdict on control-server#581, whatever the other two did, with when main's trigger
+#                        was planned, when GitHub fired it and how late, and the deadline (control-server#807).
 # Nothing here cancels a job, and no job's timeout is meant to be what ends it (a cancel can wedge a self-hosted
 # runner: workspace CLAUDE.md). The verdict is decided offline-testably in scripts/NightlyG3.psm1, checked by
 # scripts/Test-NightlyG3.ps1 in test.yml.
@@ -29,8 +31,10 @@ name: g3
 # The night is started from main. GitHub runs `schedule` only from the workflow files on the default branch (main), and
 # this line (fp/v2-impl) never merges into main, so a schedule here would never fire and there is none. Instead main
 # carries .github/workflows/g3-nightly-trigger.yml (control-server PR #592, the user's choice on 2026-10-11), which at
-# 17:00 UTC (01:00 CST) dispatches this workflow on fp/v2-impl with nightly=true. That input, not the event name, is what
-# makes a run a night: the 04:00 CST start deadline and the 定时触发 label in the comment.
+# 14:37 UTC (22:37 CST, control-server#807) dispatches this workflow on fp/v2-impl with nightly=true. That input, not the
+# event name, is what makes a run a night: the 07:00 CST start deadline and the 定时触发 label in the comment. The trigger
+# also passes trigger_cron and triggered_at, so the comment says how late GitHub fired it. Both are optional, and this
+# file declares them before main's trigger sends them: an input it does not declare makes GitHub refuse the dispatch.
 #
 # By hand, on any branch that has this file (the input picks what is tested; the workflow file comes from --ref):
 #   gh workflow run g3.yml -R trytoreachpeak0/8005-agv-control-server --ref fp/v2-impl -f ref=fp/v2-impl [-f note=...]
@@ -39,7 +43,7 @@ on:
   workflow_dispatch:
     inputs:
       nightly:
-        description: 'true only from main''s g3-nightly-trigger.yml: the 04:00 CST start deadline and the nightly label'
+        description: 'true only from main''s g3-nightly-trigger.yml: the 07:00 CST start deadline and the nightly label'
         type: boolean
         default: false
       ref:
@@ -48,6 +52,14 @@ on:
         default: 'fp/v2-impl'
       note:
         description: 'One line added to the comment (for example: red evidence on a throwaway branch)'
+        type: string
+        default: ''
+      trigger_cron:
+        description: 'Only from main''s g3-nightly-trigger.yml: the cron it fired for, so the comment can say how late'
+        type: string
+        default: ''
+      triggered_at:
+        description: 'Only from main''s g3-nightly-trigger.yml: when GitHub created its run (ISO 8601)'
         type: string
         default: ''
       comment_issue:
@@ -283,6 +295,9 @@ jobs:
           G3_CONTROL_SERVER: ${{ needs.gate.outputs.control_server }}
           G3_ONBOARD: ${{ needs.gate.outputs.onboard }}
           G3_STARTED: ${{ needs.gate.outputs.started }}
+          G3_DEADLINE: ${{ needs.gate.outputs.deadline }}
+          G3_TRIGGER_CRON: ${{ inputs.trigger_cron }}
+          G3_TRIGGERED_AT: ${{ inputs.triggered_at }}
           G3_NOTE: ${{ inputs.note }}
           G3_NIGHTLY: ${{ inputs.nightly }}
           G3_ISSUE: ${{ inputs.comment_issue || '581' }}
@@ -304,8 +319,15 @@ jobs:
           }
           $started = if ($env:G3_STARTED) { [DateTimeOffset]::Parse($env:G3_STARTED) } else { [DateTimeOffset]::UtcNow }
           $kind = if ($env:G3_NIGHTLY -eq 'true') { 'schedule' } else { $env:GITHUB_EVENT_NAME }
+          # Both optional: one that is empty or does not parse leaves the lateness or the deadline out, never the comment.
+          $triggeredAt = $deadline = $null
+          $parsed = [DateTimeOffset]::MinValue
+          $styles = [Globalization.DateTimeStyles]::AssumeUniversal
+          if ([DateTimeOffset]::TryParse($env:G3_TRIGGERED_AT, [cultureinfo]::InvariantCulture, $styles, [ref]$parsed)) { $triggeredAt = $parsed }
+          if ([DateTimeOffset]::TryParse($env:G3_DEADLINE, [cultureinfo]::InvariantCulture, $styles, [ref]$parsed)) { $deadline = $parsed }
           $body = Format-NightlyG3Comment -Verdicts $verdicts -RunUrl $runUrl -Trigger $kind -Ref $env:G3_REF `
-              -Commits $commits -StartedAtUtc $started -StoppedBy $stoppedBy -Note ($notes -join ' ') -JobResult $env:G3_JOB_RESULT
+              -Commits $commits -StartedAtUtc $started -StoppedBy $stoppedBy -Note ($notes -join ' ') -JobResult $env:G3_JOB_RESULT `
+              -TriggerCron $env:G3_TRIGGER_CRON -TriggeredAtUtc $triggeredAt -DeadlineUtc $deadline
           $body | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           $comment = Send-NightlyG3Comment -Repository $env:GITHUB_REPOSITORY -Issue ([int]$env:G3_ISSUE) -Body $body -Token $env:GH_TOKEN
           Write-Host "Commented: $($comment.html_url)"

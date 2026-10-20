@@ -209,7 +209,7 @@ try {
            Contains = @('2026-10-21', '实际触发 22:37（晚 0 分钟）', '本轮开始 22:38'); NotContains = @('2026-10-20') }
         @{ Name = 'past the deadline, without the trigger inputs: the deadline, and no lateness made up'; Args = @{ Trigger = 'schedule'; Verdicts = @()
                 StoppedBy = 'NOT_STARTED_DEADLINE'; DeadlineUtc = [DateTimeOffset]::Parse('2026-10-10T23:00:00Z') }
-           Contains = @('未跑：NOT_STARTED_DEADLINE', '截止 07:00', '本轮开始 01:05'); NotContains = @('计划', '实际触发', '晚 ') }
+           Contains = @('未跑：NOT_STARTED_DEADLINE', '截止 07:00', '本轮开始 01:05'); NotContains = @('计划', '实际触发', '（晚') }
     )
     foreach ($case in $commentCases) {
         $arguments = @{} + $common
@@ -467,7 +467,7 @@ if ([DateTimeOffset]::UtcNow -lt [DateTimeOffset]::Parse($env:NIGHTLY_G3_TEST_CO
     Check 'g3.yml: the g3 job runs on [self-hosted, cs-desktop], checks out fetch-depth 0 and runs Invoke-NightlyG3.ps1' `
         ($g3Job -match 'runs-on:\s*\[self-hosted,\s*cs-desktop\]' -and $g3Job -match 'fetch-depth:\s*0\b' -and $g3Job -match 'Invoke-NightlyG3\.ps1') 'see g3.yml'
     # The night arrives as a workflow_dispatch from main's g3-nightly-trigger.yml (a schedule on this branch never fires),
-    # so it is the nightly input, not the event name, that must give it the 04:00 CST deadline and the 定时触发 label.
+    # so it is the nightly input, not the event name, that must give it the 07:00 CST deadline and the 定时触发 label.
     Check 'g3.yml: no schedule of its own, a nightly input, and nightly runs are graded as the schedule in gate and report' `
         ($workflow -notmatch '(?m)^\s*schedule:\s*$' -and $workflow -match '(?m)^\s*nightly:\s*$' -and
          ([regex]::Matches($workflow, "G3_NIGHTLY\s*-eq\s*'true'")).Count -ge 2) 'see g3.yml'
