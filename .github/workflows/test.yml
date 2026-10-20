@@ -502,7 +502,7 @@ jobs:
         if: steps.self-check-scope.outputs.l2_peer_publish_cache == 'true'
         timeout-minutes: 3
         shell: pwsh
-        run: pwsh -NoProfile -File ./scripts/l2/Test-L2PeerPublishCache.ps1
+        run: pwsh -NoProfile -File ./scripts/Test-L2PeerPublishCache.ps1
 
       # control-server#627. The no-build half of control-server#544's self-check: section 0 hands hand-seeded baselines
       # to run-demand-bearing-g3-vectors.ps1's Get-ExpectedClaimRecordCount (taken from its AST) and asserts the

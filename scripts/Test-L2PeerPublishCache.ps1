@@ -39,11 +39,15 @@
         the run's own temporary directory is removed (review S4 of PR #822).
 
 .EXAMPLE
-    pwsh -NoProfile -File ./scripts/l2/Test-L2PeerPublishCache.ps1
+    pwsh -NoProfile -File ./scripts/Test-L2PeerPublishCache.ps1
 
 .NOTES
     No dotnet, no rig, no fixed port; git and pwsh only, everything under %TEMP%. About half a minute.
     The stage is removed on success and kept, with its path printed, on failure.
+
+    Here, not under scripts/l2, for the reason scripts/Test-L2ScenarioRunScope.ps1 gives: Select-L2ScenarioRun.ps1
+    reads every string in scripts/l2's code, and this file names run-journey-g3.ps1, which would make a change to the
+    G3 runners run the synthetic L2 round.
 
     Exit code is the contract: 0 all passed, 1 something failed.
 #>
@@ -56,9 +60,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$modulePath = Join-Path $PSScriptRoot 'L2.psm1'
+$modulePath = Join-Path $PSScriptRoot 'l2/L2.psm1'
 if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) { throw "File under test not found: $modulePath" }
-$journeyRunner = Join-Path (Split-Path -Parent $PSScriptRoot) 'run-journey-g3.ps1'
+$journeyRunner = Join-Path $PSScriptRoot 'run-journey-g3.ps1'
 if (-not (Test-Path -LiteralPath $journeyRunner -PathType Leaf)) { throw "File under test not found: $journeyRunner" }
 
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('l2-peer-publish-selftest-' + [guid]::NewGuid().ToString('N').Substring(0, 12))

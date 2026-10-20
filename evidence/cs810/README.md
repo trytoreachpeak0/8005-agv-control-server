@@ -1,7 +1,7 @@
 # control-server#810 evidence
 
 `Get-L2PeerPublish` (`scripts/l2/L2.psm1`): two runs publishing the same peer commit into the same cache root
-no longer delete each other's build. Self-check: `scripts/l2/Test-L2PeerPublishCache.ps1`.
+no longer delete each other's build. Self-check: `scripts/Test-L2PeerPublishCache.ps1` (under `scripts/l2/` until the rework below).
 
 ## red/
 
@@ -55,3 +55,20 @@ no longer delete each other's build. Self-check: `scripts/l2/Test-L2PeerPublishC
 - `03-mutation-M7-failed-rename-keeps-temp.txt` — the `finally` that removes the temporary directory taken out:
   case 10 (and case 2) red. So case 10 does catch a failed rename that leaves its build behind.
 - `04-mutation-M8-relative-root-not-resolved.txt` — the S2 resolution taken out: case 9 red.
+
+## rework/ (test run 39474424730 on `c2e3ef75`: two red steps)
+
+- `01-l2-round-scope-red.txt` — `Test-L2ScenarioRunScope.ps1` reproduced locally: 3 cases red, a change to only
+  `run-staged-g3.ps1` or `run-journey-g3.ps1` ran the synthetic L2 round. Cause: the self-check lived in `scripts/l2/`,
+  and `Select-L2ScenarioRun.ps1` reads every string in `scripts/l2`'s code; it names `run-journey-g3.ps1` (case 8), which
+  names `run-staged-g3.ps1`. Fix: the self-check moved to `scripts/Test-L2PeerPublishCache.ps1`, as
+  `Test-L2ScenarioRunScope.ps1` itself does; `test.yml` and `TestSelfCheckScope.psd1` follow. The three expectations
+  are unchanged.
+- `02`–`05` — after the move: the L2 round scope self-check, the test.yml scope self-check, the script static checks
+  (32/32) and the peer publish self-check (34/34) all pass.
+- `06-test-selector-picks-new-step.txt` — test.yml's selector still picks the step for a change to `L2.psm1`, to the
+  self-check, to `run-journey-g3.ps1`, and not for an unrelated path.
+- The second red step, `G3 scenario self-check (journey v3 script branches)`, followed from the first: the failure
+  skipped the Test step (step 45, which builds the Host), and the v3 step runs under `!cancelled()`, so it ran without
+  `src/ControlServer.Host/bin/Release/net8.0/win-x64` and reported INCOMPLETE. It was selected rightly (it imports
+  `L2.psm1`); nothing in `TestSelfCheckScope.psd1` is missing. Reported to the coordinator, not changed here.
