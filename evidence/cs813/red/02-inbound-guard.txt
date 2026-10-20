@@ -1,0 +1,4 @@
+commit 436ffd853f17fa41c660e7259dc1462b1c41be2d
+command: dotnet test tests/ControlServer.Tests -c Release --no-build --filter "FullyQualifiedName~InboundContentConflictTests.TheTestReadsThroughAContextAndConnectionOfItsOwn"  (loop: C:/work/8005-scratch/cs813/loop.ps1 via Invoke-HeavyLocal.ps1)
+rounds (exit code, test count, result; first error line when failed):
+run-1: exit=1; Total tests: 1;  Failed: 1; last test took [972 ms] | 测试拿到的读库上下文与服务端处理器共用了上下文或连接。
