@@ -167,6 +167,27 @@ Set-Content -LiteralPath '__MARKER__' -Value ready
         Exit-G3PortLock -Handle $null
         Check 'lock: Exit-G3PortLock takes $null' $true ''
 
+        # A holder that exits without releasing leaves the mutex abandoned; the next run takes it (with a warning)
+        # instead of reporting it busy. This process keeps a handle open first, so that the named mutex outlives the
+        # holder's exit and the abandoned state is what the next wait meets (review P1b of PR #819).
+        $abandonedName = Get-G3PortLockName -Port 39031
+        $keeper = [Threading.Mutex]::new($false, $abandonedName)
+        try {
+            $abandoner = Start-Child 'lock-abandoner' @'
+Import-Module '__MODULE__' -Force
+$handle = Enter-G3PortLock -Port 39031 -Reason 'self-check abandoner'
+Set-Content -LiteralPath '__MARKER__' -Value ready
+'@
+            $null = $abandoner.WaitForExit(30000)
+            $abandoned = $null
+            $abandonedError = Invoke-Caught { $script:abandoned = Enter-G3PortLock -Port 39031 -Reason 'self-check after an abandoner' -TimeoutSeconds 0 3>$null }
+            Check 'lock: a lock its holder exited without releasing is taken, not reported busy' `
+                ($abandoner.HasExited -and $null -eq $abandonedError -and $null -ne $script:abandoned) "$abandonedError"
+            Exit-G3PortLock -Handle $script:abandoned
+        } finally {
+            $keeper.Dispose()
+        }
+
         # The port set.
         $duplicate = Invoke-Caught { Assert-G3RunnerPortSet -Ports ([ordered]@{ ControlPort = 39010; SimulatorHttpPort = 39010 }) }
         Check 'port set: a port named twice is refused, naming both' `
@@ -241,7 +262,7 @@ Start-Sleep -Seconds 120
     $runners = [ordered]@{
         'run-staged-g3.ps1' = [ordered]@{
             Ports = [ordered]@{ ControlPort = '58205'; HealthPort = '58207'; ProxyPort = '58215'; BusinessProxyPort = '58216'; SimulatorModbusPort = '1502'; SimulatorHttpPort = '58006' }
-            Control = 'control'; Simulator = 'simulator'; OwnerChecked = $true
+            Control = 'control'; Simulator = 'simulator'; OwnerChecked = $true; InProcess = @('$ProxyPort', '$BusinessProxyPort')
         }
         'run-staged-g3-restart.ps1' = [ordered]@{
             Ports = [ordered]@{ ControlPort = '58105'; HealthPort = '58107'; SimulatorModbusPort = '1502'; SimulatorHttpPort = '58006' }
@@ -329,8 +350,51 @@ Start-Sleep -Seconds 120
         Check "${file}: Set-G3OnboardIoModulePort -ModbusPort `$SimulatorModbusPort" `
             ($onboardWrites.Count -eq 1 -and "$(Get-ParameterArgument $onboardWrites[0] 'ModbusPort')" -ceq '$SimulatorModbusPort') "$($onboardWrites.Count) call(s)"
 
+        # The file the ports go into is the one the simulator reads: simulator.settings.json beside the binary the run
+        # starts (MainWindow.xaml.cs reads it from AppContext.BaseDirectory), read into the object Set-G3SimulatorPorts
+        # is given and written back from it.
+        $text = $ast.Extent.Text
+        $binaryDirectories = @([regex]::Matches($text, "Join-Path\s+(\$\w+)\s+'SQCD_8005AGV_Simulator\.(?:dll|exe)'") | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        $configs = @([regex]::Matches($text, "(?m)^\s*(\$\w+)\s*=\s*Join-Path\s+(\$\w+)\s+'simulator\.settings\.json'\s*$"))
+        $settingsVariable = if ($simulatorWrites.Count -eq 1) { "$(Get-ParameterArgument $simulatorWrites[0] 'Settings')" }
+        $configPath = if ($configs.Count -eq 1) { $configs[0].Groups[1].Value }
+        $read = $configPath -and $settingsVariable -and
+            ($text -match ("(?m)^\s*" + [regex]::Escape($settingsVariable) + "\s*=\s*(Get-Content\s+-LiteralPath\s+" + [regex]::Escape($configPath) +
+                "\s+-Raw|\[IO\.File\]::ReadAllText\(" + [regex]::Escape($configPath) + "\))\s*\|\s*ConvertFrom-Json\s*$"))
+        $written = $configPath -and $settingsVariable -and
+            ($text -match ("(?m)^\s*" + [regex]::Escape($settingsVariable) + "\s*\|\s*ConvertTo-Json\s+-Depth\s+\d+\s*\|\s*Set-Content\s+-LiteralPath\s+" + [regex]::Escape($configPath) + "\b") -or
+             $text -match ("\[IO\.File\]::WriteAllText\(\s*" + [regex]::Escape($configPath) + ",\s*\(" + [regex]::Escape($settingsVariable) + "\s*\|\s*ConvertTo-Json"))
+        Check "${file}: the ports go into simulator.settings.json beside the simulator binary it starts, read and written back through the object Set-G3SimulatorPorts gets" `
+            ($binaryDirectories.Count -eq 1 -and $configs.Count -eq 1 -and $configs[0].Groups[2].Value -eq $binaryDirectories[0] -and $read -and $written) `
+            "binary in $($binaryDirectories -join ', '); $($configs.Count) config path(s): $(($configs | ForEach-Object { $_.Value.Trim() }) -join ' | '); settings $settingsVariable; read $read; written $written"
+
+        # The health URLs are on the parameters: the simulator's on -SimulatorHttpPort, ControlServer's /version on
+        # -HealthPort, and nothing else answers either.
+        $urls = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.ExpandableStringExpressionAst] }, $true) | ForEach-Object { $_.Value })
+        $simulatorUrls = @($urls | Where-Object { $_ -like '*/api/v1/health*' })
+        Check "${file}: every simulator health URL is http://127.0.0.1:`$SimulatorHttpPort/api/v1/health" `
+            ($simulatorUrls.Count -ge 1 -and @($simulatorUrls | Where-Object { $_ -cne 'http://127.0.0.1:$SimulatorHttpPort/api/v1/health' }).Count -eq 0) ($simulatorUrls -join ' | ')
+        if ($spec.OwnerChecked) {
+            $versionUrls = @($urls | Where-Object { $_ -like '*/version' })
+            Check "${file}: every ControlServer /version URL is on `$HealthPort" `
+                ($versionUrls.Count -ge 1 -and @($versionUrls | Where-Object { $_ -notmatch '^http://127\.0\.0\.1:\$HealthPort/version$' }).Count -eq 0) ($versionUrls -join ' | ')
+        }
+
         if ($spec.OwnerChecked) {
             $owners = Get-Calls $ast 'Assert-G3PortOwner'
+            # The in-process listeners (the fault proxies) are this process's own: the runner's own process is the owner.
+            foreach ($port in @($spec['InProcess'] | Where-Object { $_ })) {
+                $matching = @($owners | Where-Object {
+                        "$(Get-ParameterArgument $_ 'Process')" -ceq '$runnerProcess' -and "$(Get-ParameterArgument $_ 'Port')" -ceq $port })
+                Check "${file}: Assert-G3PortOwner -Process `$runnerProcess -Port $port (an in-process proxy)" ($matching.Count -eq 1) `
+                    (($owners | ForEach-Object { $_.Extent.Text }) -join ' | ')
+            }
+            $runnerProcessAssignments = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$runnerProcess' }, $true))
+            if (@($spec['InProcess'] | Where-Object { $_ }).Count -gt 0) {
+                Check "${file}: `$runnerProcess is this process (Get-Process -Id `$PID), assigned once" `
+                    ($runnerProcessAssignments.Count -eq 1 -and $runnerProcessAssignments[0].Right.Extent.Text -ceq 'Get-Process -Id $PID') `
+                    (($runnerProcessAssignments | ForEach-Object { $_.Extent.Text }) -join ' | ')
+            }
             foreach ($pair in @(
                     @{ Process = $spec.Simulator; Ports = '$SimulatorHttpPort, $SimulatorModbusPort' },
                     @{ Process = $spec.Control; Ports = '$ControlPort, $HealthPort' })) {
