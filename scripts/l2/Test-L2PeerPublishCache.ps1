@@ -32,6 +32,11 @@
     7. Two different cache roots do not wait for each other: the lock is per cache root.
     8. The journal notes still match what run-journey-g3.ps1's everyScenarioPublishedThePeersAtTheBinding
        assertion looks for, including the note of a run that reused a publish after waiting.
+    9. A relative cache root is resolved against PowerShell's location, as the cmdlets always did, not
+       against the process's current directory, and the returned path is absolute (review S2 of PR #822).
+    10. A cache directory that appears while the build is running -- a checkout before control-server#810
+        building in place -- is neither overwritten nor deleted: the rename fails with a named reason and
+        the run's own temporary directory is removed (review S4 of PR #822).
 
 .EXAMPLE
     pwsh -NoProfile -File ./scripts/l2/Test-L2PeerPublishCache.ps1
@@ -82,11 +87,14 @@ param([Parameter(Mandatory)][string]$ModulePath,
       [Parameter(Mandatory)][string]$ReleaseFile,
       [Parameter(Mandatory)][ValidateSet('gate', 'fail', 'quick')][string]$Mode,
       [Parameter(Mandatory)][string]$ResultFile,
-      [int]$LockTimeoutSeconds = -1)
+      [int]$LockTimeoutSeconds = -1,
+      [Parameter(Mandatory)][string]$Location)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module $ModulePath -Force
+# PowerShell's location only; the process's current directory stays where the parent started it.
+Set-Location -LiteralPath $Location
 
 $logRoot = $ResultFile + '.logs'
 $null = New-Item -ItemType Directory -Path $logRoot -Force
@@ -162,15 +170,18 @@ function Start-Publisher {
           [Parameter(Mandatory)][string]$Tag,
           [Parameter(Mandatory)][string]$Mode,
           [string]$CacheRoot = $Case.Cache,
-          [int]$LockTimeoutSeconds = -1)
+          [int]$LockTimeoutSeconds = -1,
+          # The publisher's PowerShell location. The process itself always starts in $stage, so a relative
+          # -CacheRoot means something different to a cmdlet and to a .NET call (review S2 of PR #822).
+          [string]$Location = $stage)
 
     $resultFile = Join-Path $Case.Directory "$Tag.json"
-    $process = Start-Process -FilePath 'pwsh' -PassThru -WindowStyle Hidden `
+    $process = Start-Process -FilePath 'pwsh' -PassThru -WindowStyle Hidden -WorkingDirectory $stage `
         -RedirectStandardOutput "$resultFile.out" -RedirectStandardError "$resultFile.err" -ArgumentList @(
             '-NoProfile', '-NonInteractive', '-File', $publisherScript,
             '-ModulePath', $modulePath, '-Name', $peerName, '-SourceRepository', $source,
             '-CacheRoot', $CacheRoot, '-SignalDirectory', $Case.Signals, '-ReleaseFile', $Case.Release,
-            '-Mode', $Mode, '-ResultFile', $resultFile, '-LockTimeoutSeconds', $LockTimeoutSeconds)
+            '-Mode', $Mode, '-ResultFile', $resultFile, '-LockTimeoutSeconds', $LockTimeoutSeconds, '-Location', $Location)
     $script:processes.Add($process)
     return [pscustomobject]@{ Tag = $Tag; Process = $process; ResultFile = $resultFile; Case = $Case }
 }
@@ -358,6 +369,32 @@ try {
     $firstResult = Wait-Publisher $first
     $secondResult = Wait-Publisher $second
     Assert-Case '7 both roots publish' ($firstResult.ok -and $secondResult.ok) "first=$($firstResult.message) second=$($secondResult.message)"
+
+    # --- 9. a relative cache root -----------------------------------------------------------------------
+    $case = New-CaseDirectory 'relative'
+    $relative = Wait-Publisher (Start-Publisher $case 'relative' 'quick' -CacheRoot 'cache' -Location $case.Directory)
+    $expectedPath = Join-Path (& $target $case.Cache) 'publish'
+    Assert-Case '9 a relative cache root resolves against PowerShell''s location' (
+        $relative.ok -and $relative.path -eq $expectedPath -and (Test-Path -LiteralPath (Join-Path (& $target $case.Cache) 'publish.ok'))) "ok=$($relative.ok) $($relative.message) path=$($relative.path)"
+    $strays = @(Get-ChildItem -LiteralPath $stage -Directory -Filter "$peerName-*" | ForEach-Object Name) +
+        @(if (Test-Path -LiteralPath (Join-Path $stage 'cache')) { 'cache' })
+    Assert-Case '9 nothing is built under the process''s current directory' ($strays.Count -eq 0) ($strays -join ', ')
+
+    # --- 10. a cache directory appears while the build runs -----------------------------------------------
+    $case = New-CaseDirectory 'appears'
+    $builder = Start-Publisher $case 'builder' 'gate'
+    Wait-Started $builder
+    # What a checkout before control-server#810 does: build in the cache directory itself, no lock, no stamp.
+    $oldCodeFile = Join-Path (& $target $case.Cache) 'publish\old-checkout-building'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $oldCodeFile) -Force
+    Set-Content -LiteralPath $oldCodeFile -Value 'x'
+    Set-Content -LiteralPath $case.Release -Value 'go'
+    $collided = Wait-Publisher $builder
+    Assert-Case '10 the rename fails with a named reason' (-not $collided.ok -and $collided.message -match 'Could not rename the finished build') $collided.message
+    Assert-Case '10 the other checkout''s directory is left alone' (
+        (Test-Path -LiteralPath $oldCodeFile) -and -not (Test-Path -LiteralPath (Join-Path (& $target $case.Cache) 'publish.ok'))) $oldCodeFile
+    $leftover = @(Get-Leftover $case.Cache)
+    Assert-Case '10 the run''s own temporary directory is removed' ($leftover.Count -eq 0) ($leftover -join ', ')
 
     # --- 8. the journal notes run-journey-g3.ps1 matches ------------------------------------------------
     # The pattern is read out of run-journey-g3.ps1 rather than copied, so a change there is checked too.
