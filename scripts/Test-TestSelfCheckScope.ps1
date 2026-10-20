@@ -112,15 +112,28 @@ foreach ($title in $registeredNames + $notSelfChecks) {
     $count = @($workflowSteps | Where-Object Title -ceq $title).Count
     Check "'$title' is exactly one step of test.yml" ($count -eq 1) "$count step(s)"
 }
-foreach ($title in $notSelfChecks) {
-    $step = @($workflowSteps | Where-Object Title -ceq $title)[0]
-    if ($null -ne $step) {
-        Check "'$title', listed as not a self-check, runs no script under scripts/ by -File" (
+foreach ($entry in @($scope.NotSelfChecks)) {
+    $step = $workflowSteps | Where-Object Title -ceq $entry.Step | Select-Object -First 1
+    if ($null -eq $step) { continue }
+    if ($entry.ContainsKey('RunsAlways') -and $entry.RunsAlways) {
+        # A self-check the selector must not decide (review M1 of PR #808): this file. Gated on the selector's own output,
+        # a selector that broke would skip the one check that says so, and the job would stay green.
+        Check "'$($entry.Step)' runs on every event: no if:" ($step.Block -notmatch '(?m)^        if:') $step.Block
+    } else {
+        Check "'$($entry.Step)', listed as not a self-check, runs no script under scripts/ by -File" (
             $step.Block -notmatch '-File \./scripts/') $step.Block
     }
 }
+$scopeCheck = $scope.NotSelfChecks | Where-Object { $_.Step -like 'Self-check scope self-check*' } | Select-Object -First 1
+Check 'this self-check is registered as RunsAlways, never decided by the selector it checks' (
+    $null -ne $scopeCheck -and $scopeCheck.ContainsKey('RunsAlways') -and $scopeCheck.RunsAlways -and
+    @($registered | Where-Object { $_.Script -eq 'scripts/Test-TestSelfCheckScope.ps1' }).Count -eq 0) ($scopeCheck | Out-String)
 $keys = @($registered | ForEach-Object { $_.Key })
 Check 'every Key is unique' (@($keys | Sort-Object -Unique).Count -eq $keys.Count) ($keys -join ', ')
+$buildInputs = @(if ($scope.ContainsKey('BuildInputs')) { $scope.BuildInputs })
+foreach ($required in 'src/', 'Directory.Packages.props', 'vendor/', 'global.json', 'Directory.Build.props', 'NuGet.Config') {
+    Check "BuildInputs lists $required" ($buildInputs -contains $required) ($buildInputs -join ', ')
+}
 foreach ($entry in $registered) {
     Check "Key '$($entry.Key)' is letters, digits and underscores" ($entry.Key -cmatch '^[a-z0-9_]+$') $entry.Key
     $step = @($workflowSteps | Where-Object Title -ceq $entry.Name)[0]
@@ -140,9 +153,22 @@ if ($scopeStep.Count -eq 1 -and $testStep.Count -eq 1) {
         $decide -match [regex]::Escape('./scripts/Select-TestSelfCheckRun.ps1') -and $decide -match '-NotAPullRequest' -and
         $decide -match [regex]::Escape("`$env:GITHUB_EVENT_NAME -ne 'pull_request'") -and
         $decide -match '-GitHubOutput \$env:GITHUB_OUTPUT') $decide
-    Check 'self-check-scope diffs the merge commit against its first parent, without renames' (
-        $decide -match [regex]::Escape('git diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA') -and
+    # core.quotePath=false (review S5 of PR #808): by default git quotes a non-ASCII path, "scripts/\346...", and the quoted
+    # spelling matches no input -- not even the scripts/ prefix.
+    Check 'self-check-scope diffs the merge commit against its first parent, without renames, unquoted' (
+        $decide -match [regex]::Escape('git -c core.quotePath=false diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA') -and
         $decide -match [regex]::Escape('--depth=2 origin $env:GITHUB_SHA')) $decide
+    # Review S1 of PR #808: a failed fetch leaves $LASTEXITCODE non-zero, and a pwsh step ends with it; the step would then
+    # fail where "a diff that cannot be read runs everything" was meant.
+    # The block runs up to the next step, so the next step's comment lines come off first.
+    $decideLines = @($decide -split '\r?\n')
+    $last = $decideLines.Count - 1
+    while ($last -ge 0 -and ($decideLines[$last].Trim() -eq '' -or $decideLines[$last].TrimStart().StartsWith('#'))) { $last-- }
+    Check 'self-check-scope ends with exit 0, so an unreadable diff runs everything instead of failing the step' (
+        $last -ge 0 -and $decideLines[$last].Trim() -ceq 'exit 0') $(if ($last -ge 0) { $decideLines[$last] } else { '(empty)' })
+    # Review S2 of PR #808: a push to the integration branch runs every self-check, after each merge.
+    $pushBranches = [regex]::Match($workflow, '(?ms)^on:\s*\r?\n  push:\s*\r?\n    branches: \[([^\]]*)\]').Groups[1].Value
+    Check 'test.yml runs on a push to fp/v2-impl' (@($pushBranches -split ',' | ForEach-Object Trim) -ccontains 'fp/v2-impl') "branches: [$pushBranches]"
     $firstRegistered = @($workflowSteps | Where-Object { $registeredNames -ccontains $_.Title } | ForEach-Object Index | Measure-Object -Minimum).Minimum
     Check 'self-check-scope comes before the first self-check' ($scopeStep[0].Index -lt $firstRegistered) "scope at $($scopeStep[0].Index), first self-check at $firstRegistered"
     foreach ($entry in $registered) {
@@ -295,6 +321,9 @@ try {
 Import-Module (Join-Path $PSScriptRoot 'Direct.psm1')
 $source = Get-Content -Raw (Join-Path $PSScriptRoot '..\..\src\Lib\Options.cs')
 $tree = Join-Path (Split-Path -Parent $PSScriptRoot) '../src/Lib/Deep'
+# Named, and not in the checkout: deleted or renamed by the pull request (review M2 of PR #808).
+$gone = Get-Content -Raw (Join-Path $PSScriptRoot '..\..\src\Lib\Gone.cs')
+$goneTree = Join-Path (Split-Path -Parent $PSScriptRoot) '../src/Lib/GoneDir'
 '@
     Set-Content -LiteralPath (Join-Path $sandbox 'scripts/l2/Direct.psm1') -Value ". (Join-Path `$PSScriptRoot `"..\Transitive.ps1`")"
     foreach ($leaf in 'scripts/Transitive.ps1', 'scripts/l2/Commented.psm1', 'scripts/Unnamed.ps1', 'src/Lib/Options.cs', 'src/Lib/Other.cs',
@@ -321,6 +350,11 @@ $tree = Join-Path (Split-Path -Parent $PSScriptRoot) '../src/Lib/Deep'
         @{ Path = 'scripts/Unnamed.ps1'; Run = $false }
         @{ Path = 'src/Lib/Other.cs'; Run = $false }
         @{ Path = 'docs/README.md'; Run = $false }
+        # Review M2 of PR #808: a path the script names counts whether or not it is in the checkout -- the pull request
+        # deleted or renamed it, and the script naming it is unchanged.
+        @{ Path = 'src/Lib/Gone.cs'; Run = $true }
+        @{ Path = 'src/Lib/GoneDir/Inner.cs'; Run = $true }
+        @{ Path = 'src/Lib/GoneDirSibling.cs'; Run = $false }
     )
     foreach ($case in $expect) {
         $decision = & $Selector -ChangedPath @($case.Path) -Repository $sandbox -ScopeFile $sandboxScope 6>$null
@@ -342,15 +376,25 @@ $tree = Join-Path (Split-Path -Parent $PSScriptRoot) '../src/Lib/Deep'
 # and must run whenever it does: a needed self-check by the selector raising it, a needed step this table does not decide
 # by never being gated on the scope.
 foreach ($entry in $registered) {
-    # The scripts strings, not its comments: a comment that mentions a build reads nothing.
+    # The script's code, not its comments: a comment that mentions a build reads nothing. Strings for the path it reads; the
+    # code as written, one space between tokens, for a command that builds.
     $tokens = $null
     $null = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository $entry.Script), [ref]$tokens, [ref]$null)
     $source = [string]::Join([char]10, [string[]]@(foreach ($token in $tokens) { if ($token -is [System.Management.Automation.Language.StringToken]) { $token.Value } }))
+    $code = [string]::Join(' ', [string[]]@(foreach ($token in $tokens) { if ($token.Kind -ne 'Comment') { $token.Text } }))
     $readsBuild = $source -match 'ControlServer\.Host[\\/]+bin[\\/]+(Release|Debug|\$)'
-    $buildsItself = $source -match 'dotnet (build|publish)\b'
+    $buildsItself = $code -match '\bdotnet (build|publish)\b'
     $needs = @(if ($entry.ContainsKey('Needs')) { $entry.Needs })
     if ($readsBuild -and -not $buildsItself) {
         Check "$($entry.Key) reads src/ControlServer.Host/bin without building it, so it says what it needs" ($needs.Count -gt 0) 'no Needs'
+    }
+    # Review S3 of PR #808: what a build reads besides src/ -- package versions, the vendored packages, the SDK pin -- is an
+    # input of every step that reads a build or makes one. A pull request that only bumps Microsoft.Data.Sqlite changes what
+    # those steps load and nothing else they name.
+    if (($readsBuild -or $buildsItself) -and -not $entry.ContainsKey('DecidedBy')) {
+        foreach ($buildInput in $buildInputs) {
+            Check "$($entry.Key) reads or makes a build, so $buildInput is its input" (@($entry.Inputs) -contains $buildInput) (@($entry.Inputs) -join ', ')
+        }
     }
     $self = $workflowSteps | Where-Object Title -ceq $entry.Name | Select-Object -First 1
     foreach ($need in $needs) {
