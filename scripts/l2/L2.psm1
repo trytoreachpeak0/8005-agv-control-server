@@ -588,6 +588,11 @@ checked out at an exact commit, records precisely which peer the evidence is abo
 
 A dirty source worktree is refused rather than warned about: the clone would silently test the
 committed state while the operator was looking at their edits.
+
+Two runs may publish the same commit at once (control-server#810): the second queues on
+Enter-L2PeerPublishLock and reuses the first one's publish. The build goes into a temporary directory
+beside the cache directory and is renamed into place, publish.ok already inside, only once complete --
+so a cache directory without publish.ok is never something a live run is building.
 #>
 function Get-L2PeerPublish {
     param(
@@ -602,7 +607,12 @@ function Get-L2PeerPublish {
         # The build itself, called as (clone, project path, publish directory, log) and expected to throw on
         # failure. Only Test-L2PeerPublishCache.ps1 passes one: a stand-in that takes seconds and can be held
         # mid-build, which a real dotnet publish of the onboard cannot.
-        [scriptblock]$PublishCommand = $script:L2PeerDotnetPublish
+        [scriptblock]$PublishCommand = $script:L2PeerDotnetPublish,
+        # How long to queue behind another run publishing the same commit into the same cache root. A cold
+        # build of the onboard WPF, clone included, takes minutes; thirty of them is the desktop lock's limit and
+        # still finite, so a stuck holder fails this run with a named reason rather than an unexplained timeout.
+        [ValidateRange(0, 86400)]
+        [int]$LockTimeoutSeconds = 1800
     )
 
     if (-not (Test-Path -LiteralPath $SourceRepository -PathType Container)) {
@@ -618,37 +628,183 @@ function Get-L2PeerPublish {
     $target = Join-Path $CacheRoot "$Name-$commit"
     $publish = Join-Path $target 'publish'
     $stamp = Join-Path $target 'publish.ok'
+    # No lock on the way in: a stamped directory is complete and never changes again (see below).
     if (Test-Path -LiteralPath $stamp) {
         if ($Journal) { $Journal.Note("Reusing cached $Name publish for $commit.") }
         return [pscustomobject]@{ Name = $Name; Commit = $commit; Path = $publish; FromCache = $true }
     }
 
-    if ($Journal) { $Journal.Note("Building $Name at $commit from a throwaway clone.") }
-    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
-    $null = New-Item -ItemType Directory -Path $target -Force
-    $clone = Join-Path $target 'clone'
-    $log = Join-Path $LogRoot "build-$Name.log"
-
-    # core.longpaths on both commands. The onboard repository commits its G2 evidence under paths like
-    # evidence/g2/<run>/protocol-v1.0.0/FP-IS-00/<timestamp>-<hash>/..., and below this cache root
-    # (%LOCALAPPDATA%\8005-l2-peers\onboard-hmi-<40 hex>\clone\) that runs past MAX_PATH: on
-    # 2026-09-13 the clone of c86bac5 "succeeded" and its checkout failed with "Filename too long".
-    # The G3 runners never hit it because they clone under a short StageRoot.
-    & git -c core.longpaths=true clone --quiet --no-hardlinks $SourceRepository $clone *>&1 |
-        Tee-Object -FilePath $log | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Could not clone $Name; see $log" }
-    & git -c core.longpaths=true -C $clone checkout --quiet --detach $commit *>&1 |
-        Tee-Object -FilePath $log -Append | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Could not check out $commit in the $Name clone; see $log" }
-
+    $null = New-Item -ItemType Directory -Path $CacheRoot -Force
+    $lock = Enter-L2PeerPublishLock -Name $Name -Commit $commit -CacheRoot $CacheRoot -TimeoutSeconds $LockTimeoutSeconds
     try {
-        & $PublishCommand $clone $ProjectPath $publish $log
-    } catch {
-        throw "Publishing $Name failed; see $log ($($_.Exception.Message))"
-    }
+        # Whoever held the lock before us may have published this very commit while we queued.
+        if (Test-Path -LiteralPath $stamp) {
+            if ($Journal) {
+                $Journal.Note("Reusing cached $Name publish for $commit, published by another run while this one waited.")
+            }
+            return [pscustomobject]@{ Name = $Name; Commit = $commit; Path = $publish; FromCache = $true }
+        }
 
-    Set-Content -LiteralPath $stamp -Value $commit -Encoding utf8NoBOM
-    return [pscustomobject]@{ Name = $Name; Commit = $commit; Path = $publish; FromCache = $false }
+        # Holding the lock, nobody else builds this commit under this root, so what is lying around for it is dead:
+        # a temporary directory of a run that was killed or failed to clean up, or an unstamped cache directory,
+        # which only a checkout before control-server#810 (building in place) leaves behind.
+        # -like rather than -Filter: Windows matches "x.*" against a plain "x" too, which is the cache directory.
+        Get-ChildItem -LiteralPath $CacheRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "$Name-$commit.tmp-*" -or $_.Name -like "$Name-$commit.stale-*" } |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+        if (Test-Path -LiteralPath $target) {
+            $aside = "$target.stale-" + [guid]::NewGuid().ToString('N').Substring(0, 8)
+            try {
+                [IO.Directory]::Move($target, $aside)
+            } catch {
+                throw ("L2_PEER_PUBLISH_STALE_TARGET: $target has no publish.ok and could not be moved aside " +
+                    "($($_.Exception.Message)); a run from a checkout older than control-server#810 may still be building in it.")
+            }
+            Remove-Item -LiteralPath $aside -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        if ($Journal) { $Journal.Note("Building $Name at $commit from a throwaway clone.") }
+        # Built beside the cache directory and renamed into place only once complete, publish.ok included, so the
+        # cache directory either does not exist or is whole: there is never a moment a reader could find it half
+        # built, and a failed build has nothing to leave behind but its own temporary directory.
+        $building = "$target.tmp-" + [guid]::NewGuid().ToString('N').Substring(0, 8)
+        $renamed = $false
+        try {
+            $null = New-Item -ItemType Directory -Path $building
+            $clone = Join-Path $building 'clone'
+            $log = Join-Path $LogRoot "build-$Name.log"
+
+            # core.longpaths on both commands. The onboard repository commits its G2 evidence under paths like
+            # evidence/g2/<run>/protocol-v1.0.0/FP-IS-00/<timestamp>-<hash>/..., and below this cache root
+            # (%LOCALAPPDATA%\8005-l2-peers\onboard-hmi-<40 hex>.tmp-<8 hex>\clone\) that runs past MAX_PATH: on
+            # 2026-09-13 the clone of c86bac5 "succeeded" and its checkout failed with "Filename too long".
+            # The G3 runners never hit it because they clone under a short StageRoot.
+            & git -c core.longpaths=true clone --quiet --no-hardlinks $SourceRepository $clone *>&1 |
+                Tee-Object -FilePath $log | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Could not clone $Name; see $log" }
+            & git -c core.longpaths=true -C $clone checkout --quiet --detach $commit *>&1 |
+                Tee-Object -FilePath $log -Append | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Could not check out $commit in the $Name clone; see $log" }
+
+            try {
+                & $PublishCommand $clone $ProjectPath (Join-Path $building 'publish') $log
+            } catch {
+                throw "Publishing $Name failed; see $log ($($_.Exception.Message))"
+            }
+
+            Set-Content -LiteralPath (Join-Path $building 'publish.ok') -Value $commit -Encoding utf8NoBOM
+            Move-L2PeerPublishIntoPlace -From $building -To $target
+            $renamed = $true
+        } finally {
+            if (-not $renamed) { Remove-Item -LiteralPath $building -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+        return [pscustomobject]@{ Name = $Name; Commit = $commit; Path = $publish; FromCache = $false }
+    } finally {
+        Exit-L2PeerPublishLock -Handle $lock
+    }
+}
+
+<#
+The lock that keeps two runs from building the same peer commit into the same cache root at once
+(control-server#810). Before it, a run that found no publish.ok removed the whole cache directory and
+built there, deleting the build of a run that had got there first and was still at it. The real-onboard
+rig publishes after the port lock and before the desktop lock, so two runs on different port slots do
+overlap there.
+
+A named kernel mutex for the reasons scripts/DesktopLock.psm1 gives: it dies with its holder, so a
+killed run cannot leave a stale lock, and an abandoned mutex counts as acquired. The name carries the
+peer, the commit and a hash of the cache root: two commits, or two roots (run-journey-g3.ps1 gives each
+round its own, and each account has its own %LOCALAPPDATA%), never wait for each other. Open to every
+authenticated account, like the port lock in L2PortLock.psm1, so two accounts sharing a -PeerCacheRoot
+queue rather than fail on the DACL.
+
+Lock order: this lock is taken while the port lock is held and before the desktop lock, and nothing
+else is taken while holding it -- its holder only clones and builds, and the two peers take it one
+after the other. So it cannot close a cycle with either of the other two.
+#>
+function Enter-L2PeerPublishLock {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Commit,
+        [Parameter(Mandatory)][string]$CacheRoot,
+        [Parameter(Mandatory)][int]$TimeoutSeconds
+    )
+
+    $root = [IO.Path]::GetFullPath($CacheRoot).TrimEnd('\', '/').ToLowerInvariant()
+    $rootHash = [Convert]::ToHexString(
+        [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($root))).Substring(0, 16).ToLowerInvariant()
+    $lockName = "Global\W2G-L2PeerPublish-$Name-$Commit-$rootHash"
+
+    $security = [Security.AccessControl.MutexSecurity]::new()
+    $authenticatedUsers = [Security.Principal.SecurityIdentifier]::new(
+        [Security.Principal.WellKnownSidType]::AuthenticatedUserSid, $null)
+    $security.AddAccessRule([Security.AccessControl.MutexAccessRule]::new(
+        $authenticatedUsers,
+        [Security.AccessControl.MutexRights]::FullControl,
+        [Security.AccessControl.AccessControlType]::Allow))
+    $createdNew = $false
+    $mutex = [Threading.MutexAcl]::Create($false, $lockName, [ref]$createdNew, $security)
+
+    $request = {
+        param([int]$Seconds)
+        try {
+            return $mutex.WaitOne([TimeSpan]::FromSeconds($Seconds))
+        } catch [Threading.AbandonedMutexException] {
+            Write-Host ("L2_PEER_PUBLISH_ABANDONED: the previous holder of $lockName died without releasing it; " +
+                'taking it over and clearing what it left.')
+            return $true
+        }
+    }
+    # Zero-wait first, so a queued run says so instead of going quiet for the length of someone else's build.
+    $owned = & $request 0
+    if (-not $owned -and $TimeoutSeconds -gt 0) {
+        Write-Host ("L2_PEER_PUBLISH_WAITING: another run is publishing $Name@$Commit into $CacheRoot; " +
+            "queueing up to ${TimeoutSeconds}s ($lockName)")
+        $owned = & $request $TimeoutSeconds
+        if ($owned) { Write-Host "L2_PEER_PUBLISH_ACQUIRED: $Name@$Commit is ours to publish or reuse" }
+    }
+    if (-not $owned) {
+        $mutex.Dispose()
+        throw ("L2_PEER_PUBLISH_LOCK_BUSY: another run is still publishing $Name@$Commit into $CacheRoot; " +
+            "waited ${TimeoutSeconds}s ($lockName)")
+    }
+    return [pscustomobject]@{ Mutex = $mutex; Name = $lockName }
+}
+
+function Exit-L2PeerPublishLock {
+    param([AllowNull()]$Handle)
+
+    if ($null -eq $Handle) { return }
+    try {
+        $Handle.Mutex.ReleaseMutex()
+    } finally {
+        $Handle.Mutex.Dispose()
+    }
+}
+
+<#
+Renames a finished build into its cache directory: one MoveFileEx on one volume, so a reader sees the
+directory either absent or whole. A file the build just wrote can still be held open for a moment by an
+on-access scanner, which makes the rename fail with access denied; a few retries a second apart ride that
+out, and anything longer is a real failure.
+#>
+function Move-L2PeerPublishIntoPlace {
+    param(
+        [Parameter(Mandatory)][string]$From,
+        [Parameter(Mandatory)][string]$To
+    )
+
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            [IO.Directory]::Move($From, $To)
+            return
+        } catch [UnauthorizedAccessException], [IO.IOException] {
+            if ($attempt -ge 4) {
+                throw "Could not rename the finished build $From to $To after $attempt attempts: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds 1
+        }
+    }
 }
 
 <#
