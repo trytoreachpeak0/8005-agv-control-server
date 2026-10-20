@@ -1,0 +1,13 @@
+diff --git a/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs b/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
+index 565d99068..6eff93ef4 100644
+--- a/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
++++ b/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
+@@ -320,7 +320,7 @@ public sealed class CompiledSchemaCache
+         TypeDeclaration rootType = typeBuilder.AddTypeDeclarations(
+             new JsonReference(schemaId), Corvus.Json.CodeGeneration.Draft202012.VocabularyAnalyser.DefaultVocabulary);
+         IReadOnlyCollection<GeneratedCodeFile> generatedCode = typeBuilder.GenerateCodeUsing(
+-            CSharpLanguageProvider.DefaultWithOptions(new CSharpLanguageProvider.Options("GeneratedCode", alwaysAssertFormat: true)),
++            CSharpLanguageProvider.DefaultWithOptions(new CSharpLanguageProvider.Options("GeneratedCode", alwaysAssertFormat: false)),
+             CancellationToken.None,
+             rootType);
+         string rootTypeName = CSharpLanguageProvider.GetFullyQualifiedDotnetTypeName(rootType.ReducedTypeDeclaration().ReducedType);
