@@ -928,11 +928,12 @@ try {
         param([Parameter(Mandatory)][string[]]$Arguments)
         $all = @($Arguments[0], '--database', $databasePath) + @($Arguments | Select-Object -Skip 1)
         $journal.Note("FieldOps: $($all -join ' ')")
-        $lines = @(& (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe') @all 2>&1)
-        $exit = $LASTEXITCODE
-        $text = ($lines | ForEach-Object { [string]$_ }) -join "`n"
+        # Read as UTF-8, not through the console's code page (control-server#804 review S1, L2FieldOpsSession.psm1).
+        $run = Invoke-L2FieldOpsProcess -Executable (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe') -Arguments $all
+        $exit = $run.ExitCode
+        $text = (@($run.Output) + @($run.Errors)) -join "`n"
         if ($exit -ne 0) { throw "ControlServer.FieldOps $($Arguments[0]) exited with $exit`: $text" }
-        $json = $lines | Where-Object { $_ -is [string] -and $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
+        $json = $run.Output | Where-Object { $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
         if (-not $json) { throw "ControlServer.FieldOps $($Arguments[0]) printed no JSON: $text" }
         return ($json | ConvertFrom-Json)
     }

@@ -103,4 +103,43 @@ function Stop-L2FieldOpsSession {
     }
 }
 
-Export-ModuleMember -Function Start-L2FieldOpsSession, Invoke-L2FieldOpsSessionCommand, Stop-L2FieldOpsSession
+<#
+One command in its own process, the way the scenario's $Context.InvokeFieldOps runs it. Returns
+@{ ExitCode; Output (stdout lines); Errors (stderr lines) }.
+
+stdout is read as UTF-8, which is what FieldOps writes, whatever the console's code page (control-server#804 review S1).
+`& exe 2>&1` decoded it with the console's code page instead: 437 or 1252 turned every Chinese name into '?', and 936
+(vm01, zh-CN) could swallow the closing quote after a field ending in an odd number of Chinese bytes, so the JSON no
+longer parsed. Not by switching [Console]::OutputEncoding around the call: the rig's lanes may share one console.
+#>
+function Invoke-L2FieldOpsProcess {
+    param(
+        [Parameter(Mandatory)][string]$Executable,
+        [Parameter(Mandatory)][string[]]$Arguments
+    )
+
+    $start = [Diagnostics.ProcessStartInfo]::new($Executable)
+    foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $start.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
+    $start.WorkingDirectory = Split-Path -Parent $Executable
+    $process = [Diagnostics.Process]::Start($start)
+    try {
+        # Both pipes drained at once: a process that fills one while nobody reads it never exits.
+        $output = $process.StandardOutput.ReadToEndAsync()
+        $errors = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            Output   = @($output.Result -split '\r?\n' | Where-Object { $_ -ne '' })
+            Errors   = @($errors.Result -split '\r?\n' | Where-Object { $_ -ne '' })
+        }
+    } finally {
+        $process.Dispose()
+    }
+}
+
+Export-ModuleMember -Function Start-L2FieldOpsSession, Invoke-L2FieldOpsSessionCommand, Stop-L2FieldOpsSession, Invoke-L2FieldOpsProcess

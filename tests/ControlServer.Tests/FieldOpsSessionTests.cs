@@ -101,6 +101,64 @@ public sealed class FieldOpsSessionTests
         Assert.Equal(0, await session.EndAsync());
     }
 
+    /// <summary>
+    /// 不按期望值判，而是把同一条命令的两种跑法放在一起比（审查 S3）：库状态相同时，会话里打出的每一行与退出码，
+    /// 与单独起一个进程时 stdout 加 stderr 打出的完全一样——成功的 JSON、被拒的 JSON、用法错误的说明文字都算。
+    /// </summary>
+    [Fact]
+    public async Task ForTheSameDatabaseStateTheSessionPrintsWhatItsOwnProcessPrints()
+    {
+        await using WaitingPointImportHarness harness = await CreateAsync();
+        await harness.ImportAsync(Site);
+        string bad = harness.WriteCsv("bad.csv", Csv("26,212,充电准备点1,true,", "26,214,等待点1,true,"));
+        string[][] commands =
+        [
+            [Read, "--database", harness.DatabasePath, "--map", "26", "--fleet", "VK-A;VK-B"],
+            [Read, "--database", harness.DatabasePath, "--version", "1"],
+            ["area-assignments", "--database", harness.DatabasePath],
+            ["charging-policy", "--database", harness.DatabasePath],
+            ImportArguments(harness, bad),
+            ["no-such-verb", "--database", harness.DatabasePath],
+            [Import, "--database", harness.DatabasePath],
+            ["status", "--database", harness.DatabasePath + ".missing"],
+        ];
+        await using Session session = Session.Start();
+
+        foreach (string[] command in commands)
+        {
+            (int exitCode, string stdout, string stderr) = await RunProcessAsync(command);
+            SessionReply reply = await session.RunAsync(command);
+
+            Assert.NotEmpty(Lines(reply.Text));
+            Assert.Equal((exitCode, Lines(stdout + '\n' + stderr)), (reply.ExitCode, Lines(reply.Text)));
+        }
+        Assert.Equal(0, await session.EndAsync());
+    }
+
+    private static string Lines(string text) =>
+        string.Join('\n', text.Split('\n').Select(line => line.TrimEnd('\r')).Where(line => line.Length > 0));
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(string[] arguments)
+    {
+        ProcessStartInfo start = new(FieldOps)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        foreach (string argument in arguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+        using Process process = Process.Start(start)!;
+        Task<string> stdout = process.StandardOutput.ReadToEndAsync(Token);
+        Task<string> stderr = process.StandardError.ReadToEndAsync(Token);
+        await process.WaitForExitAsync(Token);
+        return (process.ExitCode, await stdout, await stderr);
+    }
+
     [Fact]
     public async Task ASessionGivenOptionsOfItsOwnRefusesToStart()
     {
