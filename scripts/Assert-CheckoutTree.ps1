@@ -16,10 +16,15 @@
       - .git/config sets core.sparseCheckout. Our checkouts never write it there; when it is there, an earlier job's
         state is in force, and the next job's checkout will apply it too;
       - a file the checkout asked for is left out (skip-worktree), or one it left out is checked out;
-      - a tracked file that is not left out is missing from the worktree.
+      - a tracked file that is not left out is missing from the worktree;
+      - with CHECKOUT_EXCLUDE set, a top-level directory of HEAD is neither in the list nor excluded (review S1 of
+        PR #825): a pull request that adds one and leaves the lists alone goes red in its own job, instead of every
+        job that leaves out evidence/ silently missing the new directory.
     What the checkout asked for: CHECKOUT_SPARSE (or -SparseCheckout), the checkout's own sparse-checkout list, one
-    directory per line, in cone mode: the files at the top level and everything under each directory. Empty is the
-    whole tree.
+    top-level directory per line, in cone mode: the files at the top level and everything under each directory. Empty
+    is the whole tree. Top-level only (review S3 of PR #825): for a nested directory cone mode also brings the files
+    directly in each of its parents, which this does not model; Test-CheckoutSparseState.ps1 holds the lists to it.
+    CHECKOUT_EXCLUDE (or -Exclude): the top-level directories the list leaves out on purpose, one per line.
 
     Green prints CHECKOUT_TREE_OK with the counts. A second or two on the full repository.
 
@@ -29,7 +34,8 @@
 [CmdletBinding()]
 param(
     [string]$Path = '.',
-    [string[]]$SparseCheckout = @(($env:CHECKOUT_SPARSE ?? '') -split '\r?\n' | ForEach-Object Trim | Where-Object { $_ })
+    [string[]]$SparseCheckout = @(($env:CHECKOUT_SPARSE ?? '') -split '\r?\n' | ForEach-Object Trim | Where-Object { $_ }),
+    [string[]]$Exclude = @(($env:CHECKOUT_EXCLUDE ?? '') -split '\r?\n' | ForEach-Object Trim | Where-Object { $_ })
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,6 +80,19 @@ if ($leftOutWanted.Count -gt 0) {
 }
 if ($presentUnwanted.Count -gt 0) {
     $problems.Add("$($presentUnwanted.Count) file(s) outside what the checkout asked for ($asked) are checked out, so its sparse-checkout list was not applied: $(Get-Sample $presentUnwanted)")
+}
+
+$excluded = @($Exclude | ForEach-Object { $_.Trim('/') } | Where-Object { $_ })
+if ($excluded.Count -gt 0) {
+    $topLevel = @(& git -C $repository ls-tree -d --name-only HEAD)
+    if ($LASTEXITCODE -ne 0) { throw "git ls-tree HEAD in $repository exited $LASTEXITCODE" }
+    $known = @($cone) + @($excluded)
+    $unlisted = @($topLevel | Where-Object { $dir = $_; -not @($known | Where-Object { $_ -ieq $dir }) })
+    if ($unlisted.Count -gt 0) {
+        $problems.Add("$($unlisted.Count) top-level director(ies) of HEAD are neither in the checkout's sparse-checkout list nor in " +
+            "CHECKOUT_EXCLUDE ($($excluded -join ', ')), so this checkout leaves them out: $(Get-Sample $unlisted). Add them to the " +
+            "list and to CHECKOUT_SPARSE of the check after it.")
+    }
 }
 
 $deleted = @((& git -C $repository ls-files --deleted -z) -join '' -split "`0" | Where-Object { $_ })
