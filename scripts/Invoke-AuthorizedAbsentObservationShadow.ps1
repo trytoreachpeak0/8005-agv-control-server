@@ -611,7 +611,9 @@ function Start-ExactPeers {
     #
     # Taken here rather than at the top of the run: everything above is hashing, ACL work and
     # preflight assertions, none of which touch the desktop, so a queued run waits holding nothing.
-    $desktopLock = Enter-DesktopLock -Reason "authorized absent-observation shadow run $stamp"
+    # $script:, not a local: the finally's Exit-DesktopLock releases the script's $desktopLock. Until control-server#809
+    # this assigned a local, the script's stayed $null, and the lock went only when the process exited.
+    $script:desktopLock = Enter-DesktopLock -Reason "authorized absent-observation shadow run $stamp"
 
     $simulatorArguments = @{
         FilePath = Join-Path $simulatorRoot 'SQCD_8005AGV_Simulator.exe'
