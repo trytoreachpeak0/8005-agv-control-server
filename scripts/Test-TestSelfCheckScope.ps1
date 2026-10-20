@@ -473,4 +473,49 @@ try {
 }
 Check 'the needs invariant was exercised on a self-check that needs another' ($script:needsChecked -ge 2) "$script:needsChecked"
 
+# --- 8. A push to fp/v2-impl: every self-check, no suite (the coordinator's ruling on the re-review of PR #808). ---------------
+# What is skipped there is skipped by the push's own condition, never by the scope; what a skipped step made for another is
+# made by its replacement, which runs on exactly that push, after the skipped step's place and before what needs it.
+$push = if ($scope.ContainsKey('PushToIntegration')) { $scope.PushToIntegration } else { $null }
+Check 'the table says what a push to fp/v2-impl skips' ($null -ne $push -and $push.ContainsKey('Condition') -and @($push.Skips).Count -gt 0) ($push | Out-String)
+if ($null -ne $push) {
+    $condition = $push.Condition
+    Check 'the condition is a push to fp/v2-impl' ($condition -ceq "github.event_name == 'push' && github.ref == 'refs/heads/fp/v2-impl'") $condition
+    foreach ($skippedTitle in @($push.Skips)) {
+        $skippedStep = $workflowSteps | Where-Object Title -ceq $skippedTitle | Select-Object -First 1
+        Check "'$skippedTitle', which a push to fp/v2-impl skips, is a step of test.yml" ($null -ne $skippedStep) 'no such step'
+        if ($null -eq $skippedStep) { continue }
+        $if = [regex]::Match($skippedStep.Block, '(?m)^        if: ([^\r\n]+)').Groups[1].Value.Trim()
+        if ($skippedTitle -ceq 'Test') {
+            Check "'Test' is skipped on that push and nowhere else: if: `${{ !($condition) }}" ($if -ceq "`${{ !($condition) }}") "if: $if"
+        } else {
+            # The content-conflict check: its own selector says run=false on that push, before anything else it decides.
+            $decideBlock = ($workflowSteps | Where-Object { $_.Block -match '(?m)^        id: content-conflict-scope\s*$' } | Select-Object -First 1).Block
+            $pushAt = $decideBlock.IndexOf("if (`$env:GITHUB_EVENT_NAME -eq 'push' -and `$env:GITHUB_REF -eq 'refs/heads/fp/v2-impl') {")
+            Check "'$skippedTitle' is skipped on that push by content-conflict-scope writing run=false first" (
+                $pushAt -ge 0 -and $pushAt -lt $decideBlock.IndexOf("-ne 'pull_request'") -and
+                $decideBlock.IndexOf('run=false', $pushAt) -gt $pushAt) $decideBlock
+        }
+        $dependants = @($registered | Where-Object { $_.ContainsKey('Needs') -and @($_.Needs) -ccontains $skippedTitle })
+        if ($dependants.Count -eq 0) { continue }
+        $replacementTitle = if ($push.ContainsKey('Replaces') -and $push.Replaces.ContainsKey($skippedTitle)) { $push.Replaces[$skippedTitle] } else { $null }
+        Check "'$skippedTitle' is needed by $(($dependants | ForEach-Object Key) -join ', '), so a replacement makes its output on that push" (
+            $null -ne $replacementTitle) 'no Replaces entry'
+        if ($null -eq $replacementTitle) { continue }
+        $replacement = $workflowSteps | Where-Object Title -ceq $replacementTitle | Select-Object -First 1
+        Check "the replacement '$replacementTitle' is a step of test.yml" ($null -ne $replacement) 'no such step'
+        if ($null -eq $replacement) { continue }
+        $replacementIf = [regex]::Match($replacement.Block, '(?m)^        if: ([^\r\n]+)').Groups[1].Value.Trim()
+        Check 'the replacement runs on exactly that push' ($replacementIf -ceq "`${{ $condition }}") "if: $replacementIf"
+        Check 'the replacement builds the Host in Release, where the dependants read it' (
+            $replacement.Block -match [regex]::Escape('dotnet build src/ControlServer.Host/ControlServer.Host.csproj -c Release')) $replacement.Block
+        Check 'the replacement comes after the step it replaces' ($replacement.Index -gt $skippedStep.Index) "$($replacement.Index) vs $($skippedStep.Index)"
+        foreach ($dependant in $dependants) {
+            $dependantStep = $workflowSteps | Where-Object Title -ceq $dependant.Name | Select-Object -First 1
+            if ($null -eq $dependantStep) { continue }
+            Check "the replacement comes before $($dependant.Key), which needs what it makes" ($replacement.Index -lt $dependantStep.Index) "$($replacement.Index) vs $($dependantStep.Index)"
+        }
+    }
+}
+
 Finish

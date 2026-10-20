@@ -48,7 +48,19 @@
         # changed path -- would skip the one check that says so, and the job would stay green. About 15 seconds.
         @{ Step = 'Self-check scope self-check (which pull requests run which self-check)'; Why = 'checks the selector, so the selector does not decide it'
             RunsAlways = $true }
+        @{ Step = 'Build ControlServer.Host for the self-checks that read it (push to fp/v2-impl)'; Why = 'stands in for the Test step''s build on a push to fp/v2-impl, see PushToIntegration' }
     )
+
+    # A push to fp/v2-impl (the coordinator's ruling on the re-review of PR #808): the backstop for a self-check a pull
+    # request skipped, so every self-check runs and nothing else of weight does. The Test step's suite already ran on the
+    # pull request's own merge commit, and the staged content-conflict check takes about 200 s; both are skipped. What a
+    # skipped step's output was needed for is made by its replacement instead: the self-checks that Need the Test step read
+    # its Host build, so a Host build runs in its place. Test-TestSelfCheckScope.ps1 holds test.yml to all of this.
+    PushToIntegration = @{
+        Condition = "github.event_name == 'push' && github.ref == 'refs/heads/fp/v2-impl'"
+        Skips = @('Test', 'G3 runner self-check (staged content conflict)')
+        Replaces = @{ Test = 'Build ControlServer.Host for the self-checks that read it (push to fp/v2-impl)' }
+    }
 
     # What a build reads besides its project's own files (review S3 of PR #808): an input of every step that reads a build
     # or makes one. A pull request that only bumps Microsoft.Data.Sqlite in Directory.Packages.props changes what such a

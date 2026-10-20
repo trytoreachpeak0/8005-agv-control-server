@@ -1,0 +1,30 @@
+BAD   'Build ControlServer.Host for the self-checks that read it (push to fp/v2-impl)' is exactly one step of test.yml -> 0 step(s)
+swept 827 input paths over 39 steps
+inputs of the v3 check that are not inputs of the Scenario SQL check: 0
+BAD   'Test' is skipped on that push and nowhere else: if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/fp/v2-impl') }} -> if: 
+BAD   the replacement 'Build ControlServer.Host for the self-checks that read it (push to fp/v2-impl)' is a step of test.yml -> no such step
+BAD   'G3 runner self-check (staged content conflict)' is skipped on that push by content-conflict-scope writing run=false first ->       - name: Decide whether to run the staged content-conflict self-check
+        id: content-conflict-scope
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            $null = & ./scripts/Select-StagedG3ContentConflictRun.ps1 -NotAPullRequest -GitHubOutput $env:GITHUB_OUTPUT
+            exit 0
+          }
+          git fetch --no-tags --quiet --depth=2 origin $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch the merge commit's parents ($env:GITHUB_SHA)." }
+          $changed = @(git diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA)
+          if ($LASTEXITCODE -ne 0) { throw 'git diff against the base failed.' }
+          $decision = & ./scripts/Select-StagedG3ContentConflictRun.ps1 -ChangedPath $changed -GitHubOutput $env:GITHUB_OUTPUT
+          if (-not $decision.Run) {
+            Write-Host "::notice title=Staged content-conflict self-check skipped::$($decision.Reason)"
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Staged content-conflict self-check **skipped**: $($decision.Reason)"
+          }
+
+      # The stage root is short (the published tree runs deep) and unique per attempt, and is removed by the next step.
+
+2510 case(s) passed
+TEST_SELF_CHECK_SCOPE_SELFTEST_FAILED: 4 case(s)
+exit=1
