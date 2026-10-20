@@ -23,10 +23,10 @@
          `|` inside a failure reason is escaped, so it cannot break the table. A night is named by the morning it runs
          into, and says when main's trigger was planned, when GitHub fired it and how late, when the round started and
          its deadline (control-server#807); without the trigger's inputs it makes no lateness up.
-      3. Waiting for the CI real rig (l2.yml's real-rig job, the other holder of the cs-desktop runner): which runs are
-         busy, read from the REST shapes, and the wait on a fake clock -- idle at once, busy then idle, busy for the
-         whole limit (NOT_STARTED_RIG_BUSY, naming what was busy), and a query that cannot answer, which is busy, not
-         idle. Nothing is ever cancelled; the wait only decides whether this night starts.
+      3. Nothing waits for the CI real rig (control-server#807, review S1 of PR #817): the gate only resolves the
+         commits and the deadline, and the g3 job queues for the one cs-desktop runner, which a queue does not hold;
+         no rig query or rig-busy result is left in g3.yml or NightlyG3.psm1. Section 5 has a round queued into the
+         night that runs, and one queued past the deadline that starts nothing.
       4. The start deadline: a night runs from 19:00 CST to 19:00 CST, and a scheduled night starts no runner after
          07:00 CST of the morning it runs into, whichever side of midnight GitHub started it; a schedule started past
          that runs nothing; both hours are parameters; a manual dispatch is bounded by its own length. And how late
@@ -177,8 +177,8 @@ try {
         @{ Name = 'a round stopped at the deadline'; Args = @{ Trigger = 'schedule'; StoppedBy = 'NOT_STARTED_DEADLINE'; Verdicts = @(
                    (New-Verdict 'staged' 'PASS'), (New-Verdict 'restart' 'PASS'), (New-Verdict 'demand-bearing' 'PASS'), (New-Verdict 'journey' 'NOT_STARTED_DEADLINE')) }
            Contains = @('journey', 'NOT_STARTED_DEADLINE', '未跑完'); NotContains = @('全绿') }
-        @{ Name = 'not run at all, the rig busy'; Args = @{ Trigger = 'schedule'; StoppedBy = 'NOT_STARTED_RIG_BUSY'; Verdicts = @(); Note = 'run 999 job real-rig in_progress' }
-           Contains = @('未跑', 'NOT_STARTED_RIG_BUSY', 'actions/runs/123', 'run 999 job real-rig in_progress'); NotContains = @('全绿') }
+        @{ Name = 'not run at all, past the deadline at the gate'; Args = @{ Trigger = 'schedule'; StoppedBy = 'NOT_STARTED_DEADLINE'; Verdicts = @(); Note = 'a note' }
+           Contains = @('未跑', 'NOT_STARTED_DEADLINE', 'actions/runs/123', 'a note'); NotContains = @('全绿') }
         @{ Name = 'a manual dispatch says so'; Args = @{ Verdicts = $allPass; Trigger = 'workflow_dispatch'; Note = '红证据，临时分支' }
            Contains = @('手动触发', '红证据，临时分支'); NotContains = @() }
         @{ Name = 'a long red list is cut, and says how much'; Args = @{ Trigger = 'schedule'; Verdicts = @((New-Verdict 'staged' 'FAIL' $manyFailed)) }
@@ -200,16 +200,23 @@ try {
         @{ Name = 'a late night says planned, fired, how late, started and the deadline'; Args = @{ Trigger = 'schedule'; Verdicts = $allPass
                 TriggerCron = '37 14 * * *'; TriggeredAtUtc = [DateTimeOffset]::Parse('2026-10-20T17:19:11Z')
                 StartedAtUtc = [DateTimeOffset]::Parse('2026-10-20T17:21:00Z'); DeadlineUtc = [DateTimeOffset]::Parse('2026-10-20T23:00:00Z') }
-           Contains = @('2026-10-21', '计划 22:37', '实际触发 01:19（晚 162 分钟）', '本轮开始 01:21', '截止 07:00', '全绿'); NotContains = @('2026-10-20') }
+           Contains = @('2026-10-21', '计划 22:37', '实际触发 01:19（晚 162 分钟）', 'gate 01:21', '截止 07:00', '全绿'); NotContains = @('2026-10-20', '本轮开始') }
+        # Review S1 of PR #817: the g3 job queues for cs-desktop behind the real rig. When the round itself started, and
+        # how long it queued after the gate, keep a night the rig crowded out from reading as a late trigger.
+        @{ Name = 'a night that queued for cs-desktop says when the round started and how long it queued'; Args = @{ Trigger = 'schedule'; Verdicts = $allPass
+                TriggerCron = '37 14 * * *'; TriggeredAtUtc = [DateTimeOffset]::Parse('2026-10-20T14:37:09Z')
+                StartedAtUtc = [DateTimeOffset]::Parse('2026-10-20T14:38:00Z'); RoundStartedAtUtc = [DateTimeOffset]::Parse('2026-10-20T18:00:30Z')
+                DeadlineUtc = [DateTimeOffset]::Parse('2026-10-20T23:00:00Z') }
+           Contains = @('实际触发 22:37（晚 0 分钟）', 'gate 22:38', '本轮开始 02:00（在 cs-desktop 排队 202 分钟）', '截止 07:00'); NotContains = @() }
         # A night that starts on time, before midnight, is named by the morning it runs into, as one that GitHub started
         # after midnight is: the same night has one name.
         @{ Name = 'a night started before midnight is named by its morning'; Args = @{ Trigger = 'schedule'; Verdicts = $allPass
                 TriggerCron = '37 14 * * *'; TriggeredAtUtc = [DateTimeOffset]::Parse('2026-10-20T14:37:09Z')
                 StartedAtUtc = [DateTimeOffset]::Parse('2026-10-20T14:38:00Z'); DeadlineUtc = [DateTimeOffset]::Parse('2026-10-20T23:00:00Z') }
-           Contains = @('2026-10-21', '实际触发 22:37（晚 0 分钟）', '本轮开始 22:38'); NotContains = @('2026-10-20') }
+           Contains = @('2026-10-21', '实际触发 22:37（晚 0 分钟）', 'gate 22:38'); NotContains = @('2026-10-20') }
         @{ Name = 'past the deadline, without the trigger inputs: the deadline, and no lateness made up'; Args = @{ Trigger = 'schedule'; Verdicts = @()
                 StoppedBy = 'NOT_STARTED_DEADLINE'; DeadlineUtc = [DateTimeOffset]::Parse('2026-10-10T23:00:00Z') }
-           Contains = @('未跑：NOT_STARTED_DEADLINE', '截止 07:00', '本轮开始 01:05'); NotContains = @('计划', '实际触发', '（晚') }
+           Contains = @('未跑：NOT_STARTED_DEADLINE', '截止 07:00', 'gate 01:05'); NotContains = @('计划', '实际触发', '（晚', '本轮开始') }
         # Review S4 of PR #817: the comment names the night with the same night start the gate's deadline used. 20:30 CST
         # on the 20th is the night into the 21st by default, the night into the 20th when nights start at 21:00.
         @{ Name = 'the night is named with the gate''s night start'; Args = @{ Trigger = 'schedule'; Verdicts = $allPass; NightStartHourCst = 21
@@ -228,62 +235,18 @@ try {
             "$thrown missing=[$($missing -join ', ')] extra=[$($extra -join ', ')]"
     }
 
-    # --- 3. waiting for the CI real rig --------------------------------------------------------------------------
-    # Which l2.yml runs hold or want the cs-desktop runner, from the REST shapes of /actions/workflows/l2.yml/runs and
-    # /actions/runs/{id}/jobs: a real-rig job not completed, whatever its run's event. A synthetic dispatch or a pull
-    # request run carries a real-rig job too, skipped, and that is not busy.
-    $runs = @(
-        [ordered]@{ id = 1; event = 'workflow_dispatch'; status = 'in_progress' },
-        [ordered]@{ id = 2; event = 'workflow_dispatch'; status = 'queued' },
-        [ordered]@{ id = 3; event = 'workflow_dispatch'; status = 'in_progress' },
-        [ordered]@{ id = 4; event = 'pull_request'; status = 'in_progress' },
-        [ordered]@{ id = 5; event = 'workflow_dispatch'; status = 'completed' })
-    $jobsByRun = @{
-        1 = @([ordered]@{ name = 'scenarios'; status = 'completed'; conclusion = 'skipped' }, [ordered]@{ name = 'real-rig'; status = 'in_progress'; conclusion = $null })
-        2 = @([ordered]@{ name = 'real-rig'; status = 'queued'; conclusion = $null })
-        3 = @([ordered]@{ name = 'scenarios'; status = 'in_progress'; conclusion = $null }, [ordered]@{ name = 'real-rig'; status = 'completed'; conclusion = 'skipped' })
-        4 = @([ordered]@{ name = 'scenarios'; status = 'in_progress'; conclusion = $null }, [ordered]@{ name = 'real-rig'; status = 'completed'; conclusion = 'skipped' })
-        5 = @([ordered]@{ name = 'real-rig'; status = 'completed'; conclusion = 'success' })
-    }
-    $busy = $null
-    $thrown = $null
-    try { $busy = @(Select-NightlyG3BusyRealRigJob -Runs $runs -JobsByRun $jobsByRun) } catch { $thrown = $_.Exception.Message }
-    Check 'real-rig busy: the in-progress and the queued real-rig job, not the synthetic dispatch, the pull request or the finished one' `
-        ($null -eq $thrown -and $busy.Count -eq 2 -and ($busy -join ';') -match '\brun 1\b.*in_progress' -and ($busy -join ';') -match '\brun 2\b.*queued') "$thrown [$($busy -join '; ')]"
-
-    # The wait itself, on a fake clock: GetBusy answers in turn, Sleep advances the clock and is counted.
-    function Invoke-Wait([object[]]$Answers, [double]$WaitMinutes) {
-        $state = @{ Now = [DateTimeOffset]::Parse('2026-10-10T17:00:00Z'); Calls = 0; Sleeps = 0 }
-        $result = Wait-NightlyG3RigIdle -WaitMinutes $WaitMinutes -PollSeconds 60 `
-            -GetBusy {
-                $answer = $Answers[[Math]::Min($state.Calls, $Answers.Count - 1)]
-                $state.Calls++
-                if ($answer -is [string] -and $answer -like 'THROW:*') { throw $answer.Substring(6) }
-                return @($answer)
-            }.GetNewClosure() `
-            -Sleep { param($seconds) $state.Now = $state.Now.AddSeconds($seconds); $state.Sleeps++ }.GetNewClosure() `
-            -Now { $state.Now }.GetNewClosure()
-        return [pscustomobject]@{ Result = $result; Sleeps = $state.Sleeps; Elapsed = ($state.Now - [DateTimeOffset]::Parse('2026-10-10T17:00:00Z')).TotalMinutes }
-    }
-    $waitCases = @(
-        @{ Name = 'idle at once'; Answers = @(, @()); Idle = $true; Sleeps = 0; Contains = $null }
-        @{ Name = 'busy twice, then idle'; Answers = @('run 1 job real-rig in_progress', 'run 1 job real-rig in_progress', @()); Idle = $true; Sleeps = 2; Contains = $null }
-        @{ Name = 'busy for the whole 30 minutes'; Answers = @('run 1 job real-rig in_progress'); Idle = $false; Sleeps = 30; Contains = 'run 1 job real-rig in_progress' }
-        # A query that cannot answer is not idle: a night that ran blind beside the real rig is what this wait is for.
-        @{ Name = 'a query that keeps failing'; Answers = @('THROW:401 Bad credentials'); Idle = $false; Sleeps = 30; Contains = '401 Bad credentials' }
-        @{ Name = 'a query that fails once, then idle'; Answers = @('THROW:timeout', @()); Idle = $true; Sleeps = 1; Contains = $null }
-    )
-    foreach ($case in $waitCases) {
-        $outcome = $null
-        $thrown = $null
-        try { $outcome = Invoke-Wait $case.Answers 30 6>$null } catch { $thrown = $_.Exception.Message }
-        $text = if ($null -ne $outcome) { @($outcome.Result.busy) -join '; ' } else { '' }
-        Check "rig wait, $($case.Name): $(if ($case.Idle) { 'idle' } else { 'NOT_STARTED_RIG_BUSY' }) after $($case.Sleeps) sleeps" `
-            ($null -eq $thrown -and $null -ne $outcome -and $outcome.Result.idle -eq $case.Idle -and $outcome.Sleeps -eq $case.Sleeps -and
-             $outcome.Elapsed -le 30 -and ($null -eq $case.Contains -or $text.Contains($case.Contains))) `
-            "$thrown idle=$(${outcome}?.Result.idle) sleeps=$(${outcome}?.Sleeps) elapsed=$(${outcome}?.Elapsed) busy=[$text]"
-    }
-
+    # --- 3. nothing waits for the CI real rig ----------------------------------------------------------------------
+    # Until control-server#807 the gate polled l2.yml's real-rig job for up to 30 minutes on the one headless runner and
+    # gave up as NOT_STARTED_RIG_BUSY. A night now starts at 22:37 CST and has until 07:00, and waiting for that on
+    # headless would hold the runner every L2 scenario needs for hours (review S1 of PR #817). So the g3 job simply
+    # queues for cs-desktop: GitHub's queue holds no runner, the real rig and the round take the one cs-desktop runner in
+    # turn, and each runner of the round checks the deadline before it starts (section 5).
+    $workflowText = Get-Content -Raw -LiteralPath (Join-Path (Split-Path -Parent $ScriptRoot) '.github\workflows\g3.yml')
+    $moduleText = Get-Content -Raw -LiteralPath (Join-Path $ScriptRoot 'NightlyG3.psm1')
+    $rigWords = 'RIG_BUSY|RigIdle|BusyRealRig|l2\.yml/runs'
+    Check 'nothing waits for the CI real rig: no rig query or rig-busy result in g3.yml or NightlyG3.psm1' `
+        ($workflowText -notmatch $rigWords -and $moduleText -notmatch $rigWords) `
+        "g3.yml: [$(([regex]::Matches($workflowText, $rigWords) | ForEach-Object Value) -join ', ')] module: [$(([regex]::Matches($moduleText, $rigWords) | ForEach-Object Value) -join ', ')]"
     # --- 4. the start deadline -----------------------------------------------------------------------------------
     # A night runs from 19:00 CST to 19:00 CST the next day, and a scheduled night starts no runner after 07:00 CST
     # (23:00 UTC) of the morning it runs into (control-server#807; 04:00 until then, which only kept clear of the golden
@@ -440,6 +403,22 @@ exit $(if ($red) { 1 } else { 0 })
          $round.Results['stoppedBy'] -ceq 'NOT_STARTED_DEADLINE' -and $null -eq (Get-Arguments $round.Work 'restart') -and $round.Exit -eq 1) `
         "exit $($round.Exit); $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
 
+    # Review S1 of PR #817: the g3 job queues for cs-desktop, so a round can start hours after the gate. Queued into the
+    # night (the gate at 22:37, the round at 02:00, the deadline 07:00: five hours left) it runs all four; queued past
+    # the deadline it starts none, and the whole night reads NOT_STARTED_DEADLINE.
+    $round = Invoke-Round 'queued-into-the-night' @{} @{ StartDeadlineUtc = [DateTimeOffset]::UtcNow.AddHours(5).ToString('o') }
+    $verdicts = @(${round}.Results?['verdicts'] | Where-Object { $null -ne $_ })
+    Check 'round queued into the night, five hours before the deadline: all four run and PASS, exit 0' `
+        (($verdicts | ForEach-Object { $_['result'] }) -join ',' -ceq 'PASS,PASS,PASS,PASS' -and $null -ne (Get-Arguments $round.Work 'journey') -and $round.Exit -eq 0) `
+        "exit $($round.Exit); $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
+    $round = Invoke-Round 'queued-past-the-deadline' @{} @{ StartDeadlineUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('o') }
+    $verdicts = @(${round}.Results?['verdicts'] | Where-Object { $null -ne $_ })
+    $started = @($order | Where-Object { $null -ne (Get-Arguments $round.Work $_) })
+    Check 'round queued past the deadline: all four NOT_STARTED_DEADLINE, none started, exit 1' `
+        (($verdicts | ForEach-Object { $_['result'] }) -join ',' -ceq 'NOT_STARTED_DEADLINE,NOT_STARTED_DEADLINE,NOT_STARTED_DEADLINE,NOT_STARTED_DEADLINE' -and
+         $round.Results['stoppedBy'] -ceq 'NOT_STARTED_DEADLINE' -and $started.Count -eq 0 -and $round.Exit -eq 1) `
+        "exit $($round.Exit); started [$($started -join ', ')]; $(($verdicts | ForEach-Object { "$($_['runner'])=$($_['result'])" }) -join ', ') $($round.Output)"
+
     # The deadline passing during the memory wait (review F1 of PR #591): memory reads high until after the deadline, then
     # low. The deadline is checked after the wait, so staged is NOT_STARTED_DEADLINE; checked before it, staged would start.
     $highProbe = Join-Path $scratch 'commit-probe.ps1'
@@ -491,6 +470,11 @@ if ([DateTimeOffset]::UtcNow -lt [DateTimeOffset]::Parse($env:NIGHTLY_G3_TEST_CO
         ($workflow -match '(?m)^      trigger_cron:\s*$' -and $workflow -match '(?m)^      triggered_at:\s*$' -and
          $reportJobText -match 'inputs\.trigger_cron' -and $reportJobText -match 'inputs\.triggered_at' -and $reportJobText -match 'needs\.gate\.outputs\.deadline' -and
          $reportJobText -match '-TriggerCron\b' -and $reportJobText -match '-TriggeredAtUtc\b' -and $reportJobText -match '-DeadlineUtc\b') 'see g3.yml'
+    # Review S1 of PR #817: the g3 job's first step records when the round started, and the report passes it on.
+    $g3JobText = [regex]::Match($workflow, '(?ms)^  g3:\s*$.*?(?=^  \w[\w-]*:\s*$)').Value
+    Check 'g3.yml: the g3 job records when it started in its first step, and the report passes it to the comment as -RoundStartedAtUtc' `
+        ($g3JobText -match '(?ms)^    steps:\s*\n      - name: Round start\s*\n        id: start\b' -and $g3JobText -match 'round_started:\s*\$\{\{\s*steps\.start\.outputs\.started\s*\}\}' -and
+         $reportJobText -match 'needs\.g3\.outputs\.round_started' -and $reportJobText -match '-RoundStartedAtUtc\b') 'see g3.yml'
     # Review S4 of PR #817: the gate's deadline and the report's night name read the night start from one place, the
     # workflow's env, so they cannot disagree; the deadline hour comes from there too.
     $gateJobText = [regex]::Match($workflow, '(?ms)^  gate:\s*$.*?(?=^  \w[\w-]*:\s*$)').Value
