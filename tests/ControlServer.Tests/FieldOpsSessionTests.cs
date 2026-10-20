@@ -111,9 +111,19 @@ public sealed class FieldOpsSessionTests
 
     private sealed class Session : IAsyncDisposable
     {
+        /// <summary>How long one command may take to answer. A session that never answers fails the test instead of hanging it.</summary>
+        private static readonly TimeSpan AnswerTimeout = TimeSpan.FromSeconds(60);
+
         private readonly Process _process;
 
-        private Session(Process process) => _process = process;
+        // Drained from the start: a process that fills its stderr pipe (a usage text) blocks before it ever closes stdout.
+        private readonly Task<string> _errors;
+
+        private Session(Process process)
+        {
+            _process = process;
+            _errors = process.StandardError.ReadToEndAsync(CancellationToken.None);
+        }
 
         public static Session Start(params string[] options)
         {
@@ -142,9 +152,11 @@ public sealed class FieldOpsSessionTests
             await _process.StandardInput.WriteLineAsync(line.AsMemory(), Token);
             await _process.StandardInput.FlushAsync(Token);
             List<string> lines = [];
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(Token);
+            timeout.CancelAfter(AnswerTimeout);
             while (true)
             {
-                string? read = await _process.StandardOutput.ReadLineAsync(Token);
+                string? read = await _process.StandardOutput.ReadLineAsync(timeout.Token);
                 Assert.True(read is not null, $"The session ended before answering '{line}': {string.Join('\n', lines)}");
                 if (read.StartsWith("##fieldops-session-exit ", StringComparison.Ordinal))
                 {
@@ -174,10 +186,9 @@ public sealed class FieldOpsSessionTests
                 // A session that refused to start has already exited: its end of the pipe is gone.
             }
             Task<string> rest = _process.StandardOutput.ReadToEndAsync(Token);
-            Task<string> errors = _process.StandardError.ReadToEndAsync(Token);
             await _process.WaitForExitAsync(Token);
             _ = await rest;
-            _ = await errors;
+            _ = await _errors;
             return _process.ExitCode;
         }
 
