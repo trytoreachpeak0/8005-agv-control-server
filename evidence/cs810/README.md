@@ -29,7 +29,7 @@ no longer delete each other's build. Self-check: `scripts/l2/Test-L2PeerPublishC
 
 ## green/
 
-- `01-selfcheck-after-fix.txt` — all 27 assertions of the 8 cases pass.
+- `01-selfcheck-after-fix.txt` — all 29 assertions of the 8 cases pass.
 - `02-test-selfcheck-scope.txt` — `scripts/Test-TestSelfCheckScope.ps1` with the new step registered in
   `scripts/TestSelfCheckScope.psd1` (key `l2_peer_publish_cache`): passed.
 - `03-real-publish-old-vs-new.txt` — a real `dotnet publish` of onboard-hmi `2b25aa5d` and slots-simulator `fb5f7c59`,
@@ -44,3 +44,14 @@ no longer delete each other's build. Self-check: `scripts/l2/Test-L2PeerPublishC
   regression check only: synthetic scenarios do not call `Get-L2PeerPublish` (`scripts/l2/README.md`, real onboard only).
 - `06-ci-real-rig-39471104014.txt` — CI real rig `real-onboard-normal-load` ×1 on the fix commit: success. The onboard was
   built through the new lock and rename; the simulator reused a cache directory the old code had written on the runner.
+
+## review/ (independent review of PR #822: no must-fix, S2-S4 adopted, S1 left as a residual risk)
+
+- `01-s2-s4-cases-before-fix.txt` — two new cases on `6fa11f8c` (tests only). Case 9 (relative `-CacheRoot`, review
+  S2) is red: the rename resolved the relative root against the process's current directory and failed. Case 10 (a
+  cache directory appears mid-build, review S4) is green: the behaviour was already right, as the review's probe P1 found.
+- `02-selfcheck-after-fix.txt` — on `654f511a` (S2: the root is resolved against PowerShell's location first; S3:
+  the build command's output is discarded): all 34 assertions of the 10 cases pass.
+- `03-mutation-M7-failed-rename-keeps-temp.txt` — the `finally` that removes the temporary directory taken out:
+  case 10 (and case 2) red. So case 10 does catch a failed rename that leaves its build behind.
+- `04-mutation-M8-relative-root-not-resolved.txt` — the S2 resolution taken out: case 9 red.
