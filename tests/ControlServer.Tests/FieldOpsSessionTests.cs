@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
 using static ControlServer.Tests.WaitingPointImportHarness;
 
 namespace ControlServer.Tests;
@@ -69,6 +71,12 @@ public sealed class FieldOpsSessionTests
         SessionReply read = await session.RunAsync(Read, "--database", harness.DatabasePath);
         Assert.Equal((0, 0), (imported.ExitCode, read.ExitCode));
 
+        // This process opened the file too, to migrate it, and its pool keeps that connection: only the session may be
+        // what stops the move below.
+        using (SqliteConnection own = new(ControlServerSqlite.ForDatabaseFile(harness.DatabasePath)))
+        {
+            SqliteConnection.ClearPool(own);
+        }
         string moved = harness.DatabasePath + ".moved";
         File.Move(harness.DatabasePath, moved);
         File.Move(moved, harness.DatabasePath);
