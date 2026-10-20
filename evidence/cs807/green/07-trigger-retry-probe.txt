@@ -1,0 +1,6 @@
+::warning title=Nightly G3 trigger::g3.yml refused trigger_cron/triggered_at ({ "message": "Unexpected inputs provided: [\u0022triggered_at\u0022, \u0022trigger_cron\u0022, \u0022cs807_probe_unknown\u0022]", "documentation_url": "https://docs.github.com/rest/actions/workflows#create-a-workflow-dispatch-event", "status": "422" }); dispatching without them, so tonight's comment will not say how late.
+PROBE: retry recorded, not sent: {"inputs":{"nightly":"true","ref":"fp/v2-impl"},"ref":"fp/v2-impl"}
+Dispatched g3.yml on fp/v2-impl (cron '37 14 * * *', triggered at '2026-10-19T21:19:11.0000000+00:00'). The run: https://github.com/trytoreachpeak0/8005-agv-control-server/actions/workflows/g3.yml
+POSTs: 2
+  {"inputs":{"triggered_at":"2026-10-19T21:19:11.0000000+00:00","nightly":"true","ref":"fp/v2-impl","trigger_cron":"37 14 * * *"},"ref":"fp/v2-impl"}
+  {"inputs":{"nightly":"true","ref":"fp/v2-impl"},"ref":"fp/v2-impl"}
