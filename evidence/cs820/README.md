@@ -9,6 +9,7 @@
 | `queue/after-burst-1913.txt` | 改后：19:13～19:14 同时派 2 轮 L2、2 轮 test 与 1 轮真装置 |
 | `queue/jobs-1600-1730.txt`、`queue/jobs-1719-1820.txt` | 新机上所有作业的起止：第二个 cs-test 实例加入前后、加入后第一个小时 |
 | `samples/commit-cpu-*.csv` | 从宿主每 30 秒经 ssh 读的整机已提交内存、提交上限、客户机可见内存、CPU（5 秒平均）、Runner.Worker 个数 |
+| `m1/red/`、`m1/green/` | 审查 M1：`Test-G3RunnerPorts.ps1` 两份同时起、各钉 CPU 0～3、连跑 3 轮（驱动脚本 `m1/Invoke-ConcurrentSelfCheck.ps1`）。红在 `13103046f`（合入 #819 后、未修），每轮恰好一份 exit=1；绿在加锁之后，3 轮 6 份全 exit=0，每轮第二份打出 `SELF_CHECK_LOCK_WAITING` |
 | `l2-red/` | 扎堆第二轮 L2（run 39481673510）唯一的红：`charging-no-progress-isolates` 的判据结论原文 |
 
 ## 读法

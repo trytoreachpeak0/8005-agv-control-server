@@ -18,14 +18,14 @@
 | T4 | 测试里的端口 | 回环 | 已按运行隔离 | 起真进程的（`ControlServerDatabaseLockTests` 等）用 `FreePort()`，WebHost 用 `:0`；`GateHeldOnboardSendTests` 的 58999 只做参数校验、不绑定 |
 | T5 | 出站 schema 编译缓存 | `%TEMP%\controlserver-schema-cache`（共用） | 有锁排队（按设计可并发） | `CompiledSchemaCache` 先写 GUID 临时文件再原子 rename，读坏了当未命中，rename 被占就放弃；本来就有 4 个子进程同时读写 |
 | T6 | NuGet 全局包目录与 http 缓存 | `NetworkService\.nuget\packages`（共用） | 有锁排队 | NuGet 自己的跨进程锁，多 restore 并发是它的常规用法 |
-| T7 | 命名互斥体 | — | 不涉及 | test.yml 跑的脚本都不拿 `Global\W2G-L2PortBlock*` 或 `Global\W2G-InteractiveDesktop`（#583 已把拿锁的五个自检排除在外） |
+| T7 | 命名互斥体与写死端口 | 机器级 | **会撞要改（已改）** | 盘点时（`e094de3e`）test.yml 的脚本都不拿 `Global\W2G-L2PortBlock*` 或 `Global\W2G-InteractiveDesktop`，这一条当时成立。**更正（PR #821 审查 M1）**：cs#809（PR #819，10-20 19:15 UTC 合入）加了 `Test-G3RunnerPorts.ps1`，它在写死的 39011、39013 上起监听，拿写死的 `Global\W2G-Port-39001…39031`（部分不等待），并断言 39019 空闲；两份并发时每轮恰好一份 exit=1。已在 PR #821 用机器级锁 `Global\W2G-SelfCheck-G3RunnerPorts` 包住整个脚本，两份排队约 10 秒，证据在 `evidence/cs820/m1/` |
 | T8 | 自检脚本的临时目录 | `%TEMP%` | 已按运行隔离 | `Test-DataRootLockWait`、`Test-InstallerTwoCarPaths`、`Test-G3*`、`Test-L2*`、`Test-NightlyG3` 等都是 `<前缀>-<GUID>`；`Test-ScenarioSqlExplain` 用 `RUNNER_TEMP` |
 | T9 | content-conflict 的 stage 根 | `C:\ccsc-<run_id>-<attempt>` | 已按运行隔离 | 同一 run+attempt 只会落到一个实例 |
 | T10 | content-conflict 起的 ControlServer 端口 | 回环 | 已按运行隔离（小风险） | `TcpListener(Loopback, 0)` 取空端口再放给进程，有一个毫秒级的“取到后被别人抢”窗口；以前已与 l2、车载端同机并存，第二个 test 实例只是略增概率，不改 |
 | T11 | `C:\ProgramData\8005\…` | — | 不涉及 | 测试里只作字符串比较；`Test-ScenarioSqlExplain` 只读校验 MVP 生产库路径没被碰过；`Test-ParallelInstance` 只校验定义文本 |
 | T12 | 按进程名杀进程 | — | 不涉及 | tests 与 scripts 里没有 `GetProcessesByName`/`Stop-Process -Name`/`taskkill /IM` |
 
-结论：**test.yml 没有“会撞要改”的项**，`runs-on: [self-hosted, cs-test]` 不用改，直接加第二个带 `cs-test` 的实例即可。
+结论（盘点时）：test.yml 没有“会撞要改”的项，`runs-on: [self-hosted, cs-test]` 不用改。**合入 #819 之后有一项会撞（见 T7 的更正），已在 PR #821 修好。**以后 test.yml 新加的自检，凡是用写死端口或写死锁名的，都要照这条处理。
 要改的只有注释（3～12 行和 75 行附近“只有一个 cs-test runner”的说法），这几行不是 cs#803 的自检与跳过映射。
 
 剩下的是资源而不是冲突：

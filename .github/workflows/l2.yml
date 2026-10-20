@@ -18,11 +18,11 @@ name: l2
 # plan b). Debugging a scenario while watching it stays on the laptop.
 #
 #   - It needs an interactive desktop (two WPF windows appear), so it runs on
-#     win11-01-control-server-desktop, the only runner labelled `cs-desktop`: an interactive runner in
-#     the autologon session 1, installed by the workspace's
-#     remote-ops/factory-server/scripts/18-install-control-server-desktop-runner.ps1. The two service
-#     runners in session 0 cannot run it at all.
-#   - That desktop is also win11-01's golden WPF renderer and 8005-mes-ingest's desktop test host.
+#     vmwin01-control-server-desktop on vm-win-01 (win11-01-control-server-desktop on vm01 until 2026-10-20), the
+#     only runner labelled `cs-desktop`: an interactive runner in the autologon session 1, started by a logon-triggered
+#     scheduled task (the workspace's remote-ops/factory-server/scripts/18-install-control-server-desktop-runner.ps1
+#     installed the vm01 one). The service runners in session 0 cannot run it at all.
+#   - On vm01 that desktop was also the golden WPF renderer and 8005-mes-ingest's desktop test host, which stayed there.
 #     `concurrency` cannot see across repositories, so the exclusion is the machine-wide mutex
 #     `Global\W2G-InteractiveDesktop`: Invoke-L2Scenario.ps1 takes it per real-onboard scenario and
 #     queues up to 30 minutes (scripts/DesktopLock.psm1), and since 8005-mes-ingest#8 that

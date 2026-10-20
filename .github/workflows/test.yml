@@ -1,15 +1,15 @@
 name: test
 
-# Runs on win11-01 (factory server Hyper-V guest), on this repository's second
-# runner, win11-01-control-server-2. This workspace does not use GitHub-hosted
-# runners; see the workspace root CLAUDE.md for why.
+# Runs on vm-win-01 (a Hyper-V guest on the control laptop since 2026-10-20; win11-01 before), on the two runners
+# that carry 'cs-test': vmwin01-control-server-2 and, since control-server#820, vmwin01-control-server-3, so test
+# jobs of two refs run side by side. This workspace does not use GitHub-hosted runners; see the workspace root
+# CLAUDE.md for why.
 #
-# The labels split the work so that test and l2 run side by side and two l2 jobs
-# never do: only the second runner carries 'cs-test', and it does NOT carry
-# 'headless', which l2.yml and release.yml ask for. Two l2 jobs at once would
-# queue on the same four port slots (Global\W2G-L2PortBlock-slotN) and neither
-# would finish sooner. If the second runner is ever gone or wedged, switching the
-# runs-on line below back to [self-hosted, headless] restores the old setup.
+# Neither carries 'headless' (release.yml, g3.yml's short jobs) or 'cs-l2' (l2.yml's scenarios), so test and l2 never
+# take each other's runner. Two test jobs on one machine share the NETWORK SERVICE profile: what this job writes is
+# per checkout, per run or GUID-named, and the one self-check with fixed ports and port locks, Test-G3RunnerPorts.ps1,
+# queues on a machine-wide lock of its own (control-server#820). If both cs-test runners are ever gone or wedged,
+# switching the runs-on line below to [self-hosted, headless] puts the job back on a runner.
 on:
   push:
     # fp/v2-impl since control-server#803 (review S2 of PR #808): pull requests skip the self-checks whose inputs they do not
@@ -30,8 +30,8 @@ on:
 # cancels the runner's broker long-poll; the backoff retries exhaust and the
 # session wedges without self-healing. Measured on 2026-09-03: 4 hours 14 minutes
 # of dead CI, recovered only when GitHub pushed a RunnerRefreshConfigMessage.
-# test has exactly one runner that may take it, so a wedged session stops every
-# test run in this repository. A duplicate two-minute run is the cheaper outcome.
+# test has two runners that may take it (control-server#820), so a wedged session halves
+# test throughput in this repository. A duplicate two-minute run is the cheaper outcome.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -52,9 +52,8 @@ jobs:
     # upload and post-checkout is about 67 minutes, and 80 leaves the rest as margin. This limit only
     # acts when something has already gone wrong, so headroom costs nothing. Adding a step before
     # Test means recomputing this number: if the job limit fires before the step's, the run is
-    # "cancelled" again. Splitting the suite into two jobs buys nothing here: only
-    # win11-01-control-server-2 carries 'cs-test' and it runs one job at a time, so the halves would
-    # queue behind each other.
+    # "cancelled" again. Splitting the suite into two jobs buys little here: two runners
+    # carry 'cs-test' (control-server#820), and the halves would take both from the next pull request.
     # 95 since control-server#567, which added two steps after Test: the v3 script-branch check (seconds) and the
     # staged content-conflict check (197 s on the control host, its own limit 15, and only on pull requests that change
     # what it checks). control-server#571 added the parallel instance self-check after Test as well (about 40 s, its own
