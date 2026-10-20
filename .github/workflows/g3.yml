@@ -85,6 +85,11 @@ concurrency:
 env:
   G3_REF: ${{ inputs.ref || 'fp/v2-impl' }}
   G3_ONBOARD_REF: refs/heads/w2g/fp-v2-impl
+  # A night runs from G3_NIGHT_START_HOUR_CST to the same hour the next day and starts no runner after
+  # G3_DEADLINE_HOUR_CST of the morning it runs into (control-server#807). Here once, so that the gate's deadline and the
+  # report's night name cannot disagree (review S4 of PR #817).
+  G3_NIGHT_START_HOUR_CST: '19'
+  G3_DEADLINE_HOUR_CST: '7'
 
 jobs:
   register:
@@ -126,7 +131,8 @@ jobs:
           $started = [DateTimeOffset]::UtcNow
           # A night arrives as a workflow_dispatch from main's trigger; nightly=true grades it as the schedule it stands for.
           $kind = if ($env:G3_NIGHTLY -eq 'true') { 'schedule' } else { $env:GITHUB_EVENT_NAME }
-          $deadline = Get-NightlyG3StartDeadline -EventName $kind -StartedAtUtc $started
+          $deadline = Get-NightlyG3StartDeadline -EventName $kind -StartedAtUtc $started `
+              -NightStartHourCst $env:G3_NIGHT_START_HOUR_CST -DeadlineHourCst $env:G3_DEADLINE_HOUR_CST
           $controlServer = (git rev-parse HEAD).Trim()
           $onboard = ((git ls-remote https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git $env:G3_ONBOARD_REF) -split '\s+')[0]
           if ($onboard -notmatch '^[0-9a-f]{40}$') { throw "Unable to read the tip of $env:G3_ONBOARD_REF in 8005-agv-onboard-hmi: '$onboard'" }
@@ -327,7 +333,7 @@ jobs:
           if ([DateTimeOffset]::TryParse($env:G3_DEADLINE, [cultureinfo]::InvariantCulture, $styles, [ref]$parsed)) { $deadline = $parsed }
           $body = Format-NightlyG3Comment -Verdicts $verdicts -RunUrl $runUrl -Trigger $kind -Ref $env:G3_REF `
               -Commits $commits -StartedAtUtc $started -StoppedBy $stoppedBy -Note ($notes -join ' ') -JobResult $env:G3_JOB_RESULT `
-              -TriggerCron $env:G3_TRIGGER_CRON -TriggeredAtUtc $triggeredAt -DeadlineUtc $deadline
+              -TriggerCron $env:G3_TRIGGER_CRON -TriggeredAtUtc $triggeredAt -DeadlineUtc $deadline -NightStartHourCst $env:G3_NIGHT_START_HOUR_CST
           $body | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           $comment = Send-NightlyG3Comment -Repository $env:GITHUB_REPOSITORY -Issue ([int]$env:G3_ISSUE) -Body $body -Token $env:GH_TOKEN
           Write-Host "Commented: $($comment.html_url)"

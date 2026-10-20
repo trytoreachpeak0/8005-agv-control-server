@@ -89,7 +89,9 @@ function Format-NightlyG3Comment {
         [string]$TriggerCron,
         [Nullable[DateTimeOffset]]$TriggeredAtUtc,
         # The gate's start deadline, said so that a night that did not start reads as late, not as red.
-        [Nullable[DateTimeOffset]]$DeadlineUtc
+        [Nullable[DateTimeOffset]]$DeadlineUtc,
+        # The night start the gate's deadline used, so that the night is named by the same night (review S4 of PR #817).
+        [ValidateRange(0, 23)][int]$NightStartHourCst = 19
     )
 
     # One comment a night on control-server#581, in Chinese because a person reads it. Its absence means the night did
@@ -98,7 +100,7 @@ function Format-NightlyG3Comment {
 
     $cst = [TimeSpan]::FromHours(8)
     # A night is named by the morning it runs into, whichever side of midnight it started; anything else by its own date.
-    $night = if ($Trigger -eq 'schedule') { (Get-NightlyG3NightMorning -StartedAtUtc $StartedAtUtc).ToString('yyyy-MM-dd') } else {
+    $night = if ($Trigger -eq 'schedule') { (Get-NightlyG3NightMorning -StartedAtUtc $StartedAtUtc -NightStartHourCst $NightStartHourCst).ToString('yyyy-MM-dd') } else {
         $StartedAtUtc.ToOffset($cst).ToString('yyyy-MM-dd') }
     $red = @($Verdicts | Where-Object { $_.result -in 'FAIL', 'ERROR' })
     $notStarted = @($Verdicts | Where-Object { "$($_.result)" -like 'NOT_STARTED_*' })
@@ -239,6 +241,10 @@ function Get-NightlyG3StartDeadline {
     # it only kept clear of 8005-mes-ingest's golden-renderer verify near 05:30, which did not move to vm-win-01, while
     # GitHub started the 01:00 trigger two to six hours late. A manual dispatch: DispatchMinutes after its start.
     if ($EventName -ceq 'schedule') {
+        # A deadline at or after the hour the next night starts would fall inside that next night (review S4 of PR #817).
+        if ($DeadlineHourCst -ge $NightStartHourCst) {
+            throw "DeadlineHourCst ($DeadlineHourCst) must be earlier than NightStartHourCst ($NightStartHourCst)."
+        }
         $morning = Get-NightlyG3NightMorning -StartedAtUtc $StartedAtUtc -NightStartHourCst $NightStartHourCst
         return ([DateTimeOffset]::new($morning.Year, $morning.Month, $morning.Day, $DeadlineHourCst, 0, 0, [TimeSpan]::FromHours(8))).ToUniversalTime()
     }
