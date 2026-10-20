@@ -59,9 +59,17 @@ jobs:
       # This is not cosmetic: New-WireToGateReleaseCandidate.ps1 refuses to build
       # from a dirty ControlServer worktree, and a mirror checked out at the
       # workspace root *is* an untracked directory inside that worktree.
+      # Without evidence/ (control-server#804): about nine tenths of the repository's files, and the release reads none
+      # of them. New-WireToGateReleaseCandidate.ps1 and Publish-ControlServer.ps1 read src/, docs/RELEASE-CANDIDATE.md
+      # and scripts/, scan src/ and the packages for secrets, and ask git for HEAD and a clean status -- files left
+      # out by a sparse checkout are not reported as changed.
       - uses: actions/checkout@v7
         with:
           path: control-server
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/evidence/
 
       # A scratch mirror of the read-only onboard repository. fetch-depth 0
       # because the requested commit is an input and need not be the branch tip.
