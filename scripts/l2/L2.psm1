@@ -625,6 +625,11 @@ function Get-L2PeerPublish {
     }
     $commit = (& git -C $SourceRepository rev-parse HEAD).Trim()
 
+    # Absolute from here on, against PowerShell's location as the cmdlets below would resolve it: the lock name, git
+    # and the rename are .NET or native calls, which would resolve a relative root against the process's current
+    # directory instead (review S2 of PR #822).
+    $CacheRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($CacheRoot)
+
     $target = Join-Path $CacheRoot "$Name-$commit"
     $publish = Join-Path $target 'publish'
     $stamp = Join-Path $target 'publish.ok'
@@ -687,7 +692,8 @@ function Get-L2PeerPublish {
             if ($LASTEXITCODE -ne 0) { throw "Could not check out $commit in the $Name clone; see $log" }
 
             try {
-                & $PublishCommand $clone $ProjectPath (Join-Path $building 'publish') $log
+                # Discarded, so a build command that writes output cannot turn the return value into an array.
+                $null = & $PublishCommand $clone $ProjectPath (Join-Path $building 'publish') $log
             } catch {
                 throw "Publishing $Name failed; see $log ($($_.Exception.Message))"
             }
