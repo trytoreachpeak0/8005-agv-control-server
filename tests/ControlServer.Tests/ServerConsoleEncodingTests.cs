@@ -57,6 +57,36 @@ public sealed class ServerConsoleEncodingTests : IAsyncDisposable
             $"关卡 ({Convert.ToHexString(utf8)}) is not in the redirected output as UTF-8. The line it is in: {Hex(bytes, LockWaitingLog)}");
     }
 
+    /// <summary>
+    /// The last line before the process dies is on the redirected stream, UTF-8: an L2 scenario's verdict often rests on
+    /// it. The lock is held past <c>DatabaseLockStartup.Wait</c>, so the host logs <c>Startup refused</c> with the database
+    /// path and its start throws out of Program.cs, unhandled: no host shutdown, no orderly flush of anything.
+    /// </summary>
+    [Fact]
+    public async Task TheLastLineBeforeAnUnhandledExitIsOnTheRedirectedStreamAsUtf8()
+    {
+        string database = Path.Combine(_root, "关卡", "controlserver.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(database)!);
+        using ControlServerDatabaseLock held = ControlServerDatabaseLock.TryAcquire(database)
+            ?? throw new InvalidOperationException("The test could not take the lock on its own fresh database.");
+
+        _host = Process.Start(HostStart(database))!;
+        MemoryStream stdout = new();
+        MemoryStream stderr = new();
+        Task copyingOut = CollectAsync(_host.StandardOutput.BaseStream, stdout);
+        Task copyingErr = CollectAsync(_host.StandardError.BaseStream, stderr);
+        using CancellationTokenSource bounded = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        bounded.CancelAfter(TimeSpan.FromSeconds(90));
+        await _host.WaitForExitAsync(bounded.Token);
+        await Task.WhenAll(copyingOut, copyingErr);
+
+        Assert.NotEqual(0, _host.ExitCode);
+        string text = Encoding.UTF8.GetString(stdout.ToArray());
+        string last = text.TrimEnd('\r', '\n').Split('\n')[^1];
+        Assert.Contains("Startup refused: DATABASE_IN_USE", last, StringComparison.Ordinal);
+        Assert.Contains("关卡", last, StringComparison.Ordinal);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_host is not null)
