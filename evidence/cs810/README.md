@@ -42,3 +42,5 @@ no longer delete each other's build. Self-check: `scripts/l2/Test-L2PeerPublishC
   in a different directory, not from this change.
 - `05-synthetic-normal-load/` — one synthetic L2 round (`normal-load`, port slot 5) on the fix commit: PASS. A
   regression check only: synthetic scenarios do not call `Get-L2PeerPublish` (`scripts/l2/README.md`, real onboard only).
+- `06-ci-real-rig-39471104014.txt` — CI real rig `real-onboard-normal-load` ×1 on the fix commit: success. The onboard was
+  built through the new lock and rename; the simulator reused a cache directory the old code had written on the runner.
