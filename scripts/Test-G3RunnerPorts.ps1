@@ -267,15 +267,21 @@ Start-Sleep -Seconds 120
                 "$(${parameter}?[0]?.Extent.Text)"
         }
 
-        # No port number left anywhere but the param block: every use goes through the parameter.
+        # No port number left anywhere but the param block -- and the defaults Get-G3RunnerProvenance compares the
+        # parameters with, which Test-G3EvidenceHonesty.ps1 pins to the param block's: every use goes through the
+        # parameter.
         $portValues = @($spec.Ports.Values)
         $pattern = '(?<![\d.])(' + ($portValues -join '|') + ')(?![\d.])'
+        $provenanceSettings = @(Get-Calls $ast 'Get-G3RunnerProvenance' | ForEach-Object { Get-ParameterArgument $_ 'Settings' } |
+                Where-Object { $null -ne $_ })
         $literals = @($ast.FindAll({ param($node)
                     ($node -is [System.Management.Automation.Language.ConstantExpressionAst] -or
                      $node -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) -and
                     $node.Extent.StartOffset -gt $ast.ParamBlock.Extent.EndOffset }, $true) |
-                Where-Object { $_.Extent.Text -match $pattern })
-        Check "${file}: no port number outside the param block" ($literals.Count -eq 0) `
+                Where-Object { $_.Extent.Text -match $pattern } |
+                Where-Object { $literal = $_; @($provenanceSettings | Where-Object {
+                            $literal.Extent.StartOffset -ge $_.Extent.StartOffset -and $literal.Extent.EndOffset -le $_.Extent.EndOffset }).Count -eq 0 })
+        Check "${file}: no port number outside the param block and the provenance's -Settings defaults" ($literals.Count -eq 0) `
             (($literals | ForEach-Object { "line $($_.Extent.StartLineNumber): $($_.Extent.Text)" }) -join '; ')
 
         # One $runPorts table: every port parameter, by name, and nothing else.

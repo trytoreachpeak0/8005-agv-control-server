@@ -136,6 +136,11 @@ $G3RunKind = 'STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT'
 # SHARED_BINDING whatever that file said; now an edited default there is SELF_CHECK_OVERRIDE.
 $runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
         ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
+    }) -Settings ([ordered]@{
+        ControlPort = @{ Given = $ControlPort; Default = 58105 }
+        HealthPort = @{ Given = $HealthPort; Default = 58107 }
+        SimulatorModbusPort = @{ Given = $SimulatorModbusPort; Default = 1502 }
+        SimulatorHttpPort = @{ Given = $SimulatorHttpPort; Default = 58006 }
     })
 Write-G3RunnerProvenance -Provenance $runnerProvenance
 $runnerCommit = $runnerProvenance.runnerCommit

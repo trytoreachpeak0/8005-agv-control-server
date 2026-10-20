@@ -326,6 +326,13 @@ Invoke-Expression $bindingReader[0].Extent.Text
 # The disk reading stands in only when HEAD cannot say, and then runnerSource already withholds the pass.
 $runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
         ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
+    }) -Settings ([ordered]@{
+        ControlPort = @{ Given = $ControlPort; Default = 58205 }
+        HealthPort = @{ Given = $HealthPort; Default = 58207 }
+        ProxyPort = @{ Given = $ProxyPort; Default = 58215 }
+        BusinessProxyPort = @{ Given = $BusinessProxyPort; Default = 58216 }
+        SimulatorModbusPort = @{ Given = $SimulatorModbusPort; Default = 1502 }
+        SimulatorHttpPort = @{ Given = $SimulatorHttpPort; Default = 58006 }
     })
 Write-G3RunnerProvenance -Provenance $runnerProvenance
 $commitSources = Get-G3CommitSources -Binding ($runnerProvenance.bindingAtHead ?? (Get-SharedCommitBinding -Path (Join-Path $PSScriptRoot 'run-staged-g3.ps1'))) -Actual ([ordered]@{
