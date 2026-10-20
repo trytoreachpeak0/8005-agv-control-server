@@ -1,0 +1,18 @@
+ok    no key is the default preset -> no error
+ok    $false installs none -> no error
+ok    $true is refused -> threw: TaskTypeStations = $true in t means nothing: leave the key out for the default preset, give $false for none, or give the preset.
+ok    a misspelt top-level key is refused -> threw: TaskTypeStations in t has unknown key(s) Binding; the keys are Rules, MapId, RequiredTaskTypes, Bindings.
+ok    a missing Bindings is refused -> threw: TaskTypeStations in t needs Bindings (give @() for an empty one).
+ok    a binding key in the wrong case is refused -> threw: A TaskTypeStations.Bindings entry in t has unknown key(s) StationRiotID and misses nothing; it needs exactly TaskType, StationRiotId, StationName, SiteVerificationRef.
+ok    a station id that is not a number is refused -> threw: TaskTypeStations.Bindings in t: StationRiotId must be an integer, not '210'.
+ok    a deliberately bad value passes through to the server -> no error
+ok    a refusal code in lower case is refused -> threw: ExpectServerStartupRefusal in t must be a reason code such as TASK_TYPE_STATION_REUSED, not 'task_type_station_reused'.
+ok    a refusal on the real rig is refused -> threw: ExpectServerStartupRefusal in t needs the synthetic rig: a server that refuses to start has no session for the real onboard to open.
+ok    a refusal beside a dashboard is refused -> threw: ExpectServerStartupRefusal in t cannot be combined with Dashboard: nothing that needs a running server is started.
+ok    the default preset is seven rules, the rig map, and WIRE_TO_GATE bound to the gate only -> no error
+ok    $false writes a file without the section -> no error
+ok    a scenario's own preset keeps the default rules and replaces the rest -> no error
+ok    a UTF-8 server log reads as UTF-8 -> no error
+ok    a GBK server log from before control-server#812 reads as GBK whatever this machine's code page -> no error
+ok    the protocol identity is read from the ProtocolCandidate block -> no error
+Every case came out as expected.
