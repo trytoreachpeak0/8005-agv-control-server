@@ -3210,6 +3210,8 @@ $recoveryProbeTranscript = Join-Path $EvidenceRoot 'recovery-probe-events.ndjson
 $desktopLock = $null
 # control-server#809. Released last, after the desktop lock.
 $portLock = $null
+# control-server#809: the owner of the two fault proxies' ports, which listen inside this process.
+$runnerProcess = Get-Process -Id $PID
 
 try {
     # First, before an hour of cloning and publishing: the ports this run binds are ours, and nobody listens on them.
@@ -3431,6 +3433,8 @@ try {
         if (-not $proxyReady) { Start-Sleep -Milliseconds 100 }
     } while (-not $proxyReady -and [DateTimeOffset]::UtcNow -lt $proxyDeadline)
     if (-not $proxyReady) { throw 'Loopback fault proxy did not become ready.' }
+    # control-server#809: the proxy runs in this process, so -ProxyPort must be this process's and nobody else's.
+    Assert-G3PortOwner -Process $runnerProcess -Name 'fault-proxy' -Port $ProxyPort -Description 'the fault proxy reported proxy-listening'
 
     $onboard = Start-Process -FilePath 'dotnet' `
         -ArgumentList @(Join-Path $onboardPublish 'SQCD.Agv.Wpf.dll') `
@@ -3639,6 +3643,9 @@ try {
         if (-not $businessProxyReady) { Start-Sleep -Milliseconds 100 }
     } while (-not $businessProxyReady -and [DateTimeOffset]::UtcNow -lt $businessProxyDeadline)
     if (-not $businessProxyReady) { throw 'Business fault proxy did not become ready.' }
+    # control-server#809: in this process too, so -BusinessProxyPort must be this process's and nobody else's.
+    Assert-G3PortOwner -Process $runnerProcess -Name 'business-fault-proxy' -Port $BusinessProxyPort `
+        -Description 'the business fault proxy reported proxy-listening'
 
     $businessProbeJson = [StagedG3TlsHarness]::RunBusinessProbeAsync(
         $businessProxyPort,
