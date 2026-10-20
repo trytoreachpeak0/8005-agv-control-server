@@ -1,0 +1,62 @@
+mutation: 04-name-closure-ignored in scripts/Select-TestSelfCheckRun.ps1
+changed files during the run:  M scripts/Select-TestSelfCheckRun.ps1; ?? evidence/cs803/red/02-registration-removed.txt; ?? evidence/cs803/red/03-explicit-inputs-ignored.txt
+---
+BAD   l2_hmi_phrase_watch runs when scripts/l2/L2HmiPhraseWatch.psm1 changes -> not among the paths it counted
+BAD   l2_route_evidence runs when scripts/l2/L2RouteEvidence.psm1 changes -> not among the paths it counted
+BAD   l2_second_leg_intent runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   l2_second_leg_intent runs when scripts/l2/L2TaskTypeJourney.psm1 changes -> not among the paths it counted
+BAD   l2_second_leg_intent runs when scripts/l2/L2RealOnboard.psm1 changes -> not among the paths it counted
+BAD   l2_expected_action_overdue runs when scripts/l2/L2ExpectedActionOverdue.psm1 changes -> not among the paths it counted
+BAD   l2_forced_recovery_confirm runs when scripts/l2/scenarios/G3RecoveryCommon.ps1 changes -> not among the paths it counted
+BAD   l2_screen_state runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   l2_screen_state runs when scripts/l2/L2ScreenState.psm1 changes -> not among the paths it counted
+BAD   g3_journey_uia_fixture runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   g3_journey_uia_fixture runs when scripts/l2/L2MultiStopJourney.psm1 changes -> not among the paths it counted
+BAD   g3_journey_uia_fixture runs when scripts/l2/scenarios/MultiStopRigCommon.ps1 changes -> not among the paths it counted
+BAD   g3_journey_uia_fixture runs when scripts/l2/L2RealOnboard.psm1 changes -> not among the paths it counted
+BAD   g3_journey_uia_fixture runs when scripts/l2/scenarios/CargoHoldingCommon.ps1 changes -> not among the paths it counted
+BAD   l2_worklist_station_wait runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   l2_worklist_station_wait runs when scripts/l2/L2RealOnboard.psm1 changes -> not among the paths it counted
+BAD   l2_worklist_station_wait runs when scripts/l2/L2TaskTypeJourney.psm1 changes -> not among the paths it counted
+BAD   l2_double_command_error runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   l2_journey_closure_ids runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   l2_journey_closure_ids runs when scripts/l2/scenarios/StationYieldCommon.ps1 changes -> not among the paths it counted
+BAD   l2_journey_closure_ids runs when scripts/l2/scenarios/CargoHoldingCommon.ps1 changes -> not among the paths it counted
+BAD   l2_multi_stop_plan_rows runs when scripts/l2/L2MultiStopJourney.psm1 changes -> not among the paths it counted
+BAD   l2_multi_stop_plan_rows runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   l2_multi_stop_plan_rows runs when scripts/l2/L2RealOnboard.psm1 changes -> not among the paths it counted
+BAD   g3_staged_error_path runs when scripts/LoopbackListener.psm1 changes -> not among the paths it counted
+BAD   g3_evidence_location runs when scripts/G3EvidenceLocation.psm1 changes -> not among the paths it counted
+BAD   l2_single_row runs when scripts/l2/L2SingleRow.psm1 changes -> not among the paths it counted
+BAD   l2_backlog_acceptance runs when scripts/l2/L2BacklogAcceptance.psm1 changes -> not among the paths it counted
+BAD   l2_dispatch_zone_parameters runs when scripts/l2/L2DispatchZoneParameters.psm1 changes -> not among the paths it counted
+BAD   l2_real_inbound runs when scripts/l2/L2RealOnboard.psm1 changes -> not among the paths it counted
+BAD   l2_real_inbound runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   l2_session_continuity runs when scripts/l2/L2SessionContinuity.psm1 changes -> not among the paths it counted
+BAD   l2_slot_groups runs when scripts/l2/L2SlotGroups.psm1 changes -> not among the paths it counted
+BAD   l2_slot_groups runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   l2_task_type_stations runs when scripts/l2/L2TaskTypeStations.psm1 changes -> not among the paths it counted
+BAD   g3_journey_v3_branches runs when scripts/l2/L2.psm1 changes -> not among the paths it counted
+BAD   g3_journey_v3_branches runs when scripts/l2/scenarios/G3RecoveryCommon.ps1 changes -> not among the paths it counted
+swept 105 input paths over 40 steps
+BAD   scripts/l2/L2.psm1 runs l2_worklist_station_wait -> {"Key":"l2_worklist_station_wait","Name":"L2 scenario self-check (worklist station wait)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-L2WorklistStationWait.ps1"]}
+BAD   scripts/l2/L2.psm1 runs l2_double_command_error -> {"Key":"l2_double_command_error","Name":"L2 scenario self-check (double command refusal body)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-L2DoubleCommandError.ps1"]}
+BAD   scripts/Install-ControlServerLocal.ps1 runs install_data_root_lock_wait -> {"Key":"install_data_root_lock_wait","Name":"Install and upgrade self-check (data root lock wait)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/Test-DataRootLockWait.ps1"]}
+BAD   scripts/Install-ControlServerLocal.ps1 runs install_two_car_paths -> {"Key":"install_two_car_paths","Name":"Install and upgrade self-check (two-car safety projection, first readiness)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/Test-InstallerTwoCarPaths.ps1"]}
+BAD   scripts/LoopbackListener.psm1 runs l2_double_command_error -> {"Key":"l2_double_command_error","Name":"L2 scenario self-check (double command refusal body)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-L2DoubleCommandError.ps1"]}
+BAD   scripts/LoopbackListener.psm1 runs g3_staged_error_path -> {"Key":"g3_staged_error_path","Name":"G3 runner self-check (staged error path)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/Test-StagedG3ErrorPath.ps1"]}
+BAD   .github/workflows/g3.yml runs g3_nightly_decisions -> {"Key":"g3_nightly_decisions","Name":"G3 runner self-check (nightly G3 decisions)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/Test-NightlyG3.ps1"]}
+BAD   scripts/l2/scenarios/g3-forced-mechanical-recovery.ps1 runs l2_forced_recovery_confirm -> {"Key":"l2_forced_recovery_confirm","Name":"L2 scenario self-check (forced recovery confirm step)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-G3ForcedRecoveryEntry.ps1"]}
+BAD   vendor/8005-agv-protocol/integration-slices/index.json runs g3_evidence_honesty -> {"Key":"g3_evidence_honesty","Name":"G3 runner self-check (evidence honesty)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/Test-G3EvidenceHonesty.ps1"]}
+BAD   scripts/l2/L2HmiPhraseWatch.psm1 runs l2_hmi_phrase_watch -> {"Key":"l2_hmi_phrase_watch","Name":"L2 scenario self-check (HMI phrase watch)","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-L2HmiPhraseWatch.ps1"]}
+BAD   GitHub output says l2_hmi_phrase_watch=true and install_data_root_lock_wait=false -> self_check_scope=true|l2_onboard_handle=false|l2_hmi_phrase_watch=false|l2_route_evidence=false|l2_run_ledger=false|l2_probe_closures=true|l2_second_leg_intent=false|l2_expected_action_overdue=false|l2_forced_recovery_confirm=false|l2_screen_state=false|g3_journey_uia_fixture=false|g3_content_conflict_scope=false|l2_scenario_round_scope=true|l2_worklist_station_wait=false|l2_double_command_error=false|l2_journey_closure_ids=false|l2_multi_stop_plan_rows=false|g3_staged_error_path=false|g3_evidence_honesty=false|g3_self_check_override=false|g3_nightly_decisions=false|install_data_root_lock_wait=false|install_two_car_paths=false|g3_evidence_location=false|l2_closure_capture=true|l2_whole_array_return=true|l2_single_row=false|l2_backlog_acceptance=false|script_static_checks=true|g3_runner_claims=false|l2_dispatch_zone_parameters=false|l2_lanes=true|l2_real_inbound=false|l2_session_continuity=false|l2_slot_groups=false|l2_task_type_stations=false|g3_claim_record_backfill=false|scenario_sql_explain=true|parallel_instance=false|g3_journey_v3_branches=false
+BAD   closure: scripts/l2/Direct.psm1 runs -> {"Reason":"skipped 1 of 1 self-checks: this pull request changes none of their inputs","Steps":[{"Key":"one","Name":"One","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-One.ps1"]}]}
+BAD   closure: scripts/Transitive.ps1 runs -> {"Reason":"skipped 1 of 1 self-checks: this pull request changes none of their inputs","Steps":[{"Key":"one","Name":"One","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-One.ps1"]}]}
+BAD   closure: src/Lib/Options.cs runs -> {"Reason":"skipped 1 of 1 self-checks: this pull request changes none of their inputs","Steps":[{"Key":"one","Name":"One","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-One.ps1"]}]}
+BAD   closure: src/Lib/Deep/Inner.cs runs -> {"Reason":"skipped 1 of 1 self-checks: this pull request changes none of their inputs","Steps":[{"Key":"one","Name":"One","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-One.ps1"]}]}
+BAD   closure: src/Lib/Deep/a-new-file.cs runs -> {"Reason":"skipped 1 of 1 self-checks: this pull request changes none of their inputs","Steps":[{"Key":"one","Name":"One","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-One.ps1"]}]}
+BAD   closure: scripts/l2/direct.PSM1 runs -> {"Reason":"skipped 1 of 1 self-checks: this pull request changes none of their inputs","Steps":[{"Key":"one","Name":"One","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-One.ps1"]}]}
+BAD   closure: Transitive.ps1 deleted, only in the change list, runs -> {"Reason":"skipped 1 of 1 self-checks: this pull request changes none of their inputs","Steps":[{"Key":"one","Name":"One","Run":false,"Reason":"skipped: none of the changed paths is its input","Hits":[],"Reached":["scripts/l2/Test-One.ps1"]}]}
+560 case(s) passed
+TEST_SELF_CHECK_SCOPE_SELFTEST_FAILED: 55 case(s)
+exit=1
