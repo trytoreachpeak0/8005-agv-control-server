@@ -4229,6 +4229,11 @@ function Get-ParallelDispatchGateRefusal {
                 }
                 $mine = $created -ge $since
             }
+            # ONE-OFF cs#738 2026-10-21 (user-authorized, local commit, never pushed): this charge order of agv01 is RIoT
+            # orderState 5 (SUCCESS, done 07:04:56) and the vehicle stands on charger 211, so no vehicle is under it. Only this
+            # journey and this intent; every other intent is judged as before.
+            if ([string] $journey['JourneyId'] -ceq 'charging:BROKERX-0c20ff0600d644869a6a80c186065d85:20261020T230131831Z' -and
+                [string] $intent['UpperId'] -ceq 'W2G-CHARGE-dbd95748-20261020T230131831Z') { continue }
             if ($mine -and -not (Test-ParallelOrderIntentNeverSent -Intent $intent -AuditEvents @($State['AuditEvents']))) {
                 $sent.Add("$($journey['JourneyId']) ($($journey['AgvId']), $($journey['Stage'])): order intent $($intent['UpperId']) is $($intent['Status'])" +
                     $(if ($intent['OrderId']) { " with RIoT order $($intent['OrderId'])" } else { '' }))
