@@ -59,17 +59,66 @@ jobs:
       # This is not cosmetic: New-WireToGateReleaseCandidate.ps1 refuses to build
       # from a dirty ControlServer worktree, and a mirror checked out at the
       # workspace root *is* an untracked directory inside that worktree.
+      # Before every checkout of this repository on a self-hosted runner, and the check after it: a runner reuses one
+      # directory for every job of this repository, and an earlier job's core.sparseCheckout in .git/config survives
+      # actions/checkout's own git sparse-checkout disable. The checkout then leaves out most of the tree and exits 0
+      # (l2 run 39457961360: ControlServer.sln missing, MSB1009). scripts/Test-CheckoutSparseState.ps1 has the story and
+      # holds every workflow to the pair.
+      - name: Clear sparse-checkout state an earlier job left behind
+        shell: pwsh
+        env:
+          CHECKOUT_PATH: control-server
+        run: |
+          $config = Join-Path $env:GITHUB_WORKSPACE ($env:CHECKOUT_PATH ?? '.') '.git/config'
+          $stale = if (Test-Path -LiteralPath $config) { git config --file $config --get core.sparseCheckout }
+          if ($stale) {
+              Write-Host "::notice title=Sparse-checkout state cleared::core.sparseCheckout=$stale in $config, left by an earlier job"
+              git config --file $config --unset-all core.sparseCheckout
+              git config --file $config --unset-all core.sparseCheckoutCone
+              if (git config --file $config --get core.sparseCheckout) { Write-Host "::error::core.sparseCheckout is still set in $config"; exit 1 }
+          }
+          exit 0
+
       # Without evidence/ (control-server#804): about nine tenths of the repository's files, and the release reads none
       # of them. New-WireToGateReleaseCandidate.ps1 and Publish-ControlServer.ps1 read src/, docs/RELEASE-CANDIDATE.md
       # and scripts/, scan src/ and the packages for secrets, and ask git for HEAD and a clean status -- files left
       # out by a sparse checkout are not reported as changed.
+      # In cone mode, every top-level directory but evidence/ listed: non-cone mode writes the core.sparseCheckout in
+      # .git/config that broke later jobs (see the step above). Test-CheckoutSparseState.ps1 holds the list to the repository.
       - uses: actions/checkout@v7
         with:
           path: control-server
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /*
-            !/evidence/
+            .config
+            .github
+            docs
+            scripts
+            src
+            tests
+            tools
+            vendor
+
+      - name: Check the checkout is the tree it asked for
+        shell: pwsh
+        working-directory: control-server
+        env:
+          CHECKOUT_SPARSE: |
+            .config
+            .github
+            docs
+            scripts
+            src
+            tests
+            tools
+            vendor
+        run: |
+          if (Test-Path -LiteralPath scripts/Assert-CheckoutTree.ps1) { pwsh -NoProfile -File scripts/Assert-CheckoutTree.ps1; exit $LASTEXITCODE }
+          if (git ls-tree --name-only HEAD scripts/Assert-CheckoutTree.ps1) {
+              Write-Host '::error title=Checkout incomplete::scripts/Assert-CheckoutTree.ps1 is in HEAD but not in the worktree'
+              exit 1
+          }
+          Write-Host "::warning title=Checkout not checked::$(git rev-parse HEAD) predates scripts/Assert-CheckoutTree.ps1"
+          exit 0
 
       # A scratch mirror of the read-only onboard repository. fetch-depth 0
       # because the requested commit is an input and need not be the branch tip.

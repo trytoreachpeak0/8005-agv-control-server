@@ -71,6 +71,8 @@ jobs:
     # 160 since control-server#803, which put two steps before Test with a limit of 5 each (the self-check scope and its
     # self-check, seconds each): about 151 if every step ran to its own limit. Skipping a self-check lowers what a job
     # takes, never what it may take: a push or a dispatched run still runs every step.
+    # Still 160 after the steps around the checkout (2 each) and the checkout sparse-state self-check (3), which l2 run
+    # 39457961360 brought in: about 158 if every step ran to its own limit.
     timeout-minutes: 160
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
@@ -94,7 +96,38 @@ jobs:
       UseSharedCompilation: 'false'
 
     steps:
+      # Before every checkout of this repository on a self-hosted runner, and the check after it: a runner reuses one
+      # directory for every job of this repository, and an earlier job's core.sparseCheckout in .git/config survives
+      # actions/checkout's own git sparse-checkout disable. The checkout then leaves out most of the tree and exits 0
+      # (l2 run 39457961360: ControlServer.sln missing, MSB1009). scripts/Test-CheckoutSparseState.ps1 has the story and
+      # holds every workflow to the pair.
+      - name: Clear sparse-checkout state an earlier job left behind
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $config = Join-Path $env:GITHUB_WORKSPACE ($env:CHECKOUT_PATH ?? '.') '.git/config'
+          $stale = if (Test-Path -LiteralPath $config) { git config --file $config --get core.sparseCheckout }
+          if ($stale) {
+              Write-Host "::notice title=Sparse-checkout state cleared::core.sparseCheckout=$stale in $config, left by an earlier job"
+              git config --file $config --unset-all core.sparseCheckout
+              git config --file $config --unset-all core.sparseCheckoutCone
+              if (git config --file $config --get core.sparseCheckout) { Write-Host "::error::core.sparseCheckout is still set in $config"; exit 1 }
+          }
+          exit 0
+
       - uses: actions/checkout@v7
+
+      - name: Check the checkout is the tree it asked for
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath scripts/Assert-CheckoutTree.ps1) { pwsh -NoProfile -File scripts/Assert-CheckoutTree.ps1; exit $LASTEXITCODE }
+          if (git ls-tree --name-only HEAD scripts/Assert-CheckoutTree.ps1) {
+              Write-Host '::error title=Checkout incomplete::scripts/Assert-CheckoutTree.ps1 is in HEAD but not in the worktree'
+              exit 1
+          }
+          Write-Host "::warning title=Checkout not checked::$(git rev-parse HEAD) predates scripts/Assert-CheckoutTree.ps1"
+          exit 0
 
       - name: dotnet --info
         shell: pwsh
@@ -263,6 +296,15 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-L2ScenarioRunScope.ps1
+
+      # About 30 seconds, most of it pwsh and git starting: replays on a throwaway repository the runner history that left
+      # l2 run 39457961360 with half a tree, and holds every workflow to the steps around each checkout (see the first
+      # steps of this job).
+      - name: CI self-check (checkout sparse state)
+        if: steps.self-check-scope.outputs.checkout_sparse_state == 'true'
+        timeout-minutes: 3
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-CheckoutSparseState.ps1
 
       # About 27 seconds (measured 26.4 / 26.8 / 26.7 on the control host), 24 of which are twelve
       # deliberate 2-second timeouts: every case where a criterion must NOT be satisfied has to run out

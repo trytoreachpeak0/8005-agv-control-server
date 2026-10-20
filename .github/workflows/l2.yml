@@ -136,15 +136,61 @@ jobs:
       UseSharedCompilation: 'false'
 
     steps:
+      # Before every checkout of this repository on a self-hosted runner, and the check after it: a runner reuses one
+      # directory for every job of this repository, and an earlier job's core.sparseCheckout in .git/config survives
+      # actions/checkout's own git sparse-checkout disable. The checkout then leaves out most of the tree and exits 0
+      # (l2 run 39457961360: ControlServer.sln missing, MSB1009). scripts/Test-CheckoutSparseState.ps1 has the story and
+      # holds every workflow to the pair.
+      - name: Clear sparse-checkout state an earlier job left behind
+        shell: pwsh
+        run: |
+          $config = Join-Path $env:GITHUB_WORKSPACE ($env:CHECKOUT_PATH ?? '.') '.git/config'
+          $stale = if (Test-Path -LiteralPath $config) { git config --file $config --get core.sparseCheckout }
+          if ($stale) {
+              Write-Host "::notice title=Sparse-checkout state cleared::core.sparseCheckout=$stale in $config, left by an earlier job"
+              git config --file $config --unset-all core.sparseCheckout
+              git config --file $config --unset-all core.sparseCheckoutCone
+              if (git config --file $config --get core.sparseCheckout) { Write-Host "::error::core.sparseCheckout is still set in $config"; exit 1 }
+          }
+          exit 0
+
       # Without evidence/ (control-server#804): about nine tenths of the repository's files, and nothing this job runs
       # reads them -- not the build, not Invoke-L2Scenario.ps1 or a module or scenario it loads (they name evidence/ only
       # in comments), not Test-L2ReadSnapshot.ps1. The scope step below diffs commits, which needs no worktree file.
+      # In cone mode, every top-level directory but evidence/ listed: non-cone mode writes the core.sparseCheckout in
+      # .git/config that broke later jobs (see the step above). Test-CheckoutSparseState.ps1 holds the list to the repository.
       - uses: actions/checkout@v7
         with:
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /*
-            !/evidence/
+            .config
+            .github
+            docs
+            scripts
+            src
+            tests
+            tools
+            vendor
+
+      - name: Check the checkout is the tree it asked for
+        shell: pwsh
+        env:
+          CHECKOUT_SPARSE: |
+            .config
+            .github
+            docs
+            scripts
+            src
+            tests
+            tools
+            vendor
+        run: |
+          if (Test-Path -LiteralPath scripts/Assert-CheckoutTree.ps1) { pwsh -NoProfile -File scripts/Assert-CheckoutTree.ps1; exit $LASTEXITCODE }
+          if (git ls-tree --name-only HEAD scripts/Assert-CheckoutTree.ps1) {
+              Write-Host '::error title=Checkout incomplete::scripts/Assert-CheckoutTree.ps1 is in HEAD but not in the worktree'
+              exit 1
+          }
+          Write-Host "::warning title=Checkout not checked::$(git rev-parse HEAD) predates scripts/Assert-CheckoutTree.ps1"
+          exit 0
 
       # Since control-server#630 (the user's decision on 2026-10-11): a pull request whose changes reach nothing this
       # round consumes ends the job green here, without building or running a scenario, and says so in a notice and
@@ -750,16 +796,61 @@ jobs:
     steps:
       # Each repository in its own subdirectory. A peer checked out into the server's work tree would
       # sit inside it, and a peer's clean-tree check is what Get-L2PeerPublish relies on.
+      # The pair around every checkout of this repository on a self-hosted runner: scripts/Test-CheckoutSparseState.ps1.
+      - name: Clear sparse-checkout state an earlier job left behind
+        shell: pwsh
+        env:
+          CHECKOUT_PATH: control-server
+        run: |
+          $config = Join-Path $env:GITHUB_WORKSPACE ($env:CHECKOUT_PATH ?? '.') '.git/config'
+          $stale = if (Test-Path -LiteralPath $config) { git config --file $config --get core.sparseCheckout }
+          if ($stale) {
+              Write-Host "::notice title=Sparse-checkout state cleared::core.sparseCheckout=$stale in $config, left by an earlier job"
+              git config --file $config --unset-all core.sparseCheckout
+              git config --file $config --unset-all core.sparseCheckoutCone
+              if (git config --file $config --get core.sparseCheckout) { Write-Host "::error::core.sparseCheckout is still set in $config"; exit 1 }
+          }
+          exit 0
+
       # Without evidence/, as in the scenarios job (control-server#804). The two peers below keep a full checkout:
       # Get-L2PeerPublish clones each one from its checkout, and a sparse checkout is a blob:none partial clone that
       # such a clone would have to fill from GitHub.
+      # In cone mode, every top-level directory but evidence/ listed: non-cone mode writes the core.sparseCheckout in
+      # .git/config that broke later jobs (see the step above). Test-CheckoutSparseState.ps1 holds the list to the repository.
       - uses: actions/checkout@v7
         with:
           path: control-server
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /*
-            !/evidence/
+            .config
+            .github
+            docs
+            scripts
+            src
+            tests
+            tools
+            vendor
+
+      - name: Check the checkout is the tree it asked for
+        shell: pwsh
+        working-directory: control-server
+        env:
+          CHECKOUT_SPARSE: |
+            .config
+            .github
+            docs
+            scripts
+            src
+            tests
+            tools
+            vendor
+        run: |
+          if (Test-Path -LiteralPath scripts/Assert-CheckoutTree.ps1) { pwsh -NoProfile -File scripts/Assert-CheckoutTree.ps1; exit $LASTEXITCODE }
+          if (git ls-tree --name-only HEAD scripts/Assert-CheckoutTree.ps1) {
+              Write-Host '::error title=Checkout incomplete::scripts/Assert-CheckoutTree.ps1 is in HEAD but not in the worktree'
+              exit 1
+          }
+          Write-Host "::warning title=Checkout not checked::$(git rev-parse HEAD) predates scripts/Assert-CheckoutTree.ps1"
+          exit 0
 
       - uses: actions/checkout@v7
         with:

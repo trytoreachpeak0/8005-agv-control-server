@@ -116,10 +116,41 @@ jobs:
       started: ${{ steps.gate.outputs.started }}
       deadline: ${{ steps.gate.outputs.deadline }}
     steps:
+      # Before every checkout of this repository on a self-hosted runner, and the check after it: a runner reuses one
+      # directory for every job of this repository, and an earlier job's core.sparseCheckout in .git/config survives
+      # actions/checkout's own git sparse-checkout disable. The checkout then leaves out most of the tree and exits 0
+      # (l2 run 39457961360: ControlServer.sln missing, MSB1009). scripts/Test-CheckoutSparseState.ps1 has the story and
+      # holds every workflow to the pair.
+      - name: Clear sparse-checkout state an earlier job left behind
+        shell: pwsh
+        run: |
+          $config = Join-Path $env:GITHUB_WORKSPACE ($env:CHECKOUT_PATH ?? '.') '.git/config'
+          $stale = if (Test-Path -LiteralPath $config) { git config --file $config --get core.sparseCheckout }
+          if ($stale) {
+              Write-Host "::notice title=Sparse-checkout state cleared::core.sparseCheckout=$stale in $config, left by an earlier job"
+              git config --file $config --unset-all core.sparseCheckout
+              git config --file $config --unset-all core.sparseCheckoutCone
+              if (git config --file $config --get core.sparseCheckout) { Write-Host "::error::core.sparseCheckout is still set in $config"; exit 1 }
+          }
+          exit 0
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.G3_REF }}
           sparse-checkout: scripts
+
+      - name: Check the checkout is the tree it asked for
+        shell: pwsh
+        env:
+          CHECKOUT_SPARSE: scripts
+        run: |
+          if (Test-Path -LiteralPath scripts/Assert-CheckoutTree.ps1) { pwsh -NoProfile -File scripts/Assert-CheckoutTree.ps1; exit $LASTEXITCODE }
+          if (git ls-tree --name-only HEAD scripts/Assert-CheckoutTree.ps1) {
+              Write-Host '::error title=Checkout incomplete::scripts/Assert-CheckoutTree.ps1 is in HEAD but not in the worktree'
+              exit 1
+          }
+          Write-Host "::warning title=Checkout not checked::$(git rev-parse HEAD) predates scripts/Assert-CheckoutTree.ps1"
+          exit 0
 
       - name: Commits and deadline
         id: gate
@@ -173,12 +204,37 @@ jobs:
         run: |
           "started=$([DateTimeOffset]::UtcNow.ToString('o'))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
+      # The pair around every checkout of this repository on a self-hosted runner: scripts/Test-CheckoutSparseState.ps1.
+      - name: Clear sparse-checkout state an earlier job left behind
+        shell: pwsh
+        run: |
+          $config = Join-Path $env:GITHUB_WORKSPACE ($env:CHECKOUT_PATH ?? '.') '.git/config'
+          $stale = if (Test-Path -LiteralPath $config) { git config --file $config --get core.sparseCheckout }
+          if ($stale) {
+              Write-Host "::notice title=Sparse-checkout state cleared::core.sparseCheckout=$stale in $config, left by an earlier job"
+              git config --file $config --unset-all core.sparseCheckout
+              git config --file $config --unset-all core.sparseCheckoutCone
+              if (git config --file $config --get core.sparseCheckout) { Write-Host "::error::core.sparseCheckout is still set in $config"; exit 1 }
+          }
+          exit 0
+
       # The whole history: the runners clone the ControlServer from this local checkout (New-ExactClone), and the staged
       # harness reads its own identity from it.
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.control_server }}
           fetch-depth: 0
+
+      - name: Check the checkout is the tree it asked for
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath scripts/Assert-CheckoutTree.ps1) { pwsh -NoProfile -File scripts/Assert-CheckoutTree.ps1; exit $LASTEXITCODE }
+          if (git ls-tree --name-only HEAD scripts/Assert-CheckoutTree.ps1) {
+              Write-Host '::error title=Checkout incomplete::scripts/Assert-CheckoutTree.ps1 is in HEAD but not in the worktree'
+              exit 1
+          }
+          Write-Host "::warning title=Checkout not checked::$(git rev-parse HEAD) predates scripts/Assert-CheckoutTree.ps1"
+          exit 0
 
       # run-staged-g3.ps1 runs the protocol's G1 with node and pnpm. vm01 has both machine-wide (C:\Program Files\nodejs,
       # node v24.20.0 and pnpm 11.25.0 on 2026-10-11), the same installation 8005-agv-protocol's own g1.yml uses; the
@@ -280,10 +336,37 @@ jobs:
     runs-on: [self-hosted, headless]
     timeout-minutes: 30
     steps:
+      # The pair around every checkout of this repository on a self-hosted runner: scripts/Test-CheckoutSparseState.ps1.
+      - name: Clear sparse-checkout state an earlier job left behind
+        shell: pwsh
+        run: |
+          $config = Join-Path $env:GITHUB_WORKSPACE ($env:CHECKOUT_PATH ?? '.') '.git/config'
+          $stale = if (Test-Path -LiteralPath $config) { git config --file $config --get core.sparseCheckout }
+          if ($stale) {
+              Write-Host "::notice title=Sparse-checkout state cleared::core.sparseCheckout=$stale in $config, left by an earlier job"
+              git config --file $config --unset-all core.sparseCheckout
+              git config --file $config --unset-all core.sparseCheckoutCone
+              if (git config --file $config --get core.sparseCheckout) { Write-Host "::error::core.sparseCheckout is still set in $config"; exit 1 }
+          }
+          exit 0
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.control_server || env.G3_REF }}
           sparse-checkout: scripts
+
+      - name: Check the checkout is the tree it asked for
+        shell: pwsh
+        env:
+          CHECKOUT_SPARSE: scripts
+        run: |
+          if (Test-Path -LiteralPath scripts/Assert-CheckoutTree.ps1) { pwsh -NoProfile -File scripts/Assert-CheckoutTree.ps1; exit $LASTEXITCODE }
+          if (git ls-tree --name-only HEAD scripts/Assert-CheckoutTree.ps1) {
+              Write-Host '::error title=Checkout incomplete::scripts/Assert-CheckoutTree.ps1 is in HEAD but not in the worktree'
+              exit 1
+          }
+          Write-Host "::warning title=Checkout not checked::$(git rev-parse HEAD) predates scripts/Assert-CheckoutTree.ps1"
+          exit 0
 
       - name: Comment the verdict
         shell: pwsh
