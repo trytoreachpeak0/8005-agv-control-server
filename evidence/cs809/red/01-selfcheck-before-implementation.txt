@@ -1,0 +1,51 @@
+FAIL G3RunnerPorts.psm1 imports -- The specified module 'C:\work\8005-wt\cs809-8005-agv-control-server\scripts\G3RunnerPorts.psm1' was not loaded because no valid module file was found in any module directory.
+FAIL run-staged-g3.ps1: -ControlPort, an [int] defaulting to 58205, ValidateRange(1024, 65535) -- 
+FAIL run-staged-g3.ps1: -HealthPort, an [int] defaulting to 58207, ValidateRange(1024, 65535) -- 
+FAIL run-staged-g3.ps1: -ProxyPort, an [int] defaulting to 58215, ValidateRange(1024, 65535) -- 
+FAIL run-staged-g3.ps1: -BusinessProxyPort, an [int] defaulting to 58216, ValidateRange(1024, 65535) -- 
+FAIL run-staged-g3.ps1: -SimulatorModbusPort, an [int] defaulting to 1502, ValidateRange(1024, 65535) -- 
+FAIL run-staged-g3.ps1: -SimulatorHttpPort, an [int] defaulting to 58006, ValidateRange(1024, 65535) -- 
+FAIL run-staged-g3.ps1: no port number outside the param block -- line 273: 58205; line 274: 58207; line 275: 58215; line 276: 58216; line 277: 1502; line 278: 58006
+FAIL run-staged-g3.ps1: one top-level [ordered] $runPorts naming each port parameter -- 0 found: 
+FAIL run-staged-g3.ps1: Assert-G3RunnerPortSet -Ports $runPorts, once, at top level, before the run creates anything -- 0 call(s)
+FAIL run-staged-g3.ps1: Enter-G3PortLock -Port $runPorts.Values, once -- 0 call(s)
+FAIL run-staged-g3.ps1: Assert-G3PortsFree -Ports $runPorts, once, right after the lock -- 0 call(s)
+FAIL run-staged-g3.ps1: the port lock and the preflight come before the desktop lock, the first clone and the first process -- preflight at line ; Enter-DesktopLock at line 3359, Start-Process at line 3309, Start-Process at line 3361, Start-Process at line 3387, New-ExactClone at line 3188, New-ExactClone at line 3190, New-ExactClone at line 3192, New-ExactClone at line 3194
+FAIL run-staged-g3.ps1: Exit-G3PortLock once, after Exit-DesktopLock -- 0 Exit-G3PortLock, 1 Exit-DesktopLock
+FAIL run-staged-g3.ps1: Set-G3SimulatorPorts -ModbusPort $SimulatorModbusPort -HttpPort $SimulatorHttpPort -- 0 call(s)
+FAIL run-staged-g3.ps1: Set-G3OnboardIoModulePort -ModbusPort $SimulatorModbusPort -- 0 call(s)
+FAIL run-staged-g3.ps1: Assert-G3PortOwner -Process $simulator -Port $SimulatorHttpPort, $SimulatorModbusPort -- 
+FAIL run-staged-g3.ps1: Assert-G3PortOwner -Process $control -Port $ControlPort, $HealthPort -- 
+FAIL run-staged-g3-restart.ps1: -ControlPort, an [int] defaulting to 58105, ValidateRange(1024, 65535) -- 
+FAIL run-staged-g3-restart.ps1: -HealthPort, an [int] defaulting to 58107, ValidateRange(1024, 65535) -- 
+FAIL run-staged-g3-restart.ps1: -SimulatorModbusPort, an [int] defaulting to 1502, ValidateRange(1024, 65535) -- 
+FAIL run-staged-g3-restart.ps1: -SimulatorHttpPort, an [int] defaulting to 58006, ValidateRange(1024, 65535) -- 
+FAIL run-staged-g3-restart.ps1: no port number outside the param block -- line 47: 58105; line 48: 58107; line 49: 1502; line 50: 58006
+FAIL run-staged-g3-restart.ps1: one top-level [ordered] $runPorts naming each port parameter -- 0 found: 
+FAIL run-staged-g3-restart.ps1: Assert-G3RunnerPortSet -Ports $runPorts, once, at top level, before the run creates anything -- 0 call(s)
+FAIL run-staged-g3-restart.ps1: Enter-G3PortLock -Port $runPorts.Values, once -- 0 call(s)
+FAIL run-staged-g3-restart.ps1: Assert-G3PortsFree -Ports $runPorts, once, right after the lock -- 0 call(s)
+FAIL run-staged-g3-restart.ps1: the port lock and the preflight come before the desktop lock, the first clone and the first process -- preflight at line ; Enter-DesktopLock at line 686, Start-Process at line 688, New-ExactClone at line 613, New-ExactClone at line 615, New-ExactClone at line 617, Start-ControlServer at line 698, Start-ControlServer at line 807
+FAIL run-staged-g3-restart.ps1: Exit-G3PortLock once, after Exit-DesktopLock -- 0 Exit-G3PortLock, 1 Exit-DesktopLock
+FAIL run-staged-g3-restart.ps1: Set-G3SimulatorPorts -ModbusPort $SimulatorModbusPort -HttpPort $SimulatorHttpPort -- 0 call(s)
+FAIL run-staged-g3-restart.ps1: Set-G3OnboardIoModulePort -ModbusPort $SimulatorModbusPort -- 0 call(s)
+FAIL run-staged-g3-restart.ps1: Assert-G3PortOwner -Process $simulator -Port $SimulatorHttpPort, $SimulatorModbusPort -- 
+FAIL run-staged-g3-restart.ps1: Assert-G3PortOwner -Process $process -Port $ControlPort, $HealthPort -- 
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: -ProxyPort, an [int] defaulting to 58888, ValidateRange(1024, 65535) -- 
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: -SessionPort, an [int] defaulting to 59005, ValidateRange(1024, 65535) -- 
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: -HealthPort, an [int] defaulting to 59007, ValidateRange(1024, 65535) -- 
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: -SimulatorModbusPort, an [int] defaulting to 1502, ValidateRange(1024, 65535) -- 
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: -SimulatorHttpPort, an [int] defaulting to 58006, ValidateRange(1024, 65535) -- 
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: no port number outside the param block -- line 53: 58888; line 54: 59005; line 55: 59007; line 56: 1502; line 56: 58006; line 595: 1502; line 596: 58006; line 597: 'http://127.0.0.1:58006/api/v1/health'; line 618: 1502; line 619: 58006; line 879: 1502; line 880: 58006
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: one top-level [ordered] $runPorts naming each port parameter -- 0 found: 
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: Assert-G3RunnerPortSet -Ports $runPorts, once, at top level, before the run creates anything -- 0 call(s)
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: Enter-G3PortLock -Port $runPorts.Values, once -- 0 call(s)
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: Assert-G3PortsFree -Ports $runPorts, once, right after the lock -- 0 call(s)
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: the port lock and the preflight come before the desktop lock, the first clone and the first process -- preflight at line ; Start-Process at line 777, Start-Process at line 816, Start-Process at line 850, Start-Process at line 892, Start-Process at line 974, Start-ExactPeers at line 870
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: Exit-G3PortLock once, after Exit-DesktopLock -- 0 Exit-G3PortLock, 1 Exit-DesktopLock
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: Set-G3SimulatorPorts -ModbusPort $SimulatorModbusPort -HttpPort $SimulatorHttpPort -- 0 call(s)
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: Set-G3OnboardIoModulePort -ModbusPort $SimulatorModbusPort -- 0 call(s)
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: its own Assert-PortFree is gone (Assert-G3PortsFree names the holder) -- 
+FAIL Invoke-AuthorizedAbsentObservationShadow.ps1: its exact-owner checks name the holder (Get-G3PortHolderText) -- 2 function(s)
+49 check(s) failed.
+exit=1

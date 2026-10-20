@@ -1,0 +1,264 @@
+squatter: pid 50648 C:\Program Files\PowerShell\7\pwsh.exe, started 2026-10-21T00:07:36.7305044+08:00 by Start-Process pwsh -File squat-58006.ps1 (listens 127.0.0.1:58006, answers every request READY)
+command: pwsh -NoProfile -File scripts/run-staged-g3.ps1 -StageRoot C:/work/8005-scratch/cs809/stage-red -EvidenceRoot C:/work/8005-scratch/cs809/evidence-red   (defaults otherwise)
+runner commit: 782b2389481ae4988df58147ba12634492696f04
+---
+G3 runner source: COMMITTED_RUNNER (782b2389481ae4988df58147ba12634492696f04)
+G3 disk: 752.27 GiB free on C:\ (floor 30 GiB)
+WARNING: Staged G3 run errored: System.Management.Automation.RuntimeException: G3_PORT_IN_USE: SimulatorHttpPort=58006 is held by pid 50648 pwsh (C:\Program Files\PowerShell\7\pwsh.exe). Something other than this run is on its ports -- a simulator or server left open, or the survivors of a killed run; stop it, or pass this run other ports.
+WARNING:   at: At C:\work\8005-wt\cs809-8005-agv-control-server\scripts\G3RunnerPorts.psm1:217 char:9
++         throw ("G3_PORT_IN_USE: $($held -join '; '). Something other  …
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+{
+  "schemaVersion": "1.0.0",
+  "runKind": "STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT",
+  "runId": "20261020T160737200Z",
+  "startedAtUtc": "2026-10-20T16:07:37.2009768+00:00",
+  "completedAtUtc": "2026-10-20T16:07:40.5034005+00:00",
+  "status": "INCONCLUSIVE_RUNNER_ERROR",
+  "classification": {
+    "runStatus": "INCONCLUSIVE_RUNNER_ERROR",
+    "assuranceLevel": "STAGED_REBUILD",
+    "formalSlicePass": false,
+    "formalSliceWithheldReason": null,
+    "officialSlices": [
+      {
+        "integrationSliceId": "FP-IS-00",
+        "status": "INCONCLUSIVE",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": false,
+        "formalSliceWithheldReason": null
+      },
+      {
+        "integrationSliceId": "FP-IS-07",
+        "status": "INCONCLUSIVE",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": false,
+        "formalSliceWithheldReason": null
+      },
+      {
+        "integrationSliceId": "FP-IS-06",
+        "status": "INCONCLUSIVE",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": false,
+        "formalSliceWithheldReason": null
+      },
+      {
+        "integrationSliceId": "FP-IS-14",
+        "status": "INCONCLUSIVE",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": false,
+        "formalSliceWithheldReason": null
+      },
+      {
+        "integrationSliceId": "FP-IS-15",
+        "status": "INCONCLUSIVE",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": false,
+        "formalSliceWithheldReason": null
+      }
+    ],
+    "slicesWithoutSurfaceThisBatch": [],
+    "fullG3": "INCONCLUSIVE",
+    "releaseCandidate": "INCONCLUSIVE"
+  },
+  "gateResults": [
+    "slices/FP-IS-00/gate-result.json",
+    "slices/FP-IS-07/gate-result.json",
+    "slices/FP-IS-06/gate-result.json",
+    "slices/FP-IS-14/gate-result.json",
+    "slices/FP-IS-15/gate-result.json"
+  ],
+  "commits": {
+    "controlServer": "7763bcf1a03df01e319dbb9a43452aa90ed6f2fc",
+    "controlServerCommitSource": "SHARED_BINDING",
+    "onboardEvidenceBinding": "a3fdb194be045c23a4661807f4d180833a419cf8",
+    "onboardCommitSource": "SHARED_BINDING",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "simulatorCommitSource": "SHARED_BINDING",
+    "protocol": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+    "protocolCommitSource": "SHARED_BINDING",
+    "harness": "782b2389481ae4988df58147ba12634492696f04",
+    "harnessWorktreeCleanAtStart": true,
+    "runner": "782b2389481ae4988df58147ba12634492696f04",
+    "runnerWorktreeCleanAtStart": true,
+    "runnerSource": "COMMITTED_RUNNER"
+  },
+  "protocol": {
+    "tag": "protocol-v5.0.0",
+    "tagExists": false,
+    "candidateCommit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+    "approvalStatus": "APPROVED_RELEASE",
+    "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+    "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+    "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+    "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+    "g1": "NOT_RUN"
+  },
+  "configurationSha256": "2f8a7cea1c2145874a0e1b2c0ad13b2c28c49e5536c823e04c221a9566b197c5",
+  "configuration": {
+    "loopbackOnly": true,
+    "transport": {
+      "onboardTransport": "plaintext",
+      "certificatesGenerated": false,
+      "temporaryTrustRootInstalled": false,
+      "realOnboardAckDropTransport": "PLAINTEXT_LOOPBACK",
+      "realOnboardAckDropCombination": "FAIL_OR_INCONCLUSIVE"
+    },
+    "ports": {
+      "controlOnboard": 58205,
+      "controlHealth": 58207,
+      "faultProxy": 58215,
+      "businessFaultProxy": 58216,
+      "simulatorModbus": 1502,
+      "simulatorHttp": 58006
+    },
+    "faultInjection": {
+      "parameterisedByMessageType": true,
+      "actions": [
+        "drop-and-close",
+        "drop",
+        "delay",
+        "hold-until-next"
+      ],
+      "businessMessagePlane": [
+        "SublotSubmitted",
+        "OperationProgress",
+        "PreDepartureSafetyCheckResult",
+        "SlotOperationCommandRejected"
+      ],
+      "businessMessagesDrivenBySyntheticPeer": true,
+      "businessMessagesNotReachableInStagedRun": [
+        "OperationResult",
+        "SlotOperationCommand"
+      ],
+      "recoveryMessagePlane": [
+        "ExceptionRecoverySessionRequested",
+        "RecoveryActionSubmitted",
+        "HardwareRecoveryRecordSubmitted",
+        "LoadCancellationStartRequested",
+        "LoadCompensationRequested",
+        "LoadCorrectionRequested",
+        "ForcedMechanicalRecoveryResult",
+        "ForcedMechanicalRecoveryCommand"
+      ],
+      "recoveryMessagesDrivenBySyntheticPeer": true,
+      "recoveryAcceptedPathsNotReachableInStagedRun": [
+        "RESUME_AFTER_REPAIR",
+        "COMPENSATE_LOAD_ALL_EMPTY",
+        "FAULT_CARGO_HANDOFF",
+        "LOAD_CANCELLATION",
+        "LOAD_CORRECTION",
+        "RiotUnknownReconciliation"
+      ],
+      "recoveryAdministratorProofFromEnvironment": true
+    },
+    "journeyRuntimeEnabled": false,
+    "realExternalCredentialsUsed": false,
+    "realRiotOrderCreated": false,
+    "movementCommandSent": false,
+    "vehicleSafetyEligibilityFabricated": false
+  },
+  "commands": [],
+  "assertions": {
+    "identityRejections": "FAIL_OR_INCONCLUSIVE",
+    "sameConnectionSameMessageIdSameContent": "FAIL_OR_INCONCLUSIVE",
+    "sameMessageIdDifferentContentStableConflict": "FAIL_OR_INCONCLUSIVE",
+    "recoveryStateResubmittedAsANewReportAfterAckDrop": "FAIL_OR_INCONCLUSIVE",
+    "businessMessageSameMessageIdSameContentReplay": "FAIL_OR_INCONCLUSIVE",
+    "businessMessageSameMessageIdDifferentContentStableConflict": "FAIL_OR_INCONCLUSIVE",
+    "businessMessageAckDropInSessionReplay": "FAIL_OR_INCONCLUSIVE",
+    "businessMessageDelayedDeliveryAccepted": "FAIL_OR_INCONCLUSIVE",
+    "businessMessageReorderedDeliveryAccepted": "FAIL_OR_INCONCLUSIVE",
+    "recoverySessionAuthorisationBoundary": "FAIL_OR_INCONCLUSIVE",
+    "recoveryActionsRefusedWithoutPersistedOperation": "FAIL_OR_INCONCLUSIVE",
+    "hardwareRecoveryRecordScopeEnforced": "FAIL_OR_INCONCLUSIVE",
+    "recoveryCommandSurvivesMidFlightDisconnect": "FAIL_OR_INCONCLUSIVE",
+    "forcedRecoveryGenerationAdvancesMonotonically": "FAIL_OR_INCONCLUSIVE",
+    "secondForcedRecoveryWhileFirstUnsettledIsRejected": "FAIL_OR_INCONCLUSIVE",
+    "recoveryNeverReportsFalseCompletion": "FAIL_OR_INCONCLUSIVE",
+    "slotConfigurationActivationCarriesOneMessageIdOnly": "FAIL_OR_INCONCLUSIVE",
+    "slotConfigurationActivationReplayedByteForByteAfterAMidFlightDrop": "FAIL_OR_INCONCLUSIVE",
+    "slotConfigurationActivationPersistedBeforeItWasSent": "FAIL_OR_INCONCLUSIVE",
+    "slotConfigurationActivationResultReportedByTheVehicle": "FAIL_OR_INCONCLUSIVE",
+    "bothEndsComputedTheSameSlotConfigurationFingerprint": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmSnapshotPublishedOnTheFullHandshake": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmSnapshotAppliedAckOnEverySnapshot": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmSnapshotRepublishedOnlyOnHandshakeOrChange": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmProjectionKeptOnlyTheLatestOfSeveralSnapshots": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmProjectionIsASingletonPerVehicle": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmProjectionCarriesTheGenerationItArrivedIn": "FAIL_OR_INCONCLUSIVE",
+    "noMovementOrExternalSideEffects": "FAIL_OR_INCONCLUSIVE",
+    "secretScan": "PASS"
+  },
+  "probe": null,
+  "businessProbe": null,
+  "recoveryProbe": null,
+  "businessFaultInjection": null,
+  "recoveryFaultInjection": null,
+  "recoveryReplay": null,
+  "database": null,
+  "contentConflictNotApplied": [],
+  "simulatorHealth": null,
+  "controlServerVersion": null,
+  "error": {
+    "type": "System.Management.Automation.RuntimeException",
+    "message": "G3_PORT_IN_USE: SimulatorHttpPort=58006 is held by pid 50648 pwsh (C:\\Program Files\\PowerShell\\7\\pwsh.exe). Something other than this run is on its ports -- a simulator or server left open, or the survivors of a killed run; stop it, or pass this run other ports.",
+    "responseBody": null,
+    "position": "At C:\\work\\8005-wt\\cs809-8005-agv-control-server\\scripts\\G3RunnerPorts.psm1:217 char:9\r\n+         throw (\"G3_PORT_IN_USE: $($held -join '; '). Something other  …\r\n+         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  },
+  "secretLeakFiles": [],
+  "evidenceFiles": [
+    {
+      "path": "configuration.json",
+      "sha256": "2f8a7cea1c2145874a0e1b2c0ad13b2c28c49e5536c823e04c221a9566b197c5",
+      "length": 1898
+    },
+    {
+      "path": "onboard-alarm-snapshot-observation.json",
+      "sha256": "68d880a3750ec99a3740c035cacd4f848e93100af8ea76f37a2632d6036a0d6b",
+      "length": 388
+    },
+    {
+      "path": "runner-error.json",
+      "sha256": "24f5ee5623be5905aecfa3440d51139beff9bcc88f88a9745b33d1e55c7ba30e",
+      "length": 929
+    },
+    {
+      "path": "slices/FP-IS-00/gate-result.json",
+      "sha256": "4a4179529c1c4880b5a88523fc64dcbb3744455f5a5bf28a3c56546528aeb856",
+      "length": 2395
+    },
+    {
+      "path": "slices/FP-IS-06/gate-result.json",
+      "sha256": "38be8d0bb3e672b913e91fb776ff0d2005ed85c7dc2ee19147a9f24baffdb5ff",
+      "length": 2808
+    },
+    {
+      "path": "slices/FP-IS-07/gate-result.json",
+      "sha256": "1e354f17c645e19ec6eefa2dbfec4480866838b119119e3f3771def82bd19d58",
+      "length": 3126
+    },
+    {
+      "path": "slices/FP-IS-14/gate-result.json",
+      "sha256": "7ab23a74cc6f5a18f4f213fcf4a9b964290ab938a28ab4a60b22f264a5e194d5",
+      "length": 2632
+    },
+    {
+      "path": "slices/FP-IS-15/gate-result.json",
+      "sha256": "a80445949a183ec3b31a4cf95968cd83fc1521311797390e89dd923b1443a157",
+      "length": 2688
+    },
+    {
+      "path": "slot-configuration-activation-observation.json",
+      "sha256": "81c5e8e7c1ddb729796a368503255795fc93608ff601873dc5ec143dc2567d9c",
+      "length": 409
+    }
+  ]
+}
+G3_STAGE_KEPT: C:\work\8005-scratch\cs809\stage-red (the run did not pass)
+Exception: C:\work\8005-wt\cs809-8005-agv-control-server\scripts\run-staged-g3.ps1:4646
+Line |
+4646 |      throw "Staged G3 did not pass: $status. Evidence: $EvidenceRoot"
+     |      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Staged G3 did not pass: INCONCLUSIVE_RUNNER_ERROR. Evidence: C:\work\8005-scratch\cs809\evidence-red
+exit=1 elapsed=4s
