@@ -170,8 +170,7 @@ public sealed class CompiledSchemaCache
 
     private CompiledSchema GetUncached(string key, string schemaId)
     {
-        // Test commit stub (control-server#584): nothing is read from or written to disk yet.
-        string? path = null;
+        string? path = directory is null ? null : Path.Combine(directory, key + Extension);
         if (path is not null && File.Exists(path))
         {
             if (TryRead(path, key, schemaId) is { } entry)
