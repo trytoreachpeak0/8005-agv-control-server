@@ -1,0 +1,70 @@
+# Test-G3RunnerStage.ps1 on 9e9bab3ca38ffd090f9cbace1f125e7bfa852355
+PASS run-staged-g3.ps1 defines one New-ExactClone
+PASS run-staged-g3.ps1: New-ExactClone takes -ExcludeEvidence
+PASS run-staged-g3.ps1: -ExcludeEvidence clones the commit with no evidence/, clean
+PASS run-staged-g3.ps1: only the top-level evidence/ is left out (docs/evidence/ is checked out, evidence/ is still tracked)
+PASS run-staged-g3.ps1: without -ExcludeEvidence the checkout is whole
+PASS run-staged-g3.ps1: red -- a tracked file changed after a sparse checkout throws
+PASS run-staged-g3.ps1: red -- an untracked file under the excluded evidence/ still counts as dirty
+PASS run-staged-g3.ps1: red -- a HEAD off the commit throws
+PASS run-staged-g3.ps1: red -- a remote ref at another commit throws remote ref mismatch
+PASS run-staged-g3.ps1: the one ControlServer clone passes -ExcludeEvidence, no peer clone does
+PASS run-staged-g3-restart.ps1 defines one New-ExactClone
+PASS run-staged-g3-restart.ps1: New-ExactClone takes -ExcludeEvidence
+PASS run-staged-g3-restart.ps1: -ExcludeEvidence clones the commit with no evidence/, clean
+PASS run-staged-g3-restart.ps1: only the top-level evidence/ is left out (docs/evidence/ is checked out, evidence/ is still tracked)
+PASS run-staged-g3-restart.ps1: without -ExcludeEvidence the checkout is whole
+PASS run-staged-g3-restart.ps1: red -- a tracked file changed after a sparse checkout throws
+PASS run-staged-g3-restart.ps1: red -- an untracked file under the excluded evidence/ still counts as dirty
+PASS run-staged-g3-restart.ps1: red -- a HEAD off the commit throws
+PASS run-staged-g3-restart.ps1: red -- a remote ref at another commit throws remote ref mismatch
+PASS run-staged-g3-restart.ps1: the one ControlServer clone passes -ExcludeEvidence, no peer clone does
+PASS run-demand-bearing-g3-vectors.ps1 defines one New-ExactClone
+PASS run-demand-bearing-g3-vectors.ps1: New-ExactClone takes -ExcludeEvidence
+PASS run-demand-bearing-g3-vectors.ps1: -ExcludeEvidence clones the commit with no evidence/, clean
+PASS run-demand-bearing-g3-vectors.ps1: only the top-level evidence/ is left out (docs/evidence/ is checked out, evidence/ is still tracked)
+PASS run-demand-bearing-g3-vectors.ps1: without -ExcludeEvidence the checkout is whole
+PASS run-demand-bearing-g3-vectors.ps1: red -- a tracked file changed after a sparse checkout throws
+PASS run-demand-bearing-g3-vectors.ps1: red -- an untracked file under the excluded evidence/ still counts as dirty
+PASS run-demand-bearing-g3-vectors.ps1: red -- a HEAD off the commit throws
+PASS run-demand-bearing-g3-vectors.ps1: the one ControlServer clone passes -ExcludeEvidence, no peer clone does
+PASS run-journey-g3.ps1 defines one New-ExactClone
+PASS run-journey-g3.ps1: New-ExactClone takes -ExcludeEvidence
+PASS run-journey-g3.ps1: -ExcludeEvidence clones the commit with no evidence/, clean
+PASS run-journey-g3.ps1: only the top-level evidence/ is left out (docs/evidence/ is checked out, evidence/ is still tracked)
+PASS run-journey-g3.ps1: without -ExcludeEvidence the checkout is whole
+PASS run-journey-g3.ps1: red -- a tracked file changed after a sparse checkout throws
+PASS run-journey-g3.ps1: red -- an untracked file under the excluded evidence/ still counts as dirty
+PASS run-journey-g3.ps1: red -- a HEAD off the commit throws
+PASS run-journey-g3.ps1: red -- a remote ref at another commit throws remote ref mismatch
+PASS run-journey-g3.ps1: the one ControlServer clone passes -ExcludeEvidence, no peer clone does
+PASS run-journey-g3.ps1 builds once: one build-control-server, dotnet build ControlServer.sln -c Release in the clone
+PASS run-journey-g3.ps1: the build is in the scenarios' try, before them, outside the loop, and a failed build throws
+PASS run-journey-g3.ps1: every scenario is started with -SkipBuild
+G3 disk: 800.15 GiB free on C:\ (floor 0 GiB)
+PASS Assert-G3FreeDiskSpace: a floor of 0 passes and returns the free GiB
+PASS Assert-G3FreeDiskSpace: red -- below the floor throws G3_DISK_LOW naming the drive and the floor
+PASS Assert-G3FreeDiskSpace: a relative path is the drive of the current location
+PASS run-staged-g3.ps1: -MinFreeGiB, default 30
+PASS run-staged-g3.ps1: the disk is checked once, at top level, before the stage is created
+PASS run-staged-g3-restart.ps1: -MinFreeGiB, default 30
+PASS run-staged-g3-restart.ps1: the disk is checked once, at top level, before the stage is created
+PASS run-demand-bearing-g3-vectors.ps1: -MinFreeGiB, default 30
+PASS run-demand-bearing-g3-vectors.ps1: the disk is checked once, at top level, before the stage is created
+PASS run-journey-g3.ps1: -MinFreeGiB, default 30
+PASS run-journey-g3.ps1: the disk is checked once, at top level, before the stage is created
+PASS Invoke-NightlyG3.ps1 hands its own -MinFreeGiB to every runner
+PASS Complete-G3RunnerStage: a passed run's stage is removed
+PASS Complete-G3RunnerStage: a red run's stage stays, whole
+PASS Complete-G3RunnerStage: a stage it cannot remove is a warning and removed=false, not a throw
+PASS G3RunnerStage.psm1 never runs dotnet build-server shutdown (it would stop other sessions' builds)
+PASS run-staged-g3.ps1 ends: $passed once, Complete-G3RunnerStage with it, then the throw
+PASS run-staged-g3.ps1: $passed is true exactly for its pass statuses with no secret leak
+PASS run-staged-g3-restart.ps1 ends: $passed once, Complete-G3RunnerStage with it, then the throw
+PASS run-staged-g3-restart.ps1: $passed is true exactly for its pass statuses with no secret leak
+PASS run-demand-bearing-g3-vectors.ps1 ends: $passed once, Complete-G3RunnerStage with it, then the throw
+PASS run-demand-bearing-g3-vectors.ps1: $passed is true exactly for its pass statuses with no secret leak
+PASS run-journey-g3.ps1 ends: $passed once, Complete-G3RunnerStage with it, then the throw
+PASS run-journey-g3.ps1: $passed is true exactly for its pass statuses with no secret leak
+All checks passed.
+exit 0
