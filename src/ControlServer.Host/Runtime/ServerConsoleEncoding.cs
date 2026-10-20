@@ -13,8 +13,14 @@ namespace ControlServer.Host.Runtime;
 /// <see cref="Console.OutputEncoding"/>: that setter calls SetConsoleOutputCP, which changes the code page of a console
 /// the Host shares with the shell that started it, and fails when there is no console at all, as under the service
 /// control manager. A stream that is a console stays as it is: what reaches a console window is characters, not bytes
-/// anyone reads back. In production the Host is a Windows service with no standard handles; its log is the Serilog
-/// File sink, UTF-8 already, and a writer over a missing handle writes nowhere, as before.
+/// anyone reads back. In production the Host is a Windows service with no standard handles, which .NET reports as
+/// redirected: the writers are replaced there too, over a null stream, and write nowhere, as before. Its log is the
+/// Serilog File sink, UTF-8 already.
+/// <para>
+/// Not covered: what the runtime itself prints for an unhandled exception ("Unhandled exception. ...") is written in the
+/// console's code page without going through <see cref="Console.Error"/>, so on an en-US machine its Chinese is still
+/// '?' in the redirected stderr.
+/// </para>
 /// </remarks>
 public static class ServerConsoleEncoding
 {

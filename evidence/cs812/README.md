@@ -10,6 +10,8 @@
 - `green-62e8cda3.txt`：修复后，连同 `ControlServerDatabaseLockTests`、`ArchitectureTests` 共 92/92。
 - `green-three-tests.txt`：三条（UTF-8 无 BOM；未处理异常退出前最后一行 `Startup refused …关卡…` 已落盘；退出前 `Console.WriteLine` 的最后一行已落盘）。
 - `mutation-autoflush-off.txt`：把两处 `AutoFlush = true` 改成 `false`，第三条红（`Package capacity import complete` 整行丢失），另两条仍绿：Serilog 的 Console sink 每条事件后自己 flush，`AutoFlush` 保住的是 Serilog 以外的直接写。
+- `green-four-tests.txt`、`mutation-no-seterror.txt`（审查 S2）：第四条 `RedirectedStandardErrorIsUtf8` 经环境变量再挂一个全部写 stderr 的 Serilog Console sink，等锁行经托管 `Console.Error` 写出，「关卡」是 UTF-8。删掉 `Console.SetError(...)` 那一行，这条红在 `5C3F3F5C`，另三条仍绿。
+- 不在本票范围（审查 S1）：运行时自己打印的未处理异常文本（`Unhandled exception. ...`）不经 `Console.Error`，按控制台代码页写，en-US 上 stderr 里的中文仍是 `?`。
 
 ## selfcheck/
 

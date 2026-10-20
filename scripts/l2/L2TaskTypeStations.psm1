@@ -245,12 +245,14 @@ function Wait-L2ServerStartupRefusal {
 
 <#
 The server's redirected console output, as text. Since control-server#812 the Host writes it as UTF-8 on every system
-locale. Before that it wrote the console's code page: GBK on the zh-CN machines every older log came from (this one,
-win11-01, vm01, all code page 936), and a literal '?' on an en-US machine, which no reader can undo.
-How a log is told apart: strict UTF-8 first. GBK text with Chinese in it is practically never valid UTF-8 (lead bytes
-0x81-0xFE followed by bytes UTF-8 does not allow there), so a decode that succeeds is UTF-8; pure ASCII reads the same
-either way. When strict UTF-8 fails the log is a pre-#812 one and is read as GBK, code page 936 by number: the code
-page of the machine that wrote it, not of the machine reading it (an en-US reader's OEM code page is 437).
+locale (all but the runtime's own unhandled-exception text on stderr, which stays in the console's code page). Before
+that it wrote the console's code page: GBK on the zh-CN machines every older log came from (this one, win11-01, vm01,
+all code page 936), and a literal '?' on an en-US machine, which no reader can undo.
+How a log is told apart: strict UTF-8 first, and when that fails the log is a pre-#812 one and is read as GBK, code
+page 936 by number: the code page of the machine that wrote it, not of the machine reading it (an en-US reader's OEM
+code page is 437). The more Chinese a GBK log holds, the less likely it is to pass as UTF-8, and a whole log almost
+never does; a short string can. About one Chinese character in seven has GBK bytes that are valid UTF-8, and a word
+can be too: 装片 is D7B0C6AC in GBK, which decodes as strict UTF-8. Pure ASCII reads the same either way.
 #>
 function Read-L2ProcessLog {
     param([Parameter(Mandatory)][string]$Path)
