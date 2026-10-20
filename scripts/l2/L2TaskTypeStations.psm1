@@ -298,4 +298,4 @@ function Read-L2ProtocolCandidateIdentity {
 }
 
 Export-ModuleMember -Function Resolve-L2TaskTypeStationsSetting, Resolve-L2ExpectedStartupRefusal,
-    New-L2TaskTypeStationPreset, Wait-L2ServerStartupRefusal, Read-L2ProtocolCandidateIdentity
+    New-L2TaskTypeStationPreset, Wait-L2ServerStartupRefusal, Read-L2ProtocolCandidateIdentity, Read-L2ProcessLog
