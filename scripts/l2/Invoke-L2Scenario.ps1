@@ -120,6 +120,8 @@ Import-Module (Join-Path $PSScriptRoot 'L2ExpectedActionOverdue.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'L2DispatchZoneParameters.psm1') -Force
 # Batch 8's WaitingPoints setup key and the Fleet default of one waiting point per vehicle (control-server#388).
 Import-Module (Join-Path $PSScriptRoot 'L2WaitingPoints.psm1') -Force
+# The setup's FieldOps verbs in one process instead of one each (control-server#804).
+Import-Module (Join-Path $PSScriptRoot 'L2FieldOpsSession.psm1') -Force
 # Batch 9's ChargingPolicy setup key and the default approved test policy (control-server#400).
 Import-Module (Join-Path $PSScriptRoot 'L2ChargingPolicy.psm1') -Force
 # Batch 9-06's Chargers setup key: charger stations on the fake Map and its route graph (control-server#404).
@@ -433,6 +435,9 @@ $portLock = $null
 # Set when this run wrote its entry line to the machine's real-rig ledger; the exit line is written
 # only when there is an entry line to pair it with, and never for a synthetic run.
 $ledgerStarted = $null
+# The setup's FieldOps session (control-server#804): started by the first setup verb, ended before the scenario runs,
+# and in the finally below when the setup fails first.
+$fieldOpsSession = @{ Session = $null }
 
 try {
     $journal.Note("L2 run $runId starting for scenario '$Scenario'.")
@@ -931,13 +936,31 @@ try {
         if (-not $json) { throw "ControlServer.FieldOps $($Arguments[0]) printed no JSON: $text" }
         return ($json | ConvertFrom-Json)
     }
+    # The same contract for the setup's own verbs, through one FieldOps process for the whole setup (control-server#804,
+    # L2FieldOpsSession.psm1): about 2 s of process start per verb saved. Same arguments, same order, same database, the
+    # same journal note and the same thrown text naming the verb that failed. Not handed to the scenario: its
+    # $Context.InvokeFieldOps above still starts one process per command.
+    $invokeSetupFieldOps = {
+        param([Parameter(Mandatory)][string[]]$Arguments)
+        $all = @($Arguments[0], '--database', $databasePath) + @($Arguments | Select-Object -Skip 1)
+        $journal.Note("FieldOps: $($all -join ' ')")
+        if ($null -eq $fieldOpsSession.Session) {
+            $fieldOpsSession.Session = Start-L2FieldOpsSession -Executable (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe')
+        }
+        $reply = Invoke-L2FieldOpsSessionCommand -Session $fieldOpsSession.Session -Arguments $all
+        $text = $reply.Lines -join "`n"
+        if ($reply.ExitCode -ne 0) { throw "ControlServer.FieldOps $($Arguments[0]) exited with $($reply.ExitCode)`: $text" }
+        $json = $reply.Lines | Where-Object { $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
+        if (-not $json) { throw "ControlServer.FieldOps $($Arguments[0]) printed no JSON: $text" }
+        return ($json | ConvertFrom-Json)
+    }
 
     # 3a. The waiting point registration (control-server#388), before the server's first start: a Fleet server refuses to
     #     start without it. The host migrates the database and exits, then the formal FieldOps verb imports into it.
     if ($null -ne $waitingPoints) {
         Invoke-L2HostMigrateOnly -HostDirectory $hostDirectory -Environment $serverEnvironment -LogRoot $logRoot
         $waitingPointImport = Invoke-L2WaitingPointImport -Points $waitingPoints -MapId $mapId `
-            -Fleet @($fleet | ForEach-Object { $_.VehicleKey }) -Riot $riot -InvokeFieldOps $invokeFieldOps -StageRoot $stageRoot
+            -Fleet @($fleet | ForEach-Object { $_.VehicleKey }) -Riot $riot -InvokeFieldOps $invokeSetupFieldOps -StageRoot $stageRoot
         $journal.Observe('waiting-points-imported', $waitingPointImport.version,
             @{ stations = @($waitingPoints | ForEach-Object { $_.StationId }); coverage = $waitingPointImport.coverage })
         $journal.Note("Waiting points registered on map ${mapId} as version $($waitingPointImport.version): " +
@@ -1251,14 +1274,14 @@ try {
         ConvertFrom-Json).JourneyRuntime.dispatchZone
     $preseededSlotModelVersionId = $null
     if ($slotModelPreseed) {
-        $seedResult = & $invokeFieldOps -Arguments @('seed-approved-facts')
+        $seedResult = & $invokeSetupFieldOps -Arguments @('seed-approved-facts')
         $journal.Observe('slot-model-preseed:seed-approved-facts', $seedResult.outcome, @{ output = $seedResult })
         if ($seedResult.outcome -ne 'OK' -or [int]$seedResult.slotCount -ne 8) {
             throw "Slot model preseed: seed-approved-facts answered $($seedResult.outcome) with $($seedResult.slotCount) slots."
         }
         $preseededSlotModelVersionId = [string]$seedResult.slotModelVersionId
         foreach ($vehicle in $fleet) {
-            $bindResult = & $invokeFieldOps -Arguments @('bind-io', '--agv', $vehicle.AgvId)
+            $bindResult = & $invokeSetupFieldOps -Arguments @('bind-io', '--agv', $vehicle.AgvId)
             $journal.Observe("slot-model-preseed:bind-io:$($vehicle.AgvId)", $bindResult.outcome, @{ output = $bindResult })
             if ($bindResult.outcome -ne 'OK' -or [int]$bindResult.boundSlots -ne 8) {
                 throw "Slot model preseed: bind-io for $($vehicle.AgvId) answered $($bindResult.outcome) with $($bindResult.boundSlots) slots."
@@ -1310,7 +1333,7 @@ try {
                 @($wantedZones | Where-Object { $_ -cnotin $storedZones }).Count
             } -Until { param($v) $v -eq 0 }
         try {
-            $importResult = & $invokeFieldOps -Arguments @('import-area-assignments', '--input', $assignmentCsv)
+            $importResult = & $invokeSetupFieldOps -Arguments @('import-area-assignments', '--input', $assignmentCsv)
         } catch {
             $journal.Observe('slot-model-preseed:import-area-assignments', 'FAILED', @{ error = $_.Exception.Message })
             throw
@@ -1330,7 +1353,7 @@ try {
     } else {
         try {
             $policyPreset = Invoke-L2ChargingPolicyPreset -Policy $chargingPolicy `
-                -Fleet @($fleet | ForEach-Object { $_.VehicleKey }) -InvokeFieldOps $invokeFieldOps -SnapshotRoot $snapshotRoot
+                -Fleet @($fleet | ForEach-Object { $_.VehicleKey }) -InvokeFieldOps $invokeSetupFieldOps -SnapshotRoot $snapshotRoot
         } catch {
             $journal.Observe('preseed:charging-policy', 'FAILED', @{ error = $_.Exception.Message })
             throw
@@ -1357,6 +1380,11 @@ try {
                 version = $zoneVersion.Version; contentSha256 = $zoneVersion.ContentSha256; source = 'L2_PRESET'
                 zones   = @($dispatchZoneParameters) })
     }
+
+    # The setup's last FieldOps verb has run: end its session, so nothing of the setup is still running when the
+    # scenario starts (control-server#804).
+    Stop-L2FieldOpsSession -Session $fieldOpsSession.Session
+    $fieldOpsSession.Session = $null
 
     $context = [pscustomobject]@{
         Journal             = $journal
@@ -1500,6 +1528,8 @@ try {
 ", " | "))
     Write-Warning $failureReason
 } finally {
+    # A setup that failed part way leaves its FieldOps session running (control-server#804).
+    try { Stop-L2FieldOpsSession -Session $fieldOpsSession.Session } catch { Write-Warning "Could not end the FieldOps session: $_" }
     # Snapshots before teardown, so a failed run keeps the state that explains it. Each is written
     # independently: a double that already died must not stop the others being captured.
     $snapshotSources = @(
