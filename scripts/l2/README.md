@@ -383,8 +383,8 @@ control-server#581 下评论一条，全绿也写一行，**某晚没有评论�
 
 | 作业 | runner | 做什么 |
 | --- | --- | --- |
-| `gate` | headless | 取两个提交和开跑截止时间；看本仓有没有正在跑或排队的 `l2.yml` `real-rig` 作业，有就每分钟查一次、最多等 30 分钟，仍忙就本晚记 `NOT_STARTED_RIG_BUSY`。等待放在这里而不在 cs-desktop 上，是因为排在本作业后面的真装置作业要等本作业让出 runner，在 cs-desktop 上等它只会等满上限 |
-| `g3` | `cs-desktop` | `scripts/Invoke-NightlyG3.ps1`：按出口顺序 staged → restart → 需求承载 → journey 串行（staged 与 restart 都占 Modbus 1502，三个要桌面）。每个 runner 开跑前三道闸门，依次是：整机已提交内存（照真装置那套，超过 12 GiB 等最多 30 分钟）、截止时间（放在内存等待之后，等完再看一次）、C 盘剩余至少 4 GiB；任一不过，其余 runner 记 `NOT_STARTED_COMMIT_GUARD`／`NOT_STARTED_DEADLINE`／`NOT_STARTED_DISK`，不启动。处理某个 runner 时编排自己抛了异常，这一轮停下：`stoppedBy` 写 `ERROR_ROUND: <runner>: <报错>`，那个 runner 记 ERROR，其余记 `NOT_STARTED_ERROR`。跑完关掉本轮留在桌面上的残留进程和崩溃对话框，有就判作业失败。「本轮的」指可执行文件路径或命令行落在本作业的工作目录（`$RUNNER_TEMP\g3`）或检出目录下：staged、restart、需求承载都用 `dotnet <dll>` 起进程，路径是 `dotnet.exe`，只有命令行里才有 dll；崩溃对话框要是开跑后新出现的、且是为本轮进程弹的。L2 的对端缓存 `8005-l2-peers` 不算（G3 用不到它，有人手动跑 L2 时它的进程不能被误杀）。判定在 `Select-NightlyG3LeftoverProcess` 里，有离线自检 |
+| `gate` | headless | 只取两个提交和开跑截止时间，已过截止就本晚记 `NOT_STARTED_DEADLINE`、不排 `g3`。control-server#807 起不再等真装置：原先在这里查 `l2.yml` `real-rig` 作业、最多等 30 分钟；一晚从 22:37 开始、到 07:00 截止，在这里等会把 L2 场景也要用的唯一 headless runner 占上几个小时 |
+| `g3` | `cs-desktop` | 在 cs-desktop 上排队，真装置作业在跑就排在它后面，GitHub 的排队不占任何 runner；cs-desktop 只有一个 runner，作业一个接一个跑，staged、restart、journey 还和真装置一样拿 `Global\W2G-InteractiveDesktop` 桌面锁，所以本轮不会和真装置同时跑。第一步记下拿到 runner 的时刻（评论里的「本轮开始」）。然后 `scripts/Invoke-NightlyG3.ps1`：按出口顺序 staged → restart → 需求承载 → journey 串行（staged 与 restart 都占 Modbus 1502，三个要桌面）。每个 runner 开跑前三道闸门，依次是：整机已提交内存（照真装置那套，超过 12 GiB 等最多 30 分钟）、截止时间（放在内存等待之后，等完再看一次）、C 盘剩余至少 4 GiB；任一不过，其余 runner 记 `NOT_STARTED_COMMIT_GUARD`／`NOT_STARTED_DEADLINE`／`NOT_STARTED_DISK`，不启动。处理某个 runner 时编排自己抛了异常，这一轮停下：`stoppedBy` 写 `ERROR_ROUND: <runner>: <报错>`，那个 runner 记 ERROR，其余记 `NOT_STARTED_ERROR`。跑完关掉本轮留在桌面上的残留进程和崩溃对话框，有就判作业失败。「本轮的」指可执行文件路径或命令行落在本作业的工作目录（`$RUNNER_TEMP\g3`）或检出目录下：staged、restart、需求承载都用 `dotnet <dll>` 起进程，路径是 `dotnet.exe`，只有命令行里才有 dll；崩溃对话框要是开跑后新出现的、且是为本轮进程弹的。L2 的对端缓存 `8005-l2-peers` 不算（G3 用不到它，有人手动跑 L2 时它的进程不能被误杀）。判定在 `Select-NightlyG3LeftoverProcess` 里，有离线自检 |
 | `report` | headless | `if: always()`：不管前两个作业怎样，都在 #581 下评论 |
 
 - **时间。** 一晚从北京时间 19:00 算到次日 19:00；夜间一轮（`nightly=true`）不在这一晚次日早上 07:00 之后开新 runner，22:37 准时
@@ -392,8 +392,8 @@ control-server#581 下评论一条，全绿也写一行，**某晚没有评论�
   `NOT_STARTED_DEADLINE`）。截止原先是 04:00，只为避开 05:30 前后 mes-ingest 的黄金渲染 verify；黄金渲染没迁到 vm-win-01，
   而 01:00 的触发被 GitHub 推迟 2～6 小时，近四晚只跑完一晚，所以 control-server#807 改成 07:00（`Get-NightlyG3StartDeadline`
   的 `-DeadlineHourCst`、`-NightStartHourCst` 可调）。手动触发的截止是开跑后 180 分钟。
-- **评论写晚点。** 每晚评论的第二行写触发器的计划时刻、GitHub 实际触发的时刻和晚了多少分钟、本轮开始时刻与截止时刻（都是
-  北京时间），没跑成的一晚一眼看出是晚点还是产品红。计划与实际触发由触发器经 `trigger_cron`、`triggered_at` 两个输入传来；
+- **评论写晚点。** 每晚评论的第二行写触发器的计划时刻、GitHub 实际触发的时刻和晚了多少分钟、`gate` 的时刻、本轮开始时刻与
+  在 cs-desktop 上排队了多久、截止时刻（都是北京时间）。没跑成的一晚，一眼看出是触发晚点、被真装置挤到截止之后，还是产品红。计划与实际触发由触发器经 `trigger_cron`、`triggered_at` 两个输入传来；
   手动触发没有这两项，评论就不写晚点。
 - **不取消。** 本 workflow 里没有任何取消作业的动作，`cancel-in-progress: false`；作业超时给足，结束一轮的是截止时间，不是超时。
 - **磁盘。** vm01 的 C 盘 2026-10-11 只剩 7.9 GB，一个 runner 的暂存约 1.7 GB。PASS 的暂存跑完即删；红的只删 `sources/`、

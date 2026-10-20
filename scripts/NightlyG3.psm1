@@ -90,6 +90,10 @@ function Format-NightlyG3Comment {
         [Nullable[DateTimeOffset]]$TriggeredAtUtc,
         # The gate's start deadline, said so that a night that did not start reads as late, not as red.
         [Nullable[DateTimeOffset]]$DeadlineUtc,
+        # When the g3 job itself started. It queues for cs-desktop behind the CI real rig, so this can be hours after the
+        # gate (StartedAtUtc); saying so keeps a night the rig crowded out from reading as a late trigger (review S1 of
+        # PR #817). Without it -- the g3 job never ran -- nothing is said about the round's start.
+        [Nullable[DateTimeOffset]]$RoundStartedAtUtc,
         # The night start the gate's deadline used, so that the night is named by the same night (review S4 of PR #817).
         [ValidateRange(0, 23)][int]$NightStartHourCst = 19
     )
@@ -133,7 +137,11 @@ function Format-NightlyG3Comment {
         $meta += "计划 $($delay.scheduledAtUtc.ToOffset($cst).ToString('HH:mm'))"
         $meta += "实际触发 $($TriggeredAtUtc.ToOffset($cst).ToString('HH:mm'))（晚 $($delay.lateMinutes) 分钟）"
     }
-    $meta += "本轮开始 $($StartedAtUtc.ToOffset($cst).ToString('HH:mm'))"
+    $meta += "gate $($StartedAtUtc.ToOffset($cst).ToString('HH:mm'))"
+    if ($null -ne $RoundStartedAtUtc) {
+        $queued = [Math]::Max(0, [int][Math]::Floor(($RoundStartedAtUtc - $StartedAtUtc).TotalMinutes))
+        $meta += "本轮开始 $($RoundStartedAtUtc.ToOffset($cst).ToString('HH:mm'))（在 cs-desktop 排队 $queued 分钟）"
+    }
     if ($null -ne $DeadlineUtc) { $meta += "截止 $($DeadlineUtc.ToOffset($cst).ToString('HH:mm'))" }
     $meta += @("[run]($RunUrl)", "ref ``$Ref``")
     foreach ($pair in @(@('controlServer', 'control-server', ''), @('onboardHmi', 'onboard-hmi', '（顶端）'),
@@ -162,57 +170,6 @@ function Format-NightlyG3Comment {
     $lines.Add('')
     $lines.Add('自检覆盖运行（`SELF_CHECK_OVERRIDE`，`formalSlicePass=false`），不是门禁证据。红了由当班调度第二天看。')
     return ($lines -join "`n")
-}
-
-function Select-NightlyG3BusyRealRigJob {
-    param(
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Runs,
-        [Parameter(Mandatory)][System.Collections.IDictionary]$JobsByRun
-    )
-
-    # A real-rig job of l2.yml that is not completed holds or wants the one cs-desktop runner. Its run's event does not
-    # matter: every l2.yml run carries a real-rig job, skipped (completed) unless it is a rig=real dispatch.
-    $busy = [System.Collections.Generic.List[string]]::new()
-    foreach ($run in $Runs) {
-        if ("$($run['status'])" -ceq 'completed') { continue }
-        foreach ($job in @($JobsByRun[$run['id']])) {
-            if ($null -ne $job -and "$($job['name'])" -ceq 'real-rig' -and "$($job['status'])" -cne 'completed') {
-                $busy.Add("run $($run['id']) job real-rig $($job['status'])")
-            }
-        }
-    }
-    return @($busy)
-}
-
-function Wait-NightlyG3RigIdle {
-    param(
-        [Parameter(Mandatory)][scriptblock]$GetBusy,
-        [Parameter(Mandatory)][double]$WaitMinutes,
-        [int]$PollSeconds = 60,
-        [scriptblock]$Sleep = { param($seconds) Start-Sleep -Seconds $seconds },
-        [scriptblock]$Now = { [DateTimeOffset]::UtcNow }
-    )
-
-    # Waits while GetBusy names something, up to WaitMinutes, and never cancels anything: it only decides whether this
-    # night starts. A GetBusy that throws counts as busy, with its message, so a query that cannot answer never reads as
-    # an idle rig. Returns idle, busy (what was busy last) and waitedMinutes.
-    $poll = {
-        try { return @(& $GetBusy) } catch { return @("real-rig query failed: $($_.Exception.Message)") }
-    }
-    $started = & $Now
-    $busy = @(& $poll)
-    while ($busy.Count -gt 0) {
-        $elapsed = ((& $Now) - $started).TotalSeconds
-        if ($elapsed -ge $WaitMinutes * 60) { break }
-        Write-Host "G3_RIG_BUSY_WAITING: $($busy -join '; ') ($([Math]::Floor($elapsed / 60)) of $WaitMinutes minutes)"
-        & $Sleep ([Math]::Min($PollSeconds, $WaitMinutes * 60 - $elapsed))
-        $busy = @(& $poll)
-    }
-    return [pscustomobject][ordered]@{
-        idle = $busy.Count -eq 0
-        busy = @($busy)
-        waitedMinutes = [Math]::Round(((& $Now) - $started).TotalMinutes, 1)
-    }
 }
 
 function Get-NightlyG3NightMorning {
@@ -316,7 +273,7 @@ function Select-NightlyG3LeftoverProcess {
     return @($selected)
 }
 
-# The two calls to GitHub, kept thin: everything they decide is in the functions above, which the self-check covers.
+# The one call to GitHub, kept thin: what the comment says is decided by Format-NightlyG3Comment, which the self-check covers.
 function Invoke-NightlyG3Api {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -334,22 +291,6 @@ function Invoke-NightlyG3Api {
     return Invoke-RestMethod @request
 }
 
-function Get-NightlyG3BusyRealRigJob {
-    param(
-        [Parameter(Mandatory)][string]$Repository,
-        [Parameter(Mandatory)][string]$Token
-    )
-    # The most recent l2.yml runs are enough: a run that holds or waits for the rig is among the newest.
-    $runs = @((Invoke-NightlyG3Api -Path "repos/$Repository/actions/workflows/l2.yml/runs?per_page=50" -Token $Token).workflow_runs |
-        Where-Object { $_.status -ne 'completed' } | ForEach-Object { [ordered]@{ id = $_.id; event = $_.event; status = $_.status } })
-    $jobsByRun = @{}
-    foreach ($run in $runs) {
-        $jobsByRun[$run['id']] = @((Invoke-NightlyG3Api -Path "repos/$Repository/actions/runs/$($run['id'])/jobs?per_page=100" -Token $Token).jobs |
-            ForEach-Object { [ordered]@{ name = $_.name; status = $_.status; conclusion = $_.conclusion } })
-    }
-    return @(Select-NightlyG3BusyRealRigJob -Runs $runs -JobsByRun $jobsByRun)
-}
-
 function Send-NightlyG3Comment {
     param(
         [Parameter(Mandatory)][string]$Repository,
@@ -360,5 +301,5 @@ function Send-NightlyG3Comment {
     return Invoke-NightlyG3Api -Path "repos/$Repository/issues/$Issue/comments" -Token $Token -Method POST -Body @{ body = $Body }
 }
 
-Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Select-NightlyG3BusyRealRigJob, Wait-NightlyG3RigIdle,
-    Get-NightlyG3StartDeadline, Get-NightlyG3TriggerDelay, Get-NightlyG3BusyRealRigJob, Send-NightlyG3Comment, Select-NightlyG3LeftoverProcess
+Export-ModuleMember -Function Get-NightlyG3Verdict, Format-NightlyG3Comment, Get-NightlyG3StartDeadline, Get-NightlyG3TriggerDelay,
+    Send-NightlyG3Comment, Select-NightlyG3LeftoverProcess
