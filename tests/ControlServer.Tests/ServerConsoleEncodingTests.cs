@@ -87,6 +87,44 @@ public sealed class ServerConsoleEncodingTests : IAsyncDisposable
         Assert.Contains("关卡", last, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// What the host writes with <c>Console.WriteLine</c> rather than through Serilog (whose sink flushes after every
+    /// event) is on the redirected stream when the process ends: the writer that replaced <c>Console.Out</c> is not
+    /// flushed at exit by anyone, so it flushes on every write. <c>--import-package-capacity</c> ends on such a line.
+    /// </summary>
+    [Fact]
+    public async Task AConsoleWriteLineJustBeforeTheProcessEndsIsOnTheRedirectedStream()
+    {
+        string database = Path.Combine(_root, "关卡", "controlserver.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(database)!);
+        string csv = Path.Combine(_root, "package-capacity.csv");
+        await File.WriteAllLinesAsync(
+            csv,
+            ["pattern,match_type,max_boxes_per_basket,source,status,note", "PKG-812,exact,4,cs812-test,active,flush at exit"],
+            Token);
+        ProcessStartInfo import = HostStart(database);
+        foreach (string argument in new[] { "--import-package-capacity", "--input", csv, "--version", "1" })
+        {
+            import.ArgumentList.Add(argument);
+        }
+
+        _host = Process.Start(import)!;
+        MemoryStream stdout = new();
+        Task copyingOut = CollectAsync(_host.StandardOutput.BaseStream, stdout);
+        Task copyingErr = _host.StandardError.BaseStream.CopyToAsync(Stream.Null, Token);
+        using CancellationTokenSource bounded = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        bounded.CancelAfter(TimeSpan.FromSeconds(120));
+        await _host.WaitForExitAsync(bounded.Token);
+        await Task.WhenAll(copyingOut, copyingErr);
+
+        string text = Encoding.UTF8.GetString(stdout.ToArray());
+        Assert.True(_host.ExitCode == 0, text);
+        Assert.StartsWith(
+            "Package capacity import complete: inserted=1",
+            text.TrimEnd('\r', '\n').Split('\n')[^1],
+            StringComparison.Ordinal);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_host is not null)
