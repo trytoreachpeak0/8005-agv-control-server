@@ -13,8 +13,13 @@ name: test
 on:
   push:
     # fp/v2-impl since control-server#803 (review S2 of PR #808): pull requests skip the self-checks whose inputs they do not
-    # change, so every merge into the integration branch runs all of them -- a skip the table got wrong, or a selector
-    # that regressed, shows up on the next merge rather than on the next pull request that happens to touch the input.
+    # change, so the integration branch's final head runs all of them -- a skip the table got wrong, or a selector that
+    # regressed, shows up there rather than on the next pull request that happens to touch the input. Only the final head:
+    # merges that land while a run is going queue behind it, and a newer push replaces the one queued (it ends
+    # "cancelled", before any runner takes it). On that push the self-checks run and the suite does not (the coordinator's
+    # ruling on the re-review of PR #808): every pull request ran the suite on its own merge commit, and a full round here
+    # would take the one cs-test runner for 22-25 minutes per merge. scripts/TestSelfCheckScope.psd1, PushToIntegration,
+    # says what is skipped and what replaces it; Test-TestSelfCheckScope.ps1 holds this file to it.
     branches: [ControlServer_MVP, main, fp/v2-impl]
   # A draft pull request runs nothing; marking it ready runs the one round a ticket is meant to need.
   pull_request:
@@ -507,7 +512,9 @@ jobs:
 
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
+      # Not on a push to fp/v2-impl (control-server#803; see on: above): the next step builds the Host in its place.
       - name: Test
+        if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/fp/v2-impl') }}
         shell: pwsh
         # 60 = the longest Test step seen, 38m57s (37784270398 attempt 1, unfinished when the job
         # timed out), x 1.5, rounded up. It is the step's own limit, below the job's, so a suite that
@@ -524,6 +531,19 @@ jobs:
         run: |
           [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
           dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
+
+      # Only on a push to fp/v2-impl, where the Test step does not run (control-server#803). Two self-checks below read the
+      # Host build the Test step leaves in src/ControlServer.Host/bin/Release/net8.0/win-x64 (Directory.Build.props sets
+      # win-x64): the journey v3 script branches, which exit 2 without it, and the parallel instance check, which skips a
+      # case. This builds the same Host the same way, so they run on that push as on any other. About a minute; with Test
+      # (60) skipped whenever this runs, the job limit's sum above does not grow.
+      - name: Build ControlServer.Host for the self-checks that read it (push to fp/v2-impl)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/fp/v2-impl' }}
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
+          dotnet build src/ControlServer.Host/ControlServer.Host.csproj -c Release -nologo
 
       # control-server#571. The v2 parallel instance's offline self-check: the definition checks (agv01 never in
       # the vehicle roster, each roster row's identity against remote-ops/fleet.md), the overlay, and the
@@ -564,14 +584,20 @@ jobs:
       # a line in the job summary, so a green job is not read as "it ran". The diff is the merge commit's (GITHUB_SHA, not
       # the merge ref, which moves when the base does or the job is re-run) against its first parent, the base as GitHub
       # merged it, without rename detection, so a file moved out of a checked path still counts. Any other event -- a
-      # hand-dispatched run, or since control-server#803 a push to fp/v2-impl -- runs it, which is the integration
-      # branch's backstop for this check.
+      # hand-dispatched run -- runs it. A push to fp/v2-impl (control-server#803) does not: it runs the self-checks only.
       - name: Decide whether to run the staged content-conflict self-check
         id: content-conflict-scope
         if: ${{ !cancelled() }}
         timeout-minutes: 5
         shell: pwsh
         run: |
+          # Not on a push to fp/v2-impl (control-server#803; see on: above): that push runs the self-checks only, and this
+          # one takes about 200 s; the coordinator's check of the integration branch's head covers it there.
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/fp/v2-impl') {
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'run=false'
+            Write-Host '::notice title=Staged content-conflict self-check skipped::A push to fp/v2-impl runs the self-checks only.'
+            exit 0
+          }
           if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
             $null = & ./scripts/Select-StagedG3ContentConflictRun.ps1 -NotAPullRequest -GitHubOutput $env:GITHUB_OUTPUT
             exit 0

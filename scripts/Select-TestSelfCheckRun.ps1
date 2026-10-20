@@ -127,8 +127,10 @@ function Get-Named([string]$RepositoryPath) {
             # Named, and in neither place (review M2 of PR #808): the pull request deleted or renamed it, and the script
             # naming it is unchanged -- the case that breaks the script. It counts as a file, and as a directory when the
             # string is a path; a change at that path, or under it, runs the step.
-            # Only a path whose first segment is at the repository root -- tests/..., .github/..., scripts/... -- is taken for
-            # a path: "api/safety/v1/...", "-eq/s" and the like are URLs and regular expressions, not files anyone deletes.
+            # Only a candidate whose first segment is at the repository root is kept. That drops "api/safety/v1/...", "-eq/s"
+            # and the like when read from the repository root; read from the script's own directory they start with
+            # scripts/ and are kept, so Reached also holds harmless entries such as scripts/application/json that no
+            # pull request ever changes (re-review of PR #808). A narrower rule would have to know which strings are paths.
             if (-not $found) {
                 foreach ($relative in @($absent | Where-Object { $rootEntries.Contains($_.Split('/')[0]) })) {
                     $null = $files.Add($relative)
