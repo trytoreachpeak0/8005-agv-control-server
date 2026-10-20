@@ -77,6 +77,8 @@ if (Test-Path -LiteralPath $scriptsDir) {
 }
 foreach ($path in $changed) { if ($path.StartsWith('scripts/', $ignoreCase)) { Add-Leaf $path } }
 $leafNames = [string[]]@($leaves.Keys)
+# The names at the repository root, for telling a named path that is gone from a string that only looks like one.
+$rootEntries = [Collections.Generic.HashSet[string]]::new([string[]]@(Get-ChildItem -LiteralPath $Repository -Force | ForEach-Object Name), [StringComparer]::OrdinalIgnoreCase)
 
 # What one file names: files by leaf (under scripts/), and repository paths, files or directories. Read once per file.
 $namedCache = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -112,12 +114,26 @@ function Get-Named([string]$RepositoryPath) {
             $pathLike = $string -notmatch '\s'
             $stripped = $path
             while ($stripped.StartsWith('./') -or $stripped.StartsWith('../')) { $stripped = $stripped.Substring($stripped.IndexOf('/') + 1) }
+            $absent = [Collections.Generic.List[string]]::new()
+            $found = $false
             foreach ($candidate in [IO.Path]::GetFullPath([IO.Path]::Combine($directory, $path)), [IO.Path]::GetFullPath([IO.Path]::Combine($Repository, $stripped))) {
                 $relative = ConvertTo-RepositoryPath $candidate
                 # Not the repository itself, nothing outside it.
                 if ($relative -eq '.' -or $relative.StartsWith('../')) { continue }
-                if ([IO.File]::Exists($candidate)) { $null = $files.Add($relative) }
-                elseif ($pathLike -and [IO.Directory]::Exists($candidate)) { $null = $prefixes.Add($relative.TrimEnd('/') + '/') }
+                if ([IO.File]::Exists($candidate)) { $null = $files.Add($relative); $found = $true }
+                elseif ([IO.Directory]::Exists($candidate)) { if ($pathLike) { $null = $prefixes.Add($relative.TrimEnd('/') + '/') }; $found = $true }
+                else { $absent.Add($relative) }
+            }
+            # Named, and in neither place (review M2 of PR #808): the pull request deleted or renamed it, and the script
+            # naming it is unchanged -- the case that breaks the script. It counts as a file, and as a directory when the
+            # string is a path; a change at that path, or under it, runs the step.
+            # Only a path whose first segment is at the repository root -- tests/..., .github/..., scripts/... -- is taken for
+            # a path: "api/safety/v1/...", "-eq/s" and the like are URLs and regular expressions, not files anyone deletes.
+            if (-not $found) {
+                foreach ($relative in @($absent | Where-Object { $rootEntries.Contains($_.Split('/')[0]) })) {
+                    $null = $files.Add($relative)
+                    if ($pathLike) { $null = $prefixes.Add($relative.TrimEnd('/') + '/') }
+                }
             }
         }
     }

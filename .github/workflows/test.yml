@@ -12,7 +12,10 @@ name: test
 # runs-on line below back to [self-hosted, headless] restores the old setup.
 on:
   push:
-    branches: [ControlServer_MVP, main]
+    # fp/v2-impl since control-server#803 (review S2 of PR #808): pull requests skip the self-checks whose inputs they do not
+    # change, so every merge into the integration branch runs all of them -- a skip the table got wrong, or a selector
+    # that regressed, shows up on the next merge rather than on the next pull request that happens to touch the input.
+    branches: [ControlServer_MVP, main, fp/v2-impl]
   # A draft pull request runs nothing; marking it ready runs the one round a ticket is meant to need.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -100,12 +103,15 @@ jobs:
       # are (its script, every file that script reaches by name, and what a name cannot show); Select-TestSelfCheckRun.ps1
       # reads it and the checkout and writes one output per step, which each step's if: reads. The steps after Test keep
       # !cancelled() beside it. A skip is a notice and the job summary lists the skipped steps, so a green job is not
-      # read as "they ran". Never skipped: an event that is not a pull request (a push, a dispatched run -- this workflow
-      # does not run on a push to fp/v2-impl or on a schedule), a diff that cannot be read, and a pull request that
-      # changes test.yml, the table or the selector. The diff is the merge commit's (GITHUB_SHA) against its first
-      # parent, without rename detection, as the content-conflict and L2 scopes do. The staged content-conflict
-      # self-check after Test keeps its own selector. A step added to this file that the table does not register turns
-      # the next step red. Seconds; the job limit's margin above covers it.
+      # read as "they ran". Never skipped: an event that is not a pull request (a push -- including every merge into
+      # fp/v2-impl -- or a dispatched run), a diff that cannot be read, and a pull request that changes test.yml, the
+      # table or the selector. The diff is the merge commit's (GITHUB_SHA) against its first parent, without rename
+      # detection, as the content-conflict and L2 scopes do, and with core.quotePath off, since a quoted non-ASCII path
+      # matches no input. The step ends with exit 0: a failed fetch leaves a non-zero exit code behind, and the step
+      # would otherwise fail where it was meant to run everything. The staged content-conflict self-check after Test
+      # keeps its own selector. A step added to this file that the table does not register turns the next step red;
+      # that step is not gated on this one, because a selector that broke would otherwise skip the check that says so.
+      # Seconds; the job limit's margin above covers it.
       - name: Decide which self-checks this pull request runs
         id: self-check-scope
         timeout-minutes: 5
@@ -116,9 +122,11 @@ jobs:
             exit 0
           }
           $changed = @()
+          # git writes the unquoted path in UTF-8; pwsh would read it in the guest's zh-CN code page.
+          [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
           git fetch --no-tags --quiet --depth=2 origin $env:GITHUB_SHA
           if ($LASTEXITCODE -eq 0) {
-            $changed = @(git diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA)
+            $changed = @(git -c core.quotePath=false diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA)
             if ($LASTEXITCODE -ne 0) { $changed = @() }
           }
           if ($changed.Count -eq 0) {
@@ -129,11 +137,11 @@ jobs:
           if ($skipped.Count -gt 0) {
             Write-Host "::notice title=Self-checks skipped::本 PR 跳过了 $($skipped.Count) 个自检，绿不代表它们通过。$($decision.Reason)"
           }
+          exit 0
 
-      # Seconds, pure input: the table above covers every step of this file, and a change to a registered input never
-      # skips its step (control-server#803).
+      # About 15 seconds, pure input: the table above covers every step of this file, and a change to a registered input
+      # never skips its step (control-server#803). On every event, never gated on the scope above (review M1 of PR #808).
       - name: Self-check scope self-check (which pull requests run which self-check)
-        if: steps.self-check-scope.outputs.self_check_scope == 'true'
         timeout-minutes: 5
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-TestSelfCheckScope.ps1
@@ -556,8 +564,8 @@ jobs:
       # a line in the job summary, so a green job is not read as "it ran". The diff is the merge commit's (GITHUB_SHA, not
       # the merge ref, which moves when the base does or the job is re-run) against its first parent, the base as GitHub
       # merged it, without rename detection, so a file moved out of a checked path still counts. Any other event -- a
-      # hand-dispatched run -- runs it. This workflow does not run on a push to fp/v2-impl, so there is no automatic
-      # backstop there until the nightly G3 takes this check over.
+      # hand-dispatched run, or since control-server#803 a push to fp/v2-impl -- runs it, which is the integration
+      # branch's backstop for this check.
       - name: Decide whether to run the staged content-conflict self-check
         id: content-conflict-scope
         if: ${{ !cancelled() }}

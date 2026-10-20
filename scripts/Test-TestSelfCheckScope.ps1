@@ -158,6 +158,9 @@ if ($scopeStep.Count -eq 1 -and $testStep.Count -eq 1) {
     Check 'self-check-scope diffs the merge commit against its first parent, without renames, unquoted' (
         $decide -match [regex]::Escape('git -c core.quotePath=false diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA') -and
         $decide -match [regex]::Escape('--depth=2 origin $env:GITHUB_SHA')) $decide
+    Check 'self-check-scope reads git''s output as UTF-8, so an unquoted non-ASCII path arrives as written' (
+        $decide.IndexOf('[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)') -ge 0 -and
+        $decide.IndexOf('[Console]::OutputEncoding') -lt $decide.IndexOf('git -c core.quotePath=false diff')) $decide
     # Review S1 of PR #808: a failed fetch leaves $LASTEXITCODE non-zero, and a pwsh step ends with it; the step would then
     # fail where "a diff that cannot be read runs everything" was meant.
     # The block runs up to the next step, so the next step's comment lines come off first.
@@ -167,7 +170,7 @@ if ($scopeStep.Count -eq 1 -and $testStep.Count -eq 1) {
     Check 'self-check-scope ends with exit 0, so an unreadable diff runs everything instead of failing the step' (
         $last -ge 0 -and $decideLines[$last].Trim() -ceq 'exit 0') $(if ($last -ge 0) { $decideLines[$last] } else { '(empty)' })
     # Review S2 of PR #808: a push to the integration branch runs every self-check, after each merge.
-    $pushBranches = [regex]::Match($workflow, '(?ms)^on:\s*\r?\n  push:\s*\r?\n    branches: \[([^\]]*)\]').Groups[1].Value
+    $pushBranches = [regex]::Match($workflow, '(?ms)^on:\s*\r?\n  push:\s*\r?\n(?:    #[^\r\n]*\r?\n)*    branches: \[([^\]]*)\]').Groups[1].Value
     Check 'test.yml runs on a push to fp/v2-impl' (@($pushBranches -split ',' | ForEach-Object Trim) -ccontains 'fp/v2-impl') "branches: [$pushBranches]"
     $firstRegistered = @($workflowSteps | Where-Object { $registeredNames -ccontains $_.Title } | ForEach-Object Index | Measure-Object -Minimum).Minimum
     Check 'self-check-scope comes before the first self-check' ($scopeStep[0].Index -lt $firstRegistered) "scope at $($scopeStep[0].Index), first self-check at $firstRegistered"

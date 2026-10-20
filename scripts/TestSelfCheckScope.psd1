@@ -44,14 +44,20 @@
         @{ Step = 'Decide whether to run the staged content-conflict self-check'; Why = 'that self-check has its own selector (control-server#567), registered below as decided by content-conflict-scope' }
         @{ Step = 'Remove the content-conflict stage root'; Why = 'cleanup of the content-conflict self-check' }
         @{ Step = 'Upload test results'; Why = 'artifact upload' }
+        # Review M1 of PR #808: gated on the selector's own output, a selector that broke -- say, one that mangled every
+        # changed path -- would skip the one check that says so, and the job would stay green. About 15 seconds.
+        @{ Step = 'Self-check scope self-check (which pull requests run which self-check)'; Why = 'checks the selector, so the selector does not decide it'
+            RunsAlways = $true }
     )
+
+    # What a build reads besides its project's own files (review S3 of PR #808): an input of every step that reads a build
+    # or makes one. A pull request that only bumps Microsoft.Data.Sqlite in Directory.Packages.props changes what such a
+    # step loads, and nothing else it names. Test-TestSelfCheckScope.ps1 holds each such step to listing all of these.
+    BuildInputs = @('src/', 'vendor/', 'global.json', 'Directory.Build.props', 'Directory.Build.targets', 'Directory.Packages.props',
+        'NuGet.Config', '.config/')
 
     # In test.yml's order. Key is the name of the selector's output for the step (letters, digits, underscores).
     Steps = @(
-        @{ Key = 'self_check_scope'; Name = 'Self-check scope self-check (which pull requests run which self-check)'
-            Script = 'scripts/Test-TestSelfCheckScope.ps1'
-            # Its strings name src/ paths as test data, not as reads; what it reads is every step's scripts and test.yml.
-            NameClosure = $false; Inputs = @('scripts/', '.github/workflows/') }
         @{ Key = 'l2_onboard_handle'; Name = 'L2 scenario self-check (onboard handle after restart)'
             Script = 'scripts/l2/Test-L2OnboardHandleAfterRestart.ps1'
             # Lists every scenario and counterexample.
@@ -79,7 +85,10 @@
         @{ Key = 'g3_journey_uia_fixture'; Name = 'G3 scenario self-check (journey UIA fixture reads)'
             Script = 'scripts/l2/Test-G3JourneyUiaFixtureReads.ps1'; Inputs = @() }
         @{ Key = 'g3_content_conflict_scope'; Name = 'G3 runner self-check (content-conflict scope)'
-            Script = 'scripts/Test-StagedG3ContentConflictScope.ps1'; Inputs = @() }
+            Script = 'scripts/Test-StagedG3ContentConflictScope.ps1'
+            # Its strings name paths as test data -- some that exist nowhere, on purpose -- not as reads; what it reads is
+            # the selector it checks, which is pure input.
+            NameClosure = $false; Inputs = @('scripts/Select-StagedG3ContentConflictRun.ps1') }
         @{ Key = 'l2_scenario_round_scope'; Name = 'L2 self-check (scenario round scope)'
             Script = 'scripts/Test-L2ScenarioRunScope.ps1'
             # Sweeps every tracked file through Select-L2ScenarioRun.ps1, which reads every string in scripts/l2 and the
@@ -148,8 +157,10 @@
             Script = 'scripts/l2/Test-L2TaskTypeStations.ps1'; Inputs = @() }
         @{ Key = 'g3_claim_record_backfill'; Name = 'G3 runner self-check (demand-bearing claim record backfill)'
             Script = 'scripts/Test-DemandBearingClaimRecordBackfill.ps1'
-            # -SkipStores: no build, no database; the runner's AST only.
-            Inputs = @() }
+            # -SkipStores: no build, no database; the runner's AST only. The script can build (without -SkipStores), so the
+            # rule that a step making a build lists BuildInputs holds here too, without an exception to keep track of.
+            Inputs = @('src/', 'vendor/', 'global.json', 'Directory.Build.props', 'Directory.Build.targets', 'Directory.Packages.props',
+                'NuGet.Config', '.config/') }
         @{ Key = 'scenario_sql_explain'; Name = 'Scenario SQL self-check (literal SQL against the migrated schema)'
             Script = 'scripts/Test-ScenarioSqlExplain.ps1'
             # Scans every script under scripts/, and builds ControlServer.Host to migrate the schema it explains against.
@@ -158,12 +169,18 @@
         @{ Key = 'parallel_instance'; Name = 'Parallel instance self-check'
             Script = 'scripts/parallel/Test-ParallelInstance.ps1'
             # Reads the Host's options, presets, project and migrations, and borrows the SQLite provider from its build.
-            Inputs = @('scripts/parallel/', 'src/', 'tools/', 'docs/production-cutover-mode-plan.md')
+            Inputs = @('scripts/parallel/', 'tools/', 'docs/production-cutover-mode-plan.md',
+                # BuildInputs: it loads the Host build's SQLite provider.
+                'src/', 'vendor/', 'global.json', 'Directory.Build.props', 'Directory.Build.targets', 'Directory.Packages.props',
+                'NuGet.Config', '.config/')
             # The provider comes from src/ControlServer.Host/bin, which the Test step's build fills; without it the case is a
             # yellow SKIP, not a red.
             Needs = @('Test') }
         @{ Key = 'g3_journey_v3_branches'; Name = 'G3 scenario self-check (journey v3 script branches)'
-            Script = 'scripts/l2/Test-G3JourneyV3ScriptBranches.ps1'; Inputs = @()
+            Script = 'scripts/l2/Test-G3JourneyV3ScriptBranches.ps1'
+            # BuildInputs: it loads the Host build's SQLite provider.
+            Inputs = @('src/', 'vendor/', 'global.json', 'Directory.Build.props', 'Directory.Build.targets', 'Directory.Packages.props',
+                'NuGet.Config', '.config/')
             # Microsoft.Data.Sqlite from src/ControlServer.Host/bin/Release/net8.0/win-x64, which the Test step's build of
             # the test project (it references the Host; Directory.Build.props sets win-x64) fills. Without it: exit 2,
             # INCOMPLETE -- run 39428641491, where a red step before Test skipped both Test and the Scenario SQL check.
