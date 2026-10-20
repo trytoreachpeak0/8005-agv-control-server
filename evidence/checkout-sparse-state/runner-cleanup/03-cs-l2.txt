@@ -1,0 +1,93 @@
+# runner vmwin01-control-server-l2: busy=false (gh api), Runner.Worker for it: none
+# C:\actions-runner\vmwin01-control-server-l2\_work\8005-agv-control-server\8005-agv-control-server
+### before 2026-10-20 23:15:43Z
+$ git config -l --show-origin
+file:C:/Program Files/Git/etc/gitconfig	diff.astextplain.textconv=astextplain
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.clean=git-lfs clean -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.smudge=git-lfs smudge -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.process=git-lfs filter-process
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.required=true
+file:C:/Program Files/Git/etc/gitconfig	http.sslbackend=schannel
+file:C:/Program Files/Git/etc/gitconfig	http.proxy=http://DESKTOP-S109GB9.mshome.net:7890
+file:C:/Program Files/Git/etc/gitconfig	core.autocrlf=true
+file:C:/Program Files/Git/etc/gitconfig	core.fscache=true
+file:C:/Program Files/Git/etc/gitconfig	core.symlinks=false
+file:C:/Program Files/Git/etc/gitconfig	core.longpaths=true
+file:C:/Program Files/Git/etc/gitconfig	pull.rebase=false
+file:C:/Program Files/Git/etc/gitconfig	credential.helper=manager
+file:C:/Program Files/Git/etc/gitconfig	credential.https://dev.azure.com.usehttppath=true
+file:C:/Program Files/Git/etc/gitconfig	init.defaultbranch=master
+file:C:/Program Files/Git/etc/gitconfig	https.proxy=http://DESKTOP-S109GB9.mshome.net:7890
+file:.git/config	core.repositoryformatversion=1
+file:.git/config	core.filemode=false
+file:.git/config	core.bare=false
+file:.git/config	core.logallrefupdates=true
+file:.git/config	core.symlinks=false
+file:.git/config	core.ignorecase=true
+file:.git/config	core.sparsecheckout=true
+file:.git/config	remote.origin.url=https://github.com/trytoreachpeak0/8005-agv-control-server
+file:.git/config	remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*
+file:.git/config	remote.origin.promisor=true
+file:.git/config	remote.origin.partialclonefilter=blob:none
+file:.git/config	gc.auto=0
+file:.git/config	branch.ci-mig/cs820-l2-verify.remote=origin
+file:.git/config	branch.ci-mig/cs820-l2-verify.merge=refs/heads/ci-mig/cs820-l2-verify
+file:.git/config	branch.ci-mig/cs820-burst-a.remote=origin
+file:.git/config	branch.ci-mig/cs820-burst-a.merge=refs/heads/ci-mig/cs820-burst-a
+file:.git/config	branch.ci-mig/cs820-burst-b.remote=origin
+file:.git/config	branch.ci-mig/cs820-burst-b.merge=refs/heads/ci-mig/cs820-burst-b
+command line:	safe.directory=*
+$ git sparse-checkout list
+/*
+!/evidence/
+/*
+!/evidence/
+/*
+!/evidence/
+/*
+!/evidence/
+/*
+!/evidence/
+
+unset core.sparseCheckout in .git/config (exit 0)
+core.sparseCheckoutCone not in .git/config
+
+### after 2026-10-20 23:15:43Z
+$ git config -l --show-origin
+file:C:/Program Files/Git/etc/gitconfig	diff.astextplain.textconv=astextplain
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.clean=git-lfs clean -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.smudge=git-lfs smudge -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.process=git-lfs filter-process
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.required=true
+file:C:/Program Files/Git/etc/gitconfig	http.sslbackend=schannel
+file:C:/Program Files/Git/etc/gitconfig	http.proxy=http://DESKTOP-S109GB9.mshome.net:7890
+file:C:/Program Files/Git/etc/gitconfig	core.autocrlf=true
+file:C:/Program Files/Git/etc/gitconfig	core.fscache=true
+file:C:/Program Files/Git/etc/gitconfig	core.symlinks=false
+file:C:/Program Files/Git/etc/gitconfig	core.longpaths=true
+file:C:/Program Files/Git/etc/gitconfig	pull.rebase=false
+file:C:/Program Files/Git/etc/gitconfig	credential.helper=manager
+file:C:/Program Files/Git/etc/gitconfig	credential.https://dev.azure.com.usehttppath=true
+file:C:/Program Files/Git/etc/gitconfig	init.defaultbranch=master
+file:C:/Program Files/Git/etc/gitconfig	https.proxy=http://DESKTOP-S109GB9.mshome.net:7890
+file:.git/config	core.repositoryformatversion=1
+file:.git/config	core.filemode=false
+file:.git/config	core.bare=false
+file:.git/config	core.logallrefupdates=true
+file:.git/config	core.symlinks=false
+file:.git/config	core.ignorecase=true
+file:.git/config	remote.origin.url=https://github.com/trytoreachpeak0/8005-agv-control-server
+file:.git/config	remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*
+file:.git/config	remote.origin.promisor=true
+file:.git/config	remote.origin.partialclonefilter=blob:none
+file:.git/config	gc.auto=0
+file:.git/config	branch.ci-mig/cs820-l2-verify.remote=origin
+file:.git/config	branch.ci-mig/cs820-l2-verify.merge=refs/heads/ci-mig/cs820-l2-verify
+file:.git/config	branch.ci-mig/cs820-burst-a.remote=origin
+file:.git/config	branch.ci-mig/cs820-burst-a.merge=refs/heads/ci-mig/cs820-burst-a
+file:.git/config	branch.ci-mig/cs820-burst-b.remote=origin
+file:.git/config	branch.ci-mig/cs820-burst-b.merge=refs/heads/ci-mig/cs820-burst-b
+command line:	safe.directory=*
+$ git sparse-checkout list
+fatal: this worktree is not sparse
+
