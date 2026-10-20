@@ -213,7 +213,19 @@ param(
     # The free space, in GiB, the drive under -StageRoot must have before anything is cloned (G3_DISK_LOW otherwise).
     # 30 is the batch exit's rule since the batch-8 exit filled C: with G3 stages; see run-journey-g3.ps1. Not a path
     # input, so not a RUNNER_INPUT_OVERRIDE.
-    [double]$MinFreeGiB = 30
+    [double]$MinFreeGiB = 30,
+    # control-server#809: this run's loopback ports, by default the ones it always bound. ControlServer's onboard
+    # listener and health endpoint, the in-process fault proxies the onboard and the business probe go through, and
+    # the slots simulator's Modbus and HTTP, which the simulator and the onboard are now told rather than left at
+    # their builds' own 1502 and 58006. Each is locked for the run and checked free before the clone, and each
+    # component's are checked to be its own after its health wait (G3RunnerPorts.psm1). Anything but these defaults
+    # is a RUNNER_INPUT_OVERRIDE: another port is for a run beside another one, and that is not gate evidence.
+    [ValidateRange(1024, 65535)][int]$ControlPort = 58205,
+    [ValidateRange(1024, 65535)][int]$HealthPort = 58207,
+    [ValidateRange(1024, 65535)][int]$ProxyPort = 58215,
+    [ValidateRange(1024, 65535)][int]$BusinessProxyPort = 58216,
+    [ValidateRange(1024, 65535)][int]$SimulatorModbusPort = 1502,
+    [ValidateRange(1024, 65535)][int]$SimulatorHttpPort = 58006
 )
 
 $ErrorActionPreference = 'Stop'
@@ -228,6 +240,7 @@ $env:DOTNET_CLI_USE_MSBUILD_SERVER = '0'
 # golden renderer and desktop suite also claim. The mutex name is the cross-repository contract.
 Import-Module (Join-Path $PSScriptRoot 'DesktopLock.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'G3RunnerStage.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'G3RunnerPorts.psm1') -Force
 
 $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
 $nodeExecutable = if ($null -ne $nodeCommand) {
@@ -270,12 +283,6 @@ $protocolTag = $expectedProtocol.tag
 $manifestSha256 = $expectedProtocol.manifestSha256
 $schemaBundleSha256 = $expectedProtocol.schemaBundleSha256
 $vectorsSha256 = $expectedProtocol.vectorsSha256
-$controlPort = 58205
-$healthPort = 58207
-$proxyPort = 58215
-$businessProxyPort = 58216
-$modbusPort = 1502
-$simulatorHttpPort = 58006
 $agvId = 'AGV-8005-STAGED-G3-01'
 # Must stay in step with the constant inside StagedG3TlsHarness.RunRecoveryProbeAsync.
 $recoveryAgvId = 'AGV-8005-STAGED-G3-RECOVERY'
@@ -339,6 +346,17 @@ if (-not [string]::IsNullOrEmpty($SelfCheckOnboardCommit)) {
 # Before the clones and the builds, not after: naming a slice this runner cannot certify should cost
 # a message, not an hour of cloning and publishing four repositories.
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
+# control-server#809: every port this run binds, for the lock, the preflight and the provenance. Refused here, before
+# anything is created, when two are the same or one is in the L2 port slots.
+$runPorts = [ordered]@{
+    ControlPort = $ControlPort
+    HealthPort = $HealthPort
+    ProxyPort = $ProxyPort
+    BusinessProxyPort = $BusinessProxyPort
+    SimulatorModbusPort = $SimulatorModbusPort
+    SimulatorHttpPort = $SimulatorHttpPort
+}
+Assert-G3RunnerPortSet -Ports $runPorts
 
 if (Test-Path -LiteralPath $StageRoot) {
     throw "StageRoot must not already exist: $StageRoot"
@@ -3183,8 +3201,15 @@ $recoveryProbeTranscript = Join-Path $EvidenceRoot 'recovery-probe-events.ndjson
 # Released in `finally` after the peers are stopped. Declared here so that release is unconditional
 # even when the run dies during the clone or build phase, before the lock was ever taken.
 $desktopLock = $null
+# control-server#809. Released last, after the desktop lock.
+$portLock = $null
 
 try {
+    # First, before an hour of cloning and publishing: the ports this run binds are ours, and nobody listens on them.
+    # A simulator left open on 58006 fails the run here, naming itself, where it used to answer the health wait.
+    $portLock = Enter-G3PortLock -Port $runPorts.Values -Reason "staged G3 run $runId"
+    Assert-G3PortsFree -Ports $runPorts
+
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
         -Commit $ControlServerCommit -ExcludeEvidence
     New-ExactClone -Name 'onboard-hmi' -Repository $OnboardRepository -Destination $onboardSource `
@@ -3286,7 +3311,15 @@ try {
     $settings.wireToGate.journalPath = Join-Path $runtimeRoot 'onboard-journal.db'
     $settings.logging.directory = Join-Path $runtimeRoot 'onboard-logs'
     $settings.logging.writeToConsole = $true
+    # control-server#809: the simulator's Modbus port, told rather than left at the build's own 1502.
+    Set-G3OnboardIoModulePort -Settings $settings -ModbusPort $SimulatorModbusPort
     $settings | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $onboardConfig -Encoding utf8NoBOM
+
+    # control-server#809: the simulator's two ports, told rather than left at its build's own 1502 and 58006.
+    $simulatorConfig = Join-Path $simulatorPublish 'simulator.settings.json'
+    $simulatorSettings = Get-Content -LiteralPath $simulatorConfig -Raw | ConvertFrom-Json
+    Set-G3SimulatorPorts -Settings $simulatorSettings -ModbusPort $SimulatorModbusPort -HttpPort $SimulatorHttpPort
+    $simulatorSettings | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $simulatorConfig -Encoding utf8NoBOM
 
     $controlEnvironment = @{
         'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential
@@ -3313,6 +3346,10 @@ try {
         -RedirectStandardError (Join-Path $logsRoot 'control.err.log') `
         -Environment $controlEnvironment -WindowStyle Hidden -PassThru
     $version = Wait-HttpJson -Uri "http://127.0.0.1:$healthPort/version"
+    # control-server#809: an answer proves only that something listens. Before it is believed, both ports must be
+    # this ControlServer's and nobody else's.
+    Assert-G3PortOwner -Process $control -Name 'control-server' -Port $ControlPort, $HealthPort `
+        -Description 'ControlServer answered /version' -ErrLog (Join-Path $logsRoot 'control.err.log')
     if ($version.protocolTag -ne $protocolTag -or
         $version.protocolCommit -ne $ProtocolCommit -or
         $version.manifestSha256 -ne $manifestSha256) {
@@ -3364,7 +3401,11 @@ try {
         -RedirectStandardOutput (Join-Path $logsRoot 'simulator.out.log') `
         -RedirectStandardError (Join-Path $logsRoot 'simulator.err.log') `
         -WindowStyle Hidden -PassThru
-    $simulatorHealth = Wait-HttpJson -Uri "http://127.0.0.1:$simulatorHttpPort/api/v1/health"
+    $simulatorHealth = Wait-HttpJson -Uri "http://127.0.0.1:$SimulatorHttpPort/api/v1/health"
+    # control-server#809: until this check a simulator left open on 58006 answered that wait, and the run went on
+    # against it. Both ports must be this simulator's and nobody else's.
+    Assert-G3PortOwner -Process $simulator -Name 'slots-simulator' -Port $SimulatorHttpPort, $SimulatorModbusPort `
+        -Description 'the slots simulator answered /api/v1/health' -ErrLog (Join-Path $logsRoot 'simulator.err.log')
 
     # The real onboard peer only ever sends SessionHello, the two snapshots, RecoveryStateReport and
     # Heartbeat, so a rule naming any business message type cannot fire on its traffic. That is what
@@ -3698,6 +3739,8 @@ finally {
     # Last, after the peers are stopped. Releasing earlier would hand the desktop to another
     # repository while this run's WPF windows were still closing.
     Exit-DesktopLock -Handle $desktopLock
+    # After the desktop lock (G3RunnerPorts.psm1: port locks first, released last).
+    Exit-G3PortLock -Handle $portLock
 }
 
 # First, before any judgement: the judgements below read observations an errored run never filled in, and
@@ -4363,7 +4406,7 @@ $configuration = [ordered]@{
         controlHealth = $healthPort
         faultProxy = $proxyPort
         businessFaultProxy = $businessProxyPort
-        simulatorModbus = $modbusPort
+        simulatorModbus = $SimulatorModbusPort
         simulatorHttp = $simulatorHttpPort
     }
     faultInjection = [ordered]@{
