@@ -561,6 +561,22 @@ function Stop-L2Process {
 
 # --- the two peer repositories --------------------------------------------------------------------
 
+# Get-L2PeerPublish's build: one dotnet publish of the peer's project out of the clone.
+$script:L2PeerDotnetPublish = {
+    param([string]$Clone, [string]$ProjectPath, [string]$PublishDirectory, [string]$Log)
+
+    # From inside the clone, so the peer's own global.json (if it has one) picks the SDK rather than
+    # whatever directory the run was launched from.
+    Push-Location -LiteralPath $Clone
+    try {
+        & dotnet publish (Join-Path $Clone $ProjectPath) -c Release -o $PublishDirectory --nologo *>&1 |
+            Tee-Object -FilePath $Log -Append | Out-Null
+    } finally {
+        Pop-Location
+    }
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish exited $LASTEXITCODE" }
+}
+
 <#
 Publishes the onboard HMI or the slots simulator from a throwaway clone, and caches the result by
 commit so a re-run costs a directory copy rather than a build.
@@ -582,7 +598,11 @@ function Get-L2PeerPublish {
         [Parameter(Mandatory)][string]$ProjectPath,
         [Parameter(Mandatory)][string]$CacheRoot,
         [Parameter(Mandatory)][string]$LogRoot,
-        [L2Journal]$Journal
+        [L2Journal]$Journal,
+        # The build itself, called as (clone, project path, publish directory, log) and expected to throw on
+        # failure. Only Test-L2PeerPublishCache.ps1 passes one: a stand-in that takes seconds and can be held
+        # mid-build, which a real dotnet publish of the onboard cannot.
+        [scriptblock]$PublishCommand = $script:L2PeerDotnetPublish
     )
 
     if (-not (Test-Path -LiteralPath $SourceRepository -PathType Container)) {
@@ -621,16 +641,11 @@ function Get-L2PeerPublish {
         Tee-Object -FilePath $log -Append | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Could not check out $commit in the $Name clone; see $log" }
 
-    # From inside the clone, so the peer's own global.json (if it has one) picks the SDK rather than
-    # whatever directory the run was launched from.
-    Push-Location -LiteralPath $clone
     try {
-        & dotnet publish (Join-Path $clone $ProjectPath) -c Release -o $publish --nologo *>&1 |
-            Tee-Object -FilePath $log -Append | Out-Null
-    } finally {
-        Pop-Location
+        & $PublishCommand $clone $ProjectPath $publish $log
+    } catch {
+        throw "Publishing $Name failed; see $log ($($_.Exception.Message))"
     }
-    if ($LASTEXITCODE -ne 0) { throw "Publishing $Name failed; see $log" }
 
     Set-Content -LiteralPath $stamp -Value $commit -Encoding utf8NoBOM
     return [pscustomobject]@{ Name = $Name; Commit = $commit; Path = $publish; FromCache = $false }
