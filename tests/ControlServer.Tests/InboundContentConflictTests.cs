@@ -200,6 +200,49 @@ public sealed class InboundContentConflictTests
         await rig.AssertConnectionStaysAsync();
     }
 
+    /// <summary>
+    /// 测试线程读库用自己的上下文和连接，不碰服务端处理器那一个（control-server#813）。
+    /// </summary>
+    /// <remarks>
+    /// <c>DbContext</c> 与 <c>SqliteConnection</c> 都不是线程安全的。合成车载端每 2 秒发一次心跳，服务端处理心跳要查写
+    /// 处理器的那个上下文；测试线程若也从它读 <c>ProtocolInbox</c>，两者撞上就抛
+    /// <c>A second operation was started on this context instance</c>（vm-win-01 run 39430304032）。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task TheTestReadsThroughAContextAndConnectionOfItsOwn()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        await using ControlServerDbContext read = await rig.OpenReadContextAsync();
+
+        Assert.False(rig.SharesStateWith(read), "测试拿到的读库上下文与服务端处理器共用了上下文或连接。");
+    }
+
+    // EVIDENCE ONLY (control-server#813): removed before the PR leaves draft. Reads the inbox from the test thread
+    // for 5 s, across two or three heartbeats, then expects the connection still to take the next message.
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task Cs813EvidenceInboxReadsAcrossHeartbeats()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        await rig.ConnectAsync();
+        long generation = rig.Generation;
+        string messageId = Guid.NewGuid().ToString("D");
+        Answer first = await rig.Relay.InjectAsync(
+            ManualChargingReturn(messageId, Guid.NewGuid().ToString("D"), generation, "first"), AnswerWithin);
+        Assert.Equal("ManualChargingReturnToServiceResult", first.MessageType);
+
+        int reads = 0;
+        DateTime until = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTime.UtcNow < until)
+        {
+            await rig.InboxContentHashAsync(messageId);
+            reads++;
+        }
+        Console.WriteLine($"CS813-EVIDENCE reads={reads}");
+        await AssertNextMessageIsTakenAsync(rig, generation);
+    }
+
     private static string ManualChargingReturn(string messageId, string requestId, long generation, string reason) =>
         ProtocolEnvelope.Serialize(
             "ManualChargingReturnToServiceRequested",
@@ -360,6 +403,14 @@ public sealed class InboundContentConflictTests
             }
             Assert.Equal(closedBefore, Relay.ServerClosedConnections);
         }
+
+        /// <summary>Whether <paramref name="read"/> is, or shares a connection with, the server's own context.</summary>
+        public bool SharesStateWith(ControlServerDbContext read) =>
+            ReferenceEquals(read, _context) ||
+            ReferenceEquals(read.Database.GetDbConnection(), _context.Database.GetDbConnection());
+
+        /// <summary>Stub (control-server#813): still hands out the server's own context.</summary>
+        public Task<ControlServerDbContext> OpenReadContextAsync() => Task.FromResult(_context);
 
         public async Task<string> InboxContentHashAsync(string messageId)
         {
