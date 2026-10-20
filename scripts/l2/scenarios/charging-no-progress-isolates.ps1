@@ -142,6 +142,12 @@ $journal.Observe('window-start', $windowStart, @{ seen = $opened })
 # claim and the journey's block reason together with the cycle's CLEARING, so whatever is read after it is at least
 # that far along. Until control-server#823 the journey was read again after the wait, and the next round once moved
 # its reason on in between (CI run 39481673510).
+#
+# This is safe only as written. The connection is autocommit, so each SELECT here sees its own moment; reading in
+# pieces is safe only while the segment read first is the one Until waits on (README item 14, control-server#510).
+# Keep Get-Cycle first and Until on the cycle's "CLEARING UNABLE_TO_CHARGE" alone. Reorder the reads, or make Until
+# look at a later segment, and the probe can stop on a mix that never existed in the database; then move the reads
+# into Invoke-L2ReadSnapshot (L2ReadSnapshot.psm1) instead.
 $formed = Wait-L2Condition -Description 'no progress was confirmed and both sides paused' `
     -Journal $journal -Criterion 'no-progress-isolated' -TimeoutSeconds 90 `
     -Probe {
