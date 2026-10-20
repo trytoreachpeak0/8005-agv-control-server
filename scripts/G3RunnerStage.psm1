@@ -59,17 +59,36 @@ function Complete-G3RunnerStage {
     }
     $lastError = $null
     for ($attempt = 1; $attempt -le $Attempts -and (Test-Path -LiteralPath $StageRoot); $attempt++) {
-        try { Remove-Item -LiteralPath $StageRoot -Recurse -Force -ErrorAction Stop }
-        catch {
-            $lastError = $_.Exception.Message
-            if ($attempt -lt $Attempts) { Start-Sleep -Seconds $RetrySeconds }
-        }
+        # Everything that can go, each attempt: one held file must not keep the gigabytes around it.
+        $failed = $null
+        Remove-Item -LiteralPath $StageRoot -Recurse -Force -ErrorAction SilentlyContinue -ErrorVariable failed
+        if ($failed) { $lastError = $failed[-1].Exception.Message }
+        if ((Test-Path -LiteralPath $StageRoot) -and $attempt -lt $Attempts) { Start-Sleep -Seconds $RetrySeconds }
     }
     if (-not (Test-Path -LiteralPath $StageRoot)) {
         Write-Host "G3_STAGE_REMOVED: $StageRoot"
         return [pscustomobject]@{ removed = $true; reason = $null }
     }
     $left = @(Get-ChildItem -LiteralPath $StageRoot -Recurse -Force -File -ErrorAction Ignore)
+
+    # staged, restart and demand-bearing read their databases through Add-Type -Path on the Microsoft.Data.Sqlite.dll in
+    # their own publish directory, and a .NET process never unloads it or e_sqlite3.dll (g3.yml run 39436562681). When
+    # what is left is only what this process has loaded, a hidden pwsh removes the stage once this process has exited.
+    $loaded = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($module in [Diagnostics.Process]::GetCurrentProcess().Modules) { $null = $loaded.Add($module.FileName) }
+    if ($left.Count -gt 0 -and @($left | Where-Object { -not $loaded.Contains($_.FullName) }).Count -eq 0) {
+        $quoted = $StageRoot.Replace("'", "''")
+        $script = "try { Wait-Process -Id $PID -Timeout 3600 -ErrorAction Stop } catch { }`n" +
+            "for (`$i = 0; `$i -lt 30 -and (Test-Path -LiteralPath '$quoted'); `$i++) {`n" +
+            "    Remove-Item -LiteralPath '$quoted' -Recurse -Force -ErrorAction SilentlyContinue`n" +
+            "    if (Test-Path -LiteralPath '$quoted') { Start-Sleep -Seconds 2 }`n}"
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+        $remover = Start-Process -FilePath 'pwsh' -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded `
+            -WindowStyle Hidden -PassThru
+        Write-Host ("G3_STAGE_REMOVED_AFTER_EXIT: $StageRoot -- all but $($left.Count) file(s) this process has loaded " +
+            "($(@($left | ForEach-Object Name) -join ', ')); pid $($remover.Id) removes the rest once pid $PID has exited.")
+        return [pscustomobject]@{ removed = $false; reason = 'HELD_BY_THIS_PROCESS' }
+    }
     $gib = [Math]::Round((($left | Measure-Object Length -Sum).Sum) / 1GB, 2)
     Write-Warning "G3_STAGE_NOT_REMOVED: $StageRoot keeps $($left.Count) files, $gib GiB, after $Attempts attempts: $lastError The verdict stands; remove it once whatever holds it has exited."
     return [pscustomobject]@{ removed = $false; reason = 'NOT_REMOVED' }
