@@ -1,0 +1,24 @@
+## M6 Assert-CheckoutTree.ps1: HEAD's top-level directories are not compared with the list and CHECKOUT_EXCLUDE  (file: scripts/Assert-CheckoutTree.ps1)
+exit=1  KILLED
+BAD   assert: a top-level directory in HEAD neither listed nor excluded is red, by name -> CHECKOUT_TREE_OK: 18 tracked file(s), 5 left out as asked (the top level and .config, .github, docs, scripts, src, tests, tools, vendor)
+149 case(s) passed
+CHECKOUT_SPARSE_STATE_SELFTEST_FAILED: 1 case(s)
+
+## M7 l2.yml scenarios: a nested cone entry (src/ControlServer.Host), in the checkout and in its check alike  (file: .github/workflows/l2.yml)
+exit=1  KILLED
+BAD   l2.yml scenarios: sparse-checkout entry 'src/ControlServer.Host' is a top-level directory -> src/ControlServer.Host
+BAD   l2.yml real-rig: sparse-checkout entry 'src/ControlServer.Host' is a top-level directory -> src/ControlServer.Host
+BAD   history: l2.yml scenarios' own check passes -> ::error title=Checkout incomplete::1 file(s) outside what the checkout asked for (the top level and .config, .github, docs, scripts, src/ControlServer.Host, tests, tools, vendor) are checked out, so its sparse-checkout list was not applied: src/keep.txt | ::error title=Checkout incomplete::1 top-level director(ies) of HEAD are neither in the checkout's sparse-checkout list nor in CHECKOUT_EXCLUDE (evidence), so this checkout leaves them out: src. Add them to the list and to CHECKOUT_SPARSE of the check after it. | CHECKOUT_TREE_INCOMPLETE: C:\Users\szy\AppData\Local\Temp\checkout-sparse-state-9fd19403793a49999549b722fbbec393\history at 255b4f9bc483131f353034ffda9c352037c94f47. See scripts/Test-CheckoutSparseState.ps1.
+BAD   poisoned, l2.yml scenarios: the checkout is the tree it asked for -> HEAD dbdcee3ee, 1 missing (evidence/cs584/note.txt), 1 skip-worktree, core.sparseCheckout in .git/config ''; expected missing: 3
+BAD   poisoned, l2.yml scenarios: its own check passes -> ::error title=Checkout incomplete::1 file(s) outside what the checkout asked for (the top level and .config, .github, docs, scripts, src/ControlServer.Host, tests, tools, vendor) are checked out, so its sparse-checkout list was not applied: src/keep.txt | ::error title=Checkout incomplete::1 top-level director(ies) of HEAD are neither in the checkout's sparse-checkout list nor in CHECKOUT_EXCLUDE (evidence), so this checkout leaves them out: src. Add them to the list and to CHECKOUT_SPARSE of the check after it. | CHECKOUT_TREE_INCOMPLETE: C:\Users\szy\AppData\Local\Temp\checkout-sparse-state-9fd19403793a49999549b722fbbec393\poisoned-22354a1d at dbdcee3eebe05d6c8594579d1f84646195db1f30. See scripts/Test-CheckoutSparseState.ps1.
+BAD   poisoned, l2.yml real-rig: the checkout is the tree it asked for -> HEAD dbdcee3ee, 1 missing (evidence/cs584/note.txt), 1 skip-worktree, core.sparseCheckout in .git/config ''; expected missing: 3
+BAD   poisoned, l2.yml real-rig: its own check passes -> ::error title=Checkout incomplete::1 file(s) outside what the checkout asked for (the top level and .config, .github, docs, scripts, src/ControlServer.Host, tests, tools, vendor) are checked out, so its sparse-checkout list was not applied: src/keep.txt | ::error title=Checkout incomplete::1 top-level director(ies) of HEAD are neither in the checkout's sparse-checkout list nor in CHECKOUT_EXCLUDE (evidence), so this checkout leaves them out: src. Add them to the list and to CHECKOUT_SPARSE of the check after it. | CHECKOUT_TREE_INCOMPLETE: C:\Users\szy\AppData\Local\Temp\checkout-sparse-state-9fd19403793a49999549b722fbbec393\poisoned-b1eb0861\control-server at dbdcee3eebe05d6c8594579d1f84646195db1f30. See scripts/Test-CheckoutSparseState.ps1.
+139 case(s) passed
+CHECKOUT_SPARSE_STATE_SELFTEST_FAILED: 7 case(s)
+
+## M8 test.yml: runs-on written as an expression  (file: .github/workflows/test.yml)
+exit=1  KILLED
+BAD   test.yml test: runs-on is a literal label or label list -> runs-on '${{ fromJSON('["self-hosted","cs-test"]') }}'
+149 case(s) passed
+CHECKOUT_SPARSE_STATE_SELFTEST_FAILED: 1 case(s)
+
