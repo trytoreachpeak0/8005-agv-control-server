@@ -21,6 +21,8 @@ using ControlServer.Host.Runtime.ForeignOrders;
 using ControlServer.Host.Runtime.IdleReturn;
 using ControlServer.Host.Runtime.TaskTypeStations;
 
+// control-server#812: before anything writes, so every line the harnesses redirect is UTF-8 on any system locale.
+ServerConsoleEncoding.UseUtf8WhenRedirected();
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "8005 AGV ControlServer");
 // control-server#587: the installed File sink rolls at its size limit instead of stopping there, whatever an older

@@ -244,9 +244,15 @@ function Wait-L2ServerStartupRefusal {
 }
 
 <#
-A redirected .NET console writes in the console's code page, not UTF-8: on a zh-CN Windows -- this machine and
-win11-01 both -- the server's 关卡 lands in its log as GBK bytes. Strict UTF-8 first, so a log that is UTF-8 is never
-misread; the OEM code page when that fails, which is what the console used.
+The server's redirected console output, as text. Since control-server#812 the Host writes it as UTF-8 on every system
+locale (all but the runtime's own unhandled-exception text on stderr, which stays in the console's code page). Before
+that it wrote the console's code page: GBK on the zh-CN machines every older log came from (this one, win11-01, vm01,
+all code page 936), and a literal '?' on an en-US machine, which no reader can undo.
+How a log is told apart: strict UTF-8 first, and when that fails the log is a pre-#812 one and is read as GBK, code
+page 936 by number: the code page of the machine that wrote it, not of the machine reading it (an en-US reader's OEM
+code page is 437). The more Chinese a GBK log holds, the less likely it is to pass as UTF-8, and a whole log almost
+never does; a short string can. About one Chinese character in seven has GBK bytes that are valid UTF-8, and a word
+can be too: 装片 is D7B0C6AC in GBK, which decodes as strict UTF-8. Pure ASCII reads the same either way.
 #>
 function Read-L2ProcessLog {
     param([Parameter(Mandatory)][string]$Path)
@@ -257,12 +263,9 @@ function Read-L2ProcessLog {
         return [pscustomobject]@{ Text = $text; Encoding = 'utf-8' }
     } catch [Text.DecoderFallbackException] {
         [Text.Encoding]::RegisterProvider([Text.CodePagesEncodingProvider]::Instance)
-        # The system's OEM code page, not the current culture's: pwsh may run under en-US on a zh-CN system, and it is
-        # the system locale a console process falls back to (936 on both machines this runs on).
-        $codePage = [int](Get-ItemPropertyValue -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name OEMCP)
         return [pscustomobject]@{
-            Text     = [Text.Encoding]::GetEncoding($codePage).GetString($bytes)
-            Encoding = "code page $codePage"
+            Text     = [Text.Encoding]::GetEncoding(936).GetString($bytes)
+            Encoding = 'gbk'
         }
     }
 }
@@ -298,4 +301,4 @@ function Read-L2ProtocolCandidateIdentity {
 }
 
 Export-ModuleMember -Function Resolve-L2TaskTypeStationsSetting, Resolve-L2ExpectedStartupRefusal,
-    New-L2TaskTypeStationPreset, Wait-L2ServerStartupRefusal, Read-L2ProtocolCandidateIdentity
+    New-L2TaskTypeStationPreset, Wait-L2ServerStartupRefusal, Read-L2ProtocolCandidateIdentity, Read-L2ProcessLog

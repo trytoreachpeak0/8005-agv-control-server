@@ -12,8 +12,8 @@
     The rule leans one way: a path is left out only when it is known not to reach the round, and everything else --
     including anything new or unrecognised -- runs it. Left out:
 
-      docs/, evidence/, tests/      tests/ is compiled by ControlServer.sln in this job's build, but no L2 process
-                                    runs any of it; a test that stops compiling is test.yml's red, which it already is.
+      docs/, evidence/, tests/      this job's build leaves tests/ out (control-server#804) and no L2 process runs
+                                    any of it; a test that stops compiling is test.yml's red, which it already is.
       README.md, CLAUDE.md, ControlServer.http
       .github/workflows/test.yml, g3.yml, release.yml   l2.yml itself, and any other file under .github/, runs it.
       A file directly under scripts/ that no L2 code names: the G3 runners, the install scripts, their self-checks.

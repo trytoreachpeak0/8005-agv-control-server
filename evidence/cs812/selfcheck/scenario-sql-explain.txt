@@ -1,0 +1,32 @@
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:03.23
+connection string data source passed to --migrate-only: C:\work\8005-scratch\cs812\sql-work\scenario-sql-a05a19319b144b1eb2d34cd551c77cac\db\controlserver.db
+migrated: C:\work\8005-scratch\cs812\sql-work\scenario-sql-a05a19319b144b1eb2d34cd551c77cac\db\controlserver.db (106 tables, 2 s); production database untouched: True
+sql: 227 files, 194 literal statements compiled, 824 skipped as interpolated or built elsewhere, 4 skipped as sent to another database, 9 sinks (Get-Count, Get-G3Count, Get-G3Scalar, Get-L2RealCount, Get-L2RealScalar, Get-Scalar, Invoke-L2Query, Invoke-L2SnapshotStatement, Invoke-Scalar)
+ok    sinks: Invoke-L2Query, and Get-G3Scalar / Get-G3Count derived from G3RecoveryCommon.ps1
+ok    extract: named, positional, folded + and a file-local wrapper are literal
+ok    extract: the folded statement is joined
+ok    extract: interpolated and variable SQL are skipped and counted
+ok    extract: SQL on a connection opened on the onboard journal is skipped; a server store copy and a same-named parameter are checked
+ok    temp database: the MVP production database path is refused
+ok    temp database: a path outside the work root is refused
+ok    temp database: a path under the work root is accepted
+ok    temp database: a work root under %ProgramData% is refused
+ok    temp database: --migrate-only is never started for a database outside the work root
+ok    production verdict: inaccessible is UNVERIFIED, never True; unchanged is True; changed or created is False
+ok    production stamp: a file under a directory that refuses a listing is inaccessible, not absent
+ok    production stamp: a file missing under directories that can be listed is absent
+ok    production verdict: the locked directory before and after is UNVERIFIED
+ok    start info: no other connection string spelling reaches the child
+ok    start info: the connection string parses to exactly the temporary database, a ';' in the path included
+ok    start info: a host directory under %ProgramData% is refused
+ok    temp database: created and migrated
+ok    temp database: the production database file was not changed
+ok    explain: a misspelt column and a missing table are reported, a good statement is not
+ok    repository: every literal statement compiles against the migrated schema
+ok    repository: at least 150 literal statements were compiled
+22/22 passed
