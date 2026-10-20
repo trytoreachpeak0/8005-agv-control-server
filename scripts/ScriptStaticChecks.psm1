@@ -848,6 +848,9 @@ function New-MigrateStartInfo {
     $start.UseShellExecute = $false
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
+    # control-server#812: the Host writes redirected output as UTF-8; without these the error text is read in this console's code page.
+    $start.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $start.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
     foreach ($key in @($start.Environment.Keys)) {
         if ($key -match $script:ConnectionStringVariable) { $null = $start.Environment.Remove($key) }
     }

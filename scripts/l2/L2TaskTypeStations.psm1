@@ -244,9 +244,13 @@ function Wait-L2ServerStartupRefusal {
 }
 
 <#
-A redirected .NET console writes in the console's code page, not UTF-8: on a zh-CN Windows -- this machine and
-win11-01 both -- the server's 关卡 lands in its log as GBK bytes. Strict UTF-8 first, so a log that is UTF-8 is never
-misread; the OEM code page when that fails, which is what the console used.
+The server's redirected console output, as text. Since control-server#812 the Host writes it as UTF-8 on every system
+locale. Before that it wrote the console's code page: GBK on the zh-CN machines every older log came from (this one,
+win11-01, vm01, all code page 936), and a literal '?' on an en-US machine, which no reader can undo.
+How a log is told apart: strict UTF-8 first. GBK text with Chinese in it is practically never valid UTF-8 (lead bytes
+0x81-0xFE followed by bytes UTF-8 does not allow there), so a decode that succeeds is UTF-8; pure ASCII reads the same
+either way. When strict UTF-8 fails the log is a pre-#812 one and is read as GBK, code page 936 by number: the code
+page of the machine that wrote it, not of the machine reading it (an en-US reader's OEM code page is 437).
 #>
 function Read-L2ProcessLog {
     param([Parameter(Mandatory)][string]$Path)
@@ -257,12 +261,9 @@ function Read-L2ProcessLog {
         return [pscustomobject]@{ Text = $text; Encoding = 'utf-8' }
     } catch [Text.DecoderFallbackException] {
         [Text.Encoding]::RegisterProvider([Text.CodePagesEncodingProvider]::Instance)
-        # The system's OEM code page, not the current culture's: pwsh may run under en-US on a zh-CN system, and it is
-        # the system locale a console process falls back to (936 on both machines this runs on).
-        $codePage = [int](Get-ItemPropertyValue -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name OEMCP)
         return [pscustomobject]@{
-            Text     = [Text.Encoding]::GetEncoding($codePage).GetString($bytes)
-            Encoding = "code page $codePage"
+            Text     = [Text.Encoding]::GetEncoding(936).GetString($bytes)
+            Encoding = 'gbk'
         }
     }
 }
