@@ -1,0 +1,13 @@
+diff --git a/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs b/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
+index 565d99068..6d3643235 100644
+--- a/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
++++ b/tools/ControlServer.SchemaConformance/CompiledSchemaCache.cs
+@@ -198,7 +198,7 @@ public sealed class CompiledSchemaCache
+     public static string SchemaBundleSha256(string schemaRoot)
+     {
+         StringBuilder lines = new();
+-        foreach (string file in Directory.EnumerateFiles(schemaRoot, "*", SearchOption.AllDirectories)
++        foreach (string file in Directory.EnumerateFiles(Path.Combine(schemaRoot, "messages"), "*", SearchOption.AllDirectories)
+             .OrderBy(file => RelativeUnixPath(schemaRoot, file), StringComparer.Ordinal))
+         {
+             lines.Append("schemas/").Append(RelativeUnixPath(schemaRoot, file)).Append(':')

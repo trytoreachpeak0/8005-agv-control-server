@@ -35,6 +35,9 @@
          its assembly in here: its System.Text.Json 10 would replace the product's 8.0 one, and the
          gate would then be checking lines produced by a serializer production never runs. -->
     <ProjectReference Include="..\..\tools\ControlServer.SchemaConformance\ControlServer.SchemaConformance.csproj" ReferenceOutputAssembly="false" />
+    <!-- Build order only, for the same reason: SchemaCompilationCacheTests runs the validator's cache through this
+         probe as its own process (control-server#584). -->
+    <ProjectReference Include="..\..\tools\ControlServer.SchemaCacheProbe\ControlServer.SchemaCacheProbe.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
     <!-- Where the build put that validator. Threaded through an assembly attribute rather than derived
@@ -43,6 +46,10 @@
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>ControlServer.SchemaConformance.Path</_Parameter1>
       <_Parameter2>$(MSBuildProjectDirectory)\..\..\tools\ControlServer.SchemaConformance\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ControlServer.SchemaConformance.dll</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ControlServer.SchemaCacheProbe.Path</_Parameter1>
+      <_Parameter2>$(MSBuildProjectDirectory)\..\..\tools\ControlServer.SchemaCacheProbe\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ControlServer.SchemaCacheProbe.dll</_Parameter2>
     </AssemblyAttribute>
     <!-- TaskTypeStationFieldOpsTests runs FieldOps as its own process from its own output: the copy next to this
          assembly carries this project's dependency set, not the tool's, and does not start. -->

@@ -1,0 +1,98 @@
+{
+  "protocol": {
+    "tag": "protocol-v5.0.0",
+    "releaseVersion": "5.0.0",
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolVersion": 6,
+    "approvalStatus": "APPROVED_RELEASE",
+    "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+    "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+    "vendoredSchemaFiles": 73
+  },
+  "validator": "Corvus.Json.Validator 4.6.7",
+  "linesObserved": 163,
+  "testAuthoredLinesSkipped": 0,
+  "linesChecked": 163,
+  "distinctLinesChecked": 98,
+  "linesInViolation": 0,
+  "linesInKnownViolation": 0,
+  "knownViolationsMatched": 0,
+  "knownViolationEntriesNotMatched": [],
+  "schemaCompilationMilliseconds": 383,
+  "validationMilliseconds": 666,
+  "schemaCompilationProcesses": 4,
+  "schemaCache": {
+    "directory": "C:\\Users\\szy\\AppData\\Local\\Temp\\controlserver-schema-cache",
+    "hits": 15,
+    "misses": 0,
+    "rejected": 0,
+    "key": {
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "toolVersion": "27150715cffd1567091a6298b29322dca38d1a2517156d8c1245cb384cc86241",
+      "corvusVersion": "Corvus.HighPerformance/1.0.2;Corvus.Json.CodeGeneration.201909/4.6.7;Corvus.Json.CodeGeneration.202012/4.6.7;Corvus.Json.CodeGeneration.4/4.6.7;Corvus.Json.CodeGeneration.6/4.6.7;Corvus.Json.CodeGeneration.7/4.6.7;Corvus.Json.CodeGeneration.CSharp/4.6.7;Corvus.Json.CodeGeneration.CorvusVocabulary/4.6.7;Corvus.Json.CodeGeneration.HttpClientDocumentResolver/4.6.7;Corvus.Json.CodeGeneration.OpenApi30/4.6.7;Corvus.Json.CodeGeneration/4.6.7;Corvus.Json.ExtendedTypes/4.6.7;Corvus.Json.JsonReference/4.6.7;Corvus.Json.Validator/4.6.7;Corvus.UriTemplates/2.3.2;Microsoft.CodeAnalysis.Analyzers/3.3.4;Microsoft.CodeAnalysis.CSharp/4.12.0;Microsoft.CodeAnalysis.Common/4.12.0"
+    }
+  },
+  "serverMessageTypesNotObserved": [
+    "CapabilitySnapshotRequested",
+    "CurrentStopDepartureResult",
+    "DemandSelectionResult",
+    "ExceptionRecoverySessionOpened",
+    "ExceptionRecoverySessionRejected",
+    "ExceptionRecoverySessionSnapshot",
+    "FaultCargoRecoveryCommand",
+    "ForcedMechanicalRecoveryCommand",
+    "HardwareRecoveryRecordResult",
+    "HeartbeatAck",
+    "LoadCancellationAuthorization",
+    "LoadCompensationCommand",
+    "LoadCompensationRejected",
+    "LoadCorrectionCommand",
+    "LoadCorrectionRejected",
+    "ManualChargingReturnToServiceResult",
+    "ManualStationClearanceConfirmationResult",
+    "RecoveryActionAccepted",
+    "RecoveryActionRejected",
+    "SafetyStateSnapshotRequested",
+    "SessionRejected",
+    "SlotConfigurationActivationCommand",
+    "SlotFaultDeclarationCommand",
+    "SlotOperationResumeCommand",
+    "SublotRejected",
+    "UnableToChargeFieldConfirmationResult"
+  ],
+  "byMessageType": {
+    "CurrentStopWorklistSnapshot": {
+      "product": 15
+    },
+    "DurableAck": {
+      "product": 19
+    },
+    "PreDepartureSafetyCheck": {
+      "product": 16
+    },
+    "ProtocolProblem": {
+      "product": 1
+    },
+    "SessionAccepted": {
+      "product": 10
+    },
+    "SessionReadiness": {
+      "product": 13
+    },
+    "SlotOperationCommand": {
+      "product": 15
+    },
+    "SnapshotAppliedAck": {
+      "product": 20
+    },
+    "SublotEntryRequested": {
+      "product": 12
+    },
+    "UpcomingStopPlanSnapshot": {
+      "product": 27
+    },
+    "VehicleBusinessStateSnapshot": {
+      "product": 15
+    }
+  }
+}
