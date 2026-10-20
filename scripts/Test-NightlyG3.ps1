@@ -289,7 +289,7 @@ try {
     $standIn = @'
 #Requires -Version 7
 param([Parameter(Mandatory)][string]$StageRoot, [Parameter(Mandatory)][string]$EvidenceRoot,
-    [string]$SelfCheckControlServerCommit, __ONBOARD__ [string]$BatchId)
+    [string]$SelfCheckControlServerCommit, __ONBOARD__ [string]$BatchId, [double]$MinFreeGiB)
 if ((Test-Path -LiteralPath $StageRoot) -or (Test-Path -LiteralPath $EvidenceRoot)) { throw 'StageRoot and EvidenceRoot must not already exist' }
 New-Item -ItemType Directory -Path $EvidenceRoot, (Join-Path $StageRoot 'sources\control-server'), (Join-Path $StageRoot 'publish'), (Join-Path $StageRoot 'runtime') | Out-Null
 Set-Content -LiteralPath (Join-Path $StageRoot 'runtime\controlserver.db') -Value 'db'
@@ -356,6 +356,8 @@ exit $(if ($red) { 1 } else { 0 })
             $stages += $given['StageRoot']
             Check "round, ${runner}: its stage and evidence roots are under the work root" `
                 ($given['StageRoot'].StartsWith($round.Work) -and $given['EvidenceRoot'].StartsWith($round.Work)) "$($given['StageRoot']) / $($given['EvidenceRoot'])"
+            # The round's own floor (this round passes 0), not the runner's default of 30 (control-server#585).
+            Check "round, ${runner}: given the round's -MinFreeGiB" ($given['MinFreeGiB'] -eq 0 -and $given.ContainsKey('MinFreeGiB')) "$($given['MinFreeGiB'])"
         }
     }
     Check 'round: every runner gets a stage root of its own' (@($stages | Select-Object -Unique).Count -eq 4) "$($stages -join ', ')"

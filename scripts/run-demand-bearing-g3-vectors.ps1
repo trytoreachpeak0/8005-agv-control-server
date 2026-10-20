@@ -40,10 +40,15 @@ param(
     # Both the peer commit binding and the synthetic-peer harness are owned by the staged G3 runner and
     # read back from it rather than restated here, so the two runners can never drift apart.
     [string]$SharedRunnerSource = (Join-Path $PSScriptRoot 'run-staged-g3.ps1'),
-    [string]$CommitBindingFunctionSource = (Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1')
+    [string]$CommitBindingFunctionSource = (Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1'),
+    # The free space, in GiB, the drive under -StageRoot must have before anything is cloned (G3_DISK_LOW otherwise).
+    # 30 is the batch exit's rule since the batch-8 exit filled C: with G3 stages; see run-journey-g3.ps1. Not a path
+    # input, so not a RUNNER_INPUT_OVERRIDE.
+    [double]$MinFreeGiB = 30
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'G3RunnerStage.psm1') -Force
 $ProgressPreference = 'SilentlyContinue'
 
 # Plaintext loopback, like the restart runner: this exercises the message plane against a restored
@@ -214,6 +219,7 @@ if ($storeSource -eq 'FIELD_RUN') {
                'or pass -FieldRunRoot.')
     }
 }
+$null = Assert-G3FreeDiskSpace -Path $StageRoot -MinFreeGiB $MinFreeGiB
 New-Item -ItemType Directory -Path $StageRoot, $EvidenceRoot | Out-Null
 # Absolute from here on. Unlike run-journey-g3.ps1, this runner does not hand an $EvidenceRoot-derived
 # path to any child process today -- measured, not assumed, with the taint analysis kept at
@@ -603,20 +609,41 @@ $restart = [ordered]@{
 $credential = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
 $probeTranscript = Join-Path $EvidenceRoot 'probe-transcript.ndjson'
 
-try {
-    Invoke-LoggedCommand -Name 'clone-control-server' -WorkingDirectory $sourcesRoot -FilePath 'git' `
+# The one clone this runner makes, the ControlServer at -ControlServerCommit. It was inline in the try below until
+# control-server#585 lifted it out, command for command, so that Test-G3RunnerStage.ps1 can run it; unlike the other
+# runners' New-ExactClone it fetches nothing and checks no remote ref, as before.
+function New-ExactClone {
+    param(
+        [string]$Name,
+        [string]$Repository,
+        [string]$Destination,
+        [string]$Commit,
+        # Everything but the top-level evidence/ (G3RunnerStage.psm1). The assertion below holds as before.
+        [switch]$ExcludeEvidence
+    )
+
+    Invoke-LoggedCommand -Name "clone-$Name" -WorkingDirectory $sourcesRoot -FilePath 'git' `
         -Arguments @('-c', 'core.autocrlf=false', 'clone', '--no-hardlinks', '--no-checkout',
-                     $ControlServerRepository, $controlSource) `
-        -LogPath (Join-Path $logsRoot 'clone-control-server.log') | Out-Null
-    & git -C $controlSource config core.autocrlf false
+                     $Repository, $Destination) `
+        -LogPath (Join-Path $logsRoot "clone-$Name.log") | Out-Null
+    & git -C $Destination config core.autocrlf false
     if ($LASTEXITCODE -ne 0) { throw 'Unable to set core.autocrlf=false for the ControlServer clone' }
-    Invoke-LoggedCommand -Name 'checkout-control-server' -WorkingDirectory $controlSource -FilePath 'git' `
-        -Arguments @('checkout', '--detach', $ControlServerCommit) `
-        -LogPath (Join-Path $logsRoot 'checkout-control-server.log') | Out-Null
-    $checkedOut = (& git -C $controlSource rev-parse HEAD).Trim()
-    if ($checkedOut -ne $ControlServerCommit -or @(& git -C $controlSource status --porcelain).Count -ne 0) {
-        throw "The ControlServer clone is not a clean exact checkout of $ControlServerCommit"
+    if ($ExcludeEvidence) {
+        Invoke-LoggedCommand -Name "sparse-$Name" -WorkingDirectory $Destination -FilePath 'git' `
+            -Arguments (Get-G3EvidenceSparseCheckoutArguments) -LogPath (Join-Path $logsRoot "sparse-$Name.log") | Out-Null
     }
+    Invoke-LoggedCommand -Name "checkout-$Name" -WorkingDirectory $Destination -FilePath 'git' `
+        -Arguments @('checkout', '--detach', $Commit) `
+        -LogPath (Join-Path $logsRoot "checkout-$Name.log") | Out-Null
+    $checkedOut = (& git -C $Destination rev-parse HEAD).Trim()
+    if ($checkedOut -ne $Commit -or @(& git -C $Destination status --porcelain).Count -ne 0) {
+        throw "The ControlServer clone is not a clean exact checkout of $Commit"
+    }
+}
+
+try {
+    New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
+        -Commit $ControlServerCommit -ExcludeEvidence
 
     if ($storeSource -eq 'SYNTHETIC_RIG') {
         # Checked against the repository before the run started; the clone is that commit.
@@ -1332,6 +1359,9 @@ $resultJson = $result | ConvertTo-Json -Depth 40
     (Join-Path $EvidenceRoot 'run-result.json'), $resultJson, [Text.UTF8Encoding]::new($false))
 $resultJson
 
-if ($status -ne 'DEMAND_BEARING_G3_VECTORS_PASS' -or $secretLeakFiles.Count -ne 0) {
+$passed = $status -eq 'DEMAND_BEARING_G3_VECTORS_PASS' -and $secretLeakFiles.Count -eq 0
+# After run-result.json: a passed run's stage goes, a red one's stays (G3RunnerStage.psm1, control-server#585).
+$null = Complete-G3RunnerStage -StageRoot $StageRoot -Passed $passed
+if (-not $passed) {
     throw "Demand-bearing G3 vectors did not pass: $status. Evidence: $EvidenceRoot"
 }

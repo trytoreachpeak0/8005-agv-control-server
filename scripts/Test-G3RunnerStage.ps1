@@ -172,7 +172,8 @@ try {
         function Invoke-Case([string]$Case, [scriptblock]$AfterCheckout, [hashtable]$Extra = @{}, [switch]$Full) {
             $destination = Join-Path $sourcesRoot $Case
             $script:afterCheckout = $AfterCheckout
-            $splat = @{ Name = 'control-server'; Repository = $origin; Destination = $destination; Commit = $commit } + $remote + $Extra
+            $splat = @{ Name = 'control-server'; Repository = $origin; Destination = $destination; Commit = $commit } + $remote
+            foreach ($key in $Extra.Keys) { $splat[$key] = $Extra[$key] }
             if (-not $Full) { $splat['ExcludeEvidence'] = $true }
             try { $null = New-ExactClone @splat; return [pscustomobject]@{ Destination = $destination; Error = $null } }
             catch { return [pscustomobject]@{ Destination = $destination; Error = $_.Exception.Message } }
@@ -271,7 +272,7 @@ try {
         Check "${file}: -MinFreeGiB, default 30" ($parameter.Count -eq 1 -and $parameter[0].DefaultValue.Extent.Text -eq '30') "$(${parameter}?[0]?.Extent.Text)"
         $top = @($ast.EndBlock.Statements)
         $diskAt = @(for ($i = 0; $i -lt $top.Count; $i++) {
-                if ($top[$i].Extent.Text -match '^Assert-G3FreeDiskSpace -Path \$StageRoot -MinFreeGiB \$MinFreeGiB') { $i } })
+                if ($top[$i].Extent.Text -match '^(\$null = )?Assert-G3FreeDiskSpace -Path \$StageRoot -MinFreeGiB \$MinFreeGiB') { $i } })
         $stageAt = @(for ($i = 0; $i -lt $top.Count; $i++) { if ($top[$i].Extent.Text -match '^New-Item -ItemType Directory -Path \$StageRoot\b') { $i } })
         Check "${file}: the disk is checked once, at top level, before the stage is created" `
             ($diskAt.Count -eq 1 -and $stageAt.Count -eq 1 -and $diskAt[0] -lt $stageAt[0]) "check at $($diskAt -join ','), stage at $($stageAt -join ',')"

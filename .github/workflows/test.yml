@@ -270,6 +270,14 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-NightlyG3.ps1
 
+      # Seconds, no rig: the runners' stage handling (control-server#585). Each runner's own New-ExactClone against a
+      # throwaway repository: the ControlServer clone leaves evidence/ out and its HEAD, clean and remote-ref
+      # assertions still go red; the journey builds once and starts every scenario with -SkipBuild; the -MinFreeGiB
+      # floor before the stage; a passed run's stage removed, a red one's kept. No G3 run is short enough to show these.
+      - name: G3 runner self-check (stage, clone and disk)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-G3RunnerStage.ps1
+
       # About three minutes, no rig, no elevation, nothing outside %TEMP%: four cases wait out the scripts' real
       # 30-second limit. Install-ControlServerLocal.ps1 and Update-ControlServerLocal.ps1 run end to end against
       # stubs, and must neither copy nor delete a data root a live Host still holds (its <db>.instance-lock), nor
