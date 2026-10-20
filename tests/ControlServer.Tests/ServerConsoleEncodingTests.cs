@@ -58,6 +58,36 @@ public sealed class ServerConsoleEncodingTests : IAsyncDisposable
     }
 
     /// <summary>
+    /// The managed <c>Console.Error</c> is UTF-8 as well when stderr is redirected. The host writes nothing there of its
+    /// own, so a second Serilog Console sink is configured (through the environment, as an operator could) that sends
+    /// every level to stderr; the lock wait line with 关卡 in it then goes through <c>Console.Error</c>. What the runtime
+    /// itself prints for an unhandled exception does not go through <c>Console.Error</c> and is not covered here.
+    /// </summary>
+    [Fact]
+    public async Task RedirectedStandardErrorIsUtf8()
+    {
+        string database = Path.Combine(_root, "关卡", "controlserver.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(database)!);
+        using ControlServerDatabaseLock held = ControlServerDatabaseLock.TryAcquire(database)
+            ?? throw new InvalidOperationException("The test could not take the lock on its own fresh database.");
+
+        ProcessStartInfo start = HostStart(database);
+        start.Environment["Serilog__WriteTo__0__Name"] = "Console";
+        start.Environment["Serilog__WriteTo__0__Args__standardErrorFromLevel"] = "Verbose";
+        _host = Process.Start(start)!;
+        MemoryStream stderr = new();
+        Task copying = CollectAsync(_host.StandardError.BaseStream, stderr);
+        _ = _host.StandardOutput.BaseStream.CopyToAsync(Stream.Null, Token);
+
+        byte[] bytes = await WaitForAsync(stderr, copying, LockWaitingLog, TimeSpan.FromSeconds(60));
+
+        byte[] utf8 = Encoding.UTF8.GetBytes("关卡");
+        Assert.True(
+            bytes.AsSpan().IndexOf(utf8) >= 0,
+            $"关卡 ({Convert.ToHexString(utf8)}) is not in the redirected standard error as UTF-8. The line it is in: {Hex(bytes, LockWaitingLog)}");
+    }
+
+    /// <summary>
     /// The last line before the process dies is on the redirected stream, UTF-8: an L2 scenario's verdict often rests on
     /// it. The lock is held past <c>DatabaseLockStartup.Wait</c>, so the host logs <c>Startup refused</c> with the database
     /// path and its start throws out of Program.cs, unhandled: no host shutdown, no orderly flush of anything.
