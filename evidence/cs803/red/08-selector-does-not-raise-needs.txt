@@ -1,0 +1,12 @@
+mutation: 08-selector-does-not-raise-needs in scripts/Select-TestSelfCheckRun.ps1 (the raising of needed self-checks never fires)
+tracked files changed during the run:  M scripts/Select-TestSelfCheckRun.ps1
+---
+swept 202 input paths over 40 steps
+inputs of the v3 check that are not inputs of the Scenario SQL check: 0
+BAD   (throwaway table, C changed) c runs, so b, which it needs, runs -> b skipped
+BAD   needs: a change to C alone runs C, B (C needs it) and A (B needs it), and not D -> a=False b=False c=True d=False
+BAD   needs: B says why it runs -> skipped: none of the changed paths is its input
+BAD   the needs invariant was exercised on a self-check that needs another -> 1
+994 case(s) passed
+TEST_SELF_CHECK_SCOPE_SELFTEST_FAILED: 4 case(s)
+exit=1

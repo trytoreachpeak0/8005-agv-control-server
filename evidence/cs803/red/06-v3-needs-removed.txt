@@ -1,0 +1,7 @@
+mutation: 06-v3-needs-removed in scripts/TestSelfCheckScope.psd1
+tracked files changed during the run:  M scripts/TestSelfCheckScope.psd1
+---
+swept 202 input paths over 40 steps
+BAD   g3_journey_v3_branches reads src/ControlServer.Host/bin without building it, so it says what it needs -> no Needs
+Test-TestSelfCheckScope.ps1: The property 'Needs' cannot be found on this object. Verify that the property exists.
+exit=1
