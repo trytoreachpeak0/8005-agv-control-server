@@ -1,12 +1,11 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ControlServer.Domain;
+using ControlServer.SchemaConformance;
 using Corvus.Json;
-using Corvus.Json.Validator;
 
 // Validates outbound protocol lines against the JSON Schemas of the protocol release this server is
 // bound to, read from the vendored copy the repository already holds under vendor/8005-agv-protocol
@@ -33,6 +32,11 @@ using Corvus.Json.Validator;
 // validating its share and handing back what it found; the report is merged from those and is the
 // report a serial run writes, timings aside. --processes 1 validates everything in this process.
 // A copy is started with --partial <file> instead of --report, and writes only that file.
+//
+// And every compiled schema is kept on disk, under --cache (default: controlserver-schema-cache in the temporary
+// directory), keyed on the measured digest of the whole schemas/ tree, this program's own assembly and the Corvus and
+// Roslyn packages it runs with (control-server#584): a G2 run is one validator per slice, and each compiled the same
+// schemas again. CompiledSchemaCache says what an entry is and why a stale or damaged one is never used.
 const int ErrorsPerLine = 5;
 const string Validator = "Corvus.Json.Validator 4.6.7";
 
@@ -41,7 +45,7 @@ const string Validator = "Corvus.Json.Validator 4.6.7";
 // which a caller that reads the exit code -- a test fixture, the G2 script -- cannot tell apart from
 // a crash in the schema library. Caught rather than avoided, so --name value pairs stay the only
 // spelling and nothing has to be checked twice.
-const string Usage = "Usage: ControlServer.SchemaConformance --lines <ndjson> --report <directory> [--vendor <directory>] [--processes <n>]";
+const string Usage = "Usage: ControlServer.SchemaConformance --lines <ndjson> --report <directory> [--vendor <directory>] [--processes <n>] [--cache <directory>]";
 const int DefaultProcesses = 4;
 Dictionary<string, string> arguments;
 string linesPath;
@@ -69,6 +73,8 @@ catch (ArgumentException exception)
 // point the validator at a copy of its own, which is how the hash self-check is tested.
 string vendorRoot = arguments.GetValueOrDefault("vendor")
     ?? Path.Combine(AppContext.BaseDirectory, "vendor", "8005-agv-protocol");
+string cacheDirectory = Path.GetFullPath(arguments.GetValueOrDefault("cache")
+    ?? Path.Combine(Path.GetTempPath(), "controlserver-schema-cache"));
 // Violations already filed, each naming the issue that owns it. Optional: a run without the table
 // judges every line on its own.
 KnownViolation[] known = arguments.GetValueOrDefault("known") is { } knownPath
@@ -107,7 +113,7 @@ if (manifestSha256 != ProtocolCandidateIdentity.ManifestSha256)
         $"Vendored manifest hashes to {manifestSha256}, ProtocolCandidateIdentity.ManifestSha256 is " +
         $"{ProtocolCandidateIdentity.ManifestSha256}.");
 }
-string schemaBundleSha256 = SchemaBundleSha256(schemaRoot);
+string schemaBundleSha256 = CompiledSchemaCache.SchemaBundleSha256(schemaRoot);
 if (schemaBundleSha256 != ProtocolCandidateIdentity.SchemaBundleSha256)
 {
     return Fail(
@@ -155,22 +161,27 @@ foreach (string file in Directory.EnumerateFiles(schemaRoot, "*.json", SearchOpt
     string id = document.RootElement.GetProperty("$id").GetString()
         ?? throw new InvalidDataException(file + " has no $id.");
     resolver.AddDocument(id, document);
-    schemaIds["schemas/" + RelativeUnixPath(schemaRoot, file)] = id;
+    schemaIds["schemas/" + CompiledSchemaCache.RelativeUnixPath(schemaRoot, file)] = id;
 }
-JsonSchema.Options schemaOptions = new(resolver, false, null, true);
+// Keyed on the digest measured above, not on ProtocolCandidateIdentity's: today the two are equal or the run has
+// already stopped, but the key must not depend on that check staying where it is.
+CompiledSchemaCache schemaCache = new(cacheDirectory, SchemaCacheKeyParts.ForThisProcess(schemaBundleSha256), resolver);
 
 Stopwatch compileTime = new();
 Stopwatch validationTime = new();
 // Milliseconds reported by the copies of this program that did the work, when it was split.
 long splitCompileMilliseconds = 0;
 long splitValidationMilliseconds = 0;
-JsonSchema Compile(string manifestRelativePath)
+// Likewise the cache counts.
+int splitCacheHits = 0;
+int splitCacheMisses = 0;
+int splitCacheRejected = 0;
+CompiledSchema Compile(string manifestRelativePath)
 {
     compileTime.Start();
     try
     {
-        return JsonSchema.FromText(
-            File.ReadAllText(Path.Combine(vendorRoot, manifestRelativePath)), schemaIds[manifestRelativePath], schemaOptions);
+        return schemaCache.Get(schemaIds[manifestRelativePath]);
     }
     finally
     {
@@ -194,7 +205,8 @@ if (validationExit != 0)
 if (partialPath is not null)
 {
     File.WriteAllText(partialPath, JsonSerializer.Serialize(new PartialResult(
-        distinctLines, compileTime.ElapsedMilliseconds, validationTime.ElapsedMilliseconds, [.. violations.Values]),
+        distinctLines, compileTime.ElapsedMilliseconds, validationTime.ElapsedMilliseconds, [.. violations.Values],
+        schemaCache.Hits, schemaCache.Misses, schemaCache.Rejected),
         JsonSerializerOptions.Web));
     return 0;
 }
@@ -202,7 +214,7 @@ if (partialPath is not null)
 int ValidateHere(IEnumerable<IGrouping<string, ObservedLine>> groups)
 {
     // Compiled only when there is something to validate: a run that sent nothing pays nothing.
-    JsonSchema[] envelopeSchema = checkedLines.Length > 0 ? [Compile("schemas/envelope.schema.json")] : [];
+    CompiledSchema[] envelopeSchema = checkedLines.Length > 0 ? [Compile("schemas/envelope.schema.json")] : [];
     foreach (IGrouping<string, ObservedLine> byType in groups)
     {
         // One schema per messageType, never the bundle's oneOf: every message schema repeats the envelope
@@ -213,7 +225,7 @@ int ValidateHere(IEnumerable<IGrouping<string, ObservedLine>> groups)
         {
             return Fail($"{schemaPath} is named by the manifest but is not vendored.");
         }
-        JsonSchema[] messageSchema = schemaPath is null ? [] : [Compile(schemaPath)];
+        CompiledSchema[] messageSchema = schemaPath is null ? [] : [Compile(schemaPath)];
         validationTime.Start();
         foreach (IGrouping<string, ObservedLine> byContent in byType.GroupBy(line => line.Line, StringComparer.Ordinal))
         {
@@ -268,6 +280,9 @@ async Task<int> ValidateInProcessesAsync()
             distinctLines += partial.DistinctLines;
             splitCompileMilliseconds += partial.CompileMilliseconds;
             splitValidationMilliseconds += partial.ValidationMilliseconds;
+            splitCacheHits += partial.CacheHits;
+            splitCacheMisses += partial.CacheMisses;
+            splitCacheRejected += partial.CacheRejected;
             found.AddRange(partial.Violations);
         }
         foreach (Violation violation in found.OrderBy(violation => violation.MessageType, StringComparer.Ordinal))
@@ -293,7 +308,7 @@ async Task<int> ValidateInProcessesAsync()
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        foreach (string argument in (string[])["--lines", sharePath, "--partial", Path.Combine(scratch, $"partial-{index}.json"), "--vendor", vendorRoot])
+        foreach (string argument in (string[])["--lines", sharePath, "--partial", Path.Combine(scratch, $"partial-{index}.json"), "--vendor", vendorRoot, "--cache", cacheDirectory])
         {
             start.ArgumentList.Add(argument);
         }
@@ -372,6 +387,16 @@ File.WriteAllText(
         schemaCompilationMilliseconds = compileTime.ElapsedMilliseconds + splitCompileMilliseconds,
         validationMilliseconds = validationTime.ElapsedMilliseconds + splitValidationMilliseconds,
         schemaCompilationProcesses = compilationProcesses,
+        // How the compiled schemas were come by (control-server#584), summed over the processes like the timings.
+        // Reported, never judged: a hit and a miss validate the same way, and the key says why a hit could be trusted.
+        schemaCache = new
+        {
+            directory = cacheDirectory,
+            hits = schemaCache.Hits + splitCacheHits,
+            misses = schemaCache.Misses + splitCacheMisses,
+            rejected = schemaCache.Rejected + splitCacheRejected,
+            key = schemaCache.KeyParts
+        },
         // The server's own message types this run never sent. Reported, not judged: which messages a
         // test happens to send says nothing about whether the ones it sent are right.
         serverMessageTypesNotObserved = notObserved,
@@ -393,7 +418,9 @@ Console.WriteLine(string.Create(
     $"{ordered.Length} distinct violations, {unknownViolations} of them not on file; " +
     $"{known.Length - usedEntries.Count} known-violation entries matched nothing; " +
     $"schema compilation {compileTime.ElapsedMilliseconds + splitCompileMilliseconds} ms, " +
-    $"validation {validationTime.ElapsedMilliseconds + splitValidationMilliseconds} ms, in {compilationProcesses} process(es)."));
+    $"validation {validationTime.ElapsedMilliseconds + splitValidationMilliseconds} ms, in {compilationProcesses} process(es); " +
+    $"schema cache {schemaCache.Hits + splitCacheHits} hit(s), {schemaCache.Misses + splitCacheMisses} miss(es), " +
+    $"{schemaCache.Rejected + splitCacheRejected} rejected, in {cacheDirectory}."));
 // Printed before the early return: an entry that matched nothing on a run with no violations at all
 // is exactly the case worth seeing, and it would otherwise only ever appear in the report file.
 foreach (KnownViolation entry in known.Where(entry => !usedEntries.Contains(entry)))
@@ -439,7 +466,7 @@ void Record(ObservedLine line, Error[] errors)
 // its payload emptied, and the message's own schema -- which repeats every envelope field and adds
 // the payload -- to the line as sent. A payload error is therefore reported once, by the message
 // schema; an envelope error both schemas see is de-duplicated.
-static Error[] Validate(JsonSchema[] envelopeSchema, JsonSchema[] messageSchema, string line)
+static Error[] Validate(CompiledSchema[] envelopeSchema, CompiledSchema[] messageSchema, string line)
 {
     JsonNode? parsed;
     try
@@ -463,11 +490,11 @@ static Error[] Validate(JsonSchema[] envelopeSchema, JsonSchema[] messageSchema,
             .Take(ErrorsPerLine)
     ];
 
-    static IEnumerable<Error> Check(JsonSchema[] schemas, string text)
+    static IEnumerable<Error> Check(CompiledSchema[] schemas, string text)
     {
         using JsonDocument document = JsonDocument.Parse(text);
         List<Error> errors = [];
-        foreach (JsonSchema schema in schemas)
+        foreach (CompiledSchema schema in schemas)
         {
             if (!schema.Validate(document.RootElement, ValidationLevel.Flag).IsValid)
             {
@@ -560,24 +587,6 @@ static JsonElement? Resolve(JsonElement root, string pointer)
     return current;
 }
 
-// The protocol's own schema bundle digest, reproduced from schemas/: sorted relative paths, each
-// written as "<path>:<sha256>\n", the whole hashed. Implemented in 8005-agv-protocol
-// tools/finalize-manifest.mjs as combine("schemas/"), and the value it produces is the manifest's
-// schemaBundleSha256, which ProtocolCandidateIdentity carries.
-static string SchemaBundleSha256(string schemaRoot)
-{
-    StringBuilder lines = new();
-    foreach (string file in Directory.EnumerateFiles(schemaRoot, "*", SearchOption.AllDirectories)
-        .OrderBy(file => RelativeUnixPath(schemaRoot, file), StringComparer.Ordinal))
-    {
-        lines.Append("schemas/").Append(RelativeUnixPath(schemaRoot, file)).Append(':')
-            .Append(Sha256Hex(File.ReadAllBytes(file))).Append('\n');
-    }
-    return Sha256Hex(Encoding.UTF8.GetBytes(lines.ToString()));
-}
-
-static string RelativeUnixPath(string root, string file) => Path.GetRelativePath(root, file).Replace('\\', '/');
-
 static string Sha256Hex(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
 static string Quote(string value) => JsonSerializer.Serialize(value);
@@ -612,7 +621,9 @@ internal sealed record ObservedLine(string MessageType, string Origin, string Si
 internal sealed record Error(string Pointer, string Keyword, string Message, string Actual);
 
 /// <summary>What one copy of this program found in its share of the message types.</summary>
-internal sealed record PartialResult(int DistinctLines, long CompileMilliseconds, long ValidationMilliseconds, Violation[] Violations);
+internal sealed record PartialResult(
+    int DistinctLines, long CompileMilliseconds, long ValidationMilliseconds, Violation[] Violations,
+    int CacheHits, int CacheMisses, int CacheRejected);
 
 internal sealed record Violation(string MessageType, string Origin, string Site, Error[] Errors, string SampleLine)
 {
