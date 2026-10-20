@@ -61,7 +61,10 @@ jobs:
     # checks 32-40 s, the seven self-checks 1-2 s each, the SQL check 36 s plus a 26 s host build on the control host): the
     # script static checks 5, seven self-checks 2 each, the scenario SQL check 10 -- 29 more, about 141 if every step ran
     # to its own limit.
-    timeout-minutes: 150
+    # 160 since control-server#803, which put two steps before Test with a limit of 5 each (the self-check scope and its
+    # self-check, seconds each): about 151 if every step ran to its own limit. Skipping a self-check lowers what a job
+    # takes, never what it may take: a push or a dispatched run still runs every step.
+    timeout-minutes: 160
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
       # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
@@ -90,11 +93,57 @@ jobs:
         shell: pwsh
         run: dotnet --info
 
+      # control-server#803 (the user's decision on 2026-10-20): a pull request skips each self-check below whose inputs
+      # it does not change. Measured over the 132 successful jobs from 2026-10-11, the self-checks before Test took a
+      # median 600 s of 21m40s and the suite 477 s, while most pull requests change only src/ and tests/, which almost
+      # none of the self-checks read. scripts/TestSelfCheckScope.psd1 is the one place that says what each step's inputs
+      # are (its script, every file that script reaches by name, and what a name cannot show); Select-TestSelfCheckRun.ps1
+      # reads it and the checkout and writes one output per step, which each step's if: reads. The steps after Test keep
+      # !cancelled() beside it. A skip is a notice and the job summary lists the skipped steps, so a green job is not
+      # read as "they ran". Never skipped: an event that is not a pull request (a push, a dispatched run -- this workflow
+      # does not run on a push to fp/v2-impl or on a schedule), a diff that cannot be read, and a pull request that
+      # changes test.yml, the table or the selector. The diff is the merge commit's (GITHUB_SHA) against its first
+      # parent, without rename detection, as the content-conflict and L2 scopes do. The staged content-conflict
+      # self-check after Test keeps its own selector. A step added to this file that the table does not register turns
+      # the next step red. Seconds; the job limit's margin above covers it.
+      - name: Decide which self-checks this pull request runs
+        id: self-check-scope
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            $null = & ./scripts/Select-TestSelfCheckRun.ps1 -NotAPullRequest -GitHubOutput $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $changed = @()
+          git fetch --no-tags --quiet --depth=2 origin $env:GITHUB_SHA
+          if ($LASTEXITCODE -eq 0) {
+            $changed = @(git diff --no-renames --name-only "$env:GITHUB_SHA^1" $env:GITHUB_SHA)
+            if ($LASTEXITCODE -ne 0) { $changed = @() }
+          }
+          if ($changed.Count -eq 0) {
+            Write-Host "::warning title=Self-check scope::Could not read this pull request's changed paths; running every self-check."
+          }
+          $decision = & ./scripts/Select-TestSelfCheckRun.ps1 -ChangedPath $changed -GitHubOutput $env:GITHUB_OUTPUT -StepSummary $env:GITHUB_STEP_SUMMARY
+          $skipped = @($decision.Steps | Where-Object { -not $_.Run })
+          if ($skipped.Count -gt 0) {
+            Write-Host "::notice title=Self-checks skipped::本 PR 跳过了 $($skipped.Count) 个自检，绿不代表它们通过。$($decision.Reason)"
+          }
+
+      # Seconds, pure input: the table above covers every step of this file, and a change to a registered input never
+      # skips its step (control-server#803).
+      - name: Self-check scope self-check (which pull requests run which self-check)
+        if: steps.self-check-scope.outputs.self_check_scope == 'true'
+        timeout-minutes: 5
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-TestSelfCheckScope.ps1
+
       # A second of AST parsing, ahead of the suite. A real-onboard scenario that drives the onboard through a
       # handle taken before a restart reads exactly like "the entry was never offered", and nothing but a real-rig
       # round finds that out -- control-server#222 spent one on it. The check replays its own counterexamples, so a
       # rule that stopped working fails this step instead of going quietly green (control-server#230).
       - name: L2 scenario self-check (onboard handle after restart)
+        if: steps.self-check-scope.outputs.l2_onboard_handle == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2OnboardHandleAfterRestart.ps1
 
@@ -104,6 +153,7 @@ jobs:
       # cannot read -- and no real-rig round finds that out, because the real-rig round is green either way
       # (control-server#204).
       - name: L2 scenario self-check (HMI phrase watch)
+        if: steps.self-check-scope.outputs.l2_hmi_phrase_watch == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2HmiPhraseWatch.ps1
 
@@ -114,6 +164,7 @@ jobs:
       # vacuous, it goes permanently red, on the rig, where that reads as a product fault
       # (control-server#203).
       - name: L2 scenario self-check (route evidence recompute)
+        if: steps.self-check-scope.outputs.l2_route_evidence == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2RouteEvidence.ps1
 
@@ -122,6 +173,7 @@ jobs:
       # once, which is the case no real run exercises -- they are serialised by the desktop lock, so
       # an unsafe append would pass every one of them (control-server#203).
       - name: L2 scenario self-check (real-rig run ledger)
+        if: steps.self-check-scope.outputs.l2_run_ledger == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2RunLedger.ps1
 
@@ -132,6 +184,7 @@ jobs:
       # the rig that reads as a product fault. The check re-measures the rule before applying it, so
       # a PowerShell that changed this reports a finding rather than a quiet green (control-server#203).
       - name: L2 scenario self-check (probe closures resolve)
+        if: steps.self-check-scope.outputs.l2_probe_closures == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2ProbeClosureResolvable.ps1
 
@@ -142,6 +195,7 @@ jobs:
       # the first attempt at a copy put the probe outside the module, which removed the very thing the
       # test was for, and passed on broken code (control-server#203).
       - name: L2 scenario self-check (second-leg intent wait)
+        if: steps.self-check-scope.outputs.l2_second_leg_intent == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SecondLegIntentWait.ps1
 
@@ -149,12 +203,14 @@ jobs:
       # real-onboard scenario waits for (control-server#541): no real-rig round reaches it before the journey G3, and
       # without it g3-slot-fault-declaration's unload wait was met at once by the load's alarm.
       - name: L2 scenario self-check (expected-action overdue)
+        if: steps.self-check-scope.outputs.l2_expected_action_overdue == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2ExpectedActionOverdue.ps1
 
       # A few seconds, no window: the order of g3-forced-mechanical-recovery's confirm step and the failure titles it watches,
       # against a stand-in onboard and the scenario's own AST (control-server#541). The journey G3 is the only run that reaches it.
       - name: L2 scenario self-check (forced recovery confirm step)
+        if: steps.self-check-scope.outputs.l2_forced_recovery_confirm == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-G3ForcedRecoveryEntry.ps1
 
@@ -163,6 +219,7 @@ jobs:
       # timeline when off -- or a pause point that no longer names a criterion of its scenario, which on the rig reads as
       # a run that simply had no pause (control-server#653).
       - name: L2 scenario self-check (screen-state snapshot and pauses)
+        if: steps.self-check-scope.outputs.l2_screen_state == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2ScreenState.ps1
 
@@ -172,6 +229,7 @@ jobs:
       # window (control-server#560, #567). Only the journey G3 reaches these scenarios, and only after an exit moves its
       # binding, so a fixture that regressed would otherwise surface at the next exit.
       - name: G3 scenario self-check (journey UIA fixture reads)
+        if: steps.self-check-scope.outputs.g3_journey_uia_fixture == 'true'
         timeout-minutes: 5
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-G3JourneyUiaFixtureReads.ps1
@@ -179,6 +237,7 @@ jobs:
       # Under a second, pure input: which pull requests run the staged content-conflict self-check after Test
       # (control-server#567). A selector that stopped matching would skip that check for ever and stay green.
       - name: G3 runner self-check (content-conflict scope)
+        if: steps.self-check-scope.outputs.g3_content_conflict_scope == 'true'
         timeout-minutes: 5
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-StagedG3ContentConflictScope.ps1
@@ -188,6 +247,7 @@ jobs:
       # it should have run would leave L2 silent on exactly the change that broke it, so every tracked input file must
       # count, anything unknown must count, and l2.yml must be wired to the answer.
       - name: L2 self-check (scenario round scope)
+        if: steps.self-check-scope.outputs.l2_scenario_round_scope == 'true'
         timeout-minutes: 5
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-L2ScenarioRunScope.ps1
@@ -212,6 +272,7 @@ jobs:
       # showing only that the new one holds would not show the old one ever failed
       # (control-server#265).
       - name: L2 scenario self-check (worklist station wait)
+        if: steps.self-check-scope.outputs.l2_worklist_station_wait == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2WorklistStationWait.ps1
 
@@ -221,6 +282,7 @@ jobs:
       # "409 (Conflict)". control-server#277 got two such reds and could not say what had failed.
       # Nothing green ever reaches that path, so no scenario notices it quietly breaking again.
       - name: L2 scenario self-check (double command refusal body)
+        if: steps.self-check-scope.outputs.l2_double_command_error == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2DoubleCommandError.ps1
 
@@ -229,6 +291,7 @@ jobs:
       # PR #329 review). That messageId is derived twice, by the server and by CargoHoldingCommon.ps1; this
       # pins the script side to the vector JourneyClosureSnapshotTests pins on the server side.
       - name: L2 scenario self-check (journey closure ids)
+        if: steps.self-check-scope.outputs.l2_journey_closure_ids == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2JourneyClosureIds.ps1
 
@@ -237,6 +300,7 @@ jobs:
       # literal backspace: it parsed, matched nothing, and a whole real-rig session read every plan row as '?'.
       # Only a real-onboard run reaches that code, and CI's synthetic lanes never do.
       - name: L2 scenario self-check (multi-stop plan row parsing)
+        if: steps.self-check-scope.outputs.l2_multi_stop_plan_rows == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2MultiStopJourney.ps1
 
@@ -244,6 +308,7 @@ jobs:
       # run reaches it, and on 2026-09-22 it replaced such a run's own error with an IndexOf on $null and kept
       # a refused activation's reason out of the evidence (control-server#306).
       - name: G3 runner self-check (staged error path)
+        if: steps.self-check-scope.outputs.g3_staged_error_path == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-StagedG3ErrorPath.ps1
 
@@ -252,6 +317,7 @@ jobs:
       # writes its own cause before the gate-result writer's refusal, and -FieldRunRoot refuses a store the
       # synthetic rig wrote. No green G3 run reaches any of the three.
       - name: G3 runner self-check (evidence honesty)
+        if: steps.self-check-scope.outputs.g3_evidence_honesty == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3EvidenceHonesty.ps1
 
@@ -259,6 +325,7 @@ jobs:
       # which the nightly g3.yml runs them with: an override is used and recorded SELF_CHECK_OVERRIDE, withholding the
       # formal pass, and without one the written binding is what the run uses. Only the nightly run takes this path.
       - name: G3 runner self-check (self-check override parameters)
+        if: steps.self-check-scope.outputs.g3_self_check_override == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3SelfCheckOverride.ps1
 
@@ -267,6 +334,7 @@ jobs:
       # wait for the CI real rig, the start deadline, a round of Invoke-NightlyG3.ps1 against stand-in runners
       # (gates, cleanup, an exception mid-round), and the workflow lines that must not drift. Nothing of it runs by day.
       - name: G3 runner self-check (nightly G3 decisions)
+        if: steps.self-check-scope.outputs.g3_nightly_decisions == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-NightlyG3.ps1
 
@@ -276,6 +344,7 @@ jobs:
       # empty one they could not back up (control-server#503). Only a failed install or upgrade reaches most of
       # this, and the deployments that would find out run on the plant's servers.
       - name: Install and upgrade self-check (data root lock wait)
+        if: steps.self-check-scope.outputs.install_data_root_lock_wait == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-DataRootLockWait.ps1
 
@@ -284,6 +353,7 @@ jobs:
       # credential, refuses a shared or crossed one with a reason code, and leaves a single car as it was; a first install
       # whose first readiness read is already ready (no reason) completes. Only a deployment on factory01 reaches either.
       - name: Install and upgrade self-check (two-car safety projection, first readiness)
+        if: steps.self-check-scope.outputs.install_two_car_paths == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-InstallerTwoCarPaths.ps1
 
@@ -293,6 +363,7 @@ jobs:
       # its scenarios directory existed and was empty, because the children had written elsewhere,
       # and the runner reported that as a protocol fault (control-server#264).
       - name: G3 runner self-check (evidence location diagnostic)
+        if: steps.self-check-scope.outputs.g3_evidence_location == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3EvidenceLocation.ps1
 
@@ -308,6 +379,7 @@ jobs:
       # which is a false positive by construction, and no fixture could have caught it because every
       # qualified-read fixture used $script:.
       - name: L2 scenario self-check (closure variable capture)
+        if: steps.self-check-scope.outputs.l2_closure_capture == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2ClosureCapture.ps1
 
@@ -320,6 +392,7 @@ jobs:
       # listed, and every shape the scan judges is also measured at runtime, so a rule that stopped matching
       # fails this step rather than reporting zero findings for ever.
       - name: L2 scenario self-check (whole-array readers not enumerated)
+        if: steps.self-check-scope.outputs.l2_whole_array_return == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2WholeArrayReturn.ps1
 
@@ -328,6 +401,7 @@ jobs:
       # "(N rows, expected 1)" so the criterion built on it goes red and says why. Every scenario that uses it runs on
       # a product that gives exactly one row, so no run on any rig ever reaches the two branches it exists for.
       - name: L2 scenario self-check (single-row read)
+        if: steps.self-check-scope.outputs.l2_single_row == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SingleRow.ps1
 
@@ -336,6 +410,7 @@ jobs:
       # with DEMAND_ALREADY_ACCEPTED. A green run on any rig almost never reaches its red branches (not accepted,
       # AcceptedAt missing or not this acceptance's, another code), so they are pinned here.
       - name: L2 scenario self-check (backlog acceptance)
+        if: steps.self-check-scope.outputs.l2_backlog_acceptance == 'true'
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2BacklogAcceptance.ps1
 
@@ -346,6 +421,7 @@ jobs:
       # to the last two (bc22cfd25, control-server#555): both scripts were G3-only and nothing ran them by day. Each check
       # replays its own fixtures first and asserts how much it read, so a scan that broke cannot report zero findings.
       - name: Script static checks (parse, helper properties, string-null)
+        if: steps.self-check-scope.outputs.script_static_checks == 'true'
         timeout-minutes: 5
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-ScriptStaticChecks.ps1
@@ -355,36 +431,43 @@ jobs:
       # request with the reason for each (they take the machine-wide desktop or port lock, start real orchestrators,
       # register a SYSTEM task, or already run in l2.yml).
       - name: G3 runner self-check (runner claims)
+        if: steps.self-check-scope.outputs.g3_runner_claims == 'true'
         timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3RunnerClaims.ps1
 
       - name: L2 scenario self-check (dispatch zone parameters)
+        if: steps.self-check-scope.outputs.l2_dispatch_zone_parameters == 'true'
         timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2DispatchZoneParameters.ps1
 
       - name: L2 scenario self-check (CI lane plan)
+        if: steps.self-check-scope.outputs.l2_lanes == 'true'
         timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2Lanes.ps1
 
       - name: L2 scenario self-check (real inbound reads)
+        if: steps.self-check-scope.outputs.l2_real_inbound == 'true'
         timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2RealInbound.ps1
 
       - name: L2 scenario self-check (session continuity verdict)
+        if: steps.self-check-scope.outputs.l2_session_continuity == 'true'
         timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SessionContinuity.ps1
 
       - name: L2 scenario self-check (slot groups)
+        if: steps.self-check-scope.outputs.l2_slot_groups == 'true'
         timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SlotGroups.ps1
 
       - name: L2 scenario self-check (task type stations)
+        if: steps.self-check-scope.outputs.l2_task_type_stations == 'true'
         timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2TaskTypeStations.ps1
@@ -396,6 +479,7 @@ jobs:
       # 1 and 2, which build ControlServer.Host and run dotnet ef about eight times; those stay a laptop run. Pure
       # input like the seven above: no build, no window, no fixed port, no rig. About 4 s on the laptop.
       - name: G3 runner self-check (demand-bearing claim record backfill)
+        if: steps.self-check-scope.outputs.g3_claim_record_backfill == 'true'
         timeout-minutes: 2
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-DemandBearingClaimRecordBackfill.ps1 -SkipStores
@@ -408,6 +492,7 @@ jobs:
       # it hands over names a database under the work root, and afterwards that the production path is untouched; it
       # prints the data source it used. SQL with $ interpolation is skipped and counted (most of it): a blind spot, printed.
       - name: Scenario SQL self-check (literal SQL against the migrated schema)
+        if: steps.self-check-scope.outputs.scenario_sql_explain == 'true'
         timeout-minutes: 10
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-ScenarioSqlExplain.ps1 -Build
@@ -440,7 +525,7 @@ jobs:
       # the suite is red. About 40 s on the laptop; with the step limit the job's 120 (see timeout-minutes
       # above) stays above every step's, so a hang here is a failed step, not a cancelled job.
       - name: Parallel instance self-check
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.self-check-scope.outputs.parallel_instance == 'true' }}
         shell: pwsh
         timeout-minutes: 10
         run: pwsh -NoProfile -File ./scripts/parallel/Test-ParallelInstance.ps1
@@ -452,7 +537,7 @@ jobs:
       # depend on the suite's verdict, only on its build, and a red suite should not hide it. Adds seconds to the job;
       # the job limit's margin above covers it.
       - name: G3 scenario self-check (journey v3 script branches)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.self-check-scope.outputs.g3_journey_v3_branches == 'true' }}
         timeout-minutes: 5
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-G3JourneyV3ScriptBranches.ps1

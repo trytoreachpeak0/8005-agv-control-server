@@ -10,8 +10,10 @@
 #   - every file that script reaches by name, worked out by the selector from the checkout, not listed here: each string in
 #     the code of a .ps1/.psm1/.psd1 it reaches, read through the PowerShell parser, is cut into file-name-like tokens; a
 #     token that is the leaf name of a file under scripts/ brings that file in, and a token that is a repository path
-#     (src/..., .github/..., vendor/..., with leading ./ and ../ dropped) brings in that file or everything under that
-#     directory -- transitively, until nothing new is named;
+#     (src/..., .github/..., vendor/..., from the script's own directory or with leading ./ and ../ dropped) brings in
+#     that file, or everything under that directory when the string is a path and not a sentence -- transitively, until
+#     nothing new is named. NameClosure = $false turns this off for a self-check whose strings name paths as test data;
+#     its Inputs then say what it reads;
 #   - Inputs below: what a name cannot show. A directory the script lists (Get-ChildItem), a file whose name it builds from
 #     a variable ("$scenario.ps1"), a project it builds. A prefix ends in '/'; a pattern holds '*'; anything else is a file.
 # Matching is case-insensitive, so a differently cased spelling counts rather than slips through.
@@ -41,7 +43,9 @@
     # In test.yml's order. Key is the name of the selector's output for the step (letters, digits, underscores).
     Steps = @(
         @{ Key = 'self_check_scope'; Name = 'Self-check scope self-check (which pull requests run which self-check)'
-            Script = 'scripts/Test-TestSelfCheckScope.ps1'; Inputs = @() }
+            Script = 'scripts/Test-TestSelfCheckScope.ps1'
+            # Its strings name src/ paths as test data, not as reads; what it reads is every step's scripts and test.yml.
+            NameClosure = $false; Inputs = @('scripts/', '.github/workflows/') }
         @{ Key = 'l2_onboard_handle'; Name = 'L2 scenario self-check (onboard handle after restart)'
             Script = 'scripts/l2/Test-L2OnboardHandleAfterRestart.ps1'
             # Lists every scenario and counterexample.
@@ -74,7 +78,8 @@
             Script = 'scripts/Test-L2ScenarioRunScope.ps1'
             # Sweeps every tracked file through Select-L2ScenarioRun.ps1, which reads every string in scripts/l2 and the
             # files under scripts/ they name, and checks l2.yml's wiring.
-            Inputs = @('scripts/', '.github/workflows/') }
+            # Its strings name src/ and docs/ paths as test data, not as reads.
+            NameClosure = $false; Inputs = @('scripts/', '.github/workflows/') }
         @{ Key = 'l2_worklist_station_wait'; Name = 'L2 scenario self-check (worklist station wait)'
             Script = 'scripts/l2/Test-L2WorklistStationWait.ps1'; Inputs = @() }
         @{ Key = 'l2_double_command_error'; Name = 'L2 scenario self-check (double command refusal body)'

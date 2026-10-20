@@ -241,7 +241,7 @@ $cases = @(
     @{ Path = 'scripts/l2/scenarios/g3-forced-mechanical-recovery.ps1'; Runs = @('l2_forced_recovery_confirm', 'l2_onboard_handle'); Skips = @('l2_hmi_phrase_watch', 'install_two_car_paths') }
     @{ Path = 'vendor/8005-agv-protocol/integration-slices/index.json'; Runs = @('g3_evidence_honesty', 'scenario_sql_explain'); Skips = @('l2_hmi_phrase_watch') }
     @{ Path = 'scripts/l2/L2HmiPhraseWatch.psm1'; Runs = @('l2_hmi_phrase_watch'); Skips = @('install_data_root_lock_wait', 'parallel_instance') }
-    @{ Path = 'scripts/parallel/ParallelInstance.psm1'; Runs = @('parallel_instance'); Skips = @('l2_hmi_phrase_watch', 'install_data_root_lock_wait') }
+    @{ Path = 'scripts/parallel/ParallelInstance.psm1'; Runs = @('parallel_instance'); Skips = @('l2_hmi_phrase_watch', 'l2_worklist_station_wait') }
 )
 foreach ($case in $cases) {
     $decision = Decide @($case.Path)

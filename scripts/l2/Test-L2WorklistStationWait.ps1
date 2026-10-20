@@ -20,9 +20,20 @@ just as well against a criterion that had always been right (control-server#265)
 No real-rig round has ever been in any of these states: in both scenarios the callback that runs this
 wait only fires after the server has sent the operation command, by which time the worklist is long
 acknowledged. None of them can be reached by re-running a green scenario.
+
+Twelve cases must NOT be satisfied, so each runs out its wait's clock. Since control-server#803 eleven of them
+wait -TimeoutSeconds (1 by default, the shortest the [int] parameter takes; it was 2): the claim each makes is
+"timed out rather than accepted", which a 1-second wait polled every 250 ms makes as well, and its message
+says "Timed out after 1s". The one this file exists for -- the first stop's worklist revised, old criterion
+satisfied, new one not -- keeps the 2 seconds every case used before, and asserts that it waited them in full
+before giving up, so a wait that came back early would show there.
 #>
 [CmdletBinding()]
-param()
+param(
+    [ValidateRange(1, 60)]
+    [int]$TimeoutSeconds = 1
+)
+$fullTimeoutSeconds = 2
 
 $ErrorActionPreference = 'Stop'
 
@@ -88,29 +99,30 @@ function Plan([string]$id, [string[]]$stations, [string]$demand = 'd-1') {
     }
 }
 
-function Invoke-FirstWait([object[]]$Rows) {
+function Invoke-FirstWait([object[]]$Rows, [int]$Timeout = $TimeoutSeconds) {
     $global:l2wsRows = $Rows
     $global:l2wsCalls = 0
     try {
         $v = Wait-L2FirstAcknowledgedWorklistStation -Connection 'stub' -DemandId 'd-1' `
             -Criterion 'origin-worklist-acknowledged' `
-            -Description 'the onboard acknowledged the worklist at the first stop' -TimeoutSeconds 2
+            -Description 'the onboard acknowledged the worklist at the first stop' -TimeoutSeconds $Timeout
         return [pscustomobject]@{ Value = [string]$v; Error = $null; Calls = $global:l2wsCalls }
     } catch {
         return [pscustomobject]@{ Value = $null; Error = $_.Exception.Message; Calls = $global:l2wsCalls }
     }
 }
 
-function Invoke-Wait([object[]]$Rows, [string]$Previous) {
+function Invoke-Wait([object[]]$Rows, [string]$Previous, [int]$Timeout = $TimeoutSeconds) {
     $global:l2wsRows = $Rows
     $global:l2wsCalls = 0
+    $watch = [Diagnostics.Stopwatch]::StartNew()
     try {
         $v = Wait-L2WorklistAcknowledgedAtOtherStation -Connection 'stub' -DemandId 'd-1' `
             -PreviousStationId $Previous -Criterion 'destination-worklist-acknowledged' `
-            -Description 'the onboard acknowledged the worklist at the second stop' -TimeoutSeconds 2
-        return [pscustomobject]@{ Value = [string]$v; Error = $null; Calls = $global:l2wsCalls }
+            -Description 'the onboard acknowledged the worklist at the second stop' -TimeoutSeconds $Timeout
+        return [pscustomobject]@{ Value = [string]$v; Error = $null; Calls = $global:l2wsCalls; Seconds = $watch.Elapsed.TotalSeconds }
     } catch {
-        return [pscustomobject]@{ Value = $null; Error = $_.Exception.Message; Calls = $global:l2wsCalls }
+        return [pscustomobject]@{ Value = $null; Error = $_.Exception.Message; Calls = $global:l2wsCalls; Seconds = $watch.Elapsed.TotalSeconds }
     }
 }
 
@@ -137,12 +149,16 @@ $firstStopRevised = @(
     (Worklist '2' 'STATION-A' 2 $true))
 
 $oldCount = Get-OldCountCriterion $firstStopRevised
-$new = Invoke-Wait -Rows $firstStopRevised -Previous 'STATION-A'
+$new = Invoke-Wait -Rows $firstStopRevised -Previous 'STATION-A' -Timeout $fullTimeoutSeconds
 Add-Case '第一站清单改版：旧的条数判据被满足（>= 2），说明代理指标在这里就会放过' `
     ($oldCount -ge 2) "条数 = $oldCount"
 Add-Case '第一站清单改版：新的站点判据不满足，等待超时而不是放过' `
     (($null -eq $new.Value -or $new.Value -eq '') -and $null -ne $new.Error -and $new.Error -like '*Timed out*') `
     "值=$($new.Value) 错误=$($new.Error)"
+# control-server#803: the one case on the full 2 seconds, and the only one that times its wait.
+Add-Case "第一站清单改版：等满 $fullTimeoutSeconds 秒才判超时，不提前放弃" `
+    ($null -ne $new.Error -and $new.Error -like "*Timed out after ${fullTimeoutSeconds}s*" -and $new.Seconds -ge $fullTimeoutSeconds) `
+    ("用时 {0:N2} 秒" -f $new.Seconds)
 # 这一条是同站诊断的判别力所在，不是重复上一条：同站那条消息**也**以 "Timed out" 开头，所以上一条
 # 两种情况都会通过。这里断的是它**没有**说成同站旅程——「第一站清单改版、第二站还没到」在清单里与
 # 同站旅程完全同形，只有计划分得开。
@@ -245,7 +261,7 @@ Add-Case '同站 + 一份站点为空的清单：「all at」只数有站点的�
 
 # 失败路径那次读自己也抛时，原来的超时不许被顶替：服务端没了本来就是超时的原因之一，那时这次读也会
 # 抛，会把唯一说明「在等什么」的消息一起带走（cs#203 的教训，这里是它的第二次应用）。
-$global:l2wsThrowAfterUtc = [DateTime]::UtcNow.AddSeconds(2)
+$global:l2wsThrowAfterUtc = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 $readDies = Invoke-Wait -Rows $sameStationJourney -Previous 'STATION-A'
 $global:l2wsThrowAfterUtc = $null
 Add-Case '失败路径那次读也抛时：保留原来的超时，不被这次读自己的错顶替' `
