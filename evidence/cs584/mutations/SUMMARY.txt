@@ -1,0 +1,6 @@
+M1-no-bundle-hash-in-key exit=1 failed=[AChangedDefinitionTheSchemaOnlyReferencesIsCompiledAgainToo, AChangedSchemaFileIsCompiledAgainAndTheSameLineIsJudgedByIt]
+M2-bundle-hash-only-over-messages exit=1 failed=[AChangedDefinitionTheSchemaOnlyReferencesIsCompiledAgainToo]
+M3-no-tool-in-key exit=1 failed=[AnotherToolBuildDoesNotUseTheEntry]
+M4-no-corvus-in-key exit=1 failed=[AnotherCorvusDoesNotUseTheEntry]
+M5-entry-integrity-unchecked exit=1 failed=[AnEntryWhoseAssemblyBytesChangedIsCompiledAgain, ATruncatedEntryIsCompiledAgainAndReplacedNeverTrusted]
+M6-write-in-place-no-rename exit=0 failed=[]
