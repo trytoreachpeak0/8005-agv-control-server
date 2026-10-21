@@ -1957,6 +1957,10 @@ internal static class JourneyRuntimeWorkerTestKit
         /// <summary>The state RIoT reports for this upperId right now (control-server#335 asserts a held order stays held).</summary>
         public int? OrderStateOf(string upperId) => _orders[upperId].OrderState;
 
+        /// <summary>RIoT answers the order under <paramref name="upperId"/> with another orderId from now on (control-server#835).</summary>
+        public void ReplaceOrderId(string upperId, string orderId) =>
+            _orders[upperId] = _orders[upperId] with { OrderId = orderId };
+
         public void SetOrderState(string upperId, int orderState, bool terminal) =>
             _orders[upperId] = _orders[upperId] with
             {

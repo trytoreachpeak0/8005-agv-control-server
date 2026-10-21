@@ -861,6 +861,78 @@ public sealed class InTransitDoorEmergencyReleaseTests
         Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
     }
 
+    /// <summary>
+    /// control-server#835 的安全边：续行未定，RIoT 在同一 upperId 下报的却是另一张单（orderId 不同）在执行、车在动。那不是本服务端
+    /// 续的那张单：照旧急停。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task AnotherOrderRunningUnderTheSameUpperIdIsNotTheOwnContinue()
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture) { HasUnfinishedOrder = true };
+        VehicleFaultRecoveryDecision first = await VehicleFaultRecoveryTests.Service(fixture, site)
+            .RecoverAsync(ResumeRequest(fixture), Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(["RESUME_CONTINUE_AWAITING_CONFIRMATION"], first.Reasons);
+
+        fixture.Riot.ReplaceOrderId(latched.UpperId, "ORDER-NOT-THIS-SERVERS");
+        fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Executing, terminal: false);
+        fixture.Riot.MovementState = "MT_RUNNING";
+        await DriveOneRoundAsync(fixture);
+
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+    }
+
+    /// <summary>
+    /// control-server#835 的安全边：续行只认这一代故障的。上一代人按继续、续行确认、故障清除；同一张单在路上又报门没锁，进第二代，
+    /// 急停、人解除。之后单在 RIoT 上被人跑了起来、车在动，而这一代本服务端没发续行：照旧急停，照旧写
+    /// <c>HELD_ORDER_RESUMED_WITHOUT_CONTINUE</c>。借上一代的续行就会放过它。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task AContinueOfAnEarlierFaultGenerationIsNotThisOnesOwnContinue()
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        await ResumeByAPersonAsync(fixture, latched.UpperId);
+
+        // 第二代：车照原单在两站之间开着，门又报没锁 → 按住、急停；RIoT 停住单、闩锁锁上。
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.UnfinishedOrderIds = [latched.OrderId];
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Paused, terminal: false);
+        fixture.Riot.MovementState = "MT_PAUSED";
+        fixture.EmergencyLatched = true;
+        await DriveOneRoundAsync(fixture);
+
+        // 门锁修好，人解除，闩锁放开。
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        await ReleaseByAPersonAsync(fixture, latched);
+        fixture.EmergencyLatched = false;
+        await DriveOneRoundAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            VehicleFaultStateRow fault = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((VehicleFaultLevel.SuspectedBlocked, 2L), (fault.Level, fault.FaultGeneration));
+        }
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.OrderContinue));
+
+        fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Executing, terminal: false);
+        fixture.Riot.MovementState = "MT_RUNNING";
+        await DriveOneRoundAsync(fixture);
+
+        Assert.Equal(3, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        Assert.Equal(JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason, (await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
     // ---- helpers -------------------------------------------------------------------------------------------------
 
     private sealed record Latched(string UpperId, string OrderId);
