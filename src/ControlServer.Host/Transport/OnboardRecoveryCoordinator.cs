@@ -21,8 +21,19 @@ public sealed class OnboardRecoveryCoordinator(
     IConfiguration configuration,
     ILogger<OnboardRecoveryCoordinator>? logger = null,
     PlanRevisionRoutingSource? planRevisionRouting = null,
-    Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions>? runtimeOptions = null)
+    Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions>? runtimeOptions = null,
+    RecoveryGrantRegistry? recoveryGrants = null,
+    Runtime.Fleet.VehicleRoster? roster = null)
 {
+    // control-server#797 stub: only enough to compile the tests; the grant is not checked yet.
+    internal Task<IReadOnlyList<string>> EndSessionsOutsideGrantsAsync(CancellationToken cancellationToken)
+    {
+        _ = recoveryGrants;
+        _ = roster;
+        _ = cancellationToken;
+        return Task.FromResult<IReadOnlyList<string>>([]);
+    }
+
     // 待送点规则（control-server#709 的开关）：本票让待送点上的两种取消改了做法（control-server#713），开关关着时一字不变。
     private readonly StagingDepartureRulesOptions _stagingRules =
         runtimeOptions?.Value.StagingDepartureRules ?? new StagingDepartureRulesOptions();

@@ -71,6 +71,7 @@ public static class VehicleFaultRecoveryEndpoints
             return false;
         }
         app.MapVehicleFaultRecovery();
+        app.MapRecoveryGrants();
         app.MapStationExclusivityRelease();
         app.MapWaitingPointArrivalSettlement();
         app.MapRecoverySessionAdministratorClose();
@@ -96,6 +97,7 @@ public static class VehicleFaultRecoveryEndpoints
                 + "and which RIoT reads precisely as no such order, as never created, and stops it for those three.")
             .Produces<VehicleFaultRecoveryResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
@@ -111,7 +113,8 @@ public static class VehicleFaultRecoveryEndpoints
         VehicleFaultRecoveryService recovery,
         VehicleRoster roster,
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RecoveryGrantGate? grants = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(recovery);
@@ -155,6 +158,18 @@ public static class VehicleFaultRecoveryEndpoints
                 statusCode: StatusCodes.Status404NotFound,
                 title: "Unknown vehicle",
                 detail: $"'{request.AgvId}' is not a vehicle this server drives.");
+        }
+
+        // control-server#797 (ADR-cross-0066 decision 4): every request needs a grant in effect for the vehicle naming the action,
+        // and, for an action on the vehicle's journey, naming that journey. Refused before anything is read or done.
+        if (grants is not null &&
+            await grants.RefusalAsync(vehicle.AgvId, request.Action, cancellationToken).ConfigureAwait(false) is { } ungranted)
+        {
+            return Problem(
+                StatusCodes.Status403Forbidden,
+                "Vehicle fault recovery not granted",
+                new VehicleFaultRecoveryResponse(
+                    vehicle.AgvId, request.Action, "Refused", VehicleFaultRecoveryDispositions.None, [ungranted], null, []));
         }
 
         VehicleFaultRecoveryDecision decision = await recovery.RecoverAsync(

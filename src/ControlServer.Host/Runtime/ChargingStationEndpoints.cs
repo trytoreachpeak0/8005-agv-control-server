@@ -163,6 +163,7 @@ public static class ChargingStationEndpoints
             .WithSummary("Confirm a charger clear by hand (REQ-0179), the decision the onboard entry also uses")
             .Produces<ChargingStationClearanceResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
@@ -172,6 +173,7 @@ public static class ChargingStationEndpoints
             .WithSummary("Return a vehicle whose charging eligibility was paused to charging allocation (REQ-0285, REQ-0286)")
             .Produces<VehicleChargingEligibilityRecoveryResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
@@ -360,7 +362,8 @@ public static class ChargingStationEndpoints
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
         TimeProvider timeProvider,
         ILogger<VehicleChargingEligibilityRecoveryHttpRequest> logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Recovery.RecoveryGrantGate? grants = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(holds);
@@ -386,6 +389,25 @@ public static class ChargingStationEndpoints
                 statusCode: StatusCodes.Status404NotFound,
                 title: "Unknown vehicle",
                 detail: UnknownVehicle);
+        }
+
+        // control-server#797 (REQ-0254 as CP-0022 revised it): lifting the vehicle's hold needs a grant in effect for it naming
+        // this action. Refused, and audited, before anything is read.
+        if (grants is not null &&
+            await grants.RefusalAsync(
+                vehicle.AgvId, Recovery.RecoveryGrantActions.RecoverVehicleChargingEligibility, cancellationToken)
+                .ConfigureAwait(false) is { } ungranted)
+        {
+            await WriteAuditAsync(
+                audit, VehicleRecoveryAuditAction, "vehicle-charging-eligibility:" + vehicle.VehicleKey,
+                GovernanceActionOutcome.Failed, null, now,
+                new { vehicle.AgvId, vehicle.VehicleKey, codes = new[] { ungranted }, result = "REJECTED" },
+                cancellationToken, GovernedObjectKind.AgvLifecycle).ConfigureAwait(false);
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Vehicle charging eligibility recovery not granted",
+                detail: ungranted,
+                extensions: new Dictionary<string, object?>(StringComparer.Ordinal) { ["codes"] = new[] { ungranted } });
         }
 
         string? operatorId = Trimmed(request!.OperatorId);
@@ -441,7 +463,8 @@ public static class ChargingStationEndpoints
         VehicleRoster fleet,
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
         TimeProvider timeProvider,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Recovery.RecoveryGrantGate? grants = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(clearance);
@@ -469,6 +492,23 @@ public static class ChargingStationEndpoints
                 statusCode: StatusCodes.Status404NotFound,
                 title: "Unknown vehicle",
                 detail: $"'{request.AgvId}' is not a vehicle this server drives.");
+        }
+        // control-server#797 (REQ-0254 as CP-0022 revised it): a clearance submitted here needs a grant in effect for the vehicle
+        // naming this action. The onboard clearance entry is not this one and stays on its roster.
+        if (grants is not null &&
+            await grants.RefusalAsync(
+                vehicle.AgvId, Recovery.RecoveryGrantActions.ConfirmChargingStationClearance, cancellationToken)
+                .ConfigureAwait(false) is { } ungranted)
+        {
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Charger clearance not granted",
+                detail: ungranted,
+                extensions: new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["agvId"] = vehicle.AgvId,
+                    ["reasonCode"] = ungranted,
+                });
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();

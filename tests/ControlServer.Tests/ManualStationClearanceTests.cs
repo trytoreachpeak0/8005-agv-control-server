@@ -1302,6 +1302,64 @@ public sealed class ManualStationClearanceTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// control-server#797（REQ-0254 按 CP-0022 修订）：要授权时，Host 人工清桩没有这辆车点名清桩的授权就 403，判定一步不走、桩不放；授权只点了
+    /// 别的动作也一样；点名了就照常走同一个判定。
+    /// </summary>
+    [Fact]
+    public async Task TheClearanceEntryNeedsAGrantForTheVehicleNamingTheClearanceWhenGrantsAreRequired()
+    {
+        const string variable = "CONTROL_SERVER_TEST_CS797_CLEARANCE_CREDENTIAL";
+        Environment.SetEnvironmentVariable(variable, "cs797-secret");
+        try
+        {
+            await using FleetFixture fleet = await FleetAsync();
+            JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+            fleet.Riot.CancelOrder(journey.PickupUpperId);
+            MovedOff(fleet);
+            IOptions<VehicleFaultRecoveryOptions> options = Options.Create(new VehicleFaultRecoveryOptions { CredentialEnvironmentVariable = variable });
+            ChargingStationClearanceHttpRequest request = new(AgvA, Near.StationName, "op-r11", null);
+            ControlServer.Host.Runtime.Fleet.VehicleRoster roster = new(Options.Create(fleet.Options));
+            ControlServer.Host.Runtime.Recovery.RecoveryGrantRegistry registry = new(fleet.Clock);
+            ControlServer.Host.Runtime.Recovery.RecoveryGrantGate gate = new(
+                registry, Options.Create(new ControlServer.Host.Runtime.Recovery.RecoveryGrantOptions { Required = true }), fleet.Context);
+            FleetVehicleOptions vehicle = fleet.Options.Fleet.Single(item => item.AgvId == AgvA);
+
+            var ungranted = await ChargingStationEndpoints.ClearAsync(
+                HttpContextFor(null, IPAddress.Loopback, "cs797-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Token,
+                gate);
+            ProblemHttpResult refused = Assert.IsType<ProblemHttpResult>(ungranted.Result);
+            Assert.Equal((StatusCodes.Status403Forbidden, "RECOVERY_GRANT_MISSING"), (refused.StatusCode, refused.ProblemDetails.Detail));
+            Assert.NotNull(await HolderAsync(fleet, Near.StationId));
+
+            registry.Grant(Grant(vehicle, ["RESUME_AFTER_REPAIR"], fleet.Clock.GetUtcNow()));
+            var otherAction = await ChargingStationEndpoints.ClearAsync(
+                HttpContextFor(null, IPAddress.Loopback, "cs797-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Token,
+                gate);
+            Assert.Equal("RECOVERY_GRANT_ACTION_NOT_GRANTED", Assert.IsType<ProblemHttpResult>(otherAction.Result).ProblemDetails.Detail);
+            Assert.NotNull(await HolderAsync(fleet, Near.StationId));
+
+            registry.Grant(Grant(vehicle, ["CONFIRM_CHARGING_STATION_CLEARANCE"], fleet.Clock.GetUtcNow()));
+            var confirmed = await ChargingStationEndpoints.ClearAsync(
+                HttpContextFor(null, IPAddress.Loopback, "cs797-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Token,
+                gate);
+            Assert.Equal(FieldConfirmationDecision.Confirmed, Assert.IsType<Ok<ChargingStationClearanceResponse>>(confirmed.Result).Value!.Outcome);
+            Assert.Null(await HolderAsync(fleet, Near.StationId));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+
+        static ControlServer.Host.Runtime.Recovery.RecoveryGrant Grant(FleetVehicleOptions vehicle, string[] actions, DateTimeOffset now)
+        {
+            return new(
+                Guid.NewGuid().ToString("D"), vehicle.AgvId, vehicle.VehicleKey, null,
+                System.Collections.Immutable.ImmutableSortedSet.CreateRange(StringComparer.Ordinal, actions),
+                "maintenance-797", now, now.AddMinutes(30), "audit-797");
+        }
+    }
+
     // ---- 夹具 ------------------------------------------------------------------------------------------------------------
 
     private ManualStationClearance Clearance(

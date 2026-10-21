@@ -198,6 +198,8 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["ProtocolMessageSurfaceArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["ProtocolPayloadShapeArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["ProtocolVectorTestBindingArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
+            ["RecoveryGrantFieldOpsTests"] = "control-server#797 FieldOps grant-recovery, revoke-recovery and recovery-grants verbs' process entry through a running Host: rehearsal and code, grant, list, revoke, a stale code, no server; a controlled operations entry point, no wire message",
+            ["RecoveryGrantTests"] = "control-server#797 (ADR-cross-0066) the control host's per-vehicle recovery grant: rehearsal and confirmation code, audit, expiry, revocation, renewal, gone with the process, and the vehicle fault recovery entry checking every request against it; a controlled operations entry point, no wire message (the session side is FP-IS-07's, in RecoveryStateMachineG2Tests)",
             ["RiotAbsentAtObservationCreateExperimentOptionsTests"] = "options validation; no wire message",
             ["RiotCallAllowlistArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["RiotChargingOrderContractTests"] = "control-server#401 batch 9-03 the production gateway against the fake RIoT's charging model over HTTP: create, enter/exit expansion, HANG with the act result, the departure act; single-ended server-to-RIoT, no wire message",

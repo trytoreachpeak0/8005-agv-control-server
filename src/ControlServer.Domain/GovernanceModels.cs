@@ -67,7 +67,13 @@ public enum GovernedObjectKind
     /// <summary>
     /// 一趟旅程（按 <c>JourneyId</c>）。不是受治理配置、没有版本：审计的是现场人员撤下它这一次操作（control-server#771）。
     /// </summary>
-    Journey
+    Journey,
+
+    /// <summary>
+    /// 一辆车的恢复授权（按 <c>VehicleKey</c>）。不是受治理配置、没有版本、只在内存：审计的是维护人员下发、续期或收回它这一次操作
+    /// （ADR-cross-0066，control-server#797）。
+    /// </summary>
+    RecoveryGrant
 }
 
 /// <summary>
