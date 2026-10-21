@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "scenario": "load-remaining-baskets-skipped",
+  "runId": "20261021T165648131Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "batchId": "unspecified",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "847f7c39330fe57469d6541d9b350db901d2ecec",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "6.0.0",
+      "tag": "protocol-v6.0.0",
+      "commit": "98f172642937994ed01668d81fe41e69cf089e10",
+      "protocolVersion": 7,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a52876be2ddcc9b8cdd1f1e3b7b7ddbe70d31a307f1d3f017d7a1eb95ffd77b1",
+      "schemaBundleSha256": "0dab682174e2d3e4f931b3c0e87c7fa55bd2cb3395356d7845e595d8bfb1c795",
+      "vectorsSha256": "e06ca9ea1d4445cd7d70fc190b0cf606a8e33cb7760d848c0270df24e2594c91",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261021T165648131Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-RB-01",
+      "description": "三篮的需求分到三个目标仓，装货命令压在车上（Prepared）",
+      "outcome": "PASS",
+      "expected": "3 个目标仓 / Prepared",
+      "actual": "[1,2,3] / Prepared"
+    },
+    {
+      "id": "L2-RB-02",
+      "description": "服务端授权减篮：答复 AUTHORIZED，loadedSlots 就是装进的两个仓，没有 problem（AUTHORIZE_SKIP_ONLY_WITH_AT_LEAST_ONE_LOADED_AND_ONE_REMAINING_SLOT）",
+      "outcome": "PASS",
+      "expected": "AUTHORIZED [1,2]",
+      "actual": "AUTHORIZED [1,2] x1"
+    },
+    {
+      "id": "L2-RB-03",
+      "description": "车按 COMPLETED_REMAINING_SKIPPED 报完，装货按两篮提交：操作 Committed、操作与归属行都只剩那两个仓（COMMIT_AUTHORIZED_LOADED_SLOTS_AS_ONE_LOAD_BATCH、RELEASE_REMAINING_SLOTS_AND_RESERVATION_ON_SETTLEMENT）",
+      "outcome": "FAIL",
+      "expected": "Committed / [1,2] / [1,2] / 车已报结果",
+      "actual": "Committed / [1,2] / [1,2,3] / resultReported=True"
+    },
+    {
+      "id": "L2-RB-04",
+      "description": "卸货命令只开那两个仓，expectedBasketCount 2（UNLOAD_ONLY_THE_AUTHORIZED_LOADED_SLOTS）",
+      "outcome": "FAIL",
+      "expected": "UNLOAD [1,2] x2",
+      "actual": "UNLOAD [1,2,3] x3"
+    },
+    {
+      "id": "L2-RB-05",
+      "description": "卸完按正常送达完成：需求 Succeeded、业务键记完成，没有抑制、没有人工搬运告警（COMPLETE_DEMAND_AS_NORMAL_DELIVERY_WITHOUT_SUPPRESSION_OR_ALARM）",
+      "outcome": "PASS",
+      "expected": "Succeeded / 1 completion / 0 suppression / 0 alarm",
+      "actual": "Succeeded / 1 completion / 0 suppression / 0 alarm"
+    },
+    {
+      "id": "L2-RB-06",
+      "description": "全程只建了两条 RIoT 单（取货一条、关卡一条）",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    }
+  ]
+}
