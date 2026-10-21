@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scenario": "in-transit-door-unknown-stopped-released",
+  "runId": "20261021T190530871Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261021T190530871Z",
+    "batchId": "unspecified",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "controlServerCommit": "c114b9568d2e4cda84907a8cf4ab367ea7ff9454",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-DU-01",
+      "description": "读不到之后不早于 3 秒、不晚于 6 秒才发 Hold；Hold 恰好一条，打在本车本单上",
+      "outcome": "PASS",
+      "expected": "1 / W2G-db0cc314-37c7-4dfe-bacb-ef03ae4e1cce-PICKUP-1 / 3-6 s",
+      "actual": "1 / W2G-db0cc314-37c7-4dfe-bacb-ef03ae4e1cce-PICKUP-1 / 3.2 s"
+    },
+    {
+      "id": "L2-DU-02",
+      "description": "急停恰好一条，打在这台车上、在 Hold 之后；故障事实是门锁症状",
+      "outcome": "PASS",
+      "expected": "1 / vehicle:BROKERX-L2-0001 / hold first / VEHICLE_DOOR_NOT_PROVEN_LOCKED",
+      "actual": "1 / vehicle:BROKERX-L2-0001 / VEHICLE_DOOR_NOT_PROVEN_LOCKED"
+    },
+    {
+      "id": "L2-DU-03",
+      "description": "门锁仍读不到时，急停不解除",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-DU-04",
+      "description": "读回锁闭之后不早于 10 秒，服务端自己解除一次，原因 EMERGENCY_DOOR_READING_RESTORED，挂在这一代故障下",
+      "outcome": "PASS",
+      "expected": "1 / EMERGENCY_DOOR_READING_RESTORED / >= 10 s / same generation",
+      "actual": "1 / EMERGENCY_DOOR_READING_RESTORED / 12.1 s / 1 vs 1"
+    },
+    {
+      "id": "L2-DU-05",
+      "description": "解除之后：没有 CONTINUE（审计与 RIoT 两侧）、仍只 1 次急停、故障仍在效、旅程码仍是门锁症状",
+      "outcome": "PASS",
+      "expected": "0 / 0 / 1 / fault in effect",
+      "actual": "0 / 0 / 1 / SuspectedBlocked"
+    },
+    {
+      "id": "L2-DU-06",
+      "description": "继续原单：入口 200 Resumed，CONTINUE 恰好一次打在这一张 orderId 上，故障清除",
+      "outcome": "PASS",
+      "expected": "200 / Resumed / 1 -> ORDER-000001 / None",
+      "actual": "200 / Resumed / 1 -> ORDER-000001 / None"
+    },
+    {
+      "id": "L2-DU-07",
+      "description": "续行之后车在走、门锁着：不再急停、不再按住，全程没有 Cancel",
+      "outcome": "PASS",
+      "expected": "1 / 1 / 0",
+      "actual": "1 / 1 / 0"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+# cs#835 L1 red on fp/v2-impl@c7092743d (tests only, no fix)
+
+Filter: FullyQualifiedName~InTransitDoorEmergencyReleaseTests
+
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOwnContinueReadHeldFirstAndRunningLaterIsNeitherStoppedNorNamed(path: "plain") [2 s]
+  Error Message:
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOwnContinueReadHeldFirstAndRunningLaterIsNeitherStoppedNorNamed(String path) in tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 739
+   at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOwnContinueReadHeldFirstAndRunningLaterIsNeitherStoppedNorNamed(String path) in tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 759
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOwnContinueReadHeldFirstAndRunningLaterIsNeitherStoppedNorNamed(path: "behind-the-readiness-gate") [2 s]
+  Error Message:
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOwnContinueReadHeldFirstAndRunningLaterIsNeitherStoppedNorNamed(String path) in tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 739
+   at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOwnContinueReadHeldFirstAndRunningLaterIsNeitherStoppedNorNamed(String path) in tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 759
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOwnContinueReadHeldFirstAndRunningLaterIsNeitherStoppedNorNamed(path: "restarted") [2 s]
+  Error Message:
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOwnContinueReadHeldFirstAndRunningLaterIsNeitherStoppedNorNamed(String path) in tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 739
+   at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOwnContinueReadHeldFirstAndRunningLaterIsNeitherStoppedNorNamed(String path) in tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 759
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnEngineRoundInsideTheContinuesReadBackDoesNotStopTheVehicleItResumed(behindTheReadinessGate: False) [2 s]
+  Error Message:
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnEngineRoundInsideTheContinuesReadBackDoesNotStopTheVehicleItResumed(Boolean behindTheReadinessGate) in tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 805
+   at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnEngineRoundInsideTheContinuesReadBackDoesNotStopTheVehicleItResumed(Boolean behindTheReadinessGate) in tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 809
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnEngineRoundInsideTheContinuesReadBackDoesNotStopTheVehicleItResumed(behindTheReadinessGate: True) [2 s]
+  Error Message:
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnEngineRoundInsideTheContinuesReadBackDoesNotStopTheVehicleItResumed(Boolean behindTheReadinessGate) in tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 805
+   at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnEngineRoundInsideTheContinuesReadBackDoesNotStopTheVehicleItResumed(Boolean behindTheReadinessGate) in tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 809
+Failed!  - Failed:     5, Passed:    31, Skipped:     0, Total:    36, Duration: 1 m 18 s - ControlServer.Tests.dll (net8.0)

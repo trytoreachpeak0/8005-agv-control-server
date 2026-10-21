@@ -56,7 +56,8 @@ public sealed partial class JourneyRuntimeEngine
     /// A latch released on a person's confirmation while this server's held order stayed (the loaded release of CP-0011), and
     /// RIoT now runs that order -- with nobody having pressed continue. riot-behavior-lab round-44 (agv03, 2026-09-28) and agv02
     /// on 2026-10-11 both saw a HELD order stay 7 after a release; this names the day RIoT behaves otherwise, for a person to
-    /// look. A vehicle that actually moves is stopped again by the fault model on the motion it reads.
+    /// look. A vehicle that actually moves is stopped again by the fault model on the motion it reads. An order run by this
+    /// server's own continue, not refused, is neither (control-server#835, <see cref="VehicleFaultDecision.ResumedByOwnContinue"/>).
     /// </summary>
     public const string HeldOrderResumedWithoutContinueReason = "HELD_ORDER_RESUMED_WITHOUT_CONTINUE";
 
@@ -209,9 +210,11 @@ public sealed partial class JourneyRuntimeEngine
             cancellationToken).ConfigureAwait(false);
 
         // The held order running again after a release on confirmation is named over the door code: the doors are the reason
-        // the vehicle stopped, but what a person has to know now is that it may be moving without anyone having let it.
+        // the vehicle stopped, but what a person has to know now is that it may be moving without anyone having let it. Not when
+        // it runs on this server's own continue (control-server#835): a person did let it, through the fault entry.
         string code = VehicleFaultEvidence.DoorNotProvenLocked;
         if ((decision.ReleasedOnConfirmation || decision.ReleasedOnDoorReading) &&
+            !decision.ResumedByOwnContinue &&
             order.Kind == RiotOrderObservationKind.Active &&
             order.OrderState == RiotOrderState.Executing)
         {

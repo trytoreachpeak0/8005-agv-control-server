@@ -1775,6 +1775,9 @@ public sealed class VehicleFaultRecoveryTests
 
         public List<RiotOrderCommandKind> OrderCommands { get; } = [];
 
+        /// <summary>What RIoT answers an order command with; Failed is a continue RIoT refused (control-server#835).</summary>
+        public RiotCommandCallDisposition OrderCommandDisposition { get; set; } = RiotCommandCallDisposition.Accepted;
+
         public List<RiotEmergencyCommandKind> EmergencyCommands { get; } = [];
 
         /// <summary>设了就在每次 RIoT 调用时试拿一下这把锁：拿不到，说明调用方正持着它（独立审查 M2）。</summary>
@@ -1804,7 +1807,7 @@ public sealed class VehicleFaultRecoveryTests
             OrderCommands.Add(kind);
             OnOrderCommand?.Invoke(kind, orderId);
             return Task.FromResult(new RiotCommandCallResult(
-                RiotCommandCallDisposition.Accepted,
+                OrderCommandDisposition,
                 new RiotOrderCallReceipt(RiotCommandTypeNames.For(kind), "SdkAccepted", fixture.Clock.GetUtcNow())));
         }
 

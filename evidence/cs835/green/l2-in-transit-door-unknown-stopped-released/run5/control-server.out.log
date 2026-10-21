@@ -1,0 +1,241 @@
+[03:07:04 INF] No migrations were applied. The database is already up to date.
+[03:07:04 INF] Task type station preset C:\Users\szy\AppData\Local\Temp\l2-20261021T190658359Z\task-type-stations.settings.json loaded: rule version 1 (new), Map 25 binding set version 1 (new) active.
+[03:07:04 WRN] The manual station clearance exit is not available (FIELD_OPERATOR_ROSTER_EMPTY). Until it is, a vehicle that cannot charge at its charger is left on ORDER_HANG instead of being paused for a manual clearance (control-server#406). Configure FieldOperatorRoles:Path with at least one R-11 or R-13, and VehicleFaultRecovery:enabled or FieldOperatorRoles:OnboardClearanceEntryDeclared.
+[03:07:04 INF] Onboard NDJSON listener started on 127.0.0.1:48405; transport=plaintext
+[03:07:04 INF] Now listening on: http://127.0.0.1:48407
+[03:07:04 INF] Application started. Press Ctrl+C to shut down.
+[03:07:04 INF] Hosting environment: Production
+[03:07:04 INF] Content root path: C:\work\8005-wt\cs835-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64
+[03:07:04 INF] EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"] allowedDispatchZones=["MAP-25-WIRE_TO_GATE"] mesIngestBaseUrl=http://127.0.0.1:48409 fleet=[] clearanceToWaitingPointEnabled=False mapStationCatalog={"ApprovedSyncPeriod": "00:00:30", "ApprovedMaxUnconfirmed": "00:05:00"} foreignRunningOrderRelease={"Enabled": false, "CredentialPresent": true} admissionPolicyVersion=7 admissionPolicyDeploymentId=L2-20261021T190658359Z cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:00:30 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False stagingLoadNotSettledAlarmAfter=00:05:00 idleReturnEnabled=False catalogAgeWindow=00:30:00 trialSublotCharacterPosition=0 trialSublotCharacters=
+[03:07:04 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:04 INF] End processing HTTP request after 10.5356ms - 200
+[03:07:04 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:04 INF] End processing HTTP request after 2.9173ms - 200
+[03:07:04 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_POLICY_NOT_APPROVED. 
+[03:07:04 INF] Idle return not committed for vehicle AGV-L2-001: IDLE_RETURN_DISABLED. 
+[03:07:04 INF] HTTP GET /health/live responded 200 in 3.5368 ms
+[03:07:05 INF] HTTP GET /version responded 200 in 1.2165 ms
+[03:07:05 INF] SessionReadiness b74e8843-5410-458f-b08b-f1b2fa58c80e to AGV-L2-001 generation 1: READY [null], after the answer to RecoveryStateReport 06cbf1bc-a7e0-4bb6-b057-8f639a766b9d.
+[03:07:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:05 INF] End processing HTTP request after 1.0503ms - 200
+[03:07:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:05 INF] End processing HTTP request after 0.6844ms - 200
+[03:07:05 INF] HTTP GET /health/ready responded 200 in 3.7148 ms
+[03:07:06 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:06 INF] End processing HTTP request after 1.0744ms - 200
+[03:07:06 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:06 INF] End processing HTTP request after 0.6463ms - 200
+[03:07:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:07 INF] End processing HTTP request after 0.9776ms - 200
+[03:07:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:07 INF] End processing HTTP request after 1.68ms - 200
+[03:07:07 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_NOT_REQUIRED. 
+[03:07:07 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy sent
+[03:07:07 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy answered 200 after 9.0551 ms
+[03:07:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=L2-DU-20261021T190658359Z
+[03:07:07 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=L2-DU-20261021T190658359Z
+[03:07:07 INF] Received HTTP response headers after 4.9252ms - 200
+[03:07:07 INF] End processing HTTP request after 5.8391ms - 200
+[03:07:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:07 INF] End processing HTTP request after 1.0449ms - 200
+[03:07:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:07 INF] End processing HTTP request after 0.6716ms - 200
+[03:07:08 INF] RIoT request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-41b5691f-8609-47ef-b795-fa2de768b92c-PICKUP-1 answered 404 after 4.3778 ms, which is not a success status
+[03:07:08 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions sent
+[03:07:08 INF] RIoT command POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions answered 200 after 4.9813 ms
+[03:07:08 INF] SessionReadiness b8b83a8b-f42a-4e66-b148-1b0219237e3d to AGV-L2-001 generation 1: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged b4d88b3c-617e-4e39-82f9-02b5d0ec18ef.
+[03:07:08 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:08 INF] End processing HTTP request after 0.9195ms - 200
+[03:07:08 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:08 INF] End processing HTTP request after 0.5073ms - 200
+[03:07:09 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:09 INF] End processing HTTP request after 0.8815ms - 200
+[03:07:09 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:09 INF] End processing HTTP request after 0.4556ms - 200
+[03:07:10 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:10 INF] End processing HTTP request after 0.8913ms - 200
+[03:07:10 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:10 INF] End processing HTTP request after 0.6514ms - 200
+[03:07:11 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:11 INF] End processing HTTP request after 0.8256ms - 200
+[03:07:11 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:11 INF] End processing HTTP request after 0.5383ms - 200
+[03:07:11 INF] SessionReadiness f4a8249c-4758-4a89-9174-8a9820d7dd42 to AGV-L2-001 generation 1: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged a53d4fd1-5727-416d-89ce-880ebdc2646d.
+[03:07:12 WRN] Vehicle AGV-L2-001 is driving on order W2G-41b5691f-8609-47ef-b795-fa2de768b92c-PICKUP-1 with a slot it cannot read (SLOT_STATE_UNKNOWN, generation 1, safety version 3); graced for 3 s before its doors count as not proven locked (CP-0017). Nothing is commanded.
+[03:07:12 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:12 INF] End processing HTTP request after 0.7641ms - 200
+[03:07:12 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:12 INF] End processing HTTP request after 0.4502ms - 200
+[03:07:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:13 INF] End processing HTTP request after 0.6469ms - 200
+[03:07:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:13 INF] End processing HTTP request after 0.4247ms - 200
+[03:07:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:14 INF] End processing HTTP request after 0.6725ms - 200
+[03:07:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:14 INF] End processing HTTP request after 0.6863ms - 200
+[03:07:14 WRN] Vehicle AGV-L2-001 is driving on order W2G-41b5691f-8609-47ef-b795-fa2de768b92c-PICKUP-1 with its doors SlotStateUnknown (generation 1, safety version 3); handed to the fault model (DOOR_UNKNOWN_GRACE_EXPIRED).
+[03:07:14 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:14 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/order/command/ORDER-000001 sent
+[03:07:14 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/order/command/ORDER-000001 answered 200 after 2.63 ms
+[03:07:14 INF] RIoT command POST http://127.0.0.1:48408/api/device/v1/command/sync/service/BROKERX-L2-0001/triggerEmergency sent
+[03:07:14 INF] RIoT command POST http://127.0.0.1:48408/api/device/v1/command/sync/service/BROKERX-L2-0001/triggerEmergency answered 200 after 1.3204 ms
+[03:07:14 FTL] Emergency stop alarm EMERGENCY_STOP_UNCONFIRMED for AGV-L2-001; field confirmation and area isolation required.
+[03:07:14 INF] Emergency stop request from Automatic by - for AGV-L2-001: STOP_PROOF_MOTION_OBSERVED,STOP_PROOF_POSITION_UNKNOWN,STOP_PROOF_TOO_FEW_SAMPLES -> Triggered.
+[03:07:14 FTL] Vehicle fault alarm VEHICLE_FAULT_ORDER_NOT_PROTECTED for AGV-L2-001: STOP_PROOF_MOTION_OBSERVED,STOP_PROOF_POSITION_UNKNOWN,STOP_PROOF_TOO_FEW_SAMPLES,ORDER_HOLD_PENDING.
+[03:07:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:14 INF] End processing HTTP request after 0.7265ms - 200
+[03:07:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:14 INF] End processing HTTP request after 0.5348ms - 200
+[03:07:14 FTL] Emergency stop alarm EMERGENCY_STOP_UNCONFIRMED for AGV-L2-001; field confirmation and area isolation required.
+[03:07:15 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:15 INF] End processing HTTP request after 0.8076ms - 200
+[03:07:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:15 INF] End processing HTTP request after 0.4747ms - 200
+[03:07:16 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:16 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:16 INF] End processing HTTP request after 0.6636ms - 200
+[03:07:16 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:16 INF] End processing HTTP request after 0.4657ms - 200
+[03:07:17 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:17 INF] End processing HTTP request after 0.5524ms - 200
+[03:07:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:17 INF] End processing HTTP request after 0.4224ms - 200
+[03:07:18 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:18 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:18 INF] End processing HTTP request after 0.5321ms - 200
+[03:07:18 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:18 INF] End processing HTTP request after 0.3823ms - 200
+[03:07:18 INF] SessionReadiness 2c0e890c-70ad-4c94-a33b-557e78961649 to AGV-L2-001 generation 1: RECOVERY_REQUIRED [DEPARTURE_UNSAFE], after the answer to SafetyStateChanged a0c4d8d6-3036-4c54-b8b1-4a4ddf19c5cb.
+[03:07:19 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:19 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:19 INF] End processing HTTP request after 0.5298ms - 200
+[03:07:19 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:19 INF] End processing HTTP request after 0.4121ms - 200
+[03:07:20 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:20 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:20 INF] End processing HTTP request after 0.6037ms - 200
+[03:07:20 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:20 INF] End processing HTTP request after 0.4313ms - 200
+[03:07:21 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:21 INF] End processing HTTP request after 0.492ms - 200
+[03:07:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:21 INF] End processing HTTP request after 0.3924ms - 200
+[03:07:22 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:22 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:22 INF] End processing HTTP request after 0.5272ms - 200
+[03:07:22 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:22 INF] End processing HTTP request after 0.4002ms - 200
+[03:07:23 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:23 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:23 INF] End processing HTTP request after 0.4817ms - 200
+[03:07:23 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:23 INF] End processing HTTP request after 0.3614ms - 200
+[03:07:24 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:24 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:24 INF] End processing HTTP request after 0.5066ms - 200
+[03:07:24 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:24 INF] End processing HTTP request after 0.3769ms - 200
+[03:07:25 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:25 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:25 INF] End processing HTTP request after 0.5384ms - 200
+[03:07:25 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:25 INF] End processing HTTP request after 0.4541ms - 200
+[03:07:26 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:26 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:26 INF] End processing HTTP request after 0.5456ms - 200
+[03:07:26 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:26 INF] End processing HTTP request after 0.5012ms - 200
+[03:07:27 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:27 INF] End processing HTTP request after 0.4896ms - 200
+[03:07:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:27 INF] End processing HTTP request after 0.4019ms - 200
+[03:07:28 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:28 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:28 INF] End processing HTTP request after 0.635ms - 200
+[03:07:28 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:28 INF] End processing HTTP request after 0.6101ms - 200
+[03:07:29 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:29 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:29 INF] End processing HTTP request after 0.5219ms - 200
+[03:07:29 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:29 INF] End processing HTTP request after 0.409ms - 200
+[03:07:30 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:30 INF] RIoT command POST http://127.0.0.1:48408/api/device/v1/command/sync/service/BROKERX-L2-0001/cancelEmergency sent
+[03:07:30 INF] RIoT command POST http://127.0.0.1:48408/api/device/v1/command/sync/service/BROKERX-L2-0001/cancelEmergency answered 200 after 0.6532 ms
+[03:07:30 FTL] Emergency stop alarm EMERGENCY_RELEASE_UNCONFIRMED for AGV-L2-001; field confirmation and area isolation required.
+[03:07:30 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:30 INF] End processing HTTP request after 0.4505ms - 200
+[03:07:30 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:30 INF] End processing HTTP request after 0.758ms - 200
+[03:07:31 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:31 FTL] Vehicle fault alarm VEHICLE_FAULT_ORDER_NOT_PROTECTED for AGV-L2-001: STOP_PROOF_POSITION_UNKNOWN,STOP_PROOF_TOO_FEW_SAMPLES.
+[03:07:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:31 INF] End processing HTTP request after 0.4362ms - 200
+[03:07:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:31 INF] End processing HTTP request after 0.4973ms - 200
+[03:07:32 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:32 FTL] Vehicle fault alarm VEHICLE_FAULT_ORDER_NOT_PROTECTED for AGV-L2-001: STOP_PROOF_POSITION_UNKNOWN,STOP_PROOF_TOO_FEW_SAMPLES.
+[03:07:32 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:32 INF] End processing HTTP request after 0.5132ms - 200
+[03:07:32 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:32 INF] End processing HTTP request after 0.5552ms - 200
+[03:07:33 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:33 FTL] Vehicle fault alarm VEHICLE_FAULT_ORDER_NOT_PROTECTED for AGV-L2-001: STOP_PROOF_POSITION_UNKNOWN.
+[03:07:33 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:33 INF] End processing HTTP request after 0.4503ms - 200
+[03:07:33 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:33 INF] End processing HTTP request after 0.3721ms - 200
+[03:07:34 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:34 FTL] Vehicle fault alarm VEHICLE_FAULT_ORDER_NOT_PROTECTED for AGV-L2-001: STOP_PROOF_POSITION_UNKNOWN.
+[03:07:34 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:34 INF] End processing HTTP request after 0.431ms - 200
+[03:07:34 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:34 INF] End processing HTTP request after 0.521ms - 200
+[03:07:35 WRN] Vehicle AGV-L2-001 is at fault level SuspectedBlocked on evidence VEHICLE_DOOR_NOT_PROVEN_LOCKED (generation 1).
+[03:07:35 FTL] Vehicle fault alarm VEHICLE_FAULT_ORDER_NOT_PROTECTED for AGV-L2-001: STOP_PROOF_POSITION_UNKNOWN.
+[03:07:35 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:35 INF] End processing HTTP request after 0.4787ms - 200
+[03:07:35 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:35 INF] End processing HTTP request after 0.291ms - 200
+[03:07:35 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/order/command/ORDER-000001 sent
+[03:07:35 INF] RIoT command POST http://127.0.0.1:48408/api/task/v1/order/command/ORDER-000001 answered 200 after 0.7655 ms
+[03:07:36 WRN] Fault recovery ResumeHeldOrder on AGV-L2-001 by L2-OPERATOR-789 -> Resumed (NONE): -; note: L2 20261021T190658359Z: door reading restored.
+[03:07:36 INF] HTTP POST /api/safety/v1/vehicle-fault-recoveries responded 200 in 557.0092 ms
+[03:07:36 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:36 INF] End processing HTTP request after 0.5303ms - 200
+[03:07:36 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:36 INF] End processing HTTP request after 0.4866ms - 200
+[03:07:37 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:37 INF] End processing HTTP request after 0.5824ms - 200
+[03:07:37 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:37 INF] End processing HTTP request after 0.4246ms - 200
+[03:07:38 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:38 INF] End processing HTTP request after 0.5526ms - 200
+[03:07:38 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:38 INF] End processing HTTP request after 0.4658ms - 200
+[03:07:39 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:39 INF] End processing HTTP request after 0.401ms - 200
+[03:07:39 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:39 INF] End processing HTTP request after 0.3191ms - 200
+[03:07:40 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[03:07:40 INF] End processing HTTP request after 0.4223ms - 200
+[03:07:40 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[03:07:40 INF] End processing HTTP request after 0.2784ms - 200
+[03:07:40 WRN] Onboard connection ended with a protocol or transport error. Vehicle AGV-L2-001 (generation 1), remote 127.0.0.1:50565.
+System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+ ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\cs835-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 179
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\cs835-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 299
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\cs835-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 299
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\cs835-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 299
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in C:\work\8005-wt\cs835-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 119
