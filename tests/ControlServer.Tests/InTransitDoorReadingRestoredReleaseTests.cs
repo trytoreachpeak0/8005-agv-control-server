@@ -283,14 +283,19 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
     /// 急停监管只认本次急停那一代、也是当前故障那一代的放行条件（审查 M4 第 4 条）：放行条件属于另一代、或当前故障已经换代，都照旧挡在
     /// 「原因未消除」上；属于这一代时只放过它点名的那张 7。
     /// </summary>
+    /// <remarks>
+    /// 触发行没有代次（<c>null</c>）那一格单独守「放行条件要属于本次急停那一代」：有代次而对不上时另有「故障代次已变」挡着，
+    /// 删掉代次核对它也不红。
+    /// </remarks>
     [Theory]
-    [InlineData(4, 4, 4, true)]
-    [InlineData(3, 4, 4, false)]
-    [InlineData(4, 3, 4, false)]
-    [InlineData(4, 4, 5, false)]
+    [InlineData(4L, 4L, 4L, true)]
+    [InlineData(3L, 4L, 4L, false)]
+    [InlineData(4L, 3L, 4L, false)]
+    [InlineData(4L, 4L, 5L, false)]
+    [InlineData(4L, null, 4L, false)]
     [Trait("Requirement", "REQ-0167")]
     public void TheSupervisorTakesAnAllowanceOnlyForTheTriggersAndTheFaultsGeneration(
-        long allowanceGeneration, long triggerGeneration, long faultGeneration, bool released)
+        long allowanceGeneration, long? triggerGeneration, long faultGeneration, bool released)
     {
         VehicleFaultFact fault = new(
             "AGV-X", VehicleFaultLevel.SuspectedBlocked, faultGeneration, VehicleFaultEvidence.DoorNotProvenLocked,
