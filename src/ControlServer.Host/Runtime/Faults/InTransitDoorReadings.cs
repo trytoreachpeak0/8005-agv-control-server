@@ -179,7 +179,17 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
     /// Takes this round's reading of a driving vehicle's doors, and whether a door fault stands for it, and says what the
     /// engine does with them.
     /// </summary>
-    public InTransitDoorReading Observe(string agvId, InTransitDoorVerdict doors, bool doorFaultInEffect, DateTimeOffset now)
+    /// <param name="earlierReadingsUnread">
+    /// Summaries received since the vehicle's last round were left unread (the read is bounded by
+    /// <see cref="InTransitDoorFacts.UnknownRunLookBack"/>): a door fault standing across them has no known history, like one
+    /// standing at a restart (cs#839 second re-review, M).
+    /// </param>
+    public InTransitDoorReading Observe(
+        string agvId,
+        InTransitDoorVerdict doors,
+        bool doorFaultInEffect,
+        DateTimeOffset now,
+        bool earlierReadingsUnread = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         ArgumentNullException.ThrowIfNull(doors);
@@ -190,6 +200,11 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
             {
                 vehicle = new Vehicle();
                 vehicles.Add(agvId, vehicle);
+            }
+
+            if (doorFaultInEffect && earlierReadingsUnread && vehicle.Episode is not null)
+            {
+                vehicle.Episode.HistoryKnown = false;
             }
 
             InTransitDoorReading reading = doorFaultInEffect
@@ -420,8 +435,11 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
 
     private sealed class Episode(bool historyKnown)
     {
-        /// <summary>This process saw the episode from its first reading; false for a fault standing at a restart.</summary>
-        public bool HistoryKnown { get; } = historyKnown;
+        /// <summary>
+        /// This process saw every reading of the episode; false for a fault standing at a restart, or across readings left
+        /// unread.
+        /// </summary>
+        public bool HistoryKnown { get; set; } = historyKnown;
 
         /// <summary>When this server received the unknown the grace counts from; null when the episode began otherwise.</summary>
         public DateTimeOffset? UnknownSince { get; set; }

@@ -260,6 +260,15 @@ public static class InTransitDoorFacts
                     fact = summary;
                 }
             }
+
+            // The summaries since the caller's moment are read here too (cs#839 second re-review, H): the caller moves its
+            // moment up to everything this read returns, so one that is left out here is never read again.
+            if (since is DateTimeOffset from)
+            {
+                between!.AddRange(summaries
+                    .Where(summary => summary.ReceivedAt > from && !ReferenceEquals(summary, fact))
+                    .OrderByDescending(summary => summary.ReceivedAt));
+            }
         }
 
         IReadOnlyList<InTransitDoorSample>? samples = between is null

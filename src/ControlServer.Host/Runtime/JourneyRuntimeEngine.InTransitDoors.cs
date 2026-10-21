@@ -104,8 +104,11 @@ public sealed partial class JourneyRuntimeEngine
         DateTimeOffset now = timeProvider.GetUtcNow();
         // Every summary received since the vehicle's last round as well as the one in force (cs#839 review H1), but not further
         // back than the run look-back: a vehicle back on the road after an hour at a station has nothing older to tell.
+        // What the cut leaves unread is unknown, and a door fault standing across it is taken to have read a door not locked
+        // (cs#839 second re-review, M).
         DateTimeOffset? since = _doorReadings.SinceFor(runtime.AgvId);
-        if (since < now - InTransitDoorFacts.UnknownRunLookBack)
+        bool earlierReadingsUnread = since < now - InTransitDoorFacts.UnknownRunLookBack;
+        if (earlierReadingsUnread)
         {
             since = now - InTransitDoorFacts.UnknownRunLookBack;
         }
@@ -133,7 +136,8 @@ public sealed partial class JourneyRuntimeEngine
         // Only what a live onboard reports raises the symptom; a vehicle not heard from stays with control-server#234's code
         // (see InTransitDoorVerdict.ReadUnknown). A slot that cannot be read is graced first (CP-0017): no fault, no command,
         // an alarm. A fault already raised is still driven every round, silent or not.
-        InTransitDoorReading reading = _doorReadings.Observe(runtime.AgvId, doors, doorFaultInEffect, now);
+        InTransitDoorReading reading = _doorReadings.Observe(
+            runtime.AgvId, doors, doorFaultInEffect, now, earlierReadingsUnread);
         if (reading.GraceEndedAfter is TimeSpan unread)
         {
             LogDoorUnknownGraceEnded(logger, runtime.AgvId, unread.TotalSeconds, null);
