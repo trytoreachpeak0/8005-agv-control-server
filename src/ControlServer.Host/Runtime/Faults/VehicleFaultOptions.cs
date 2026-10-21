@@ -59,6 +59,8 @@ public sealed class VehicleFaultOptions
     /// <remarks>
     /// RIoT accepts CONTINUE_FROM_HELD before it moves the order: on agv01 on 2026-10-19 the read 50 ms after the call
     /// still said HELD (7), and the order read SUCCESS (5) from 16:38:24 on. Zero reads once, as before this ticket.
+    /// It is spent as a count, <see cref="ResumeConfirmationRereads"/> reads one interval apart, not as a deadline: each read
+    /// can itself take up to the RIoT client's timeout, so with RIoT not answering the entry answers minutes later.
     /// </remarks>
     public TimeSpan ResumeConfirmationBudget { get; set; } = TimeSpan.FromSeconds(5);
 
