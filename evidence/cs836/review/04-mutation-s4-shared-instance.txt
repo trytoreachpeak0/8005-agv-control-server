@@ -1,0 +1,6 @@
+# S4 mutation: services.AddScoped(_ => peer) added to the PushGate rig. Expect ListenerRigScopeArchitectureTests red naming the site. Restored with git checkout.
+[xUnit.net 00:00:02.82]     ControlServer.Tests.ListenerRigScopeArchitectureTests.NoTestHandsOneExistingInstanceToEveryScopeOutsideTheLedger [FAIL]
+  Failed ControlServer.Tests.ListenerRigScopeArchitectureTests.NoTestHandsOneExistingInstanceToEveryScopeOutsideTheLedger [51 ms]
+  Error Message:
+   One instance registered for every scope; use TestOnboardProcessorFactory.AddScopedProcessor or a factory that builds per scope, or say in the ledger why sharing it is safe: OnboardHandshakePushGateTests.cs: peer
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 68 ms - ControlServer.Tests.dll (net8.0)
