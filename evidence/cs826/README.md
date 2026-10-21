@@ -18,3 +18,12 @@ Mutations (one file each, restored with `git checkout` after each run):
   (an older SAFE would depart the vehicle) and the own-order test (the consumed answer is the older one).
 - M4 the store's movement authorization back to zero tolerance: the 0.12 s answer throws
   `UnsafeMovementAuthorizationException` in the round.
+
+## Review rework (#853 review M1, L1, L3)
+
+- `red/review-tests-3cc442da.txt`: on `3cc442da` (the new tests over the reviewed code) the outdated newer UNSAFE (probe P1
+  shape) and the UNSAFE received first but observed later (P3 shape) both let the SAFE depart, and 1001 / 2000 ms pass the
+  validator (-1 ms fails only on the changed message).
+- `green/bb949091.txt`: the same filter as above plus `JourneyRuntimeOptionsTests`, 156 passed.
+- Mutations on `bb949091`, appended to `mutations/summary.txt`: M5 without the newer-unsafe veto both new tests go red; M6
+  "newer" by receive time only, the P3-shape test goes red; M7 the bound back at 2 s, the 1001 and 2000 ms cases go red.

@@ -1,0 +1,21 @@
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.TheToleranceMustBeBetweenZeroAndOneSecond(milliseconds: 2000, accepted: False) [1 ms]
+  Error Message:
+Expected: False
+Actual:   True
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.TheToleranceMustBeBetweenZeroAndOneSecond(milliseconds: 1001, accepted: False) [< 1 ms]
+  Error Message:
+Expected: False
+Actual:   True
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.TheToleranceMustBeBetweenZeroAndOneSecond(milliseconds: -1, accepted: False) [< 1 ms]
+  Error Message:
+Expected: False
+Actual:   True
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.ANewerUnsafeAnswerHoldsTheVehicleEvenWhenItIsItselfOutdated [2 s]
+  Error Message:
+Expected: AwaitingDepartureSafety
+Actual:   AwaitingGateArrival
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnUnsafeAnswerObservedLaterHoldsTheVehicleThoughASafeOneWasReceivedAfterIt [2 s]
+  Error Message:
+Expected: AwaitingDepartureSafety
+Actual:   AwaitingGateArrival
+Failed!  - Failed:     5, Passed:    14, Skipped:     0, Total:    19, Duration: 23 s - ControlServer.Tests.dll (net8.0)

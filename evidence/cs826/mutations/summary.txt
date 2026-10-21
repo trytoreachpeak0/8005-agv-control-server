@@ -18,3 +18,14 @@ Failed!  - Failed:     2, Passed:     9, Skipped:     0, Total:    11, Duration:
   Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnAnswerStampedAFewTenthsOfASecondAheadOfTheServerDepartsTheVehicle [275 ms]
   Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.WhileTheSessionIsNotReadyOnTheOwnOrderASkewedSafeAnswerDoesNotDepart [1 s]
 Failed!  - Failed:     2, Passed:     9, Skipped:     0, Total:    11, Duration: 17 s - ControlServer.Tests.dll (net8.0)
+== M5-no-newer-unsafe-veto (on bb949091)
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.ANewerUnsafeAnswerHoldsTheVehicleEvenWhenItIsItselfOutdated [1 s]
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnUnsafeAnswerObservedLaterHoldsTheVehicleThoughASafeOneWasReceivedAfterIt [1 s]
+Failed!  - Failed:     2, Passed:    17, Skipped:     0, Total:    19, Duration: 20 s - ControlServer.Tests.dll (net8.0)
+== M6-newer-by-receive-only (on bb949091)
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnUnsafeAnswerObservedLaterHoldsTheVehicleThoughASafeOneWasReceivedAfterIt [1 s]
+Failed!  - Failed:     1, Passed:    18, Skipped:     0, Total:    19, Duration: 22 s - ControlServer.Tests.dll (net8.0)
+== M7-bound-2s (on bb949091)
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.TheToleranceMustBeBetweenZeroAndOneSecond(milliseconds: 2000, accepted: False) [1 ms]
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.TheToleranceMustBeBetweenZeroAndOneSecond(milliseconds: 1001, accepted: False) [< 1 ms]
+Failed!  - Failed:     2, Passed:    17, Skipped:     0, Total:    19, Duration: 23 s - ControlServer.Tests.dll (net8.0)
