@@ -817,8 +817,8 @@ public sealed class StagingDepartureFullOrNoFitTests
     }
 
     /// <summary>
-    /// control-server#800（cs#780 独立审查 M1）：判满状态下在追加停靠受理了出发，没装的已经放回；仓门一时证明不了锁闭，离站核验还没发出。这期间等着的那条变得
-    /// 装得下，重判也不撤回：本停靠已受理出发是保持点（落在停靠行的 <c>OperatorDepartedAt</c> 上）。仓门证明锁闭之后车照常离站，不等持货期限。
+    /// control-server#800（cs#780 独立审查 M1）：判满状态下在追加停靠受理了出发，没装的已经放回，离站核验还没发出。这时等着的那条已经装得下，受理之后的重判
+    /// 也不撤回：本停靠已受理出发是保持点（落在停靠行的 <c>OperatorDepartedAt</c> 上），车照常离站，不等持货期限。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
@@ -826,24 +826,17 @@ public sealed class StagingDepartureFullOrNoFitTests
     public async Task AnAcceptedDepartureWhileFullIsNotWithdrawnByALaterRound()
     {
         await using RuntimeFixture fixture = await FullThenAtTheAppendedStopAsync();
+        // 受理的那一轮里，出发先答、装货阶段后判：前仓放开、等着的那条变得装得下，同一轮的重判就会撤回——除非受理留下了保持点。
+        await SetSlotAvailabilityAsync(fixture, [1, 2, 3, 4], "ENABLED");
         string departureRequestId = await StagingDepartureRequestTests.RequestDepartureAsync(fixture);
-        RecordFrontOnlyWaiting(fixture);
+        RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchAdmissionChain.Eligible));
         await StagingDepartureRequestTests.RunAsync(fixture);
         Assert.Equal(
             "ACCEPTED",
             (await StagingDepartureRequestTests.ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
         Assert.NotNull((await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, Demand)).OperatorDepartedAt);
-
-        await fixture.SetSafetyEvidenceAsync(unknownPresent: true, reasonCodes: []);
-        await SetSlotAvailabilityAsync(fixture, [1, 2, 3, 4], "ENABLED");
-        for (int round = 0; round < 2; round++)
-        {
-            RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchAdmissionChain.Eligible));
-            await StagingDepartureRequestTests.RunAsync(fixture);
-        }
         Assert.Equal(LoadingPhaseStates.VehicleFull, (await fixture.RuntimeAsync()).LoadingPhaseState);
 
-        await fixture.ProveSlotDoorsClosedAsync();
         RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchAdmissionChain.Eligible));
         await StagingDepartureRequestTests.RunAsync(fixture);
 
