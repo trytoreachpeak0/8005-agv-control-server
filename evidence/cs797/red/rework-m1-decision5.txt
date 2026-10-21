@@ -1,0 +1,13 @@
+# cs#797 rework red, on c4f99d32 + new tests only (M1, decision 5 literal)
+Failed!  - Failed:     2, Passed:    21, Skipped:     0, Total:    23, Duration: 5 s - ControlServer.Tests.dll (net8.0)
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ACompensationAwaitingItsAuthorizationIsSpentWhenTheGrantEnds [99 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (RecoveryRequired, "RECOVERY_GRANT_ENDED")
+Actual:   Tuple (AwaitingAuthorization, null)
+--
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionUnderWayWhenTheGrantEndsFinishesAndItsResultClosesTheSession [106 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("CLOSED", "RECOVERY_AUTHENTICATION_FAILED")
+Actual:   Tuple ("CLOSED", null)

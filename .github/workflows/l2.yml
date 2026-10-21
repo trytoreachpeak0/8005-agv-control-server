@@ -467,6 +467,9 @@ jobs:
               # demand on the vehicle and rebuilds its order after the delay; the same request twice does nothing, and an
               # unsigned one is still refused.
               @{ Name = 'vehicle-fault-operator-clearance'; Runs = 1 }
+              # control-server#797: with recovery grants required, CLEAR_FAULT without a grant is refused; a grant is rehearsed,
+              # given for CLEAR_FAULT only (another action still refused), revoked, and a short one runs out on the server.
+              @{ Name = 'vehicle-fault-recovery-needs-grant'; Runs = 1 }
               # control-server#539 review S-4: the door half of the clearance, beside the FAILED half above.
               @{ Name = 'vehicle-fault-operator-clearance-door'; Runs = 1 }
               # control-server#345 (before the v2 vehicle trial): an own order rebuilt after a cancellation is cancelled again

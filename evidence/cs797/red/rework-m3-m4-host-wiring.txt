@@ -1,0 +1,14 @@
+=== N3: Program.cs line 186 commented out at f3c60646a
+-builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoveryGrantGate>();
++// MUTATION N3 builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoveryGrantGate>();
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 1 m 30 s - ControlServer.Tests.dll (net8.0)
+  Error Message:
+   The host never answered /health/live. Output: [00:23:42 INF] Applying migration '20260825101420_InitialWireToGate'.
+[00:23:42 INF] Applying migration '20260826071119_DurableOnboardBusinessInbox'.
+=== N8: Program.cs line 187 commented out at f3c60646a
+-builder.Services.AddHostedService<ControlServer.Host.Runtime.Recovery.RecoveryGrantSweeper>();
++// MUTATION N8 builder.Services.AddHostedService<ControlServer.Host.Runtime.Recovery.RecoveryGrantSweeper>();
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 33 s - ControlServer.Tests.dll (net8.0)
+  Error Message:
+   The host never logged 'the recovery grant sweep is running'. Output: [00:25:22 INF] Applying migration '20260825101420_InitialWireToGate'.
+[00:25:22 INF] Applying migration '20260826071119_DurableOnboardBusinessInbox'.

@@ -7095,10 +7095,15 @@ Invoke-SourceCase 'idle return: only the production stage-3 definition writes it
 Write-Host ''
 Write-Host 'Recovery grant and per-vehicle recovery proofs (control-server#797)' -ForegroundColor Cyan
 
-function New-GrantDefinition($From, [object] $EntriesOn, [object] $Section = $null, [switch] $LeaveOut) {
+function New-GrantDefinition($From, [object] $EntriesOn, [object] $Section = $null, [switch] $LeaveOut, [string] $Phase = '') {
     $d = Copy-Definition $From
     $d['vehicleFaultRecovery'] = [ordered]@{ enabled = $EntriesOn }
     if (-not $LeaveOut) { $d['recoveryGrant'] = $Section }
+    if ($Phase) {
+        $d['productionCutover'] = [ordered]@{ approvalRecord = 'review M2'; phase = $Phase }
+    } elseif ($d.Contains('productionCutover')) {
+        $d.Remove('productionCutover')
+    }
     return $d
 }
 function Get-GrantFailure($Definition) {
@@ -7107,10 +7112,12 @@ function Get-GrantFailure($Definition) {
 foreach ($case in @(
         @{ Name = 'left out with the entries off: off'; EntriesOn = $false; LeaveOut = $true; Expect = $false }
         @{ Name = 'left out with the entries on: on, so turning the entries on cannot leave grants off'; EntriesOn = $true; LeaveOut = $true; Expect = $true }
-        @{ Name = 'stated false with the entries on: off (a rig''s choice)'; EntriesOn = $true; Section = [ordered]@{ required = $false }; Expect = $false }
+        @{ Name = 'stated false with the entries on and no productionCutover: off (a rig''s choice, refused in trial and production below)'; EntriesOn = $true; Section = [ordered]@{ required = $false }; Expect = $false }
+        @{ Name = 'left out with the entries on in production: on, and accepted'; EntriesOn = $true; LeaveOut = $true; Phase = 'production'; Expect = $true }
+        @{ Name = 'stated true with the entries on in trial: on, and accepted'; EntriesOn = $true; Section = [ordered]@{ required = $true }; Phase = 'trial'; Expect = $true }
         @{ Name = 'stated true with the entries on: on'; EntriesOn = $true; Section = [ordered]@{ required = $true }; Expect = $true })) {
     Invoke-SourceCase "recovery grant: $($case.Name), and the overlay writes exactly that" {
-        $d = New-GrantDefinition $baseline $case.EntriesOn ($case.ContainsKey('Section') ? $case.Section : $null) -LeaveOut:($case.ContainsKey('LeaveOut') -and $case.LeaveOut)
+        $d = New-GrantDefinition $baseline $case.EntriesOn ($case.ContainsKey('Section') ? $case.Section : $null) -LeaveOut:($case.ContainsKey('LeaveOut') -and $case.LeaveOut) -Phase ($case.ContainsKey('Phase') ? $case.Phase : '')
         $failures = @(Get-GrantFailure $d)
         $o = New-ParallelInstanceConfigurationOverlay -Definition $d
         $v = $o['RecoveryGrant']['required']
@@ -7124,9 +7131,12 @@ foreach ($case in @(
         @{ Name = 'a string "true" is refused, not bound as on behind the check'; EntriesOn = $true; Section = [ordered]@{ required = 'true' }; Says = 'recoveryGrant.required must be a JSON boolean' }
         @{ Name = 'a section without required is refused'; EntriesOn = $true; Section = [ordered]@{}; Says = 'recoveryGrant.required must be stated explicitly' }
         @{ Name = 'an unknown sub-key is refused'; EntriesOn = $true; Section = [ordered]@{ required = $true; minutes = 600 }; Says = 'recoveryGrant' }
-        @{ Name = 'a bare true instead of an object is refused'; EntriesOn = $true; Section = $true; Says = 'recoveryGrant must be an object with required' })) {
+        @{ Name = 'a bare true instead of an object is refused'; EntriesOn = $true; Section = $true; Says = 'recoveryGrant must be an object with required' }
+        @{ Name = 'stated false in production is refused (review M2)'; EntriesOn = $true; Section = [ordered]@{ required = $false }; Phase = 'production'; Says = 'RECOVERY_GRANT_OFF_IN_CUTOVER' }
+        @{ Name = 'stated false in trial is refused (review M2)'; EntriesOn = $true; Section = [ordered]@{ required = $false }; Phase = 'trial'; Says = 'RECOVERY_GRANT_OFF_IN_CUTOVER' }
+        @{ Name = 'stated false in production with the entries off is refused too'; EntriesOn = $false; Section = [ordered]@{ required = $false }; Phase = 'production'; Says = 'RECOVERY_GRANT_OFF_IN_CUTOVER' })) {
     Invoke-SourceCase "recovery grant: $($case.Name)" {
-        $f = @(Get-GrantFailure (New-GrantDefinition $baseline $case.EntriesOn $case.Section))
+        $f = @(Get-GrantFailure (New-GrantDefinition $baseline $case.EntriesOn $case.Section -Phase ($case.ContainsKey('Phase') ? $case.Phase : '')))
         @{ Ok = ($f.Count -ge 1 -and @($f | Where-Object { $_.Contains($case.Says) }).Count -ge 1); Detail = "failures: $($f -join ' | ')" }
     }
 }

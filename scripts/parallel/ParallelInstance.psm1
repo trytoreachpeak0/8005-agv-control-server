@@ -1464,6 +1464,7 @@ function Test-ParallelInstanceDefinition {
     # anyone holding the shared credential recovers any vehicle (ADR-cross-0066), so turning the entries on turns grants on with
     # them. Stated, it is an explicit JSON boolean; true needs those entries, which are where a grant is given.
     $grantRequired = $false
+    $grantStatedOff = $false
     if (Test-KeyPresent -Node $Definition -Key 'recoveryGrant') {
         $grantNode = $Definition['recoveryGrant']
         if ($grantNode -isnot [System.Collections.IDictionary]) {
@@ -1474,6 +1475,7 @@ function Test-ParallelInstanceDefinition {
             $failures += "recoveryGrant.required must be a JSON boolean, got '$($grantNode['required'])'."
         } else {
             $grantRequired = $grantNode['required']
+            $grantStatedOff = -not $grantRequired
         }
     }
     # Not $recovery: Get-Node returns a [hashtable] only, and a section built with [ordered] is not one.
@@ -1484,6 +1486,14 @@ function Test-ParallelInstanceDefinition {
             'is given through the Host recovery entries, so no exception recovery session could ever open.')
     }
     $phaseNode = (Test-KeyPresent -Node $Definition -Key 'productionCutover') ? $Definition['productionCutover'] : $null
+    # Review M2 (2026-10-22): a trial or production instance drives real vehicles, and 06-deploy -RecoveryResume leaves a
+    # vehicle's recovery entry on for good on the promise that this server asks for a grant. Stating it off there is refused; a
+    # rig without productionCutover may still turn it off.
+    if ($grantStatedOff -and $phaseNode -is [System.Collections.IDictionary] -and $script:CutoverPhases -ccontains $phaseNode['phase']) {
+        $failures += ("RECOVERY_GRANT_OFF_IN_CUTOVER: recoveryGrant.required is false while productionCutover.phase is " +
+            "'$($phaseNode['phase'])'. A vehicle deployed with 06-deploy -RecoveryResume keeps its recovery entry on, and only the " +
+            'per-vehicle grant stops anyone with the shared credential recovering it; leave recoveryGrant out or state it true.')
+    }
     if ($phaseNode -is [System.Collections.IDictionary] -and $phaseNode['phase'] -ceq 'production' -and
         -not (Test-ParallelEmergencyReleaseEnabled -Definition $Definition)) {
         $failures += ('EMERGENCY_STOP_RELEASE_REQUIRED_IN_PRODUCTION: productionCutover.phase is production, so emergencyStopRelease.enabled ' +
