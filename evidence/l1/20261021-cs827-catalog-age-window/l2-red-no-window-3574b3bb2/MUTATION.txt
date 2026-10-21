@@ -1,0 +1,4 @@
+Mutation for this red run, src/ControlServer.Host/Runtime/Dispatch/CatalogAgeWindow.cs, restored with git checkout afterwards:
+-        if (round.RedispatchGenerations.ContainsKey(demand.DemandId))
++        if (demand.DemandId.Length >= 0)
+(Refusal returns null for every demand: both the admission criterion and the intake re-check are gone. A constant if (true) does not build, CS0162.)

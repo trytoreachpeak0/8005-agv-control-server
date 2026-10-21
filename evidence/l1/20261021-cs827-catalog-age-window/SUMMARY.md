@@ -21,3 +21,10 @@
 | M7 | 边界 `>` 改 `>=` | `ADemandExactlyAtTheWindowIsStillDispatched` |
 | M8 | 缺 `createdAt` 放行 | `ADemandWithoutAFirstReadTimeIsNotDispatchedAndWaitsWithItsOwnReason` |
 | M9 | 轮次不取配置值 | `TheWindowIsTheConfiguredOne` |
+
+## 合成 L2 `catalog-age-window`（调度要求，加进 `l2.yml`）
+
+| 目录 | 内容 |
+| --- | --- |
+| `l2-green-b9aa5960a/` | 本机合成装置一次，4 条判据全过：40 分钟前读到的 STALE 空闲车不派、看板列出带中文说明；1 分钟前的 FRESH 派出并送达；送达后 STALE 被重新判过仍不派（第二个事实，`Wait-L2ConditionOrLast`）。服务端是 `b9aa5960a` 加未提交的场景文件，场景随后提交为 `3574b3bb2` |
+| `l2-red-no-window-3574b3bb2/` | 把时间窗整体去掉（`MUTATION.txt`）：STALE 被空闲车接走（`DEMAND_ALREADY_ACCEPTED`、1 趟旅程），看板不再列它，FRESH 没车接；L2-CAW-01～03 红，04 因 FRESH 未受理提前收尾未落 |
