@@ -1,0 +1,23 @@
+# Fixture as on origin/fp/v2-impl e1c454951, reconnect test x60 per process, 3 processes in parallel, pinned to 4 cores (0xF0), Release, --no-build.
+
+## batch red-1
+Failed!  - Failed:     3, Passed:    57, Skipped:     0, Total:    60, Duration: 17 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 17 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 17 s - ControlServer.Tests.dll (net8.0)
+-- server 1003/1008 log lines carrying an exception (guid/port stripped):
+      2 1003 Onboard connection ended with a protocol or transport error. Vehicle AGV-GATE-01 (generation (null)), remote . :: System.InvalidOperationException: A second operation was started on this context instance before a pr
+      3 1003 Onboard connection ended with a protocol or transport error. Vehicle AGV-GATE-01 (generation 1), remote . :: System.InvalidOperationException: A second operation was started on this context instance before a previou
+      1 1003 Onboard connection ended with a protocol or transport error. Vehicle AGV-GATE-01 (generation 1), remote . :: System.InvalidOperationException: Execute requires the command to have a transaction object when the conne
+      1 1003 Onboard connection ended with a protocol or transport error. Vehicle AGV-GATE-01 (generation 2), remote . :: System.InvalidOperationException: A second operation was started on this context instance before a previou
+      1 1008 Onboard connection for AGV-GATE-01 (generation 1), remote , ended after a newer session took it over (control-server#310). :: System.InvalidOperationException: A second operation was started on this context instance
+
+## batch red-2
+Failed!  - Failed:     2, Passed:    58, Skipped:     0, Total:    60, Duration: 12 s - ControlServer.Tests.dll (net8.0)
+Failed!  - Failed:     1, Passed:    59, Skipped:     0, Total:    60, Duration: 14 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 13 s - ControlServer.Tests.dll (net8.0)
+-- server 1003/1008 log lines carrying an exception (guid/port stripped):
+      1 1003 Onboard connection ended with a protocol or transport error. Vehicle AGV-GATE-01 (generation (null)), remote . :: System.InvalidOperationException: A second operation was started on this context instance before a pr
+      1 1003 Onboard connection ended with a protocol or transport error. Vehicle AGV-GATE-01 (generation 1), remote . :: System.InvalidOperationException: A second operation was started on this context instance before a previou
+      2 1003 Onboard connection ended with a protocol or transport error. Vehicle AGV-GATE-01 (generation 2), remote . :: System.InvalidOperationException: A second operation was started on this context instance before a previou
+      1 1008 Onboard connection for AGV-GATE-01 (generation 1), remote , ended after a newer session took it over (control-server#310). :: System.ObjectDisposedException: Cannot access a disposed object.
+      1 name: 'System.Net.Sockets.NetworkStream'.

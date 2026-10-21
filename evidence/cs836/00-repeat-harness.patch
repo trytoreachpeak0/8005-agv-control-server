@@ -1,0 +1,64 @@
+commit fe1f42825f956337fa22184cad13e7f75cc4fb5f
+Author: Zhengyu Shao <trytoreachpeak0@gmail.com>
+Date:   Wed Oct 21 14:12:07 2026 +0800
+
+    EXPERIMENT cs#836: repeat the reconnect test 60x, log server errors (to be dropped)
+
+diff --git a/tests/ControlServer.Tests/OnboardHandshakePushGateTests.cs b/tests/ControlServer.Tests/OnboardHandshakePushGateTests.cs
+index 20a267ad7..f41beec46 100644
+--- a/tests/ControlServer.Tests/OnboardHandshakePushGateTests.cs
++++ b/tests/ControlServer.Tests/OnboardHandshakePushGateTests.cs
+@@ -159,10 +159,14 @@ public sealed class OnboardHandshakePushGateTests
+     /// generation) and sends it once.
+     /// </para>
+     /// </remarks>
+-    [Fact]
++    public static TheoryData<int> Cs836Rounds => new(Enumerable.Range(1, int.Parse(Environment.GetEnvironmentVariable("CS836_ROUNDS") ?? "60", System.Globalization.CultureInfo.InvariantCulture)));
++
++    [Theory]
++    [MemberData(nameof(Cs836Rounds))]
+     [Trait("IntegrationSlice", "FP-IS-00")]
+-    public async Task APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt()
++    public async Task APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(int round)
+     {
++        _ = round;
+         await using Rig rig = await Rig.StartAsync();
+         await rig.Onboard.StartAsync(rig.Lifetime.Token).WaitAsync(Guard, TestContext.Current.CancellationToken);
+         await rig.SendWhenRoutableAsync(Push("FaultCargoRecoveryCommand", sessionGeneration: 1));
+@@ -562,7 +566,7 @@ public sealed class OnboardHandshakePushGateTests
+                 }),
+                 provider.GetRequiredService<IServiceScopeFactory>(),
+                 peer,
+-                NullLogger<OnboardTcpServer>.Instance);
++                Cs836FileLogger.Instance);
+             await server.StartAsync(TestContext.Current.CancellationToken);
+ 
+             LineRelay relay = LineRelay.Start(serverPort);
+@@ -846,3 +850,27 @@ public sealed class OnboardHandshakePushGateTests
+         }
+     }
+ }
++
++// cs#836 experiment only: the server's errors, appended to the file CS836_LOG names.
++internal sealed class Cs836FileLogger : Microsoft.Extensions.Logging.ILogger<OnboardTcpServer>
++{
++    public static readonly Cs836FileLogger Instance = new();
++    private static readonly object Gate = new();
++
++    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
++
++    public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
++
++    public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
++    {
++        string? path = Environment.GetEnvironmentVariable("CS836_LOG");
++        if (path is null || exception is null)
++        {
++            return;
++        }
++        lock (Gate)
++        {
++            File.AppendAllText(path, $"{DateTimeOffset.Now:O} {eventId.Id} {formatter(state, exception)} :: {exception.GetType().FullName}: {exception.Message}{Environment.NewLine}");
++        }
++    }
++}

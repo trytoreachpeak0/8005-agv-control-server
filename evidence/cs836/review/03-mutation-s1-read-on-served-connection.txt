@@ -1,0 +1,15 @@
+# S1 mutation: each rig's test read context opened on the connection of a context the server's processor was built over (ServedContexts.FirstForMutation).
+# Expect the three #813 read guards red on their assertion. Restored with git checkout.
+[xUnit.net 00:00:04.01]     ControlServer.Tests.OnboardSilentLivenessLossTests.TheTestReadsThroughAContextAndConnectionOfItsOwn [FAIL]
+  Failed ControlServer.Tests.OnboardSilentLivenessLossTests.TheTestReadsThroughAContextAndConnectionOfItsOwn [1 s]
+  Error Message:
+   测试拿到的读库上下文与服务线程共用了上下文或连接。
+[xUnit.net 00:00:04.34]     ControlServer.Tests.InboundContentConflictTests.TheTestReadsThroughAContextAndConnectionOfItsOwn [FAIL]
+[xUnit.net 00:00:04.34]     ControlServer.Tests.OnboardHandshakePushGateTests.TheTestReadsThroughAConnectionOfItsOwn [FAIL]
+[xUnit.net 00:00:04.34]     ControlServer.Tests.OnboardHandshakePushGateTests.TheTestReadsThroughAConnectionOfItsOwn [FAIL]
+  Failed ControlServer.Tests.InboundContentConflictTests.TheTestReadsThroughAContextAndConnectionOfItsOwn [1 s]
+  Error Message:
+   测试拿到的读库上下文与服务端处理器共用了上下文或连接。
+  Error Message:
+   测试拿到的上下文与服务端处理器共用了连接。
+Failed!  - Failed:     3, Passed:     0, Skipped:     0, Total:     3, Duration: 1 s - ControlServer.Tests.dll (net8.0)

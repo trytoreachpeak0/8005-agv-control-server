@@ -460,6 +460,10 @@ public sealed class OnboardSilentLivenessLossTests
     public async Task TheTestReadsThroughAContextAndConnectionOfItsOwn()
     {
         await using LivenessRig rig = await LivenessRig.StartAsync(TimeSpan.FromMilliseconds(250));
+        // The listener builds a connection's processor as it accepts it; a connection is enough.
+        using TcpClient client = new();
+        await client.ConnectAsync(IPAddress.Loopback, rig.Port, TestContext.Current.CancellationToken);
+        await rig.Served.WaitForAsync(1, TimeSpan.FromSeconds(20));
         await using ControlServerDbContext read = await rig.OpenReadContextAsync();
 
         Assert.False(rig.SharesStateWith(read), "测试拿到的读库上下文与服务线程共用了上下文或连接。");
@@ -715,32 +719,28 @@ public sealed class OnboardSilentLivenessLossTests
     /// <summary>一台真起在回环上的监听器，连着一个真的消息处理器与一个内存库。</summary>
     private sealed class LivenessRig(
         SqliteConnection connection,
-        ControlServerDbContext context,
         ServiceProvider provider,
         PortReservation port,
         OnboardTcpServer server) : IAsyncDisposable
     {
-        /// <summary>
-        /// The context the server's processor uses. Private so that no test can read through it; see
-        /// <see cref="OpenReadContextAsync"/>.
-        /// </summary>
-        private ControlServerDbContext ServerContext { get; } = context;
+        /// <summary>The contexts the server's processors were built over, one per connection served (control-server#836).</summary>
+        public ServedContexts Served { get; private init; } = new();
 
-        /// <summary>Whether <paramref name="read"/> is, or shares a connection with, the server's own context.</summary>
-        public bool SharesStateWith(ControlServerDbContext read) =>
-            ReferenceEquals(read, ServerContext) ||
-            ReferenceEquals(read.Database.GetDbConnection(), ServerContext.Database.GetDbConnection());
+        /// <summary>
+        /// Whether <paramref name="read"/> is, or shares a connection with, a context the server's processors were built over.
+        /// </summary>
+        public bool SharesStateWith(ControlServerDbContext read) => Served.SharesStateWith(read);
 
         /// <summary>
         /// A context of the test's own, on a connection of its own, to the same database the server writes
         /// (control-server#256). The caller disposes it, and with it its connection.
         /// </summary>
         /// <remarks>
-        /// Neither <see cref="DbContext"/> nor <see cref="SqliteConnection"/> is thread-safe, and the server's processor
-        /// uses <see cref="ServerContext"/> on the listener's threads. Reading through that instance from the test thread
+        /// Neither <see cref="DbContext"/> nor <see cref="SqliteConnection"/> is thread-safe, and each server connection's
+        /// processor uses its own on the listener's threads. Reading through the server's context from the test thread
         /// was safe only while the server happened to be idle at the moment of the read. The database is a named
-        /// shared-cache in-memory one, kept alive by the server's connection, so a second connection sees the same rows;
-        /// SQLite serialises the two connections itself, which is what makes the read safe by construction.
+        /// shared-cache in-memory one, kept alive by the rig's connection, so every connection sees the same rows;
+        /// SQLite serialises the connections itself, which is what makes the read safe by construction.
         /// </remarks>
         public async Task<ControlServerDbContext> OpenReadContextAsync()
         {
@@ -796,14 +796,16 @@ public sealed class OnboardSilentLivenessLossTests
             TimeSpan idleTimeout,
             string? credentialBefore)
         {
-            // Named and shared-cache so that OpenReadContextAsync can reach it on a second connection; this one stays
-            // open for the rig's lifetime, which is what keeps an in-memory database alive.
+            // Named and shared-cache so that each server connection and OpenReadContextAsync reach it on a connection of
+            // their own; this one stays open for the rig's lifetime, which is what keeps an in-memory database alive.
             SqliteConnection connection = new(
                 $"Data Source=liveness-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
-            ControlServerDbContext context = new(
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
-            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            await using (ControlServerDbContext schema = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options))
+            {
+                await schema.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            }
 
             TimeProvider clock = new FixedClock();
             IConfiguration configuration = new ConfigurationBuilder()
@@ -812,10 +814,9 @@ public sealed class OnboardSilentLivenessLossTests
                     ["OnboardTransport:CredentialEnvironmentVariable"] = CredentialVariable
                 })
                 .Build();
-            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
-                context, new WireToGateStore(context), clock, configuration);
             ServiceCollection services = new();
-            services.AddScoped(_ => processor);
+            // A processor and a context per connection, as in the host (control-server#836).
+            ServedContexts served = services.AddScopedProcessor(connection.ConnectionString, clock, configuration);
             ServiceProvider provider = services.BuildServiceProvider();
 
             // Held until DisposeAsync, after the server has stopped: never free between being chosen and being bound.
@@ -843,11 +844,12 @@ public sealed class OnboardSilentLivenessLossTests
                 port.Dispose();
                 throw;
             }
-            return new LivenessRig(connection, context, provider, port, server)
+            return new LivenessRig(connection, provider, port, server)
             {
                 Port = port.Port,
                 Log = log,
-                CredentialBefore = credentialBefore
+                CredentialBefore = credentialBefore,
+                Served = served
             };
         }
 
@@ -859,7 +861,6 @@ public sealed class OnboardSilentLivenessLossTests
                 server.Dispose();
                 port.Dispose();
                 await provider.DisposeAsync();
-                await ServerContext.DisposeAsync();
                 await connection.DisposeAsync();
             }
             finally

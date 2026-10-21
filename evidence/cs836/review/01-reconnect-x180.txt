@@ -1,0 +1,8 @@
+# After review fixes S1-S5 (serialized connections per scope, ServedContexts guard, shape guard). Reconnect test x60 per process, 3 processes, 4 cores (harness 00-repeat-harness.patch applied to the working tree only).
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 9 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 9 s - ControlServer.Tests.dll (net8.0)
+-- server log lines carrying an exception (ports stripped):
+      3  1008 Onboard connection for AGV-GATE-01 (generation 1), remote , ended after a newer session took it over (control-server#310). :: System.ObjectDisposedException: Cannot access a disposed object.
+      3 NetworkStream'.
+Only 1008 takeover lines (control-server#310 path), as before the fix.

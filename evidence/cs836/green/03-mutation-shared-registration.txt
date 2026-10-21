@@ -1,0 +1,6 @@
+# Mutation: AddScopedProcessor registers the context and the processor as singletons (one for every connection, the old shape).
+# Filter: EachConnectionIsServedByAProcessorAndAContextOfItsOwn + the #813 read-guard tests.
+[xUnit.net 00:00:03.82]     ControlServer.Tests.OnboardHandshakePushGateTests.EachConnectionIsServedByAProcessorAndAContextOfItsOwn [FAIL]
+  Error Message:
+Failed!  - Failed:     1, Passed:     3, Skipped:     0, Total:     4, Duration: 943 ms - ControlServer.Tests.dll (net8.0)
+# Restored with git checkout; the #813 read guards pass either way (they guard the test thread's reads, not the server's connections).

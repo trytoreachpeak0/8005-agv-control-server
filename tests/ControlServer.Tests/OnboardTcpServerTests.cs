@@ -65,14 +65,18 @@ public sealed class OnboardTcpServerTests
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         Environment.SetEnvironmentVariable(HandshakeCredentialVariable, HandshakeCredential);
-        await using SqliteConnection database = new("Data Source=:memory:");
+        // Named and shared-cache so that each server connection reaches it on a connection of its own; this one keeps it alive.
+        await using SqliteConnection database = new($"Data Source=tcp-server-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
         await database.OpenAsync(token);
-        await using ControlServerDbContext context = new(
-            new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(database).Options);
-        await context.Database.EnsureCreatedAsync(token);
-        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
-            context,
-            new WireToGateStore(context),
+        await using (ControlServerDbContext schema = new(
+            new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(database).Options))
+        {
+            await schema.Database.EnsureCreatedAsync(token);
+        }
+        ServiceCollection services = new();
+        // A processor and a context per connection, as in the host (control-server#836).
+        services.AddScopedProcessor(
+            database.ConnectionString,
             new FixedClock(),
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
@@ -80,8 +84,6 @@ public sealed class OnboardTcpServerTests
                     ["OnboardTransport:CredentialEnvironmentVariable"] = HandshakeCredentialVariable
                 })
                 .Build());
-        ServiceCollection services = new();
-        services.AddScoped(_ => processor);
         await using ServiceProvider provider = services.BuildServiceProvider();
         OnboardPeer peer = new();
         int port = ReserveFreePort();
@@ -416,16 +418,14 @@ public sealed class OnboardTcpServerTests
     private sealed class ListenerRig : IAsyncDisposable
     {
         private readonly SqliteConnection _database;
-        private readonly ControlServerDbContext _context;
         private readonly ServiceProvider _provider;
         private readonly OnboardTcpServer _server;
 
         private ListenerRig(
-            SqliteConnection database, ControlServerDbContext context, ServiceProvider provider, OnboardTcpServer server,
+            SqliteConnection database, ServiceProvider provider, OnboardTcpServer server,
             OnboardPeer peer, int port)
         {
             _database = database;
-            _context = context;
             _provider = provider;
             _server = server;
             Peer = peer;
@@ -440,15 +440,20 @@ public sealed class OnboardTcpServerTests
         {
             CancellationToken token = TestContext.Current.CancellationToken;
             Environment.SetEnvironmentVariable(HandshakeCredentialVariable, HandshakeCredential);
-            SqliteConnection database = new("Data Source=:memory:");
+            // Named and shared-cache so that each server connection reaches it on a connection of its own; this one keeps
+            // it alive.
+            SqliteConnection database = new($"Data Source=tcp-listener-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
             await database.OpenAsync(token);
-            ControlServerDbContext context = new(
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(database).Options);
-            await context.Database.EnsureCreatedAsync(token);
+            await using (ControlServerDbContext schema = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(database).Options))
+            {
+                await schema.Database.EnsureCreatedAsync(token);
+            }
             OnboardPeer peer = new();
-            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
-                context,
-                new WireToGateStore(context),
+            ServiceCollection services = new();
+            // A processor and a context per connection, as in the host (control-server#836).
+            services.AddScopedProcessor(
+                database.ConnectionString,
                 new FixedClock(),
                 new ConfigurationBuilder()
                     .AddInMemoryCollection(new Dictionary<string, string?>
@@ -457,8 +462,6 @@ public sealed class OnboardTcpServerTests
                     })
                     .Build(),
                 peer);
-            ServiceCollection services = new();
-            services.AddScoped(_ => processor);
             ServiceProvider provider = services.BuildServiceProvider();
             int port = ReserveFreePort();
             OnboardTcpServer server = new(
@@ -467,7 +470,7 @@ public sealed class OnboardTcpServerTests
                 peer,
                 NullLogger<OnboardTcpServer>.Instance);
             await server.StartAsync(token);
-            return new ListenerRig(database, context, provider, server, peer, port);
+            return new ListenerRig(database, provider, server, peer, port);
         }
 
         public async ValueTask DisposeAsync()
@@ -481,7 +484,6 @@ public sealed class OnboardTcpServerTests
             {
                 Environment.SetEnvironmentVariable(HandshakeCredentialVariable, null);
                 await _provider.DisposeAsync();
-                await _context.DisposeAsync();
                 await _database.DisposeAsync();
             }
         }
