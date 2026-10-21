@@ -142,8 +142,8 @@ $settled = Wait-L2Change -Description 'the server authorized the skip and settle
             if ($null -eq $operation -or [string]$operation.Status -ne 'Committed') { return $null }
             $membership = (Invoke-L2Query -Connection $connection `
                 -Sql "SELECT TargetSlotsJson, LoadedSlotsJson FROM JourneyDemands WHERE DemandId = '$demandId' AND RemovedAt IS NULL")[0]
-            $answer = @(Invoke-L2Query -Connection $connection `
-                -Sql "SELECT PayloadJson FROM ProtocolOutbox WHERE MessageType = 'RemainingBasketsSkipResult'")
+            $answer = Invoke-L2Query -Connection $connection `
+                -Sql "SELECT PayloadJson FROM ProtocolOutbox WHERE MessageType = 'RemainingBasketsSkipResult'"
             [pscustomobject]@{ Operation = $operation; Membership = $membership; Answers = $answer }
         } } `
     -Until { param($before, $now) $before -eq 'Prepared' -and $null -ne $now }
@@ -179,10 +179,11 @@ $completed = Wait-L2Condition -Description 'the journey completed at the gate' `
     -Probe { Invoke-L2ReadSnapshot -Connection $connection -Read {
             $runtime = Get-Runtime
             if ($null -eq $runtime -or [string]$runtime.Stage -ne 'Completed') { return $null }
+            $commands = Invoke-L2Query -Connection $connection `
+                -Sql "SELECT PayloadJson FROM ProtocolOutbox WHERE MessageType = 'SlotOperationCommand'"
             [pscustomobject]@{
                 Unload      = Get-Operation 'Unload'
-                Command     = @(Invoke-L2Query -Connection $connection `
-                    -Sql "SELECT PayloadJson FROM ProtocolOutbox WHERE MessageType = 'SlotOperationCommand'") |
+                Command     = $commands |
                     ForEach-Object { ($_.PayloadJson | ConvertFrom-Json).payload } |
                     Where-Object { [string]$_.operationType -eq 'UNLOAD' -and [string]$_.demandId -eq $demandId }
                 Demand      = [string](Invoke-L2Query -Connection $connection -Sql "SELECT Status FROM AcceptedDemands WHERE DemandId = '$demandId'")[0].Status
