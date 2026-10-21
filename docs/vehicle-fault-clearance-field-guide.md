@@ -262,7 +262,13 @@ continue，另一个回 409 `FAULT_RECOVERY_RESUME_IN_PROGRESS`，过一会儿�
 上半句）。把 `action` 换成 `RESUME_HELD_ORDER`：服务端核对工号、「原因已排除」、急停已解除，再核对订单确实是
 PAUSED、订单号与车辆一致、货物绑定与这趟旅程一致，然后发 `CONTINUE_FROM_HELD`，**读回订单在执行之后才清故障**。
 旅程不动，照常往下走。拒绝原因除了上表的几条，还有 `RESUME_ORDER_NOT_HELD`、`RESUME_ORDER_IDENTITY_MISMATCH`、
-`RESUME_CARGO_BINDING_MISMATCH`、`RESUME_CONTINUE_NOT_CONFIRMED` 等。
+`RESUME_CARGO_BINDING_MISMATCH`、`RESUME_CONTINUE_NOT_CONFIRMED`（续行之后订单被取消或失败，续行没起作用）等。
+
+**`RESUME_CONTINUE_AWAITING_CONFIRMATION`：续行已发出、等待确认**（control-server#791）。RIoT 接下续行之后要过一会儿才改单态，
+服务端在 5 秒内反复读（`VehicleFault:ResumeConfirmationBudget`），读到执行中或已完成就照常清故障；5 秒内一直没变，或者读不到，
+才回这个码。这时故障、货物绑定、阻断都还在，告警是 `VEHICLE_FAULT_RESUME_AWAITING_CONFIRMATION`，不是「订单未受保护」。
+**过一会儿再发同一个 `RESUME_HELD_ORDER`**：服务端先核上一次续行，确认生效了就直接清故障，不要求单仍是 PAUSED，也不会再发一次续行；
+单仍是 PAUSED 就照常再续一次。旅程已经离开等单的阶段（单直接完成、车已进「等录入」）时这条路走不通，改用 `CLEAR_FAULT`。
 
 **急停锁着时不能续行**，入口会直接拒绝（`FAULT_RECOVERY_EMERGENCY_LATCHED`）。服务端在真正发出 `CONTINUE_FROM_HELD`
 之前还会再读一次急停：前面核对完、命令发出之前这几秒里急停又锁上了（服务端自己重新急停，或有人在 RIoT 上按了），
