@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+index 66726c611..593e5e2a2 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+@@ -118,7 +118,7 @@ public sealed class OnboardDispatchFactsReader(
+             : [];
+         int[] available = capabilitySlots
+             .Where(item => SlotAvailable(item, safetySlots) ||
+-                           (SlotAvailableButForCargo(item, safetySlots) &&
++                           (true &&
+                             unloadedSinceBaseline.Contains(item.GetProperty("slotNo").GetInt32())))
+             .Select(item => item.GetProperty("slotNo").GetInt32())
+             .Order()

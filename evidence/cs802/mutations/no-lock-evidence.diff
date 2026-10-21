@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+index 66726c611..a9900c9c4 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+@@ -223,7 +223,7 @@ public sealed class OnboardDispatchFactsReader(
+             foreach (SlotPhysicalEvidence evidence in
+                      JsonSerializer.Deserialize<SlotPhysicalEvidence[]>(result.EvidenceJson) ?? [])
+             {
+-                if (evidence is { State: SlotBusinessState.Empty, DoorLocked: true, UnlockOutputReset: true })
++                if (evidence is { State: SlotBusinessState.Empty, UnlockOutputReset: true })
+                 {
+                     unloaded.Add(evidence.SlotNumber);
+                 }
