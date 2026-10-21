@@ -26,6 +26,12 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan DepartureSafetyResultWait { get; set; } = TimeSpan.FromMilliseconds(1500);
 
     /// <summary>
+    /// How far ahead of this server's clock the vehicle may stamp the <c>observedAt</c> of its pre-departure safety
+    /// answer (control-server#826).
+    /// </summary>
+    public TimeSpan PeerClockSkewTolerance { get; set; } = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
     /// How long a vehicle stays at the pickup after its load commits before departure safety is
     /// asked for (ADR-cross-0055's StationDepartureWaitTimeout). This is the window REQ-0237 keeps for
     /// correcting an ordinary mis-placement: a correction may start only inside it, holds the vehicle

@@ -1001,7 +1001,8 @@ internal static class JourneyRuntimeWorkerTestKit
             string messageType,
             object payload,
             string? correlationId = null,
-            long sessionGeneration = 1)
+            long sessionGeneration = 1,
+            DateTimeOffset? receivedAt = null)
         {
             JourneyRuntimeRow runtime = await RuntimeAsync();
             string json = JsonSerializer.Serialize(new
@@ -1025,7 +1026,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 RequestJson = json,
                 ContentHash = new string('a', 64),
                 FirstResponseJson = "{}",
-                ReceivedAt = Now
+                ReceivedAt = receivedAt ?? Now
             });
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
