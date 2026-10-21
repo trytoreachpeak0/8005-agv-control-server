@@ -1,11 +1,11 @@
 {
   "minimumPostTaskBatteryMarginPercent": 20,
   "mandatoryChargeEntryThresholdPercent": 40,
-  "chargingCompletionThresholdPercent": 80,
+  "chargingCompletionThresholdPercent": 95,
   "estimatedTaskConsumptionPercent": 10,
   "progressStabilizationSeconds": 180,
   "progressObservationWindowSeconds": 600,
   "progressMinimumIncreasePercent": 3,
   "vehicleScope": [],
-  "changeNote": "10-18 用户选定：强制充电线 30→40，其余不变。依据 agv03 10-18 02:12 电量 30% 卡线接单，三车近期约 25% 掉电。80 > 40 >= 20（REQ-0281）。"
+  "changeNote": "用户 2026-10-21 定：充满线 80→95，其余不变（强制线 40、余量 20、单趟耗电 10、无进展参数 180/600/3）。95 > 40 >= 20（REQ-0281）。此前 10-18 用户选定强制充电线 30→40。"
 }
