@@ -1,0 +1,5 @@
+# control-server#844 mutation: only cutover-production-s3.runtime-on put back to false on df094acf7, 2026-10-22 02:14:53 +0800
+    24 passed, 0 failed
+  FAIL  cutover production stages: each stage definition turns the vehicle fault recovery entry on (the section is exactly { enabled: true }), is accepted with -ProductionCutover, and its overlay writes VehicleFaultRecovery:enabled and RecoveryGrant:required true (control-server#844)
+        wrong: instance-factory01-v2.cutover-production-s3.runtime-on.json
+1359 passed, 1 failed

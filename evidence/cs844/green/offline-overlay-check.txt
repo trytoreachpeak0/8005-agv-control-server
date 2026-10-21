@@ -1,0 +1,20 @@
+# control-server#844 offline check (no ssh, no deploy): Read-ParallelInstanceDefinition, Test-ParallelInstanceDefinition -ProductionCutover, New-ParallelInstanceConfigurationOverlay -- the module functions 19-deploy and the installer call -- on df094acf7, 2026-10-22 02:15:07 +0800
+# script:
+#   #Requires -Version 7
+#   param([string] $Root)
+#   Import-Module (Join-Path $Root 'scripts/parallel/ParallelInstance.psm1') -Force
+#   foreach ($name in 'cutover-production-s1', 'cutover-production-s1.runtime-on', 'cutover-production-s2.runtime-on', 'cutover-production-s3.runtime-on') {
+#       $path = Join-Path $Root "scripts/parallel/instance-factory01-v2.$name.json"
+#       $d = Read-ParallelInstanceDefinition -Path $path
+#       $refusals = @(Test-ParallelInstanceDefinition -Definition $d -ProductionCutover)
+#       $o = New-ParallelInstanceConfigurationOverlay -Definition (Read-ParallelInstanceDefinition -Path $path)
+#       '{0}: refusals={1} VehicleFaultRecovery={2} RecoveryGrant={3} FieldOperatorRoles.onboardClearanceEntryDeclared={4} JourneyRuntime.stagingDepartureRules={5} RecoveryGrantRequired={6}' -f $name, $refusals.Count,
+#           ($o['VehicleFaultRecovery'] | ConvertTo-Json -Compress), ($o['RecoveryGrant'] | ConvertTo-Json -Compress),
+#           $o['FieldOperatorRoles']['onboardClearanceEntryDeclared'], ($o['JourneyRuntime']['stagingDepartureRules'] | ConvertTo-Json -Compress),
+#           (Test-ParallelRecoveryGrantRequired -Definition $d)
+#       $refusals | ForEach-Object { "  REFUSAL $_" }
+#   }
+cutover-production-s1: refusals=0 VehicleFaultRecovery={"enabled":true,"credentialEnvironmentVariable":"CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL"} RecoveryGrant={"required":true} FieldOperatorRoles.onboardClearanceEntryDeclared=False JourneyRuntime.stagingDepartureRules={"enabled":true} RecoveryGrantRequired=True
+cutover-production-s1.runtime-on: refusals=0 VehicleFaultRecovery={"enabled":true,"credentialEnvironmentVariable":"CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL"} RecoveryGrant={"required":true} FieldOperatorRoles.onboardClearanceEntryDeclared=False JourneyRuntime.stagingDepartureRules={"enabled":true} RecoveryGrantRequired=True
+cutover-production-s2.runtime-on: refusals=0 VehicleFaultRecovery={"enabled":true,"credentialEnvironmentVariable":"CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL"} RecoveryGrant={"required":true} FieldOperatorRoles.onboardClearanceEntryDeclared=False JourneyRuntime.stagingDepartureRules={"enabled":true} RecoveryGrantRequired=True
+cutover-production-s3.runtime-on: refusals=0 VehicleFaultRecovery={"enabled":true,"credentialEnvironmentVariable":"CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL"} RecoveryGrant={"required":true} FieldOperatorRoles.onboardClearanceEntryDeclared=False JourneyRuntime.stagingDepartureRules={"enabled":true} RecoveryGrantRequired=True
