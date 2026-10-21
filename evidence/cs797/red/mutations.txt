@@ -67,3 +67,16 @@ Failed ControlServer.Tests.RecoveryGrantTests.AWrongCodeIsRefusedWithTheCurrentP
   Error Message:   Error Message: Failed!  - Failed:     2, Passed:    56, Skipped:     0, Total:    58, Duration: 14 s - ControlServer.Tests.dll (net8.0)
 Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "shared", accepted: False)
 Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "own", accepted: True)
+
+# after 6f8f2c8d6 (shared proof accepted while set, for the 18 fallback): M8 again on the new rule, on 6f8f2c8d6
+
+# after 6f8f2c8d6 (shared proof accepted while set, for the 18 fallback): M8 again on the new rule, on 6f8f2c8d6
+
+## M8b own standing proof ignored (only the shared one answers) (src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+  Error Message:   Error Message: Failed!  - Failed:     2, Passed:     3, Skipped:     0, Total:     5, Duration: 2 s - ControlServer.Tests.dll (net8.0)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "own", windowOpen: True, accepted: True)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "own", windowOpen: False, accepted: True)
+
+## M8c any listed vehicle's proof accepted (src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+  Error Message: Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 2 s - ControlServer.Tests.dll (net8.0)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "other-vehicle", windowOpen: True, accepted: False)
