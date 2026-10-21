@@ -70,6 +70,8 @@ public sealed class Batch7StarvationEscalationTests
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         await fixture.ImportStarvationThresholdsAsync((Zone, 60));
+        // control-server#827：这条需求等了一天，远超目录时间窗（REQ-0366）的默认 30 分钟；这里测的是防饥饿，不是时间窗，放宽它。
+        fixture.Options.CatalogAgeWindow = TimeSpan.FromDays(2);
         // N22-1 在默认分区归属表里，默认地图上没有它的站点。
         fixture.Catalog.Set(fixture.Demand(Waiting, "SUBLOT-WAITING", JourneyRuntimeWorkerTestKit.Now.AddDays(-1), "N22-1"));
         fixture.BoxCounts.Set("SUBLOT-WAITING", 4);
@@ -220,6 +222,8 @@ public sealed class Batch7StarvationEscalationTests
         {
             await fixture.ImportStarvationThresholdsAsync((Zone, null));
         }
+        // control-server#827：这条需求等了一天，远超目录时间窗（REQ-0366）的默认 30 分钟；这里测的是防饥饿，不是时间窗，放宽它。
+        fixture.Options.CatalogAgeWindow = TimeSpan.FromDays(2);
         fixture.Catalog.Set(WaitingDemand(fixture, minutesAgo: 24 * 60));
 
         for (int round = 0; round < 3; round++)

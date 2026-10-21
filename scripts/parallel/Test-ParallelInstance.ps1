@@ -5204,6 +5204,29 @@ Invoke-SourceCase 'station timeout redispatch limit: the overlay writes the defi
     $overlay = New-ParallelInstanceConfigurationOverlay -Definition $d
     @{ Ok = ($overlay['JourneyRuntime']['stationTimeoutRedispatchLimit'] -eq 0); Detail = "written: $($overlay['JourneyRuntime']['stationTimeoutRedispatchLimit'])" }
 }
+# control-server#827: the catalog age window (REQ-0366) is optional; written, it is a positive hh:mm:ss.
+foreach ($case in @(
+        @{ Value = '00:30:00'; Ok = $true }, @{ Value = '02:00:00'; Ok = $true }, @{ Value = '00:00:00'; Ok = $false },
+        @{ Value = '30'; Ok = $false }, @{ Value = 1800; Ok = $false }, @{ Value = '-00:30:00'; Ok = $false })) {
+    Invoke-SourceCase "catalog age window: $($case.Value) ($($case.Value.GetType().Name)) is $(if ($case.Ok) { 'accepted' } else { 'refused' })" {
+        $d = Copy-Definition $baseline
+        $d['journeyRuntime']['catalogAgeWindow'] = $case.Value
+        $f = @(Test-ParallelInstanceDefinition -Definition $d)
+        $refused = @($f | Where-Object { $_.Contains('catalogAgeWindow must be a positive string hh:mm:ss') }).Count
+        @{ Ok = ($case.Ok ? ($f.Count -eq 0) : ($f.Count -eq 1 -and $refused -eq 1)); Detail = "failures: $($f -join ' | ')" }
+    }.GetNewClosure()
+}
+Invoke-SourceCase 'catalog age window: the overlay writes 00:30:00 when the definition leaves it out (control-server#827)' {
+    $overlay = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $baseline)
+    $written = $overlay['JourneyRuntime']['catalogAgeWindow']
+    @{ Ok = ($written -ceq '00:30:00'); Detail = "written: $written" }
+}
+Invoke-SourceCase 'catalog age window: the overlay writes the definition''s value' {
+    $d = Copy-Definition $baseline
+    $d['journeyRuntime']['catalogAgeWindow'] = '01:00:00'
+    $overlay = New-ParallelInstanceConfigurationOverlay -Definition $d
+    @{ Ok = ($overlay['JourneyRuntime']['catalogAgeWindow'] -ceq '01:00:00'); Detail = "written: $($overlay['JourneyRuntime']['catalogAgeWindow'])" }
+}
 Invoke-SourceCase 'clearance switch: a case twin (ClearanceToWaitingPointEnabled) is refused' {
     $d = Copy-Definition $baseline
     $d['journeyRuntime']['ClearanceToWaitingPointEnabled'] = $true

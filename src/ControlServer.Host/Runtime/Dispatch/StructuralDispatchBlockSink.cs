@@ -201,6 +201,14 @@ public sealed class StructuralDispatchBlockSink(
             // The AREA is out of scope by configuration: nothing about this demand is alarmed, whatever else holds.
             return DemandJudgement.Silent;
         }
+        // REQ-0366 (control-server#827): past the catalog age window, or with no first-read time, the demand is not dispatched by
+        // the user's decision. Nothing is raised, and a block raised while it was inside the window is cleared -- a structural block
+        // tells the floor to carry the demand by hand, and REQ-0366 hangs no manual-carry alarm on these. Unlike a silent code the
+        // demand stays on the backlog card; only the alarm side is the same.
+        if (verdicts.Any(verdict => DispatchReasonCodes.IsCatalogAgeWindowRefusal(verdict.ReasonCode)))
+        {
+            return DemandJudgement.Silent;
+        }
 
         Dictionary<string, object> holding = new(StringComparer.Ordinal);
         foreach (IGrouping<string, RoundVerdict> code in verdicts

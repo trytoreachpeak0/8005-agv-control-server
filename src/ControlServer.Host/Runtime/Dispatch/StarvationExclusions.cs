@@ -32,6 +32,30 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// </remarks>
 public static class StarvationExclusions
 {
+    /// <summary>
+    /// 本轮目录里不进超时层的需求 id：下面那一份，加上目录时间窗挡下的（REQ-0366，control-server#827）。
+    /// </summary>
+    /// <remarks>
+    /// 时间窗挡下的是用户定的有意不派：条文写明不升级防饥饿告警。按 <paramref name="round"/> 的时刻与时间窗判，与开轮时的判据同一个答案；
+    /// 轮中受理前重判才超窗的那一条，本轮按开轮时刻仍算窗内，下一轮起排除。派车排序与轮末告警都经这里，所以两边对「排不排除」一致。
+    /// </remarks>
+    public static async Task<HashSet<string>> ReadAsync(
+        ControlServerDbContext dbContext,
+        DispatchRoundFacts round,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(round);
+        HashSet<string> excluded = await ReadAsync(dbContext, round.Catalog.Items, cancellationToken).ConfigureAwait(false);
+        foreach (AcceptedDemandSnapshot demand in round.Catalog.Items)
+        {
+            if (CatalogAgeWindow.Refusal(round, demand, round.Now) is not null)
+            {
+                excluded.Add(demand.DemandId);
+            }
+        }
+        return excluded;
+    }
+
     /// <summary><paramref name="catalog"/> 里此刻不进超时层的需求 id，加上全部未解除结构性阻断的需求 id。</summary>
     public static async Task<HashSet<string>> ReadAsync(
         ControlServerDbContext dbContext,

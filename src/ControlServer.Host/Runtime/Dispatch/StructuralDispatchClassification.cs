@@ -89,6 +89,7 @@ public static class StructuralDispatchClassification
     private const int VehicleTaskType = 25;
     private const int RequiredMesFacts = 30;
     private const int AreaScope = 40;
+    private const int CatalogAgeWindowAdmission = 45;
     private const int AreaEqpUnique = 50;
     private const int CatalogAvailability = 55;
     private const int StationResolution = 60;
@@ -193,6 +194,16 @@ public static class StructuralDispatchClassification
         new(DispatchReasonCodes.OutOfScopeArea, DispatchReasonClass.Silent, AreaScope,
             "REQ-0191: an AREA the assignment table leaves unmapped is not executed here, by configuration. " +
             "Silent (DispatchReasonCodes.IsSilent): never structural, never alarmed."),
+
+        // ---- CatalogAgeWindowCriterion (45) -------------------------------------------------------------
+        Backlog(DispatchReasonCodes.DemandOlderThanCatalogWindow, CatalogAgeWindowAdmission,
+            "control-server#827, REQ-0366: MesIngest first read the unaccepted demand longer ago than the catalog age window. " +
+            "The user's decision not to dispatch it, not a fault: listed on the backlog card, never a structural block, never " +
+            "a starvation escalation or manual-carry alarm (the structural summary treats it as silent and clears a block " +
+            "raised while it was inside the window). Also written by intake when the re-read finds the window passed."),
+        Backlog(DispatchReasonCodes.DemandCatalogCreatedAtMissing, CatalogAgeWindowAdmission,
+            "control-server#827, REQ-0366: the catalog item carries no first-read time, so its age cannot be told; refused " +
+            "rather than guessed, and otherwise treated like DEMAND_OLDER_THAN_CATALOG_WINDOW."),
 
         // ---- AreaEqpUniqueCriterion (50) ----------------------------------------------------------------
         Backlog("AREA_EQP_NOT_UNIQUE", AreaEqpUnique,

@@ -54,9 +54,6 @@ public static class DispatchAdmissionCriteria
             // 判据就会在受理存储层撞唯一索引，一个漏传它们的调用方就是一个带着那个隐患的调用方。
             new TransportDemandKeySuppressedCriterion(suppressions),
             new TransportDemandKeyAlreadyAcceptedCriterion(dbContext),
-            // REQ-0366（CP-0020，control-server#827）：目录时间窗。必填：它挡的是需求本身，与车无关，所以排在逐车判据之前，
-            // 每辆车对超窗的需求给出同一个原因码，看板积压行上留下的就是它，而不是哪辆车此刻在充电。
-            new CatalogAgeWindowCriterion(),
             // Required rather than optional, unlike the three appended below: a safety block a
             // caller may leave out is a safety block that will be left out.
             new VehicleFaultBlockCriterion(faultStore, dbContext),
@@ -86,6 +83,9 @@ public static class DispatchAdmissionCriteria
             new SublotTaskTypeConflictCriterion(),
             new AreaAssignmentLookupCriterion(),
             new AreaScopeCriterion(),
+            // REQ-0366（CP-0020，control-server#827）：目录时间窗，序号 45。必填：它是用户定的派车范围，一个可以漏传的调用方就会把
+            // 超窗的需求派出去。排在范围类判据（任务类型 20、AREA 40）之后、站点解析（60）之前，理由见判据本身。
+            new CatalogAgeWindowCriterion(),
             new AreaEqpUniqueCriterion(),
             new StationResolutionCriterion(stationResolver, options),
             new DispatchZoneVehicleCriterion(),

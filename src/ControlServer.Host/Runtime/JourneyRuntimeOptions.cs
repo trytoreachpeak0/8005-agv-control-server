@@ -418,6 +418,7 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             failures.Add("SameStationAppendCorrectionGrace must not be negative.");
         }
         if (options.CargoHoldingTimeout <= TimeSpan.Zero) failures.Add("CargoHoldingTimeout must be positive.");
+        if (options.CatalogAgeWindow <= TimeSpan.Zero) failures.Add("CatalogAgeWindow must be positive.");
         if (options.StationTimeoutRedispatchLimit < 0) failures.Add("StationTimeoutRedispatchLimit must not be negative.");
         if (options.MaximumJourneyStops < Dispatch.EnRouteAppendPlanner.MaximumLegs)
         {

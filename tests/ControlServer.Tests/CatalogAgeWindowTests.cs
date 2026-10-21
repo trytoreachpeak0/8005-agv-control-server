@@ -118,6 +118,10 @@ public sealed class CatalogAgeWindowTests
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
 
         await fixture.Engine.ExecuteOnceAsync(Token);
+        // 决策事实变了的那一轮，积压行照既有规则记一次 DEMAND_DECISION_FACT_CHANGED（UpsertBacklog）；下一轮才写判据的结论。
+        Assert.Empty(await AcceptedAsync(fixture));
+        fixture.Clock.Advance(TimeSpan.FromMinutes(1));
+        await fixture.Engine.ExecuteOnceAsync(Token);
 
         Assert.NotEqual(before.LiveMesFields, updated.LiveMesFields);
         Assert.Equal(before.CreatedAt, updated.CreatedAt);

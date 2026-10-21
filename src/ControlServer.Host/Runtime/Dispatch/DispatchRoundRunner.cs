@@ -247,6 +247,8 @@ public sealed class DispatchRoundRunner(
             ClaimsIntakeRefused = claimsIntakeRefused,
             ZoneParameters = zoneParameters,
             RedispatchGenerations = redispatchGenerations,
+            // REQ-0366（control-server#827）：判据、受理前重判与轮末两个汇总都按这一个值判。
+            CatalogAgeWindow = runtimeOptions.CatalogAgeWindow,
         };
 
         // 「上次成功接单」从既有旅程记录推出（票面第 6 条带内层），一轮查一次。
@@ -287,7 +289,7 @@ public sealed class DispatchRoundRunner(
         // 连合格候选都不是的需求不进超时层（批次7-09 定、批次7-05 扩充）：结构性阻断、键被抑制、键已被别的 DemandId 受理。
         // 取开轮时的状态，本轮新立或解除的下一轮才算。集合只有 StarvationExclusions 一处定义，轮末的升级告警读的是同一份。
         HashSet<string> notCandidates = await StarvationExclusions
-            .ReadAsync(dbContext, round.Catalog.Items, cancellationToken).ConfigureAwait(false);
+            .ReadAsync(dbContext, round, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<DispatchTask> tasksInOrder = candidateRanker.Order(
             [.. round.Catalog.Items.Select(item => new DispatchTask(
                 item,
@@ -944,7 +946,6 @@ public sealed class DispatchRoundRunner(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        _ = round;
         string demandId = selected.Candidate.Snapshot.DemandId;
         long expectedSessionGeneration = selected.Facts.Onboard?.SessionGeneration
             ?? throw new InvalidOperationException("An eligible candidate requires current Onboard facts.");
@@ -1015,20 +1016,32 @@ public sealed class DispatchRoundRunner(
                 PublishedBatteryState = BatteryEligibility.Project(
                     selected.Facts.Vehicle, selected.Facts.BatteryPolicy, observationFresh: true),
             };
+        // REQ-0366（control-server#827）：受理前重读目录之后，按同一时间窗再判一次，超窗即放弃本次受理。放在最终准入门里，
+        // 因为它正好落在重读之后、写库之前，受理与追加两条路都过它；开轮时判过的窗，可能在这一轮里已经走过去了。
+        // 重读的决策事实比对含 createdAt，所以这里判的就是重读出来的那一条。被挡时受理报 FinalAdmissionRejected，
+        // 积压行写的是时间窗的码而不是「动态事实未就绪」。
+        string? windowRefusalAtIntake = null;
+        async Task<bool> FinalAdmissionAsync(CancellationToken token)
+        {
+            windowRefusalAtIntake = CatalogAgeWindow.Refusal(round, selected.Candidate.Snapshot, timeProvider.GetUtcNow());
+            return windowRefusalAtIntake is null &&
+                await FinalDynamicFactsReadyAsync(
+                    selected.Vehicle, underWay, expectedSessionGeneration,
+                    SlotRoom(selected.Candidate), selected.Facts, token).ConfigureAwait(false);
+        }
+
         // Taken before the call rather than after it: a candidate this vehicle is committing to must stop being
         // a candidate for the rest of the round whatever the intake then reports.
         acceptedDemandIds.Add(demandId);
         claimedHere.Add(demandId);
         JourneyIntakeResult result = underWay
-            ? await AppendToJourneyAsync(selected, plan, intakeAt, expectedSessionGeneration, cancellationToken)
+            ? await AppendToJourneyAsync(selected, plan, intakeAt, FinalAdmissionAsync, cancellationToken)
                 .ConfigureAwait(false)
             : await intakeCoordinator.AcceptAndDispatchToPickupAsync(
                     selected.Candidate.Snapshot,
                     JourneyPlanBuilder.PickupIntent(plan, demandId, intakeAt),
                     plan,
-                    token => FinalDynamicFactsReadyAsync(
-                        selected.Vehicle, underWay, expectedSessionGeneration,
-                        SlotRoom(selected.Candidate), selected.Facts, token),
+                    FinalAdmissionAsync,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -1047,7 +1060,7 @@ public sealed class DispatchRoundRunner(
                 {
                     DemandIntakeOutcome.CandidateGone => "FINAL_CATALOG_CANDIDATE_GONE",
                     DemandIntakeOutcome.CandidateChanged => "FINAL_CATALOG_DECISION_FACT_CHANGED",
-                    DemandIntakeOutcome.FinalAdmissionRejected => "FINAL_DYNAMIC_FACTS_NOT_READY",
+                    DemandIntakeOutcome.FinalAdmissionRejected => windowRefusalAtIntake ?? "FINAL_DYNAMIC_FACTS_NOT_READY",
                     DemandIntakeOutcome.JourneyPlanIncomplete => "FINAL_JOURNEY_PLAN_INCOMPLETE",
                     _ => throw new InvalidOperationException($"Unsupported intake outcome '{result.IntakeOutcome}'.")
                 },
@@ -1113,7 +1126,7 @@ public sealed class DispatchRoundRunner(
         EligibleVehicleOffer selected,
         JourneyExecutionPlan plan,
         DateTimeOffset intakeAt,
-        long expectedSessionGeneration,
+        Func<CancellationToken, Task<bool>> finalAdmission,
         CancellationToken cancellationToken)
     {
         EnRouteAppendPlacement placement = selected.Placement
@@ -1152,9 +1165,7 @@ public sealed class DispatchRoundRunner(
         DemandIntakeOutcome outcome = await intakeCoordinator.AppendToJourneyAsync(
                 selected.Candidate.Snapshot,
                 append,
-                token => FinalDynamicFactsReadyAsync(
-                    selected.Vehicle, underWay: true, expectedSessionGeneration,
-                    SlotRoom(selected.Candidate), selected.Facts, token),
+                finalAdmission,
                 cancellationToken)
             .ConfigureAwait(false);
         return new JourneyIntakeResult(outcome, null);
