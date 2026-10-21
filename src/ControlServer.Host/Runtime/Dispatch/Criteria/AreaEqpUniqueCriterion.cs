@@ -17,6 +17,14 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// on the floor whatever MES asks to be carried from it, so two EQPs under one AREA in any task type make the AREA
 /// ambiguous for all of them.
 /// </para>
+/// <para>
+/// <b>Except the rows the catalog age window refuses</b> (REQ-0366, control-server#827 review M2, the coordinator's ruling):
+/// an unaccepted demand MesIngest first read too long ago, or with no first-read time, is still in the catalog but is never
+/// dispatched, and counting its EQP would hold every fresh demand of the same AREA under <c>AREA_EQP_NOT_UNIQUE</c> until MES
+/// closes the old one. REQ-0187 asks for a monitor over the equipment master data; this criterion stands in for it with the
+/// catalog's rows, and only that stand-in is narrowed. The cost: an old row's EQP may be the real evidence that one AREA
+/// serves two machines, and it is no longer seen here. Accepted demands are not subject to the window, so their rows stay in.
+/// </para>
 /// </remarks>
 public sealed class AreaEqpUniqueCriterion : IDispatchAdmissionCriterion
 {
@@ -30,10 +38,12 @@ public sealed class AreaEqpUniqueCriterion : IDispatchAdmissionCriterion
         _ = cancellationToken;
 
         string area = evaluation.Candidate.LiveMesFields!.Area!;
-        string[] areaEqps = evaluation.Round.Catalog.Items
+        DispatchRoundFacts round = evaluation.Round;
+        string[] areaEqps = round.Catalog.Items
             .Where(item =>
                 string.Equals(item.LiveMesFields?.Area, area, StringComparison.Ordinal) &&
-                !string.IsNullOrWhiteSpace(item.LiveMesFields?.Eqp))
+                !string.IsNullOrWhiteSpace(item.LiveMesFields?.Eqp) &&
+                (round.AcceptedDemandIds.Contains(item.DemandId) || CatalogAgeWindow.Refusal(round, item, round.Now) is null))
             .Select(item => item.LiveMesFields!.Eqp!)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
