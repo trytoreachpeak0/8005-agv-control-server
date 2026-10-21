@@ -51,20 +51,51 @@ public sealed class StagingDepartureRuleTests
         string row, bool everySideFull, string[] waiting, bool expected)
     {
         Assert.True(
-            StagingDepartureRule.Decide(new StagingDepartureRule.Facts(false, everySideFull, waiting)) == expected,
+            StagingDepartureRule.Decide(new StagingDepartureRule.Facts(everySideFull, waiting)) == expected,
             row);
     }
 
-    /// <summary>验收 8：派车轮这一轮没有这辆车的结论、或车的仓位读不到时说不出来；判过该走的照旧该走（锁住，不翻回）。</summary>
+    /// <summary>
+    /// 验收 8：派车轮这一轮没有这辆车的结论、或车的仓位读不到时说不出来。判过该走不再锁住（CP-0018，control-server#800）：规则只看这一轮的事实，
+    /// 保持点由调用方与 <see cref="LoadingPhaseMachine"/> 管。
+    /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
-    public void WithoutARoundOrSlotFactsItCannotSayAndOnceDueItStaysDue()
+    public void WithoutARoundOrSlotFactsItCannotSayAndItOnlyReadsThisRound()
     {
-        Assert.Null(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(false, false, null)));
-        Assert.Null(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(false, true, null)));
-        Assert.Null(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(false, null, [OwnCargo])));
-        Assert.True(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(true, null, null)));
-        Assert.True(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(true, false, [Eligible])));
+        Assert.Null(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(false, null)));
+        Assert.Null(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(true, null)));
+        Assert.Null(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(null, [OwnCargo])));
+        Assert.False(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(false, [Eligible])));
+    }
+
+    /// <summary>
+    /// control-server#800（CP-0018 第五节第二张表第 1 项）：因本车占位被拒的候选，按它要的那一侧只扣已装货物之后的空仓重看——放得下它的篮数，挡住它的只是预留，
+    /// 换成非容量的码、不计入；放不下（已装货物挡住）、或篮数与侧说不出来的，照旧是容量。别的码不动。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public void ACandidateRefusedOnlyForOwnReservationsIsNotCapacity()
+    {
+        DispatchCandidateVerdict[] verdicts =
+        [
+            StagingDepartureFullOrNoFitTests.Verdict("A", TransportTaskTypes.StagingToWire, 305, "REAR", OwnCargo, baskets: 2),
+            StagingDepartureFullOrNoFitTests.Verdict("B", TransportTaskTypes.StagingToWire, 305, "FRONT", OwnCargo, baskets: 1),
+            StagingDepartureFullOrNoFitTests.Verdict("C", TransportTaskTypes.StagingToWire, 305, "REAR", OwnCargo, baskets: 3),
+            StagingDepartureFullOrNoFitTests.Verdict("D", TransportTaskTypes.StagingToWire, 305, "REAR", OwnCargo, baskets: 0),
+            StagingDepartureFullOrNoFitTests.Verdict("E", TransportTaskTypes.StagingToWire, 305, "REAR", ShortOfFreeSlots, baskets: 1),
+        ];
+        Dictionary<string, int> freeOfLoadedCargo = new(StringComparer.Ordinal) { ["FRONT"] = 0, ["REAR"] = 2 };
+
+        IReadOnlyList<string> waiting = StagingDepartureRule.WaitingAt(verdicts, 305, freeOfLoadedCargo);
+
+        Assert.Equal(
+            [StagingDepartureRule.RefusedOnlyForOwnReservations, OwnCargo, OwnCargo, OwnCargo, ShortOfFreeSlots],
+            waiting);
+        Assert.False(StagingDepartureRule.IsCapacityRefusal(StagingDepartureRule.RefusedOnlyForOwnReservations));
+        Assert.Equal(["FRONT", "REAR"], StagingDepartureRule.GroupsBlockedByLoadedCargo(verdicts, freeOfLoadedCargo).Order());
+        Assert.False(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(
+            false, StagingDepartureRule.WaitingAt(verdicts[..1], 305, freeOfLoadedCargo))));
     }
 
     /// <summary>容量只有三个码；票面列的四样里 9 段与 8 条共用一个。</summary>
