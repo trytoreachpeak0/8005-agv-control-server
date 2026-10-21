@@ -345,6 +345,49 @@ public sealed class OnboardJourneyPublisher(
         return store.StageOutboundEnvelopeAsync(messageId, "CurrentStopDepartureResult", wire, createdAt, cancellationToken);
     }
 
+    /// <summary>
+    /// <c>RemainingBasketsSkipResult</c>（协议 6.0.0 候选，CP-0021，control-server#830）只暂存进调用方那一次还没保存的改动，与出发答复同一个做法：
+    /// 判定与这条答复同一次提交，提交之后再发。<c>correlationId</c> 按 manifest 为 null，答的是哪一次按键由 <c>skipRequestId</c> 说。
+    /// 已有这一行返回 false，不覆盖：存下的就是原样重放的那一份。
+    /// </summary>
+    public static Task<bool> StageRemainingBasketsSkipResultAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        string skipRequestId,
+        string demandId,
+        string slotOperationAttemptId,
+        RemainingBasketsSkipRule.Decision decision,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(decision);
+        ValidateUuid(messageId, nameof(messageId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+
+        string wire = SerializeWire(
+            RemainingBasketsSkipRecords.ResultType,
+            messageId,
+            correlationId: null,
+            agvId,
+            sessionGeneration,
+            createdAt,
+            new
+            {
+                skipRequestId,
+                demandId,
+                slotOperationAttemptId,
+                outcome = decision.Outcome,
+                loadedSlots = decision.LoadedSlots,
+                problem = decision.Problem
+            });
+        return store.StageOutboundEnvelopeAsync(
+            messageId, RemainingBasketsSkipRecords.ResultType, wire, createdAt, cancellationToken);
+    }
+
     public Task PublishSlotOperationCommandAsync(
         string messageId,
         string agvId,

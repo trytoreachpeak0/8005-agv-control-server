@@ -274,8 +274,8 @@ $authorizationText = if ($null -ne $authorization) {
 if ($cancellationResult -is [string]) {
     $assertions.Add(
         'G3-02-22',
-        '取消经服务端显式授权，范围就是这笔装载的全部授权仓位',
-        $false, "LoadCancellationAuthorization AUTHORIZED $(Format-Slots $targetSlots)", $authorizationText)
+        '取消经服务端显式授权，仓位范围为空（协议 6.0.0 起取消不为清空而开门）',
+        $false, "LoadCancellationAuthorization AUTHORIZED $(Format-Slots @())", $authorizationText)
     Add-NotReached @('G3-02-23', 'G3-02-24', 'G3-02-25', 'G3-02-26', 'G3-02-27', 'G3-02-28') '取消没有执行（车载端弹出「取消装货失败」）'
     return
 }
@@ -287,12 +287,12 @@ $workflowState = Wait-L2Condition -Description 'the cancellation workflow settle
 
 $assertions.Add(
     'G3-02-22',
-    '取消经服务端显式授权：应答是 LoadCancellationAuthorization AUTHORIZED，指向这条需求、这笔装载，范围就是全部授权仓位（AUTHORIZE_CANCELLATION_EXPLICITLY）',
+    '取消经服务端显式授权：应答是 LoadCancellationAuthorization AUTHORIZED，指向这条需求、这笔装载，仓位范围为空——协议 6.0.0 起取消一律不为清空而开门，两种决定都只带空 slots（AUTHORIZE_CANCELLATION_EXPLICITLY、AUTHORIZE_WITH_AN_EMPTY_SLOT_SCOPE，control-server#830）',
     ($request.Response -eq 'LoadCancellationAuthorization' -and $null -ne $authorization -and
         [string]$authorization.decision -eq 'AUTHORIZED' -and [string]$authorization.cancellationId -eq $cancellationId -and
         [string]$authorization.demandId -eq $demandId -and [string]$authorization.slotOperationAttemptId -eq $attemptId -and
-        (Format-Slots $authorization.slots) -eq (Format-Slots $targetSlots)),
-    "LoadCancellationAuthorization AUTHORIZED $(Format-Slots $targetSlots)",
+        @($authorization.slots).Count -eq 0),
+    "LoadCancellationAuthorization AUTHORIZED $(Format-Slots @())",
     $authorizationText)
 
 $requests = @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object { [string]$_.Payload.demandId -eq $demandId })

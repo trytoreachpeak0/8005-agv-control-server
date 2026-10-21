@@ -123,7 +123,7 @@ internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken);
         int loadedBaskets = stops.Demands
             .Where(item => item.Membership.Status == JourneyDemandStatuses.Loaded)
-            .Sum(item => item.Membership.ExpectedBasketCount);
+            .Sum(item => JourneyRuntimeEngine.BasketsOnBoard(item.Membership));
         int pendingDemands = stops.Demands.Count(item =>
             item.Membership.Status is JourneyDemandStatuses.PendingLoad or JourneyDemandStatuses.Loading);
 

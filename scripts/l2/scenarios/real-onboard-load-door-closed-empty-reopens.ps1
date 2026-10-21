@@ -192,11 +192,11 @@ $request = Wait-L2Condition -Description 'the server answered LoadCancellationSt
     -Until { param($v) $null -ne $v }
 $authorization = $request.ResponsePayload
 $assertions.Add(
-    'L2-DC-07', '出厂配置下按取消：车载端发出针对这笔装货的取消请求，服务端授权（AUTHORIZED），范围就是这个仓',
+    'L2-DC-07', '出厂配置下按取消：车载端发出针对这笔装货的取消请求，服务端授权（AUTHORIZED），仓位范围为空（协议 6.0.0 起取消不为清空而开门，control-server#830）',
     ([string]$request.Payload.slotOperationAttemptId -eq $attemptId -and $request.Response -eq 'LoadCancellationAuthorization' -and
         $null -ne $authorization -and [string]$authorization.decision -eq 'AUTHORIZED' -and
-        (@($authorization.slots | ForEach-Object { [int]$_ }) -join ',') -eq "$slotNo"),
-    "$attemptId / LoadCancellationAuthorization AUTHORIZED [$slotNo]",
+        @($authorization.slots).Count -eq 0),
+    "$attemptId / LoadCancellationAuthorization AUTHORIZED []",
     "$($request.Payload.slotOperationAttemptId) / $($request.Response) $(if ($authorization) { "$($authorization.decision) [$(@($authorization.slots) -join ',')]" })")
 
 $journal.Note("The operator shuts the empty slot $slotNo.")

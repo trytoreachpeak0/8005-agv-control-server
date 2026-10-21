@@ -2840,6 +2840,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         }
 
         int[] expectedSlots = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson) ?? [];
+        if (operation.OperationType == SlotOperationType.Load &&
+            result.OverallOutcome == RemainingBasketsSkipRecords.SkippedOutcome &&
+            await AuthorizedSkipSettlesAsync(result, expectedSlots, cancellationToken).ConfigureAwait(false)
+                is { } loadedSlots)
+        {
+            await CommitSkippedLoadAsync(operation, result, loadedSlots, cancellationToken).ConfigureAwait(false);
+            return OperationResultDisposition.Accepted;
+        }
         SlotBusinessState expectedState = operation.OperationType == SlotOperationType.Load
             ? SlotBusinessState.Occupied
             : SlotBusinessState.Empty;
@@ -2948,6 +2956,86 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         });
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return OperationResultDisposition.Accepted;
+    }
+
+    /// <summary>
+    /// The k slots a <c>COMPLETED_REMAINING_SKIPPED</c> load result settles on, or null when it settles nothing (REQ-0367,
+    /// CP-0021, control-server#830). Null sends the result down the ordinary path, where it is not <c>COMPLETED</c> and so
+    /// goes to recovery and blocks the journey (<c>CV-REMAINING-BASKETS-SKIP-UNAUTHORIZED-RESULT</c>).
+    /// </summary>
+    /// <remarks>
+    /// Three things must hold: this server authorized a skip for exactly this demand and attempt; the attempt had no
+    /// result before this one -- an authorization is spent once the attempt settles another way, a resumed attempt's
+    /// replacement result included (wire-notes: "never applies the authorization afterwards"); and the result is exactly
+    /// the authorization's shape (<see cref="RemainingBasketsSkipRule.SettlesAuthorization"/>). Read inside the inbox's
+    /// write transaction, like the rest of this method.
+    /// </remarks>
+    private async Task<int[]?> AuthorizedSkipSettlesAsync(
+        StationOperationResult result,
+        int[] targetSlots,
+        CancellationToken cancellationToken)
+    {
+        int[]? authorized = await RemainingBasketsSkipRecords.AuthorizedSlotsAsync(
+            dbContext, result.DemandId, result.SlotOperationAttemptId, cancellationToken).ConfigureAwait(false);
+        if (authorized is null)
+        {
+            return null;
+        }
+        bool earlierResult = await dbContext.OperationResults.AsNoTracking().AnyAsync(
+            row => row.SlotOperationAttemptId == result.SlotOperationAttemptId && row.ResultId != result.ResultId,
+            cancellationToken).ConfigureAwait(false);
+        return !earlierResult && RemainingBasketsSkipRule.SettlesAuthorization(result, targetSlots, authorized)
+            ? authorized
+            : null;
+    }
+
+    /// <summary>
+    /// Commits an authorized skip as a load of k baskets and releases the rest of its slots (REQ-0352, REQ-0367): the
+    /// operation and the demand's journey membership both name only the k loaded slots from here on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why the target slots are rewritten rather than a second column added.</b> Every reader of a committed load reads
+    /// its target slots as where the cargo is: the unload command (<c>JourneyRuntimeEngine.PublishUnloadCommandAsync</c>,
+    /// from the membership), the slot ledger that dispatch and the staging fullness check subtract
+    /// (<c>JourneyAwareSlotLedger</c>, <c>SlotRoomAtStaging</c>), the cargo evidence of an own-order rebuild, a load
+    /// correction's and a recovery session's slot scope. Rewriting the two columns in the result's own save makes every one
+    /// of them see k slots at once -- the remaining slots are free for another demand from that commit, which is the
+    /// immediate release REQ-0367 asks for -- where a new column would need each of them changed and would leave any
+    /// reader not changed reading N. The demand's expected basket count N is kept (the worklist still shows it, as the
+    /// wire-notes require), and the N slots commanded stay in the load command in the outbox and in the operation's
+    /// content hash.
+    /// </para>
+    /// <para>
+    /// Not a cancellation: the demand stays <c>Accepted</c>, nothing is suppressed and no manual transport alarm is raised;
+    /// the journey goes on as for any committed load, and the demand completes as a normal delivery once unloaded.
+    /// </para>
+    /// </remarks>
+    private async Task CommitSkippedLoadAsync(
+        StationOperationRow operation,
+        StationOperationResult result,
+        int[] loadedSlots,
+        CancellationToken cancellationToken)
+    {
+        string loadedJson = JsonSerializer.Serialize(loadedSlots);
+        operation.Status = StationOperationStatus.Committed;
+        operation.TargetSlotsJson = loadedJson;
+        operation.EvidenceJson = JsonSerializer.Serialize(result.SlotEvidence
+            .Where(item => loadedSlots.Contains(item.SlotNumber))
+            .OrderBy(item => item.SlotNumber));
+        operation.CommittedAt = result.ObservedAt;
+        JourneyDemandRow? membership = await dbContext.Set<JourneyDemandRow>()
+            .SingleOrDefaultAsync(
+                row => row.DemandId == result.DemandId &&
+                       row.LoadSlotOperationAttemptId == result.SlotOperationAttemptId &&
+                       row.RemovedAt == null,
+                cancellationToken).ConfigureAwait(false);
+        if (membership is not null)
+        {
+            membership.TargetSlotsJson = loadedJson;
+            membership.LoadedSlotsJson = loadedJson;
+        }
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

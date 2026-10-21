@@ -213,7 +213,7 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | journey | `correctionCreatesNoDuplicateCommit`（G3-02-12） | FP-IS-02 | `CV-LOAD-CORRECTION` finalState | 仍只有一笔装载、一份结果、一条命令 | |
 | journey | `correctionOnlyBeforeDepartureAndHoldsTheVehicle`（G3-02-13） | FP-IS-02 | `CV-LOAD-CORRECTION` 里没有对应的产品断言，依据是 REQ-0237 / ADR-cross-0054 | 修正时旅程在 AwaitingStationDeparture，收敛后等满离站期限才建单出发 | 疑点 30 |
 | journey | `onboardOffersLoadCancellationDuringLoad`（G3-02-21） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY`（前提） | 装载进行中 HMI 上出现可用的「取消装货」入口 | 疑点 31 |
-| journey | `cancellationAuthorizedExplicitly`（G3-02-22） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY`（`AUTHORIZE_CANCELLATION_EXPLICITLY`） | 应答为 AUTHORIZED，指向这笔装载，范围是全部授权仓 | |
+| journey | `cancellationAuthorizedExplicitly`（G3-02-22） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY`（`AUTHORIZE_CANCELLATION_EXPLICITLY`） | 应答为 AUTHORIZED，指向这笔装载，仓位范围为空（协议 6.0.0 起，control-server#830） | |
 | journey | `loadCancellationSequenceMatchesVector`（G3-02-23） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY` orderedExpectedMessages（`NEVER_CANCEL_UNILATERALLY`） | 四条消息各一次，车载端没有在授权之前报结果 | |
 | journey | `cancellationProvesEmptyWithoutUnlocking`（G3-02-24） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY` | 取消之后没有再开任何仓 | |
 | journey | `allSlotsProvenEmpty`（G3-02-25） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY`（`PROVE_ALL_SLOTS_EMPTY`） | ALL_EMPTY，每仓空、锁上，与模拟器一致 | |

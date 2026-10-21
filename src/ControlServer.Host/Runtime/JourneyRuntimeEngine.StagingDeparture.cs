@@ -662,11 +662,23 @@ public sealed partial class JourneyRuntimeEngine
             item.Demand.Status == DemandExecutionStatus.Accepted &&
             item.Membership.Status == JourneyDemandStatuses.PendingLoad);
 
-    /// <summary>车上的篮数：已装上与正在装的需求的期待篮数之和（审计用）。</summary>
+    /// <summary>
+    /// 车上的篮数：已装上的按它占着的仓数、正在装的按期待篮数，求和（审计用）。已装上的不按期待篮数：减篮之后它只占装进的那 k 个仓
+    /// （REQ-0367，control-server#830）。
+    /// </summary>
     private static int LoadedBaskets(JourneyStopCursor stops) =>
         stops.AllDemands
             .Where(item => item.Membership.Status is JourneyDemandStatuses.Loaded or JourneyDemandStatuses.Loading)
-            .Sum(item => item.Membership.ExpectedBasketCount);
+            .Sum(item => BasketsOnBoard(item.Membership));
+
+    /// <summary>
+    /// 一条已装或在装的需求在车上占几篮：已装上、分过仓的按仓数（减篮之后是 k），其余按期待篮数。
+    /// </summary>
+    internal static int BasketsOnBoard(JourneyDemandRow membership) =>
+        membership.Status == JourneyDemandStatuses.Loaded &&
+        (JsonSerializer.Deserialize<int[]>(membership.TargetSlotsJson) ?? []) is { Length: > 0 } slots
+            ? slots.Length
+            : membership.ExpectedBasketCount;
 
     /// <summary>
     /// 保存之后发：出发的空清单与业务状态快照，或收尾的三张快照。送不到时留在发件箱，由补发送出。业务状态快照只发
