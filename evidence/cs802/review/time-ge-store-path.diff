@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+index 66726c611..bfcefa207 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+@@ -218,7 +218,7 @@ public sealed class OnboardDispatchFactsReader(
+                 (result, operation) => new { result.ObservedAt, result.EvidenceJson })
+             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+         HashSet<int> unloaded = [];
+-        foreach (var result in results.Where(result => result.ObservedAt > baselineObservedAt))
++        foreach (var result in results.Where(result => result.ObservedAt >= baselineObservedAt))
+         {
+             foreach (SlotPhysicalEvidence evidence in
+                      JsonSerializer.Deserialize<SlotPhysicalEvidence[]>(result.EvidenceJson) ?? [])

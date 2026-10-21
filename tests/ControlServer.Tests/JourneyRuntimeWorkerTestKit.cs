@@ -1030,10 +1030,20 @@ internal static class JourneyRuntimeWorkerTestKit
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
+        /// <summary>
+        /// A safe result for <paramref name="operation"/>, applied the way the processor applies one.
+        /// </summary>
+        /// <param name="observedAt">
+        /// The vehicle's <c>observedAt</c> on the result; <see cref="Now"/> unless given. That default is exactly the
+        /// session baseline's <c>observedAt</c> in this fixture, and a slot occupied at the baseline joins it only on an unload
+        /// observed strictly after the baseline (control-server#802): an unload written with the default never brings such a
+        /// slot back. A test about that passes a later time.
+        /// </param>
         public async Task ApplySafeResultAsync(
             StationOperationRow operation,
             SlotOperationType type,
-            SlotBusinessState state)
+            SlotBusinessState state,
+            DateTimeOffset? observedAt = null)
         {
             int[] slots = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson) ?? [];
             string resultId = Guid.NewGuid().ToString("D");
@@ -1046,7 +1056,7 @@ internal static class JourneyRuntimeWorkerTestKit
                     "COMPLETED",
                     slots.Select(slot => new SlotPhysicalEvidence(slot, state, true, true)).ToArray(),
                     true,
-                    Now,
+                    observedAt ?? Now,
                     new string(type == SlotOperationType.Load ? 'b' : 'c', 64),
                     new string(type == SlotOperationType.Load ? 'd' : 'e', 64)),
                 Options.AgvId,

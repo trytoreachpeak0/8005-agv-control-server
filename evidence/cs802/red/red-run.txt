@@ -1,0 +1,52 @@
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:04.19]     ControlServer.Tests.UnloadedSlotAvailabilityTests.TheAgv02SessionOfOctober21GetsBackEverySlotItUnloaded [FAIL]
+  Failed ControlServer.Tests.UnloadedSlotAvailabilityTests.TheAgv02SessionOfOctober21GetsBackEverySlotItUnloaded [1 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "1,2,3,4,5,6,7,8"
+Actual:   "3,4,8"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.UnloadedSlotAvailabilityTests.TheAgv02SessionOfOctober21GetsBackEverySlotItUnloaded() in C:\work\8005-wt\cs802-8005-agv-control-server\tests\ControlServer.Tests\UnloadedSlotAvailabilityTests.cs:line 56
+   at ControlServer.Tests.UnloadedSlotAvailabilityTests.TheAgv02SessionOfOctober21GetsBackEverySlotItUnloaded() in C:\work\8005-wt\cs802-8005-agv-control-server\tests\ControlServer.Tests\UnloadedSlotAvailabilityTests.cs:line 58
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:08.40]     ControlServer.Tests.UnloadedSlotAvailabilityTests.ADemandRefusedForCapacityIsAcceptedOnceTheSameSessionUnloadsThoseSlots [FAIL]
+[xUnit.net 00:00:08.55]     ControlServer.Tests.UnloadedSlotAvailabilityTests.SlotsGotBackSurviveTheSessionBeingNotReadyOnTheServersOwnOrder [FAIL]
+  Failed ControlServer.Tests.UnloadedSlotAvailabilityTests.ADemandRefusedForCapacityIsAcceptedOnceTheSameSessionUnloadsThoseSlots [195 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ACCEPTED"
+Actual:   "SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.UnloadedSlotAvailabilityTests.ADemandRefusedForCapacityIsAcceptedOnceTheSameSessionUnloadsThoseSlots() in C:\work\8005-wt\cs802-8005-agv-control-server\tests\ControlServer.Tests\UnloadedSlotAvailabilityTests.cs:line 81
+   at ControlServer.Tests.UnloadedSlotAvailabilityTests.ADemandRefusedForCapacityIsAcceptedOnceTheSameSessionUnloadsThoseSlots() in C:\work\8005-wt\cs802-8005-agv-control-server\tests\ControlServer.Tests\UnloadedSlotAvailabilityTests.cs:line 81
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.UnloadedSlotAvailabilityTests.SlotsGotBackSurviveTheSessionBeingNotReadyOnTheServersOwnOrder [141 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "1,2,3,4,5,6,7,8"
+Actual:   "5,6,7,8"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.UnloadedSlotAvailabilityTests.SlotsGotBackSurviveTheSessionBeingNotReadyOnTheServersOwnOrder() in C:\work\8005-wt\cs802-8005-agv-control-server\tests\ControlServer.Tests\UnloadedSlotAvailabilityTests.cs:line 222
+   at ControlServer.Tests.UnloadedSlotAvailabilityTests.SlotsGotBackSurviveTheSessionBeingNotReadyOnTheServersOwnOrder() in C:\work\8005-wt\cs802-8005-agv-control-server\tests\ControlServer.Tests\UnloadedSlotAvailabilityTests.cs:line 224
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:10.64]     ControlServer.Tests.UnloadedSlotAvailabilityTests.ASlotGotBackAndLoadedAgainIsTakenOnceByTheLedger [FAIL]
+  Failed ControlServer.Tests.UnloadedSlotAvailabilityTests.ASlotGotBackAndLoadedAgainIsTakenOnceByTheLedger [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+            ↓ (pos 1)
+Expected: "[1,2]"
+Actual:   "[3,4]"
+            ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.UnloadedSlotAvailabilityTests.ASlotGotBackAndLoadedAgainIsTakenOnceByTheLedger() in C:\work\8005-wt\cs802-8005-agv-control-server\tests\ControlServer.Tests\UnloadedSlotAvailabilityTests.cs:line 174
+   at ControlServer.Tests.UnloadedSlotAvailabilityTests.ASlotGotBackAndLoadedAgainIsTakenOnceByTheLedger() in C:\work\8005-wt\cs802-8005-agv-control-server\tests\ControlServer.Tests\UnloadedSlotAvailabilityTests.cs:line 177
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     4, Passed:    14, Skipped:     0, Total:    18, Duration: 7 s - ControlServer.Tests.dll (net8.0)

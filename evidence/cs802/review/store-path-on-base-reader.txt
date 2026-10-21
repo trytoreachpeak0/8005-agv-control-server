@@ -1,0 +1,16 @@
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:12.01]     ControlServer.Tests.UnloadedSlotAvailabilityTests.AnUnloadAppliedByTheStoreBringsBackSlotsLoadedBeforeAReconnect(observedAfterTheBaseline: True) [FAIL]
+  Failed ControlServer.Tests.UnloadedSlotAvailabilityTests.AnUnloadAppliedByTheStoreBringsBackSlotsLoadedBeforeAReconnect(observedAfterTheBaseline: True) [6 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "1,2,3,4,5,6,7,8"
+Actual:   "3,4,5,6,7,8"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.UnloadedSlotAvailabilityTests.AnUnloadAppliedByTheStoreBringsBackSlotsLoadedBeforeAReconnect(Boolean observedAfterTheBaseline) in C:\work\8005-wt\cs802-8005-agv-control-server\tests\ControlServer.Tests\UnloadedSlotAvailabilityTests.cs:line 264
+   at ControlServer.Tests.UnloadedSlotAvailabilityTests.AnUnloadAppliedByTheStoreBringsBackSlotsLoadedBeforeAReconnect(Boolean observedAfterTheBaseline) in C:\work\8005-wt\cs802-8005-agv-control-server\tests\ControlServer.Tests\UnloadedSlotAvailabilityTests.cs:line 264
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, Duration: 9 s - ControlServer.Tests.dll (net8.0)

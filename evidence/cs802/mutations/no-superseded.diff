@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+index 66726c611..eb500f52c 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+@@ -208,7 +208,7 @@ public sealed class OnboardDispatchFactsReader(
+         var results = await dbContext.OperationResults.AsNoTracking()
+             .Where(result => result.AgvId == agvId &&
+                              !result.HistoricalOnly &&
+-                             result.SupersededByResultId == null)
++                             true)
+             .Join(
+                 dbContext.StationOperations.AsNoTracking()
+                     .Where(operation => operation.OperationType == SlotOperationType.Unload &&
