@@ -226,6 +226,12 @@ public sealed class VehicleFaultCoordinator(
     /// <summary>The resumption's refusal when the order ended some other way after the continue: cancelled, failed.</summary>
     public const string ContinueNotConfirmed = "RESUME_CONTINUE_NOT_CONFIRMED";
 
+    /// <summary>
+    /// The resumption's refusal while an emergency stop of this server's is open: before the continue goes out, or once it
+    /// has been confirmed and before the fault is cleared (control-server#791 review H1).
+    /// </summary>
+    public const string ResumeEmergencyStopOpen = "RESUME_EMERGENCY_STOP_OPEN";
+
     private static readonly Action<ILogger, string, string, string, long, Exception?> LogFaultLevel =
         LoggerMessage.Define<string, string, string, long>(
             LogLevel.Warning,
@@ -415,6 +421,9 @@ public sealed class VehicleFaultCoordinator(
             .ConfigureAwait(false);
         RiotOrderObservation observation = await movement
             .ReconcileByUpperIdAsync(resumption.Order.UpperId, cancellationToken).ConfigureAwait(false);
+        // An order that reads HELD again was paused after that continue (in RIoT, or by this server's own hold): the earlier
+        // confirmation resumed nothing that still runs, and this request continues it again (control-server#791 review H2).
+        continued = continued && observation.OrderState != RiotOrderState.Paused;
 
         List<string> refusals = ResumeRefusals(subject, resumption, fault, cargo, observation, continued);
         // The last read before the continue goes out, and it is the emergency state (control-server#335). The recovery
@@ -443,7 +452,7 @@ public sealed class VehicleFaultCoordinator(
             await emergencyStop.SettleReleaseTakenEffectAsync(subject, emergency, cancellationToken).ConfigureAwait(false);
             if (await emergencyStop.HasOpenEpisodeAsync(subject, cancellationToken).ConfigureAwait(false))
             {
-                refusals.Add("RESUME_EMERGENCY_STOP_OPEN");
+                refusals.Add(ResumeEmergencyStopOpen);
             }
         }
 
@@ -462,6 +471,18 @@ public sealed class VehicleFaultCoordinator(
             // resume it.
             Alarm(OrderNotProtectedAlarm, subject.AgvId, [ContinueNotConfirmed]);
             return new VehicleFaultResumeDecision(false, outcome, [ContinueNotConfirmed]);
+        }
+
+        if (outcome == RiotOrderCommandOutcome.Confirmed && !continued &&
+            await emergencyStop.HasOpenEpisodeAsync(subject, cancellationToken).ConfigureAwait(false))
+        {
+            // The emergency state was read before the continue went out, and the read-back took up to the budget after it,
+            // with the gate released: an engine round in between can stop the vehicle again -- with a door fault standing it
+            // escalates as soon as the resumed vehicle moves. Clearing the fault now would end the supervision that stop needs
+            // and leave nothing that could lift it (control-server#791 review H1). Kept; once the stop is released, asking
+            // again settles the continue, or continues the order again if it was paused.
+            Alarm(OrderNotProtectedAlarm, subject.AgvId, [ResumeEmergencyStopOpen]);
+            return new VehicleFaultResumeDecision(false, outcome, [ResumeEmergencyStopOpen]);
         }
 
         if (outcome != RiotOrderCommandOutcome.Confirmed)
