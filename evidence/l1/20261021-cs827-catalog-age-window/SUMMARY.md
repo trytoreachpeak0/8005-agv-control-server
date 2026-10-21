@@ -38,3 +38,9 @@
 | M12 | 去掉 24 小时上限（审查 L4） | `TheWindowDefaultsToThirtyMinutesMustBePositiveAtMostADayAndIsShippedInAppSettings`（`"30"` 绑定成 30 天被放过） |
 
 M11 的第一版用例一下拨钟 25 分钟，变异下也红，但红在原因码上：车的动态事实过期，最终门本来就拒，追加没有发生。改成开轮时差半秒满 30 分钟、重读时只拨 2 秒之后，变异下追加真的发生，见 `mutations/M11-append-skips-window.txt`。
+
+## 审查 M2（调度定：超窗的未受理行不参加 AREA-EQP 唯一性）
+
+- 红：`red/02-m2-tests-before-the-fix.txt`，改之前 `AStaleRowDoesNotMakeAFreshDemandsAreaAmbiguous` 红（新需求被 40 分钟前的旧行挡住，没派出）；守护用例 `AnAcceptedRowPastTheWindowStillTakesPartInTheAreaCheck` 改前改后都绿。
+- 绿：`green/06-m2-affected-classes.txt`，相关测试类 923 条全过。
+- 变异 M13：去掉「已受理的照旧参加」，守护用例变红（`mutations/M13-accepted-rows-dropped.txt`）。
