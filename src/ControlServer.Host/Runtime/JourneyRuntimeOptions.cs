@@ -26,6 +26,20 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan DepartureSafetyResultWait { get; set; } = TimeSpan.FromMilliseconds(1500);
 
     /// <summary>
+    /// How far ahead of this server's clock the vehicle may stamp the <c>observedAt</c> of its pre-departure safety
+    /// answer (control-server#826).
+    /// </summary>
+    /// <remarks>
+    /// The vehicle PC's clock drifts about 0.12 s a day between syncs; at zero tolerance an answer judged on receipt was
+    /// "in the future" and the vehicle stood at the stop. 500 ms matches the onboard side's own sub-second judgment
+    /// (<c>vehicleSafety.clockSkewToleranceMs</c>), and the bound is the onboard side's too: at most 1 s. A clock further
+    /// off than that is a time-sync fault to fix on the vehicle PC (workspace#55), not drift to absorb here. The bound is
+    /// soft at its edge: an answer just beyond it is refused now and may pass a poll later, while its own
+    /// <c>validUntil</c> lasts; <c>validUntil</c> is the hard limit.
+    /// </remarks>
+    public TimeSpan PeerClockSkewTolerance { get; set; } = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
     /// How long a vehicle stays at the pickup after its load commits before departure safety is
     /// asked for (ADR-cross-0055's StationDepartureWaitTimeout). This is the window REQ-0237 keeps for
     /// correcting an ordinary mis-placement: a correction may start only inside it, holds the vehicle
@@ -407,6 +421,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.DepartureSafetyResultWait > TimeSpan.FromSeconds(10))
         {
             failures.Add("DepartureSafetyResultWait must be positive and at most 10 s.");
+        }
+        if (options.PeerClockSkewTolerance < TimeSpan.Zero ||
+            options.PeerClockSkewTolerance > TimeSpan.FromSeconds(1))
+        {
+            failures.Add("PeerClockSkewTolerance must be between 0 and 1 s.");
         }
         if (options.StationDepartureWaitTimeout != TimeSpan.Zero &&
             options.StationDepartureWaitTimeout < TimeSpan.FromSeconds(5))
