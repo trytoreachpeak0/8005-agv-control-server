@@ -219,7 +219,7 @@ $script:AllowedKeys = [ordered]@{
         'sameStationAppendCorrectionGrace', 'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
         'admissionPolicyVersion', 'admissionPolicyDeploymentId', 'checkpointWaitBudget',
         'areaEndAdmissionRevokedTimeout', 'clearanceToWaitingPointEnabled', 'stationTimeoutRedispatchLimit', 'stagingDepartureRules',
-        'catalogAgeWindow')
+        'catalogAgeWindow', 'trialSublotCharacterPosition', 'trialSublotCharacters')
     # control-server#454. credentialEnvironmentVariable is deliberately absent: the overlay writes
     # this instance's own variable name, so no definition can point the service at the MVP's.
     'vehicleFaultRecovery' = @('enabled')
@@ -1255,6 +1255,22 @@ function Test-ParallelInstanceDefinition {
         if ((Test-KeyPresent -Node $journey -Key 'catalogAgeWindow') -and
             ($null -eq ($windowSpan = ConvertTo-ParallelCatalogSpan $journey['catalogAgeWindow']) -or $windowSpan -le [timespan]::Zero)) {
             $failures += "journeyRuntime.catalogAgeWindow must be a positive string hh:mm:ss, got '$($journey['catalogAgeWindow'])'."
+        }
+
+        # control-server#828. The trial sublot rule (JourneyRuntimeOptions.TrialSublotCharacterPosition/-Characters, REQ-0368): an
+        # unaccepted demand whose SUBLOT has one of the characters at the position (1-based, the leading Q is 1) is not dispatched.
+        # Optional -- absent, the overlay writes 0 and "", off -- but when written the position is a JSON integer, the characters a
+        # JSON string, and both are set or both empty: the Host refuses half a rule at startup, and this refuses it before the
+        # install. Character 6 and "9" are the values the user confirmed on 2026-10-21; any other takes the user's approval
+        # (REQ-0368: a commissioning value), which this does not check.
+        $trialPosition = (Test-KeyPresent -Node $journey -Key 'trialSublotCharacterPosition') ? $journey['trialSublotCharacterPosition'] : 0
+        $trialCharacters = (Test-KeyPresent -Node $journey -Key 'trialSublotCharacters') ? $journey['trialSublotCharacters'] : ''
+        if (-not (($trialPosition -is [int] -or $trialPosition -is [long]) -and $trialPosition -ge 0)) {
+            $failures += "journeyRuntime.trialSublotCharacterPosition must be a non-negative JSON integer, got '$trialPosition'."
+        } elseif ($trialCharacters -isnot [string]) {
+            $failures += "journeyRuntime.trialSublotCharacters must be a JSON string, got '$trialCharacters'."
+        } elseif (($trialPosition -gt 0) -ne ($trialCharacters.Length -gt 0)) {
+            $failures += "journeyRuntime.trialSublotCharacterPosition and trialSublotCharacters must both be set or both be left empty, got $trialPosition and '$trialCharacters'."
         }
 
         # program#184. The staging station's departure rules (JourneyRuntimeOptions.StagingDepartureRules, control-server#709):
@@ -3246,6 +3262,10 @@ function New-ParallelInstanceConfigurationOverlay {
     # control-server#827. Always written too, 00:30:00 (REQ-0366's default) when the definition leaves it out, for the same
     # reason: a widened window from an earlier install must not survive a reinstall in appsettings.Production.json unseen.
     $journeyOverlay['catalogAgeWindow'] = $journey.Contains('catalogAgeWindow') ? $journey['catalogAgeWindow'] : '00:30:00'
+    # control-server#828. Always written too, off (0 and "") when the definition leaves the trial sublot rule out, for the same
+    # reason: a rule from an earlier install must not survive a reinstall in appsettings.Production.json unseen.
+    $journeyOverlay['trialSublotCharacterPosition'] = $journey.Contains('trialSublotCharacterPosition') ? $journey['trialSublotCharacterPosition'] : 0
+    $journeyOverlay['trialSublotCharacters'] = $journey.Contains('trialSublotCharacters') ? $journey['trialSublotCharacters'] : ''
 
     $routeGraphOverlay = [ordered]@{}
     foreach ($key in $routeGraph.Keys) { $routeGraphOverlay[$key] = $routeGraph[$key] }

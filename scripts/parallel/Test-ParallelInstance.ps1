@@ -5227,6 +5227,28 @@ Invoke-SourceCase 'catalog age window: the overlay writes the definition''s valu
     $overlay = New-ParallelInstanceConfigurationOverlay -Definition $d
     @{ Ok = ($overlay['JourneyRuntime']['catalogAgeWindow'] -ceq '01:00:00'); Detail = "written: $($overlay['JourneyRuntime']['catalogAgeWindow'])" }
 }
+# control-server#828: the trial sublot rule (REQ-0368) is optional; written, the position is a non-negative JSON integer, the
+# characters a JSON string, and both are set or both empty.
+foreach ($case in @(
+        @{ Position = 6; Characters = '9'; Ok = $true }, @{ Position = 0; Characters = ''; Ok = $true },
+        @{ Position = 6; Characters = '89'; Ok = $true }, @{ Position = 6; Characters = ''; Ok = $false },
+        @{ Position = 0; Characters = '9'; Ok = $false }, @{ Position = -1; Characters = '9'; Ok = $false },
+        @{ Position = '6'; Characters = '9'; Ok = $false }, @{ Position = 6; Characters = 9; Ok = $false })) {
+    Invoke-SourceCase "trial sublot rule: $($case.Position) ($($case.Position.GetType().Name)) / '$($case.Characters)' ($($case.Characters.GetType().Name)) is $(if ($case.Ok) { 'accepted' } else { 'refused' })" {
+        $d = Copy-Definition $baseline
+        $d['journeyRuntime']['trialSublotCharacterPosition'] = $case.Position
+        $d['journeyRuntime']['trialSublotCharacters'] = $case.Characters
+        $f = @(Test-ParallelInstanceDefinition -Definition $d)
+        $refused = @($f | Where-Object { $_.Contains('journeyRuntime.trialSublotCharacter') }).Count
+        @{ Ok = ($case.Ok ? ($f.Count -eq 0) : ($f.Count -eq 1 -and $refused -eq 1)); Detail = "failures: $($f -join ' | ')" }
+    }.GetNewClosure()
+}
+Invoke-SourceCase 'trial sublot rule: the overlay writes it off (0 and "") when the definition leaves it out (control-server#828)' {
+    $overlay = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $baseline)
+    $position = $overlay['JourneyRuntime']['trialSublotCharacterPosition']
+    $characters = $overlay['JourneyRuntime']['trialSublotCharacters']
+    @{ Ok = ($position -is [int] -and $position -eq 0 -and $characters -is [string] -and $characters -ceq ''); Detail = "written: $position / '$characters'" }
+}
 Invoke-SourceCase 'clearance switch: a case twin (ClearanceToWaitingPointEnabled) is refused' {
     $d = Copy-Definition $baseline
     $d['journeyRuntime']['ClearanceToWaitingPointEnabled'] = $true
@@ -5564,6 +5586,23 @@ Invoke-SourceCase "cutover production stages: each stage definition turns the st
                 $overlay['stagingDepartureRules']['enabled'] -eq $true -and [long] $overlay['dispatchGeneration'] -eq $productionDispatchGeneration) })
     @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
 }
+# control-server#828 (REQ-0368): every production stage turns the trial sublot rule on with the values the user confirmed on
+# 2026-10-21 -- character 6, "9" -- and its overlay writes them; the trial stages and the mother leave the rule out (off).
+Invoke-SourceCase 'cutover production stages: each stage definition carries the trial sublot rule, character 6 and "9" (user 2026-10-21), passes the definition check, and its overlay writes it; no trial stage carries it (control-server#828)' {
+    $wrong = @($productionStageDefinitions.Keys | Where-Object {
+            $path = Join-Path $PSScriptRoot $_
+            if (-not (Test-Path -LiteralPath $path)) { return $true }
+            $d = Read-ParallelInstanceDefinition -Path $path
+            $j = $d['journeyRuntime']
+            $overlay = (New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $d))['JourneyRuntime']
+            $trial = (Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot ($_ -creplace '\.cutover-production-', '.cutover-trial-')))['journeyRuntime']
+            -not (($j['trialSublotCharacterPosition'] -is [int] -or $j['trialSublotCharacterPosition'] -is [long]) -and
+                $j['trialSublotCharacterPosition'] -eq 6 -and $j['trialSublotCharacters'] -ceq '9' -and
+                @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $d) -ProductionCutover | Where-Object { $_ -match 'trialSublot' }).Count -eq 0 -and
+                $overlay['trialSublotCharacterPosition'] -eq 6 -and $overlay['trialSublotCharacters'] -ceq '9' -and
+                -not $trial.Contains('trialSublotCharacterPosition') -and -not $trial.Contains('trialSublotCharacters')) })
+    @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
+}
 # As PR #683 review S2 for the trial: nothing else may drift. Each production stage is its trial stage with only
 # productionCutover replaced and emergencyStopRelease added, so it is held to the same mother, key for key, and to its trial twin.
 Invoke-SourceCase 'cutover production stages: apart from productionCutover, emergencyStopRelease, fleet, allowedDispatchZones, the two runtime switches, the staging rules and the dispatch generation, each stage definition is the runtime-on cutover definition key for key, every fleet row is one of its rows verbatim, and the trial stage of the same name differs from it in those two sections only (control-server#564 step 18a)' {
@@ -5587,6 +5626,9 @@ Invoke-SourceCase 'cutover production stages: apart from productionCutover, emer
             # mother and the trial stages leave the rules out and start at their own generation. The generation is overwritten in
             # place, not removed: the comparison is of serialised JSON, and a key added back would move to the end.
             $twin['journeyRuntime'].Remove('stagingDepartureRules')
+            # control-server#828: so is the trial sublot rule (pinned by its own case); the mother and the trial stages leave it out.
+            $twin['journeyRuntime'].Remove('trialSublotCharacterPosition')
+            $twin['journeyRuntime'].Remove('trialSublotCharacters')
             $twin['journeyRuntime']['dispatchGeneration'] = $trial['journeyRuntime']['dispatchGeneration']
             $n = Copy-Definition $twin
             $n['journeyRuntime']['dispatchGeneration'] = $mother['journeyRuntime']['dispatchGeneration']
