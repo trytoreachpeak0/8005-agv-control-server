@@ -1,0 +1,78 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/TrialSublot.cs b/src/ControlServer.Host/Runtime/Dispatch/TrialSublot.cs
+index ab4a04d10..0a655915c 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/TrialSublot.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/TrialSublot.cs
+@@ -33,7 +33,7 @@ public sealed record TrialSublotRule(int Position, string Characters)
+ 
+     /// <summary><paramref name="sublot"/> 是不是试验批。规则关着、批号为空或不够长时为假。</summary>
+     public bool Matches(string? sublot) =>
+-        IsOn && sublot is not null && sublot.Length >= Position && Characters.Contains(sublot[Position - 1], StringComparison.Ordinal);
++        IsOn && sublot is not null && sublot.Trim().Normalize(System.Text.NormalizationForm.FormKC).Length >= Position && Characters.Contains(sublot.Trim().Normalize(System.Text.NormalizationForm.FormKC)[Position - 1], StringComparison.Ordinal);
+ }
+ 
+ /// <summary>
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:04.38]     ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatIsNotATrialOneIsDispatched(sublot: "Q2607９458-1") [FAIL]
+[xUnit.net 00:00:04.46]     ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatIsNotATrialOneIsDispatched(sublot: " Q26079458-1") [FAIL]
+[xUnit.net 00:00:04.87]     ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: " Q26079458-1", trial: False) [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatIsNotATrialOneIsDispatched(sublot: "Q2607９458-1") [112 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+           ↓ (pos 0)
+Expected: ["10000000-0000-4000-8000-000000000928"]
+Actual:   []
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatIsNotATrialOneIsDispatched(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 118
+   at ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatIsNotATrialOneIsDispatched(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 118
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatIsNotATrialOneIsDispatched(sublot: " Q26079458-1") [78 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+           ↓ (pos 0)
+Expected: ["10000000-0000-4000-8000-000000000928"]
+Actual:   []
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatIsNotATrialOneIsDispatched(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 118
+   at ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatIsNotATrialOneIsDispatched(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 118
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: " Q26079458-1", trial: False) [1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: False
+Actual:   True
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(String sublot, Boolean trial) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 54
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+[xUnit.net 00:00:04.87]     ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: "Q2607９458-1", trial: False) [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: "Q2607９458-1", trial: False) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: False
+Actual:   True
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(String sublot, Boolean trial) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 54
+   at InvokeStub_TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+
+Failed!  - Failed:     4, Passed:    32, Skipped:     0, Total:    36, Duration: 4 s - ControlServer.Tests.dll (net8.0)

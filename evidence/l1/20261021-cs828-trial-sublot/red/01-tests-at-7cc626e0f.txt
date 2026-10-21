@@ -1,0 +1,255 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:03.65]     ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "DEMAND_TRIAL_SUBLOT", expected: Backlog) [FAIL]
+  Failed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "DEMAND_TRIAL_SUBLOT", expected: Backlog) [3 ms]
+  Error Message:
+   Assert.Contains() Failure: Key not found in dictionary
+Keys:      ["DEMAND_ALREADY_ACCEPTED", "TRANSPORT_DEMAND_KEY_SUPPRESSED", "TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED", "VEHICLE_FAULT_SUSPECTED_BLOCK", "VEHICLE_FAULT_ISOLATED", ···]
+Not found: "DEMAND_TRIAL_SUBLOT"
+  Stack Trace:
+     at ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(String reasonCode, DispatchReasonClass expected) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\StructuralDispatchBlockTests.cs:line 149
+   at InvokeStub_StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:06.39]     ControlServer.Tests.StructuralDispatchBlockTests.TheTableCoversEveryReasonCodeTheChainAndTheIntakeBehindItWrite [FAIL]
+[xUnit.net 00:00:06.40]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialRowDoesNotMakeAnOrdinaryDemandsAreaAmbiguous [FAIL]
+[xUnit.net 00:00:06.49]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotPastTheCatalogWindowIsRefusedAsATrialSublot [FAIL]
+[xUnit.net 00:00:06.62]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNeverEscalatedForStarvation [FAIL]
+[xUnit.net 00:00:06.62]     ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: "Q26069E34-1", trial: True) [FAIL]
+  Failed ControlServer.Tests.StructuralDispatchBlockTests.TheTableCoversEveryReasonCodeTheChainAndTheIntakeBehindItWrite [15 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 22
+            ↓ (pos 1)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "DISPATCH_ZONE_HAS_NO_VEHICLES"
+            ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.StructuralDispatchBlockTests.TheTableCoversEveryReasonCodeTheChainAndTheIntakeBehindItWrite() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\StructuralDispatchBlockTests.cs:line 235
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialRowDoesNotMakeAnOrdinaryDemandsAreaAmbiguous [86 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+           ↓ (pos 0)
+Expected: ["10000000-0000-4000-8000-000000000929"]
+Actual:   []
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialRowDoesNotMakeAnOrdinaryDemandsAreaAmbiguous() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 397
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialRowDoesNotMakeAnOrdinaryDemandsAreaAmbiguous() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 398
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotPastTheCatalogWindowIsRefusedAsATrialSublot [84 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+                  ↓ (pos 7)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "DEMAND_OLDER_THAN_CATALOG_WINDOW"
+                  ↑ (pos 7)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotPastTheCatalogWindowIsRefusedAsATrialSublot() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 174
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotPastTheCatalogWindowIsRefusedAsATrialSublot() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 175
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNeverEscalatedForStarvation [131 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "SUBLOT_BOX_COUNT_UNAVAILABLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNeverEscalatedForStarvation() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 325
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNeverEscalatedForStarvation() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 327
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: "Q26069E34-1", trial: True) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(String sublot, Boolean trial) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 54
+   at InvokeStub_TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:06.62]     ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: "Q26079458-1", trial: True) [FAIL]
+[xUnit.net 00:00:06.62]     ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: "Q26079308-1", trial: True) [FAIL]
+[xUnit.net 00:00:06.62]     ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: "Q26079", trial: True) [FAIL]
+[xUnit.net 00:00:06.63]     ControlServer.Tests.TrialSublotAdmissionTests.TheRuleBindsFromConfiguration [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: "Q26079458-1", trial: True) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(String sublot, Boolean trial) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 54
+   at InvokeStub_TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: "Q26079308-1", trial: True) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(String sublot, Boolean trial) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 54
+   at InvokeStub_TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(sublot: "Q26079", trial: True) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(String sublot, Boolean trial) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 54
+   at InvokeStub_TrialSublotAdmissionTests.TheProductionRuleMatchesCharacterSixBeingAHalfWidthNine(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheRuleBindsFromConfiguration [4 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheRuleBindsFromConfiguration() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 543
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:06.63]     ControlServer.Tests.TrialSublotAdmissionTests.TheHostRegistersTheCriterionAndTheSingletonLog [FAIL]
+[xUnit.net 00:00:06.95]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26079308-1") [FAIL]
+[xUnit.net 00:00:07.06]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26069E34-1") [FAIL]
+[xUnit.net 00:00:07.16]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26079458-1") [FAIL]
+[xUnit.net 00:00:07.66]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotReleasedBackForRedispatchIsRedispatched [FAIL]
+[xUnit.net 00:00:07.75]     ControlServer.Tests.TrialSublotAdmissionTests.TheDashboardListsTheRefusalWithAChineseDescription [FAIL]
+[xUnit.net 00:00:07.76]     ControlServer.Tests.TrialSublotAdmissionTests.TheRuleShipsEmptyAndHalfARuleIsRefused [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheHostRegistersTheCriterionAndTheSingletonLog [1 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: [ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.AlreadyAcceptedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.TransportDemandKeySuppressedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.TransportDemandKeyAlreadyAcceptedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.CatalogAgeWindowCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.VehicleFaultBlockCriterion, ···]
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheHostRegistersTheCriterionAndTheSingletonLog() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 227
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26079308-1") [106 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: ["10000000-0000-4000-8000-000000000928"]
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 98
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 103
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26069E34-1") [101 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: ["10000000-0000-4000-8000-000000000928"]
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 98
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 103
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26079458-1") [107 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: ["10000000-0000-4000-8000-000000000928"]
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 98
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 103
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotReleasedBackForRedispatchIsRedispatched [248 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotReleasedBackForRedispatchIsRedispatched() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 304
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotReleasedBackForRedispatchIsRedispatched() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 304
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheDashboardListsTheRefusalWithAChineseDescription [94 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheDashboardListsTheRefusalWithAChineseDescription() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 484
+   at ControlServer.Tests.TrialSublotAdmissionTests.TheDashboardListsTheRefusalWithAChineseDescription() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 492
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheRuleShipsEmptyAndHalfARuleIsRefused [3 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: ["MesIngest:sharedSecretEnvironmentVariable must nam"···, "RIoT:callApiKeyEnvironmentVariable must name a pop"···, "OnboardTransport:credentialEnvironmentVariable mus"···]
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheRuleShipsEmptyAndHalfARuleIsRefused() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 519
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:07.86]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotRaisesNoStructuralBlock [FAIL]
+[xUnit.net 00:00:07.98]     ControlServer.Tests.TrialSublotAdmissionTests.OnlyTheOrdinaryDemandIsDispatchedAndTheTrialOneIsListedOnTheDashboard [FAIL]
+[xUnit.net 00:00:08.20]     ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs [FAIL]
+[xUnit.net 00:00:08.34]     ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatTurnsIntoATrialOneAtIntakesRereadIsNotAccepted [FAIL]
+[xUnit.net 00:00:08.34]     ControlServer.Tests.TrialSublotAdmissionTests.EveryCharacterOfTheValuesIsOneValue [FAIL]
+[xUnit.net 00:00:08.43]     ControlServer.Tests.TrialSublotAdmissionTests.TheFilteredSublotsAreLoggedOnlyWhenTheyChange [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotRaisesNoStructuralBlock [101 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [StructuralDispatchBlockRow { ClearedAt = null, DemandId = "10000000-0000-4000-8000-000000000928", DetailJson = "{\"agvIds\":[\"\\u8001\\u5382\\u524D\\u7EBF\\u65B0"···, FirstRaisedAt = 2026-08-26T01:00:00.0000000+00:00, LastSeenAt = 2026-08-26T01:01:00.0000000+00:00, ··· }]
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotRaisesNoStructuralBlock() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 346
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotRaisesNoStructuralBlock() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 347
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.OnlyTheOrdinaryDemandIsDispatchedAndTheTrialOneIsListedOnTheDashboard [124 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+                                              ↓ (pos 35)
+Expected: "10000000-0000-4000-8000-000000000929"
+Actual:   "10000000-0000-4000-8000-000000000928"
+                                              ↑ (pos 35)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.OnlyTheOrdinaryDemandIsDispatchedAndTheTrialOneIsListedOnTheDashboard() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 148
+   at ControlServer.Tests.TrialSublotAdmissionTests.OnlyTheOrdinaryDemandIsDispatchedAndTheTrialOneIsListedOnTheDashboard() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 154
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs [97 ms]
+  Error Message:
+   Assert.All() Failure: 1 out of 1 items in the collection did not pass.
+[0]: Item:  StructuralDispatchBlockRow { ClearedAt = null, DemandId = "10000000-0000-4000-8000-000000000928", DetailJson = "{\"agvIds\":[\"\\u8001\\u5382\\u524D\\u7EBF\\u65B0"···, FirstRaisedAt = 2026-08-26T01:00:00.0000000+00:00, LastSeenAt = 2026-08-26T01:02:00.0000000+00:00, ··· }
+     Error: Assert.NotNull() Failure: Value of type 'Nullable<DateTimeOffset>' does not have a value
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 372
+   at ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 375
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatTurnsIntoATrialOneAtIntakesRereadIsNotAccepted [135 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: ["10000000-0000-4000-8000-000000000928"]
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatTurnsIntoATrialOneAtIntakesRereadIsNotAccepted() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 213
+   at ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatTurnsIntoATrialOneAtIntakesRereadIsNotAccepted() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 214
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.EveryCharacterOfTheValuesIsOneValue [< 1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.EveryCharacterOfTheValuesIsOneValue() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 77
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheFilteredSublotsAreLoggedOnlyWhenTheyChange [87 ms]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheFilteredSublotsAreLoggedOnlyWhenTheyChange() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 440
+   at ControlServer.Tests.TrialSublotAdmissionTests.TheFilteredSublotsAreLoggedOnlyWhenTheyChange() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 456
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    23, Passed:   131, Skipped:     0, Total:   154, Duration: 5 s - ControlServer.Tests.dll (net8.0)

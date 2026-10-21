@@ -1,0 +1,45 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeOptions.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeOptions.cs
+index c365e8501..86566b925 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeOptions.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeOptions.cs
+@@ -443,7 +443,7 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
+         }
+         // control-server#828: half a trial sublot rule looks configured and filters nothing (TrialSublotRule.IsOn), so it is refused.
+         if (options.TrialSublotCharacterPosition < 0 ||
+-            (options.TrialSublotCharacterPosition > 0) != !string.IsNullOrEmpty(options.TrialSublotCharacters))
++            false)
+         {
+             failures.Add("TrialSublotCharacterPosition and TrialSublotCharacters must both be set (a positive position, at least one character) or both be left empty.");
+         }
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:06.06]     ControlServer.Tests.TrialSublotAdmissionTests.TheRuleShipsEmptyAndHalfARuleIsRefused [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheRuleShipsEmptyAndHalfARuleIsRefused [3 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: ["MesIngest:sharedSecretEnvironmentVariable must nam"···, "RIoT:callApiKeyEnvironmentVariable must name a pop"···, "OnboardTransport:credentialEnvironmentVariable mus"···]
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheRuleShipsEmptyAndHalfARuleIsRefused() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 519
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     1, Passed:    35, Skipped:     0, Total:    36, Duration: 4 s - ControlServer.Tests.dll (net8.0)

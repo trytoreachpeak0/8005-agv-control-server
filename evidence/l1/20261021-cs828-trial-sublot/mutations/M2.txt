@@ -1,0 +1,44 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/Criteria/DispatchAdmissionCriteria.cs b/src/ControlServer.Host/Runtime/Dispatch/Criteria/DispatchAdmissionCriteria.cs
+index 1b4130e88..9fa221954 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/Criteria/DispatchAdmissionCriteria.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/Criteria/DispatchAdmissionCriteria.cs
+@@ -165,7 +165,6 @@ public static class DispatchAdmissionCriteria
+         services.AddScoped<IDispatchAdmissionCriterion, AlreadyAcceptedCriterion>();
+         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeySuppressedCriterion>();
+         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeyAlreadyAcceptedCriterion>();
+-        services.AddScoped<IDispatchAdmissionCriterion, TrialSublotCriterion>();
+         services.AddScoped<IDispatchAdmissionCriterion, CatalogAgeWindowCriterion>();
+         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
+         services.AddScoped<IDispatchAdmissionCriterion, IdleReturnCommitmentCriterion>();
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:04.58]     ControlServer.Tests.TrialSublotAdmissionTests.TheHostRegistersTheCriterionAndTheSingletonLog [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheHostRegistersTheCriterionAndTheSingletonLog [2 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: [ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.AlreadyAcceptedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.TransportDemandKeySuppressedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.TransportDemandKeyAlreadyAcceptedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.CatalogAgeWindowCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.VehicleFaultBlockCriterion, ···]
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheHostRegistersTheCriterionAndTheSingletonLog() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 227
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     1, Passed:    35, Skipped:     0, Total:    36, Duration: 4 s - ControlServer.Tests.dll (net8.0)

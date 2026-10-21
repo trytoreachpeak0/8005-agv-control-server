@@ -1,0 +1,165 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/Criteria/DispatchAdmissionCriteria.cs b/src/ControlServer.Host/Runtime/Dispatch/Criteria/DispatchAdmissionCriteria.cs
+index 1b4130e88..368907e1f 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/Criteria/DispatchAdmissionCriteria.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/Criteria/DispatchAdmissionCriteria.cs
+@@ -84,7 +84,6 @@ public static class DispatchAdmissionCriteria
+             new AreaAssignmentLookupCriterion(),
+             new AreaScopeCriterion(),
+             // REQ-0368（CP-0023，control-server#828）：试验机批号，序号 42，先于目录时间窗。必填，理由同时间窗；配置为空时它什么都不挡。
+-            new TrialSublotCriterion(),
+             // REQ-0366（CP-0020，control-server#827）：目录时间窗，序号 45。必填：它是用户定的派车范围，一个可以漏传的调用方就会把
+             // 超窗的需求派出去。排在范围类判据（任务类型 20、AREA 40）之后、站点解析（60）之前，理由见判据本身。
+             new CatalogAgeWindowCriterion(),
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:05.35]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialRowDoesNotMakeAnOrdinaryDemandsAreaAmbiguous [FAIL]
+[xUnit.net 00:00:05.45]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotPastTheCatalogWindowIsRefusedAsATrialSublot [FAIL]
+[xUnit.net 00:00:05.60]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNeverEscalatedForStarvation [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialRowDoesNotMakeAnOrdinaryDemandsAreaAmbiguous [162 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "AREA_EQP_NOT_UNIQUE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialRowDoesNotMakeAnOrdinaryDemandsAreaAmbiguous() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 398
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialRowDoesNotMakeAnOrdinaryDemandsAreaAmbiguous() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 398
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotPastTheCatalogWindowIsRefusedAsATrialSublot [100 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+                  ↓ (pos 7)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "DEMAND_OLDER_THAN_CATALOG_WINDOW"
+                  ↑ (pos 7)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotPastTheCatalogWindowIsRefusedAsATrialSublot() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 174
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotPastTheCatalogWindowIsRefusedAsATrialSublot() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 175
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNeverEscalatedForStarvation [148 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "AREA_EQP_NOT_UNIQUE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNeverEscalatedForStarvation() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 325
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNeverEscalatedForStarvation() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 327
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:06.00]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26079308-1") [FAIL]
+[xUnit.net 00:00:06.10]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26069E34-1") [FAIL]
+[xUnit.net 00:00:06.19]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26079458-1") [FAIL]
+[xUnit.net 00:00:06.66]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotReleasedBackForRedispatchIsRedispatched [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26079308-1") [105 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "AREA_EQP_NOT_UNIQUE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 101
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 103
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26069E34-1") [99 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "AREA_EQP_NOT_UNIQUE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 101
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 103
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(sublot: "Q26079458-1") [86 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "AREA_EQP_NOT_UNIQUE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 101
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotIsNotDispatchedAndWaitsWithItsReason(String sublot) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 103
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotReleasedBackForRedispatchIsRedispatched [249 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "ELIGIBLE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotReleasedBackForRedispatchIsRedispatched() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 304
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotReleasedBackForRedispatchIsRedispatched() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 304
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:06.86]     ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotRaisesNoStructuralBlock [FAIL]
+[xUnit.net 00:00:06.99]     ControlServer.Tests.TrialSublotAdmissionTests.OnlyTheOrdinaryDemandIsDispatchedAndTheTrialOneIsListedOnTheDashboard [FAIL]
+[xUnit.net 00:00:07.22]     ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs [FAIL]
+[xUnit.net 00:00:07.36]     ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatTurnsIntoATrialOneAtIntakesRereadIsNotAccepted [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotRaisesNoStructuralBlock [97 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "AREA_EQP_NOT_UNIQUE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotRaisesNoStructuralBlock() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 347
+   at ControlServer.Tests.TrialSublotAdmissionTests.ATrialSublotRaisesNoStructuralBlock() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 347
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.OnlyTheOrdinaryDemandIsDispatchedAndTheTrialOneIsListedOnTheDashboard [129 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+                                              ↓ (pos 35)
+Expected: "10000000-0000-4000-8000-000000000929"
+Actual:   "10000000-0000-4000-8000-000000000928"
+                                              ↑ (pos 35)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.OnlyTheOrdinaryDemandIsDispatchedAndTheTrialOneIsListedOnTheDashboard() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 148
+   at ControlServer.Tests.TrialSublotAdmissionTests.OnlyTheOrdinaryDemandIsDispatchedAndTheTrialOneIsListedOnTheDashboard() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 154
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs [117 ms]
+  Error Message:
+   Assert.All() Failure: 1 out of 1 items in the collection did not pass.
+[0]: Item:  StructuralDispatchBlockRow { ClearedAt = null, DemandId = "10000000-0000-4000-8000-000000000928", DetailJson = "{\"agvIds\":[\"\\u8001\\u5382\\u524D\\u7EBF\\u65B0"···, FirstRaisedAt = 2026-08-26T01:00:00.0000000+00:00, LastSeenAt = 2026-08-26T01:00:00.0000000+00:00, ··· }
+     Error: Assert.NotNull() Failure: Value of type 'Nullable<DateTimeOffset>' does not have a value
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 372
+   at ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 375
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatTurnsIntoATrialOneAtIntakesRereadIsNotAccepted [114 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "DEMAND_TRIAL_SUBLOT"
+Actual:   "AREA_EQP_NOT_UNIQUE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatTurnsIntoATrialOneAtIntakesRereadIsNotAccepted() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 214
+   at ControlServer.Tests.TrialSublotAdmissionTests.ASublotThatTurnsIntoATrialOneAtIntakesRereadIsNotAccepted() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 214
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    11, Passed:    25, Skipped:     0, Total:    36, Duration: 4 s - ControlServer.Tests.dll (net8.0)
