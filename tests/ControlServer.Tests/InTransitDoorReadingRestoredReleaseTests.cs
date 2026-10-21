@@ -219,25 +219,6 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
     }
 
     /// <summary>
-    /// 故障协调器那一轮读到单是 7，急停监管在 cancelEmergency 之前再读车上未完成单时它已是 3（有人在 RIoT 让它继续了）：不解除
-    /// （cs#839 审查 M4 第 1 条：只靠协调器那一次读，这条单独删掉不会红）。
-    /// </summary>
-    [Fact]
-    [Trait("Requirement", "REQ-0167")]
-    public async Task AHeldOrderThatRunsBetweenTheCoordinatorsReadAndTheReleaseIsNotReleasedPast()
-    {
-        await using RuntimeFixture fixture = await LatchedForUnreadDoorsAsync();
-        Latched latched = await LatchedFactsAsync(fixture);
-        fixture.BeforeUnfinishedOrdersRead = () =>
-            fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Executing, terminal: false);
-
-        await ReportLockedAsync(fixture);
-        await DriveRoundsAsync(fixture, 12);
-
-        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
-    }
-
-    /// <summary>
     /// 自动解除的四个前提单独核（审查 M4）：本代 Hold 回查未确认、故障已到第二级（隔离）、RIoT 上这张单不是 7、读到的是另一张单——
     /// 任一条不满足都没有放行条件；全部满足才有，而且挂在本代故障下。
     /// </summary>

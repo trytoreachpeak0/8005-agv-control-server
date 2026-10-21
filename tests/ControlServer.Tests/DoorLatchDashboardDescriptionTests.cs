@@ -98,7 +98,7 @@ public sealed class DoorLatchDashboardDescriptionTests
     {
         string text = Describe(table, VehicleFaultEvidence.DoorNotProvenLocked);
 
-        Assert.Contains("仓位状态读不到超过 3 秒", text, StringComparison.Ordinal);
+        Assert.Contains("仓位状态读不到超过 3 秒（同一车 10 分钟内第 3 次起不等）", text, StringComparison.Ordinal);
         Assert.Contains("读到过门锁未锁闭的，门锁读回锁闭服务端也不会解除这次急停", text, StringComparison.Ordinal);
         Assert.Contains("只是仓位状态读不到的，读数恢复、连续 10 秒读回全部锁闭后，服务端自己解除急停；单仍停着", text, StringComparison.Ordinal);
         Assert.Contains("只是读不到的，等读数恢复后服务端自己解", text, StringComparison.Ordinal);

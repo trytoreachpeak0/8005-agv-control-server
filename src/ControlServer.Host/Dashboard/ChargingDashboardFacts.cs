@@ -118,7 +118,7 @@ internal static class ChargingDashboardDescriptions
                 + "先按急停人工解除；然后由现场人员经故障清除入口确认。故障清除后这次充电按失败结束，不会另建一张充电单；30 秒内不给这辆车安排任何充电桩，"
                 + "10 分钟内它的充电再失败一次，就改为人工充电等待",
             [VehicleFaultEvidence.DoorNotProvenLocked] =
-                "车在开往充电桩的途中，车载端报门锁未锁闭，或仓位状态读不到超过 3 秒：服务端已按住这张单，证不出停稳即急停，并把车判为疑似故障，"
+                "车在开往充电桩的途中，车载端报门锁未锁闭，或仓位状态读不到超过 3 秒（同一车 10 分钟内第 3 次起不等）：服务端已按住这张单，证不出停稳即急停，并把车判为疑似故障，"
                 + "车、桩预占与充电用途都保持。"
                 + BlockedJourneysQueryEndpoint.DoorLatchNotReleasedByTheLock + BlockedJourneysQueryEndpoint.DoorLatchWayOut,
             [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =

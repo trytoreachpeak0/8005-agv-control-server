@@ -136,7 +136,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             // control-server#335（REQ-0246）：行驶中车载端报门没锁或仓位状态未知——按住本单，证不出停稳就急停。
             // 车载端失联本身不走这里（ONBOARD_SESSION_LOST，用户 09-20 决定留到批次 9）。
             [Runtime.Faults.VehicleFaultEvidence.DoorNotProvenLocked] =
-                "车在行驶中，车载端报门锁未锁闭，或仓位状态读不到超过 3 秒：服务端已按住本单，证不出停稳即急停，"
+                "车在行驶中，车载端报门锁未锁闭，或仓位状态读不到超过 3 秒（同一车 10 分钟内第 3 次起不等）：服务端已按住本单，证不出停稳即急停，"
                 + "并把车判为疑似故障：不派新单，需求不改派。" + DoorLatchNotReleasedByTheLock + DoorLatchWayOut,
             // control-server#335：门锁急停经人工确认解除（有货入口，CP-0011）、单应仍停着，RIoT 却把它跑了起来，没有人按继续。
             [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =
