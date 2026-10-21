@@ -1,0 +1,16 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index f7455aee7..9d1a2bdec 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -219,7 +219,7 @@ public sealed class FleetStandingReader(
+ 
+         return observed.CurrentStationId switch
+         {
+-            null => (false, null, "no current station"),
++            null => (true, null, null),
+             // Between stations (control-server#772): on no point now, and the station it was last seen on is behind it.
+             <= Charging.ChargerOccupancyReader.NoStation => (true, null, null),
+             int station => (true, station, null),
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AVehicleThatCannotBeReadCountsWhereItWasLastSeen(unreadable: "gateway-unknown-vehicle") [5 s]
+   Assert.Empty() Failure: Collection was not empty
+Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, Duration: 5 s - ControlServer.Tests.dll (net8.0)

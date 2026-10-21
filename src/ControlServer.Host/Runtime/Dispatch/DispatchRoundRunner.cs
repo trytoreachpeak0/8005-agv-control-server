@@ -392,11 +392,12 @@ public sealed class DispatchRoundRunner(
         // 空闲返回（批次8-18，control-server#389）：任务优先派车之后，才轮到这一轮没被选中的空闲车。在途车不交过去。
         // 放在上面那次保存之后：承诺自己保存一次，变更跟踪里不能还压着这一轮别的东西。评估器是必填的（审查 4）：可选注入时宿主漏注册
         // 会静默成「从不评估」。开关关着时它什么也不读、不写。
+        // control-server#798 review M2: the vehicles under way were read this round too; choosing a point asks RIoT for none of
+        // them again.
         await idleReturn.EvaluateAsync(
                 currentMap,
                 [.. participants.Where(p => !p.UnderWay)
                     .Select(p => new IdleReturnCandidate(p.Vehicle, p.Facts, p.MayStillTakeWork))],
-                // control-server#798 review M2: the vehicles under way were read this round too; choosing a point asks RIoT for none of them again.
                 [.. participants.Where(p => p.UnderWay).Select(p => p.Facts.Vehicle)],
                 cancellationToken)
             .ConfigureAwait(false);

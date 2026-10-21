@@ -1,0 +1,17 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index f7455aee7..f21472348 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -169,7 +169,6 @@ public sealed class FleetStandingReader(
+                 standing.Add(new StandingVehicle(key, vehicle.AgvId, last, StandingSources.LastKnown));
+                 if (memory.FirstUnlocated(key))
+                 {
+-                    LogCountedAtLastSeen(logger, vehicle.AgvId, key, why ?? "unlocated", last, null);
+                 }
+                 continue;
+             }
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleThatCannotBeReadCountsWhereItWasLastSeen(unreadable: "throws") [2 s]
+   Assert.Single() Failure: The collection was empty
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleThatCannotBeReadCountsWhereItWasLastSeen(unreadable: "gateway-unknown-vehicle") [18 ms]
+   Assert.Single() Failure: The collection was empty
+Failed!  - Failed:     2, Passed:     0, Skipped:     0, Total:     2, Duration: 2 s - ControlServer.Tests.dll (net8.0)

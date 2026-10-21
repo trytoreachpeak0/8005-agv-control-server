@@ -1,0 +1,22 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index f7455aee7..91261b7a1 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -164,7 +164,7 @@ public sealed class FleetStandingReader(
+                 continue;
+             }
+ 
+-            if (memory.LastSeen(key) is int last)
++            if (memory.LastSeen(key) is int last && last < 0)
+             {
+                 standing.Add(new StandingVehicle(key, vehicle.AgvId, last, StandingSources.LastKnown));
+                 if (memory.FirstUnlocated(key))
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleThatCannotBeReadCountsWhereItWasLastSeen(unreadable: "throws") [2 s]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleThatCannotBeReadCountsWhereItWasLastSeen(unreadable: "gateway-unknown-vehicle") [18 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+Failed!  - Failed:     2, Passed:     0, Skipped:     0, Total:     2, Duration: 2 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,17 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index f7455aee7..2e28a5868 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -291,7 +291,8 @@ public sealed class FleetStandingMemory
+     {
+         lock (_gate)
+         {
+-            return _warned.Add(vehicleKey);
++            _warned.Add(vehicleKey);
++            return true;
+         }
+     }
+ }
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint [2 s]
+   Assert.Single() Failure: The collection contained 2 items
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 2 s - ControlServer.Tests.dll (net8.0)

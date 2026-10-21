@@ -1,0 +1,17 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index f7455aee7..4c153e799 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -238,7 +238,7 @@ public sealed class FleetStandingReader(
+         using CancellationTokenSource expiry = new(
+             TimeSpan.FromMilliseconds(milliseconds > 0 ? milliseconds : new FleetVehicleOptions().RoundTimeoutMilliseconds), timeProvider);
+         using CancellationTokenSource linked =
+-            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token, fleetBudget);
++            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);
+         try
+         {
+             return await vehicleFacts.ReadVehicleAsync(vehicle.VehicleKey, linked.Token).ConfigureAwait(false);
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleWhoseReadHangsIsCutOffByTheFleetBudgetAndCountsWhereItWasLastSeen [33 s]
+   Assert.InRange() Failure: Value not in range
+Actual: 00:00:30.0215659
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 33 s - ControlServer.Tests.dll (net8.0)

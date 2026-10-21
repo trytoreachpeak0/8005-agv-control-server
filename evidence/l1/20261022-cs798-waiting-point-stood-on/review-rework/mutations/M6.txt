@@ -1,0 +1,18 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index f7455aee7..becd7afc7 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -55,7 +55,7 @@ public sealed class FleetStanding
+     /// （<see cref="Domain.RouteGraph.TraversalCostsFrom"/>：两个站吸附到同一个端点）。
+     /// </summary>
+     internal static bool StandsOn(Domain.RouteGraph graph, int from, int stationId) =>
+-        from == stationId || graph.Traverse(from, stationId) is { Reachable: true, TraversalCostMm: 0 };
++        from == stationId;
+ 
+     /// <summary>除 <paramref name="vehicleKey"/> 之外站在这个站上的那辆车；没有答空。</summary>
+     internal StandingVehicle? StoodOnByAnother(Domain.RouteGraph graph, string vehicleKey, int stationId) =>
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNotHandedToTheEvaluationOnAStationAtThePointsNodeKeepsOthersOffThePoint [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("IDLE_RETURN_COMMITTED", 215)
+Actual:   Tuple ("IDLE_RETURN_COMMITTED", 214)
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 2 s - ControlServer.Tests.dll (net8.0)

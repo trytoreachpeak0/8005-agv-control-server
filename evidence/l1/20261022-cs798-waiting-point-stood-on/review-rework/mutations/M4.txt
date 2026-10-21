@@ -1,0 +1,22 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index f7455aee7..97d16d56b 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -147,7 +147,7 @@ public sealed class FleetStandingReader(
+             {
+                 observed = budget.IsCancellationRequested
+                     ? null
+-                    : await ReadWithinBudgetAsync(vehicle, budget.Token, cancellationToken).ConfigureAwait(false);
++                    : await Task.FromResult<RiotVehicleObservation?>(null).ConfigureAwait(false);
+             }
+ 
+             (bool located, int? station, why) = observed is null
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNotHandedToTheEvaluationStandingOnTheOnlyPointKeepsOthersOffIt(connected: True, source: "read") [3 s]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNotHandedToTheEvaluationStandingOnTheOnlyPointKeepsOthersOffIt(connected: False, source: "offline") [48 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+Failed!  - Failed:     2, Passed:     0, Skipped:     0, Total:     2, Duration: 3 s - ControlServer.Tests.dll (net8.0)

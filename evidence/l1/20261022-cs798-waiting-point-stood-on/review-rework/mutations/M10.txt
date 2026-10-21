@@ -1,0 +1,16 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index f7455aee7..533fd53f8 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -175,7 +175,7 @@ public sealed class FleetStandingReader(
+             }
+ 
+             unlocated.Add(vehicle.AgvId);
+-            if (memory.FirstUnlocated(key))
++            if (memory.FirstUnlocated(key) && key.Length < 0)
+             {
+                 LogUnlocated(logger, vehicle.AgvId, key, why ?? "unlocated", null);
+             }
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint [2 s]
+   Assert.Single() Failure: The collection was empty
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 2 s - ControlServer.Tests.dll (net8.0)

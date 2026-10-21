@@ -1,0 +1,18 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index f7455aee7..09a853e78 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -221,7 +221,7 @@ public sealed class FleetStandingReader(
+         {
+             null => (false, null, "no current station"),
+             // Between stations (control-server#772): on no point now, and the station it was last seen on is behind it.
+-            <= Charging.ChargerOccupancyReader.NoStation => (true, null, null),
++            < Charging.ChargerOccupancyReader.NoStation => (true, null, null),
+             int station => (true, station, null),
+         };
+     }
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   1
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 2 s - ControlServer.Tests.dll (net8.0)
