@@ -143,7 +143,14 @@ public sealed partial class JourneyRuntimeEngine
         // FaultedVehicleContext.DoorsNotProvenLocked). Reading locked again releases nothing (CP-0011).
         FaultedVehicleContext inFlight = await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken)
             .ConfigureAwait(false);
-        FaultedVehicleContext context = inFlight with { DoorsNotProvenLocked = reading.DoorsNotProvenLocked };
+        // The doors reading locked again release nothing on a fault that read a door not locked (CP-0011). On one raised only
+        // for doors that could not be read, ten unbroken seconds of them are REQ-0167's "原原因消除" (CP-0017): the coordinator
+        // releases on it past this server's own confirmed hold, and the order stays held for a person's continue.
+        FaultedVehicleContext context = inFlight with
+        {
+            DoorsNotProvenLocked = reading.DoorsNotProvenLocked,
+            DoorReadingRestored = reading.ReadingRestored,
+        };
         VehicleFaultDecision decision = await faults.ObserveAsync(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
             VehicleFaultEvidence.DoorNotProvenLocked,
@@ -153,7 +160,7 @@ public sealed partial class JourneyRuntimeEngine
         // The held order running again after a release on confirmation is named over the door code: the doors are the reason
         // the vehicle stopped, but what a person has to know now is that it may be moving without anyone having let it.
         string code = VehicleFaultEvidence.DoorNotProvenLocked;
-        if (decision.ReleasedOnConfirmation &&
+        if ((decision.ReleasedOnConfirmation || decision.ReleasedOnDoorReading) &&
             order.Kind == RiotOrderObservationKind.Active &&
             order.OrderState == RiotOrderState.Executing)
         {

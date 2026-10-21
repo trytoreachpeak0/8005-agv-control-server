@@ -117,7 +117,9 @@ public static class EmergencyStopReleaseEndpoints
         }
 
         EmergencyStopSubject subject = new(vehicle.AgvId, vehicle.VehicleKey);
-        bool doorCause = await EmergencyStopDoorCause.ReadAsync(dbContext, faults, supervisor, subject, cancellationToken)
+        bool doorCause = await EmergencyStopDoorCause.ReadAsync(
+                dbContext, faults, supervisor, subject, cancellationToken,
+                context.RequestServices?.GetService<Faults.InTransitDoorReadings>())
             .ConfigureAwait(false);
         EmergencyStopDecision decision = await supervisor.ReleaseOnConfirmationAsync(
             new EmergencyStopReleaseConfirmation(

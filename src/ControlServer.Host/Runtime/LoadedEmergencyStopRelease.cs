@@ -53,7 +53,8 @@ public sealed class LoadedEmergencyStopRelease(
     IVehicleFaultStore faults,
     FieldOperatorRoleRoster roles,
     IGovernanceAuditWriter audit,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    InTransitDoorReadings? doorReadings = null)
 {
     /// <summary>每一次请求写的管理员审计动作。</summary>
     public const string AuditAction = "EMERGENCY_STOP_GOVERNED_LOADED_RELEASE";
@@ -115,7 +116,8 @@ public sealed class LoadedEmergencyStopRelease(
             return new LoadedEmergencyStopReleaseResult(null, [.. codes], refused);
         }
 
-        bool doorCause = await EmergencyStopDoorCause.ReadAsync(dbContext, faults, supervisor, subject, cancellationToken)
+        bool doorCause = await EmergencyStopDoorCause.ReadAsync(
+                dbContext, faults, supervisor, subject, cancellationToken, doorReadings)
             .ConfigureAwait(false);
         HashSet<string> ownOrderIds = (await dbContext.OrderIntents.AsNoTracking()
                 .Where(row => row.VehicleKey == subject.DeviceKey && row.OrderId != null)
@@ -236,11 +238,18 @@ public static class EmergencyStopDoorCause
         CancellationToken cancellationToken,
         InTransitDoorReadings? doorReadings = null)
     {
-        _ = doorReadings;
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(faults);
         ArgumentNullException.ThrowIfNull(supervisor);
         ArgumentNullException.ThrowIfNull(subject);
+        // CP-0017 section 6, item 3: a stop raised only for doors that could not be read, whose doors read locked again, asks
+        // for no repaired lock -- the lock did not break, and the person confirms the cause removed, which for it is the reading
+        // back. Known only to the process that saw the whole fault (InTransitDoorReadings); anything else asks as before.
+        if (doorReadings?.OnlyUnreadAndLockedSince(subject.AgvId) == true)
+        {
+            return false;
+        }
+
         if ((await supervisor.OpenEpisodeCausesAsync(subject, cancellationToken).ConfigureAwait(false))
             .Contains(VehicleFaultEvidence.DoorNotProvenLocked))
         {

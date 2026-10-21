@@ -94,6 +94,12 @@ public static class VehicleFaultEvidence
 /// stopped again for want of a station alone (REQ-0247), but doors not proven locked again are REQ-0246's own trigger, and
 /// the vehicle is stopped again. False unless the caller says otherwise.
 /// </param>
+/// <param name="DoorReadingRestored">
+/// The door fault in effect was raised only for doors that could not be read, and they have read locked for
+/// <see cref="VehicleFaultOptions.DoorReadingRestoredFor"/> without a break (<see cref="InTransitDoorReadings"/>). REQ-0167 as
+/// revised by CP-0017 counts that as the cause removed; see <see cref="VehicleFaultCoordinator.DoorReadingRelease"/>. False
+/// unless the caller says otherwise.
+/// </param>
 /// <remarks>
 /// Until CP-0011 it carried the opposite fact, whether the doors read locked again, which released a door-cause stop on its
 /// own (control-server#335). The user ruled on 2026-10-13 that a lock feedback that came back proves nothing about the lock,
@@ -131,7 +137,8 @@ public sealed record VehicleFaultDecision(
     bool Escalated,
     IReadOnlyList<string> Reasons,
     string? AlarmCode = null,
-    bool ReleasedOnConfirmation = false)
+    bool ReleasedOnConfirmation = false,
+    bool ReleasedOnDoorReading = false)
 {
     /// <summary>
     /// True whenever a fault fact is held. New dispatch is blocked at either level — REQ-0234 does
@@ -787,12 +794,18 @@ public sealed class VehicleFaultCoordinator(
         (StopProofVerdict proof, VehicleMotionSample latest) = await ProveStopAsync(
             subject, fault, emergency, cancellationToken).ConfigureAwait(false);
 
-        // Asked only when it can change the answer: a latched vehicle is not escalated for motion either way.
+        // Asked only when it can change the answer: a latched vehicle is not escalated for motion either way. A release on the
+        // door reading restored (CP-0017) leaves the vehicle where a person's release does -- held between stations, its order
+        // HELD -- and exempts it the same way, on the same bound.
         bool releasedOnConfirmation = false;
+        bool releasedOnDoorReading = false;
         if (!emergency.IsLatched)
         {
             releasedOnConfirmation = await emergencyStop
                 .WasReleasedOnConfirmationAsync(subject, fault.FaultGeneration, cancellationToken)
+                .ConfigureAwait(false);
+            releasedOnDoorReading = await emergencyStop
+                .WasReleasedOnDoorReadingAsync(subject, fault.FaultGeneration, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -809,7 +822,7 @@ public sealed class VehicleFaultCoordinator(
         bool escalated = stopRequired &&
             (RequiresEscalation(
                 hold == RiotOrderCommandOutcome.Confirmed, proof, latest, emergency.IsLatched,
-                releasedOnConfirmation && !context.DoorsNotProvenLocked) ||
+                (releasedOnConfirmation || releasedOnDoorReading) && !context.DoorsNotProvenLocked) ||
              (emergency.IsLatched && fault.EscalatedAt is null));
         if (escalated)
         {
@@ -823,8 +836,13 @@ public sealed class VehicleFaultCoordinator(
             // this server's class stands has to be re-triggered (REQ-0248). The supervisor's
             // evaluation does both. It releases automatically only on a cleared fault (REQ-0167);
             // a fault this evaluation just recorded is not cleared, so it never releases here --
-            // and since CP-0011 the doors read locked again are no exception.
-            await emergencyStop.EvaluateAsync(subject, cancellationToken).ConfigureAwait(false);
+            // and since CP-0011 the doors read locked again are no exception, but for the one
+            // CP-0017 made: a fault raised only for doors that could not be read, whose doors have
+            // read locked long enough, past this server's own confirmed hold (DoorReadingRelease).
+            DoorReadingReleaseAllowance? allowance = emergency.IsLatched
+                ? await DoorReadingReleaseAsync(subject, fault, context, cancellationToken).ConfigureAwait(false)
+                : null;
+            await emergencyStop.EvaluateAsync(subject, allowance, cancellationToken).ConfigureAwait(false);
         }
 
         List<string> reasons = [.. proof.MissingFacts];
@@ -839,7 +857,91 @@ public sealed class VehicleFaultCoordinator(
         Alarm(alarm, subject.AgvId, reasons);
 
         return new VehicleFaultDecision(
-            fault.Level, fault.FaultGeneration, evidenceCode, hold, cargo, proof, escalated, reasons, alarm, releasedOnConfirmation);
+            fault.Level, fault.FaultGeneration, evidenceCode, hold, cargo, proof, escalated, reasons, alarm, releasedOnConfirmation,
+            releasedOnDoorReading);
+    }
+
+    /// <summary>
+    /// Reads what the release on the door reading restored rests on, and builds its allowance when it is due (control-server#789,
+    /// REQ-0167 as revised by CP-0017).
+    /// </summary>
+    /// <remarks>
+    /// The hold is reconciled here, the last read before the release: <see cref="RiotOrderCommandService.ReconcileAsync"/> settles
+    /// it Confirmed once the order reads PAUSED and never re-decides a settled attempt. The order is read again too and must still
+    /// be 7: RIoT accepts CONTINUE_FROM_HELD under a CAN_RECOVER latch and turns the order 7 -> 3 (riot-behavior-lab round-44,
+    /// BC-ORDER-020), and whether the vehicle then drives off the moment the latch comes off has never been observed. The
+    /// supervisor reads the vehicle's unfinished orders once more immediately before the cancelEmergency and lets through only
+    /// this order, PAUSED.
+    /// </remarks>
+    private async Task<DoorReadingReleaseAllowance?> DoorReadingReleaseAsync(
+        EmergencyStopSubject subject,
+        VehicleFaultFact fault,
+        FaultedVehicleContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!context.DoorReadingRestored || context.CurrentOrder is not RiotOrderCommandTarget target)
+        {
+            return null;
+        }
+
+        bool releasedBefore = await emergencyStop
+            .WasReleasedOnDoorReadingAsync(subject, fault.FaultGeneration, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> attempts = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.OrderHold, target.UpperId, cancellationToken).ConfigureAwait(false);
+        RiotOrderCommandAttempt? hold = attempts.LastOrDefault(attempt => attempt.FaultGeneration == fault.FaultGeneration);
+        RiotOrderCommandOutcome? holdOutcome = hold is null
+            ? null
+            : await commands.ReconcileAsync(hold, cancellationToken).ConfigureAwait(false);
+        RiotOrderObservation order = await movement
+            .ReconcileByUpperIdAsync(target.UpperId, cancellationToken).ConfigureAwait(false);
+        return DoorReadingRelease(fault, context, holdOutcome, order, releasedBefore);
+    }
+
+    /// <summary>
+    /// The allowance the door reading restored earns a door fault's stop, or null. Pure, so every refusal is a case a test can
+    /// name (control-server#789).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// All of these, or nothing (REQ-0167 as revised by CP-0017): the caller read the doors locked long enough on a fault raised
+    /// only for doors that could not be read (<see cref="FaultedVehicleContext.DoorReadingRestored"/>); the fault is the doors'
+    /// and still at the first level -- a confirmed isolation, a <c>CAN_NOT_RECOVER</c> seen once, is a person's; this generation
+    /// issued an <c>OrderHold</c> on this order and it reads back Confirmed; RIoT reports this very order -- same orderId --
+    /// PAUSED (7) now. No order at all (the journey ended, the order was cancelled) earns nothing: "本服务端为该故障暂停的订单仍为
+    /// HELD" cannot hold, and CP-0017 section 5, item 4 keeps that with a person.
+    /// </para>
+    /// <para>
+    /// <b>Once per fault generation.</b> A vehicle released on its door reading and stopped again in the same fault -- the doors
+    /// unread again, motion read -- is left to a person the second time. CP-0017 does not ask for it; it is the stricter side,
+    /// so that a vehicle whose IO comes and goes does not stand cycling between a stop and a release (the control-server#527
+    /// oscillation, without the bookkeeping that kept it in bounds).
+    /// </para>
+    /// </remarks>
+    internal static DoorReadingReleaseAllowance? DoorReadingRelease(
+        VehicleFaultFact fault,
+        FaultedVehicleContext context,
+        RiotOrderCommandOutcome? holdOutcome,
+        RiotOrderObservation order,
+        bool releasedBefore)
+    {
+        ArgumentNullException.ThrowIfNull(fault);
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(order);
+
+        if (releasedBefore ||
+            !context.DoorReadingRestored ||
+            fault.Level != VehicleFaultLevel.SuspectedBlocked ||
+            !string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal) ||
+            context.CurrentOrder is not RiotOrderCommandTarget target ||
+            holdOutcome != RiotOrderCommandOutcome.Confirmed ||
+            order.Kind != RiotOrderObservationKind.Active ||
+            order.OrderState != RiotOrderState.Paused ||
+            !string.Equals(order.OrderId, target.OrderId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return new DoorReadingReleaseAllowance(fault.FaultGeneration, target.OrderId);
     }
 
     /// <summary>
