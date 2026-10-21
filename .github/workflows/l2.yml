@@ -300,6 +300,11 @@ jobs:
               # control-server#539 review H-1: the same with the emergency-stop button held -- recorded without a call,
               # re-triggered once a class-two entry clears the latch, then released by a person.
               @{ Name = 'in-transit-door-button-held'; Runs = 1 }
+              # control-server#789 (CP-0017): a slot that cannot be read while driving is graced for 3 s -- unread about a
+              # second, nothing is held or stopped; unread 5 s, held and stopped, then released by this server once the doors
+              # read locked for 10 s, the order still held until a person continues it.
+              @{ Name = 'in-transit-door-unknown-graced'; Runs = 1 }
+              @{ Name = 'in-transit-door-unknown-stopped-released'; Runs = 1 }
               # The batch-3 exit (FP-IS-14 and FP-IS-15), three consecutive runs each.
               @{ Name = 'slot-configuration-activation-replay'; Runs = 3; BatchId = 'batch-3' }
               @{ Name = 'onboard-alarm-snapshot-dashboard';     Runs = 3; BatchId = 'batch-3' }

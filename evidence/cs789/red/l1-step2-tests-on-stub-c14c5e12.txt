@@ -1,0 +1,19 @@
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.BehindTheReadinessGateTheStopIsReleasedToo [4 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.OneFaultIsReleasedOnItsOwnOnlyOnce [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.TheClassThreeEntryAsksForARepairedLockOnlyWhenADoorReadNotLocked(history: "unread-and-locked", repairRequired: False) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.AStopForDoorsThatCouldNotBeReadIsReleasedOnceTheyReadLockedForTenSeconds [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.ABreakInTheLockedReadingsStartsTheTenSecondsAgain [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.AHeldOrderThatRunsAfterTheAutomaticReleaseIsNamed [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Failed!  - Failed:     6, Passed:    10, Skipped:     0, Total:    16, Duration: 37 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,49 @@
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.TheLimitIsCountedPerVehicle [244 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.ARestartDoesNotLengthenTheGrace [8 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.TheThirdGraceWithinTenMinutesIsNotGiven [3 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorLockFaultTests.ADoorNotProvenLockedWhileDrivingIsHeldOnThisOrderThenStopped(leg: "gate", side: "behind-gate", doors: "unknown") [3 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.ARestartForgetsHowManyGracesWereGiven [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorLockFaultTests.ADoorNotProvenLockedWhileDrivingIsHeldOnThisOrderThenStopped(leg: "gate", side: "ready", doors: "unknown") [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.ADoorReadNotLockedDuringTheGraceIsHandedAtOnce [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.TheGraceIsCountedFromWhenTheUnknownWasReceived [1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorLockFaultTests.ADoorNotProvenLockedWhileDrivingIsHeldOnThisOrderThenStopped(leg: "pickup", side: "behind-gate", doors: "unknown") [142 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.AnUnknownStillUnknownWhenTheGraceRunsOutIsHandedToTheFaultModel(side: "behind-gate") [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.AnUnknownStillUnknownWhenTheGraceRunsOutIsHandedToTheFaultModel(side: "ready") [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.AGraceOlderThanTheWindowNoLongerCounts [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.AnUnknownThatReadsLockedWithinTheGraceRaisesNothingAndIsAlarmed(side: "ready") [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.AnUnknownThatReadsLockedWithinTheGraceRaisesNothingAndIsAlarmed(side: "behind-gate") [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.AGraceThatRanOutCountsTowardsTheLimitToo [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.ALockedReadingEndsTheGraceAndTheNextUnknownStartsAfresh [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Failed!  - Failed:    16, Passed:    30, Skipped:     0, Total:    46, Duration: 39 s - ControlServer.Tests.dll (net8.0)
