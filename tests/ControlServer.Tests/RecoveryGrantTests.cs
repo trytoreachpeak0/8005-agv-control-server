@@ -138,6 +138,7 @@ public sealed class RecoveryGrantTests
     [InlineData("too-long", RecoveryGrantIssuance.DurationOutOfRange)]
     [InlineData("journey-of-nobody", RecoveryGrantIssuance.JourneyNotFound)]
     [InlineData("journey-completed", RecoveryGrantIssuance.JourneyCompleted)]
+    [InlineData("journey-omitted", RecoveryGrantIssuance.JourneyRequired)]
     public async Task ARehearsalOfWhatCannotBeGrantedSaysWhy(string shape, string code)
     {
         await using GrantFixture rig = await GrantFixture.FaultedAsync();
@@ -150,6 +151,7 @@ public sealed class RecoveryGrantTests
             case "too-long": request = request with { Minutes = 481 }; break;
             case "journey-of-nobody": request = request with { JourneyId = "journey:not-this-vehicles" }; break;
             case "journey-completed": await rig.SetJourneyStageAsync(JourneyRuntimeStage.Completed); break;
+            case "journey-omitted": request = request with { JourneyId = null }; break;
         }
 
         RecoveryGrantResult result = await rig.Issuance.GrantAsync(request, Token);

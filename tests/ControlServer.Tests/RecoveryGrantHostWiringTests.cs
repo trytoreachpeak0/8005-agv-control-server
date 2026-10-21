@@ -61,6 +61,16 @@ public sealed class RecoveryGrantHostWiringTests : IAsyncDisposable
             JsonDocument.Parse(refusedBody).RootElement.GetProperty("reasons").EnumerateArray().Select(item => item.GetString()));
         await WaitForOutputAsync(SweepRunning);
 
+        // Review L5 (ADR-cross-0066 decision 3): the charging station recovery confirmation acts on the station only and is not
+        // granted per vehicle -- the same process, grants required and none given, does not refuse it on a grant.
+        using HttpResponseMessage station = await client.PostAsJsonAsync(
+            "api/charging/v1/station-recoveries",
+            new { mapId = 1, stationId = 1, operatorId = "op-r11", basis = "L1", claimedRole = (string?)null },
+            Token);
+        string stationBody = await station.Content.ReadAsStringAsync(Token);
+        Assert.True(station.StatusCode == HttpStatusCode.Conflict, $"{(int)station.StatusCode}: {stationBody}");
+        Assert.DoesNotContain("RECOVERY_GRANT_", stationBody, StringComparison.Ordinal);
+
         using HttpResponseMessage planned = await client.PostAsJsonAsync(
             "api/field-ops/v1/recovery-grants",
             new
