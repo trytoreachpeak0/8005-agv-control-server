@@ -3,7 +3,9 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -41,6 +43,40 @@ internal static class TestOnboardProcessorFactory
             logger ?? NullLogger<OnboardMessageProcessor>.Instance,
             stationClearance: stationClearance,
             fieldConfirmations: fieldConfirmations);
+    }
+
+    /// <summary>
+    /// Registers the processor the way the host does (<c>AddDbContext</c>, <c>AddScoped</c> in Program.cs): one per scope, so
+    /// one per connection the listener serves, each over a context of its own on a connection of its own to
+    /// <paramref name="connectionString"/> (control-server#836).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One processor handed to every scope shares one context between the listener's connections. On a reconnect the old
+    /// connection's loop is still finishing a line when the new one's <c>SessionHello</c> arrives; EF refuses the second
+    /// operation, and the listener ends the new connection with 1003 (CI run 39545289891). Production never shares, so a
+    /// test whose rig did saw a failure production cannot have.
+    /// </para>
+    /// <para>
+    /// The database has to be one a second connection reaches: a named shared-cache in-memory one, kept alive by a
+    /// connection the caller holds open, or a file. SQLite serialises the connections itself.
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddScopedProcessor(
+        this IServiceCollection services,
+        string connectionString,
+        TimeProvider timeProvider,
+        IConfiguration configuration,
+        IOnboardPeer? peer = null)
+    {
+        services.AddScoped(_ => new ControlServerDbContext(
+            new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connectionString).Options));
+        services.AddScoped(provider =>
+        {
+            ControlServerDbContext context = provider.GetRequiredService<ControlServerDbContext>();
+            return Create(context, new WireToGateStore(context), timeProvider, configuration, peer);
+        });
+        return services;
     }
 
     /// <summary>

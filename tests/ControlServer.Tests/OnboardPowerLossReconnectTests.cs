@@ -424,7 +424,6 @@ public sealed class OnboardPowerLossReconnectTests
             ?? throw new InvalidOperationException("OnboardPeer._gate 改名了，这一类读路由表的办法要跟着改。");
 
         private readonly SqliteConnection _connection;
-        private readonly ControlServerDbContext _context;
         private readonly ServiceProvider _provider;
         private readonly OnboardTcpServer _server;
         private long _longestPushTicks;
@@ -432,7 +431,6 @@ public sealed class OnboardPowerLossReconnectTests
 
         private Rig(
             SqliteConnection connection,
-            ControlServerDbContext context,
             ServiceProvider provider,
             OnboardTcpServer server,
             OnboardPeer peer,
@@ -441,7 +439,6 @@ public sealed class OnboardPowerLossReconnectTests
             OnboardPeerSession onboard)
         {
             _connection = connection;
-            _context = context;
             _provider = provider;
             _server = server;
             Peer = peer;
@@ -492,11 +489,16 @@ public sealed class OnboardPowerLossReconnectTests
         public static async Task<Rig> StartAsync(TimeSpan? writeTimeout = null)
         {
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
-            SqliteConnection connection = new("Data Source=:memory:");
+            // Named and shared-cache so that each server connection and the test reach it on a connection of their own;
+            // this one stays open for the rig's lifetime, which is what keeps an in-memory database alive.
+            SqliteConnection connection = new(
+                $"Data Source=power-loss-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
-            ControlServerDbContext context = new(
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
-            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            await using (ControlServerDbContext schema = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options))
+            {
+                await schema.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            }
 
             IConfiguration configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
@@ -505,10 +507,9 @@ public sealed class OnboardPowerLossReconnectTests
                 })
                 .Build();
             OnboardPeer peer = new();
-            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
-                context, new WireToGateStore(context), TimeProvider.System, configuration, peer);
             ServiceCollection services = new();
-            services.AddScoped(_ => processor);
+            // A processor and a context per connection, as in the host (control-server#836).
+            services.AddScopedProcessor(connection.ConnectionString, TimeProvider.System, configuration, peer);
             ServiceProvider provider = services.BuildServiceProvider();
 
             int serverPort = ReserveFreePort();
@@ -533,7 +534,7 @@ public sealed class OnboardPowerLossReconnectTests
                     CredentialEnvironmentVariable = CredentialVariable
                 },
                 SlotStateSeed.Read(new ConfigurationBuilder().Build()));
-            return new Rig(connection, context, provider, server, peer, relay, engine, onboard) { ServerLog = serverLog };
+            return new Rig(connection, provider, server, peer, relay, engine, onboard) { ServerLog = serverLog };
         }
 
         /// <summary>The production defaults, and the write timeout only when a test names one.</summary>
@@ -629,17 +630,18 @@ public sealed class OnboardPowerLossReconnectTests
 
         /// <summary>
         /// Stages an unacknowledged <c>CurrentStopDepartureResult</c> for the given session, which the replay after the next
-        /// handshake has to deliver (control-server#713). Only while nothing reaches the server: the processor shares this
-        /// context.
+        /// handshake has to deliver (control-server#713). Through a context of the test's own, on a connection of its own:
+        /// each server connection's processor has its own (control-server#836).
         /// </summary>
         public async Task StageDepartureResultAsync(long generation)
         {
             const string requestId = "31000000-0000-4000-8000-0000000000d1";
+            await using ControlServerDbContext context = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection.ConnectionString).Options);
             Assert.True(await OnboardJourneyPublisher.StageCurrentStopDepartureResultAsync(
-                new WireToGateStore(_context), CurrentStopDepartures.ResultMessageId(requestId), AgvId, generation, requestId,
+                new WireToGateStore(context), CurrentStopDepartures.ResultMessageId(requestId), AgvId, generation, requestId,
                 problem: null, currentWorklistRevision: 3, DateTimeOffset.UtcNow, TestContext.Current.CancellationToken));
-            await _context.SaveChangesAsync(TestContext.Current.CancellationToken);
-            _context.ChangeTracker.Clear();
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         /// <summary>Waits until one push has been in flight for <paramref name="stuckFor"/>.</summary>
@@ -929,7 +931,6 @@ public sealed class OnboardPowerLossReconnectTests
                     finally
                     {
                         await _provider.DisposeAsync();
-                        await _context.DisposeAsync();
                         await _connection.DisposeAsync();
                     }
                 }

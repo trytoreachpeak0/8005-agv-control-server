@@ -374,6 +374,23 @@ public sealed class OnboardHandshakePushGateTests
     }
 
     /// <summary>
+    /// Each connection the server serves has a processor and a context of its own, as in the host (control-server#836).
+    /// </summary>
+    /// <remarks>
+    /// With one processor for every connection, a reconnect puts the old connection's last line and the new one's
+    /// <c>SessionHello</c> on the same context at once; EF refuses the second operation and the server ends the new
+    /// connection with 1003 (CI run 39545289891, the reconnect test above).
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public async Task EachConnectionIsServedByAProcessorAndAContextOfItsOwn()
+    {
+        await using Rig rig = await Rig.StartAsync();
+
+        Assert.Equal((false, false, false), rig.TwoConnectionsShare());
+    }
+
+    /// <summary>
     /// A new <c>SessionHello</c> on a connection whose handshake was done starts a new handshake, and the gate
     /// closes again before its answer goes out.
     /// </summary>
@@ -491,13 +508,11 @@ public sealed class OnboardHandshakePushGateTests
     private sealed class Rig : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
-        private readonly ControlServerDbContext _serverContext;
         private readonly ServiceProvider _provider;
         private readonly OnboardTcpServer _server;
 
         private Rig(
             SqliteConnection connection,
-            ControlServerDbContext serverContext,
             ServiceProvider provider,
             OnboardTcpServer server,
             OnboardPeer peer,
@@ -506,7 +521,6 @@ public sealed class OnboardHandshakePushGateTests
             OnboardPeerSession onboard)
         {
             _connection = connection;
-            _serverContext = serverContext;
             _provider = provider;
             _server = server;
             Peer = peer;
@@ -528,14 +542,16 @@ public sealed class OnboardHandshakePushGateTests
         public static async Task<Rig> StartAsync()
         {
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
-            // Named and shared-cache so that NewContext can reach it on a connection of its own; this one stays open
-            // for the rig's lifetime, which is what keeps an in-memory database alive.
+            // Named and shared-cache so that each server connection and NewContext reach it on a connection of their own;
+            // this one stays open for the rig's lifetime, which is what keeps an in-memory database alive.
             SqliteConnection connection = new(
                 $"Data Source=push-gate-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
-            ControlServerDbContext context = new(
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
-            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            await using (ControlServerDbContext schema = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options))
+            {
+                await schema.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            }
 
             IConfiguration configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
@@ -546,10 +562,9 @@ public sealed class OnboardHandshakePushGateTests
             // The one peer the server routes through is also the one the processor's replay sends through,
             // as in the host, where both resolve the same singleton.
             OnboardPeer peer = new();
-            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
-                context, new WireToGateStore(context), TimeProvider.System, configuration, peer);
             ServiceCollection services = new();
-            services.AddScoped(_ => processor);
+            // A processor and a context per connection, as in the host (control-server#836).
+            services.AddScopedProcessor(connection.ConnectionString, TimeProvider.System, configuration, peer);
             ServiceProvider provider = services.BuildServiceProvider();
 
             int serverPort = ReserveFreePort();
@@ -576,7 +591,7 @@ public sealed class OnboardHandshakePushGateTests
                     CredentialEnvironmentVariable = CredentialVariable
                 },
                 SlotStateSeed.Read(new ConfigurationBuilder().Build()));
-            return new Rig(connection, context, provider, server, peer, relay, engine, onboard);
+            return new Rig(connection, provider, server, peer, relay, engine, onboard);
         }
 
         /// <summary>
@@ -584,18 +599,43 @@ public sealed class OnboardHandshakePushGateTests
         /// (control-server#813). The caller disposes it.
         /// </summary>
         /// <remarks>
-        /// Neither <see cref="DbContext"/> nor <see cref="SqliteConnection"/> is thread-safe, and the server's processor
-        /// uses its connection on the listener's threads, for every heartbeat as well. The database is a named
-        /// shared-cache in-memory one, kept alive by the server's connection, so another connection sees the same rows;
-        /// SQLite serialises the two connections itself. The same shape as OnboardSilentLivenessLossTests (#256).
+        /// Neither <see cref="DbContext"/> nor <see cref="SqliteConnection"/> is thread-safe, and each server connection's
+        /// processor uses its own on the listener's threads, for every heartbeat as well. The database is a named
+        /// shared-cache in-memory one, kept alive by the rig's connection, so every connection sees the same rows;
+        /// SQLite serialises the connections itself. The same shape as OnboardSilentLivenessLossTests (#256).
         /// </remarks>
         public ControlServerDbContext NewContext() =>
             new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection.ConnectionString).Options);
 
-        /// <summary>Whether <paramref name="context"/> is, or shares a connection with, the server's own context.</summary>
-        public bool SharesStateWith(ControlServerDbContext context) =>
-            ReferenceEquals(context, _serverContext) ||
-            ReferenceEquals(context.Database.GetDbConnection(), _serverContext.Database.GetDbConnection());
+        /// <summary>
+        /// Whether <paramref name="context"/> is, or shares a connection with, the context a server connection is served by.
+        /// </summary>
+        /// <remarks>The listener opens a scope of this provider per connection, so a scope opened here is what one gets.</remarks>
+        public bool SharesStateWith(ControlServerDbContext context)
+        {
+            using IServiceScope scope = _provider.CreateScope();
+            ControlServerDbContext server = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
+            return ReferenceEquals(context, server) ||
+                ReferenceEquals(context.Database.GetDbConnection(), server.Database.GetDbConnection());
+        }
+
+        /// <summary>
+        /// What two server connections would share, from the scopes the listener would open for them: the processor, the
+        /// context, the context's connection (control-server#836).
+        /// </summary>
+        public (bool Processor, bool Context, bool Connection) TwoConnectionsShare()
+        {
+            using IServiceScope first = _provider.CreateScope();
+            using IServiceScope second = _provider.CreateScope();
+            ControlServerDbContext a = first.ServiceProvider.GetRequiredService<ControlServerDbContext>();
+            ControlServerDbContext b = second.ServiceProvider.GetRequiredService<ControlServerDbContext>();
+            return (
+                ReferenceEquals(
+                    first.ServiceProvider.GetRequiredService<OnboardMessageProcessor>(),
+                    second.ServiceProvider.GetRequiredService<OnboardMessageProcessor>()),
+                ReferenceEquals(a, b),
+                ReferenceEquals(a.Database.GetDbConnection(), b.Database.GetDbConnection()));
+        }
 
         /// <summary>What the vehicle has read, in order, heartbeat answers left out.</summary>
         public WireEvent[] Inbound() =>
@@ -651,7 +691,6 @@ public sealed class OnboardHandshakePushGateTests
             await _server.StopAsync(CancellationToken.None);
             _server.Dispose();
             await _provider.DisposeAsync();
-            await _serverContext.DisposeAsync();
             await _connection.DisposeAsync();
             Lifetime.Dispose();
         }
