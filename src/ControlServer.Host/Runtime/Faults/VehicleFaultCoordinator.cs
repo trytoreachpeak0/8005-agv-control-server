@@ -103,7 +103,8 @@ public static class VehicleFaultEvidence
 public sealed record FaultedVehicleContext(
     RiotOrderCommandTarget? CurrentOrder,
     FaultedVehicleCargoFacts? Cargo,
-    bool DoorsNotProvenLocked = false);
+    bool DoorsNotProvenLocked = false,
+    bool DoorReadingRestored = false);
 
 /// <summary>The cargo facts REQ-0238 decides the two paths from.</summary>
 /// <param name="LoadingWitnessed">Whether loading was actually observed.</param>

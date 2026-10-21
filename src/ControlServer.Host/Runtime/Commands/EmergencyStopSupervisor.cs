@@ -263,6 +263,11 @@ public sealed class EmergencyStopSupervisor(
     public const string HeldOrderNotPausedReason = "EMERGENCY_HELD_ORDER_NOT_PAUSED";
 
     /// <summary>
+    /// The reason recorded on the automatic release of a stop raised only for doors that could not be read, once they have read
+    /// locked long enough (REQ-0167 as revised by CP-0017; control-server#789).
+    /// </summary>
+    public const string DoorReadingRestoredReason = "EMERGENCY_DOOR_READING_RESTORED";
+    /// <summary>
     /// The receipt property that carries a person's confirmation, and that marks a release as one
     /// issued on it.
     /// </summary>

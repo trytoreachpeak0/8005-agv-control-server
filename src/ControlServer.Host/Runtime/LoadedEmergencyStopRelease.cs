@@ -233,8 +233,10 @@ public static class EmergencyStopDoorCause
         IVehicleFaultStore faults,
         EmergencyStopSupervisor supervisor,
         EmergencyStopSubject subject,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        InTransitDoorReadings? doorReadings = null)
     {
+        _ = doorReadings;
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(faults);
         ArgumentNullException.ThrowIfNull(supervisor);
