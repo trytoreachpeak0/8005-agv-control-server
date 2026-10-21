@@ -61,6 +61,53 @@ public sealed class CatalogAgeWindowTests
         Assert.Null(backlog.AcceptedAt);
     }
 
+    /// <summary>
+    /// 正面证明（调度 Coordinator13 要求）：同一目录里一新一旧，只派新的；旧的留在积压、带时间窗原因码、看板照样列出；
+    /// 新的受理之后钟走过它的时间窗两小时，旅程照常、不被收回，旧的仍不派。
+    /// </summary>
+    [Fact]
+    public async Task OnlyTheFreshDemandIsDispatchedAndItIsDeliveredPastItsWindow()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        const string stale = "10000000-0000-4000-8000-000000000829";
+        fixture.Catalog.Set(
+            fixture.Demand(stale, "SUBLOT-STALE", Now.AddMinutes(-31)),
+            fixture.Demand(Demand, Sublot, Now.AddMinutes(-5)));
+        fixture.BoxCounts.Set("SUBLOT-STALE", 4);
+        fixture.BoxCounts.Set(Sublot, 4);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal([Demand], await AcceptedAsync(fixture));
+        Assert.Equal(DispatchReasonCodes.DemandOlderThanCatalogWindow, (await fixture.BacklogAsync(stale)).ReasonCode);
+        JourneyRuntimeRow journey = await fixture.Context.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        using (JsonDocument board = JsonDocument.Parse(JsonSerializer.Serialize(
+                   await new DispatchBacklogQueryEndpoint().ReadAsync(fixture.Context, Token))))
+        {
+            JsonElement listed = Assert.Single(
+                board.RootElement.GetProperty("backlog").EnumerateArray(),
+                row => row.GetProperty("demandId").GetString() == stale);
+            Assert.Equal(DispatchReasonCodes.DemandOlderThanCatalogWindow, listed.GetProperty("reasonCode").GetString());
+        }
+
+        for (int round = 0; round < 4; round++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromMinutes(30));
+            await fixture.Engine.ExecuteOnceAsync(Token);
+        }
+
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(Now.AddMinutes(120), fixture.Clock.GetUtcNow());
+        JourneyRuntimeRow after = await fixture.Context.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal(journey.JourneyId, after.JourneyId);
+        Assert.NotEqual(JourneyRuntimeStage.Completed, after.Stage);
+        Assert.NotEqual(
+            DemandExecutionStatus.Cancelled,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(Token)).Status);
+        Assert.Equal([Demand], await AcceptedAsync(fixture));
+        Assert.Equal(DispatchReasonCodes.DemandOlderThanCatalogWindow, (await fixture.BacklogAsync(stale)).ReasonCode);
+    }
+
     /// <summary>恰好 30 分钟不算「已超过」（条文「已超过目录时间窗的」）：照常派车。</summary>
     [Fact]
     public async Task ADemandExactlyAtTheWindowIsStillDispatched()

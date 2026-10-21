@@ -74,6 +74,11 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "这个子批次的这类任务已在本地取消过、或已以故障货物交接终止，按业务键永久不再执行；MES 换了新的需求号也一样",
             [DispatchReasonCodes.TransportDemandKeyAlreadyAccepted] =
                 "这个子批次的这类任务已由另一个需求号受理过（在办、已完成或已取消），同一件活不再重复受理",
+            // 目录时间窗（REQ-0366，control-server#827）：用户定的有意不派，不是故障；需求仍在目录里，交现场按既有方式处理。
+            [DispatchReasonCodes.DemandOlderThanCatalogWindow] =
+                "MES 接入首次读到这条需求已超过目录时间窗（默认 30 分钟），不再派车；需求仍在目录里，MES 字段更新也不会放回",
+            [DispatchReasonCodes.DemandCatalogCreatedAtMissing] =
+                "MES 接入没有给出首次读到这条需求的时刻，无法判断是否在目录时间窗内，不派车",
             // 批次8-18（control-server#389）：空闲返回的承诺不被搬运抢，正常调度结论，不是故障。
             [DispatchReasonCodes.VehicleCommittedToIdleReturn] =
                 "这辆车已承诺返回等待点，返回不被搬运取消或抢走；由别的车接，或等它到点后下一轮再派",
