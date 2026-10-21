@@ -464,8 +464,8 @@ public sealed class RecoveryGrantTests
                 Service(Fixture, new SiteRiot(Fixture)),
                 Roster,
                 RecoveryOptions(credentialVariable),
-                Token,
-                new RecoveryGrantGate(Registry, GrantOptions, Fixture.Context));
+                new RecoveryGrantGate(Registry, GrantOptions, Fixture.Context),
+                Token);
 
         public ValueTask DisposeAsync() => Fixture.DisposeAsync();
     }

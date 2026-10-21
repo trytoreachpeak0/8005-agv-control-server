@@ -113,13 +113,14 @@ public static class VehicleFaultRecoveryEndpoints
         VehicleFaultRecoveryService recovery,
         VehicleRoster roster,
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
-        CancellationToken cancellationToken,
-        [Microsoft.AspNetCore.Mvc.FromServices] RecoveryGrantGate? grants = null)
+        RecoveryGrantGate grants,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(recovery);
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(recoveryOptions);
+        ArgumentNullException.ThrowIfNull(grants);
 
         VehicleFaultRecoveryOptions options = recoveryOptions.Value;
         context.Response.Headers.CacheControl = "no-store";
@@ -162,8 +163,7 @@ public static class VehicleFaultRecoveryEndpoints
 
         // control-server#797 (ADR-cross-0066 decision 4): every request needs a grant in effect for the vehicle naming the action,
         // and, for an action on the vehicle's journey, naming that journey. Refused before anything is read or done.
-        if (grants is not null &&
-            await grants.RefusalAsync(vehicle.AgvId, request.Action, cancellationToken).ConfigureAwait(false) is { } ungranted)
+        if (await grants.RefusalAsync(vehicle.AgvId, request.Action, cancellationToken).ConfigureAwait(false) is { } ungranted)
         {
             return Problem(
                 StatusCodes.Status403Forbidden,

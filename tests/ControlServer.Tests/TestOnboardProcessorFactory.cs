@@ -173,3 +173,16 @@ internal sealed class ServedContexts
         }
     }
 }
+
+/// <summary>
+/// control-server#797: the recovery grant gate the endpoints take, for a test that asks for no grant -- the product default,
+/// <c>RecoveryGrant:required</c> off, under which the gate refuses nothing and reads nothing.
+/// </summary>
+internal static class TestRecoveryGrants
+{
+    public static ControlServer.Host.Runtime.Recovery.RecoveryGrantGate NotRequired(ControlServerDbContext context) =>
+        new(
+            new ControlServer.Host.Runtime.Recovery.RecoveryGrantRegistry(TimeProvider.System),
+            Options.Create(new ControlServer.Host.Runtime.Recovery.RecoveryGrantOptions()),
+            context);
+}

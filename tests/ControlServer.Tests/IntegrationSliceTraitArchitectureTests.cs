@@ -199,6 +199,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["ProtocolPayloadShapeArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["ProtocolVectorTestBindingArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["RecoveryGrantFieldOpsTests"] = "control-server#797 FieldOps grant-recovery, revoke-recovery and recovery-grants verbs' process entry through a running Host: rehearsal and code, grant, list, revoke, a stale code, no server; a controlled operations entry point, no wire message",
+            ["RecoveryGrantHostWiringTests"] = "control-server#797 review M3/M4: a real ControlServer.Host process refuses a fault recovery without a grant and runs the grant sweep; host composition, no wire message",
             ["RecoveryGrantTests"] = "control-server#797 (ADR-cross-0066) the control host's per-vehicle recovery grant: rehearsal and confirmation code, audit, expiry, revocation, renewal, gone with the process, and the vehicle fault recovery entry checking every request against it; a controlled operations entry point, no wire message (the session side is FP-IS-07's, in RecoveryStateMachineG2Tests)",
             ["RiotAbsentAtObservationCreateExperimentOptionsTests"] = "options validation; no wire message",
             ["RiotCallAllowlistArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",

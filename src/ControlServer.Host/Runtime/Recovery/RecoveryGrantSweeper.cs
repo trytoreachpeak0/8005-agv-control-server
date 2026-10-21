@@ -30,12 +30,19 @@ public sealed class RecoveryGrantSweeper(
             new EventId(9796, nameof(LogRoundFailed)),
             "A recovery grant sweep failed (control-server#797); the next one tries again.");
 
+    private static readonly Action<ILogger, Exception?> LogSweepRunning =
+        LoggerMessage.Define(
+            LogLevel.Information,
+            new EventId(9795, nameof(LogSweepRunning)),
+            "Recovery grants are required: the recovery grant sweep is running (control-server#797).");
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.Value.Required)
         {
             return;
         }
+        LogSweepRunning(logger, null);
         while (!stoppingToken.IsCancellationRequested)
         {
             Task changed = registry.WaitForChangeAsync(stoppingToken);

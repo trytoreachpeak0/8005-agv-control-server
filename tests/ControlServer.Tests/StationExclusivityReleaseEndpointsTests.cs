@@ -144,6 +144,7 @@ public sealed class StationExclusivityReleaseEndpointsTests
         builder.Services.AddScoped<VehicleFaultRecoveryService>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<WaitingPointArrivalSettlement>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<RecoverySessionAdministratorClose>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoveryGrantGate>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<VehicleRoster>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<ControlServerDbContext>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<IGovernanceAuditWriter>(_ => throw new InvalidOperationException("not resolved"));

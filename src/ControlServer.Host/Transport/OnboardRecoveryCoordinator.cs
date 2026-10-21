@@ -701,7 +701,8 @@ public sealed class OnboardRecoveryCoordinator(
             closed.UpdatedAt = timeProvider.GetUtcNow();
             await SettleAnsweredCommandAsync(closed, cancellationToken).ConfigureAwait(false);
         }
-        await AdvanceSessionAfterResultAsync(workflow, connection!.SessionGeneration, cancellationToken).ConfigureAwait(false);
+        await AdvanceSessionAfterResultAsync(workflow, connection!.SessionGeneration, cancellationToken, closedByAdministrator: true)
+            .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new AdministratorCloseDecision([], session.ExceptionRecoverySessionId);
 
@@ -1573,16 +1574,17 @@ public sealed class OnboardRecoveryCoordinator(
             workflow.State is not (RecoveryWorkflowState.AwaitingAuthorization or RecoveryWorkflowState.CommandPending
                 or RecoveryWorkflowState.AwaitingResult))
         {
-            // A compensation an administrator closed while it awaited its authorization (control-server#484): its session is
-            // what ended, and the refusal says so, as it does for a session closed on another result below.
-            bool closedByAdministrator = workflow?.Outcome == AdministratorClosedOutcome &&
-                                         workflow.State == RecoveryWorkflowState.RecoveryRequired;
+            // A compensation an administrator closed while it awaited its authorization (control-server#484), or spent when its
+            // session's recovery grant ended (control-server#797): its session is what ended, and the refusal says so, as it
+            // does for a session closed on another result below.
+            bool sessionEnded = workflow?.Outcome is AdministratorClosedOutcome or GrantEndedOutcome &&
+                                workflow.State == RecoveryWorkflowState.RecoveryRequired;
             return Response(root, "LoadCompensationRejected", new
             {
                 recoveryActionId = actionId,
-                problem = closedByAdministrator
+                problem = sessionEnded
                     ? Problem(ServerReasonCodes.RecoverySessionNotOpen, "payload",
-                        "The recovery session this compensation belongs to was closed by an administrator.")
+                        "The recovery session this compensation belongs to has ended.")
                     : Problem(ServerReasonCodes.ActionNotAllowedInState, "payload",
                         "Load compensation is not authorized.")
             });
@@ -1845,7 +1847,8 @@ public sealed class OnboardRecoveryCoordinator(
     private async Task AdvanceSessionAfterResultAsync(
         RecoveryWorkflowRow workflow,
         long sessionGeneration,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool closedByAdministrator = false)
     {
         if (workflow.ExceptionRecoverySessionId is null) return;
         ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.SingleAsync(
@@ -1865,13 +1868,20 @@ public sealed class OnboardRecoveryCoordinator(
         session.ClosedReason = workflow.State == RecoveryWorkflowState.Reconciled
             ? null
             : ServerReasonCodes.RecoveryActionResultNotReconciled;
-        if (session.ClosedReason is not null)
+        // control-server#797 (ADR-cross-0066 decision 5): a session whose grant ended while its action was under way closes,
+        // once that action's result is in, under RECOVERY_AUTHENTICATION_FAILED -- it ended because its grant did; the result
+        // itself is reconciled on the workflow as always. Judged by the vehicle having no grant in effect, not by the journey:
+        // a resume that completes its demand takes the demand off the journey before this runs. An administrator's closing
+        // keeps its own reason.
+        if (!closedByAdministrator && GrantRequired && recoveryGrants?.Current(session.AgvId) is null)
+            session.ClosedReason = ServerReasonCodes.RecoveryAuthenticationFailed;
+        if (workflow.State != RecoveryWorkflowState.Reconciled)
         {
             // Written before the caller's save: should that transaction roll back, this line names a closing that
             // did not happen. The store, not the log, is the record.
             LogSessionClosedNotReconciled(
                 logger ?? (ILogger)NullLogger.Instance,
-                session.ExceptionRecoverySessionId, session.ClosedReason, workflow.WorkflowType,
+                session.ExceptionRecoverySessionId, session.ClosedReason ?? string.Empty, workflow.WorkflowType,
                 workflow.WorkflowId, workflow.Outcome, workflow.DemandId, null);
         }
         await QueueSessionSnapshotAsync(session, sessionGeneration, cancellationToken).ConfigureAwait(false);
@@ -3268,12 +3278,16 @@ public sealed class OnboardRecoveryCoordinator(
                                      row.State is RecoveryWorkflowState.CommandPending or RecoveryWorkflowState.AwaitingResult))
                 continue;
             DateTimeOffset now = timeProvider.GetUtcNow();
-            foreach (RecoveryWorkflowRow release in workflows.Where(row =>
-                         row.WorkflowType == RepairReleaseAction && row.State == RecoveryWorkflowState.CommandPending))
+            // Spent with the session (cs#797 review M1), as an administrator's closing spends them (CloseSessionAwaitingResultAsync):
+            // a repair release still awaiting its hardware record, and a compensation still awaiting its authorization -- left
+            // as they were, they would count as an open recovery of this vehicle that nothing can end.
+            foreach (RecoveryWorkflowRow spent in workflows.Where(row =>
+                         (row.WorkflowType == RepairReleaseAction && row.State == RecoveryWorkflowState.CommandPending) ||
+                         row.State == RecoveryWorkflowState.AwaitingAuthorization))
             {
-                release.State = RecoveryWorkflowState.RecoveryRequired;
-                release.Outcome = GrantEndedOutcome;
-                release.UpdatedAt = now;
+                spent.State = RecoveryWorkflowState.RecoveryRequired;
+                spent.Outcome = GrantEndedOutcome;
+                spent.UpdatedAt = now;
             }
             session.State = "CLOSED";
             session.ClosedReason = ServerReasonCodes.RecoveryAuthenticationFailed;

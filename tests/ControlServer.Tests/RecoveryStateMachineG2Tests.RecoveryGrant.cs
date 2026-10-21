@@ -213,7 +213,8 @@ public sealed partial class RecoveryStateMachineG2Tests
 
     /// <summary>
     /// The action under way is not cut off: a resume whose command is out when the grant ends is left to its result, which
-    /// is reconciled and closes the session the way every result does.
+    /// is reconciled, and the session then closes under RECOVERY_AUTHENTICATION_FAILED (ADR-cross-0066 decision 5: the session
+    /// ended because its grant did; the action's own result is reconciled apart, on the workflow).
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
@@ -235,9 +236,79 @@ public sealed partial class RecoveryStateMachineG2Tests
             OperationResultPayload(journalCheckpoint: "RESUME_RESULT_RECORDED")))));
         ExceptionRecoverySessionRow session = await rig.Context.ExceptionRecoverySessions.AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(("CLOSED", (string?)null), (session.State, session.ClosedReason));
+        Assert.Equal(("CLOSED", "RECOVERY_AUTHENTICATION_FAILED"), (session.State, session.ClosedReason));
         Assert.Equal(RecoveryWorkflowState.Reconciled, (await rig.Context.RecoveryWorkflows.AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken)).State);
+    }
+
+    /// <summary>
+    /// cs#797 review M1: a compensation still awaiting its authorization when the grant ends has sent the vehicle nothing; the
+    /// session closes and the compensation is spent with it (RecoveryRequired under RECOVERY_GRANT_ENDED, as an administrator's
+    /// closing spends one), so it no longer counts as an open recovery of the vehicle -- the online withdrawal and the
+    /// administrator closing would otherwise find a workflow nothing can end -- and its authorization asked afterwards is refused.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ACompensationAwaitingItsAuthorizationIsSpentWhenTheGrantEnds()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using GrantRig rig = await GrantRig.FailedLoadAsync();
+        (await rig.Context.SessionRecoveries.SingleAsync(token)).DepartureSafe = true;
+        await rig.Context.SaveChangesAsync(token);
+        rig.Context.ChangeTracker.Clear();
+        rig.Grant(SeededJourneyId, actions: ["RESUME_AFTER_REPAIR", "COMPENSATE_LOAD_ALL_EMPTY"]);
+        Assert.Equal("ExceptionRecoverySessionOpened", MessageType(await rig.ProcessAsync(RecoverySessionRequest(GrantProof))));
+        Assert.Equal("RecoveryActionAccepted", MessageType(await rig.ProcessAsync(RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY"))));
+        Assert.Equal("ACTION_SELECTED", (await rig.Context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+
+        rig.Registry.Revoke(AgvId);
+        await rig.SweepAsync();
+
+        ExceptionRecoverySessionRow session = await rig.Context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+        RecoveryWorkflowRow workflow = await rig.Context.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+        Assert.Equal(("CLOSED", "RECOVERY_AUTHENTICATION_FAILED"), (session.State, session.ClosedReason));
+        Assert.Equal((RecoveryWorkflowState.RecoveryRequired, "RECOVERY_GRANT_ENDED"), (workflow.State, workflow.Outcome));
+        Assert.False(await rig.Context.RecoveryWorkflows.AsNoTracking().AnyAsync(
+            row => row.AgvId == AgvId && (row.State == RecoveryWorkflowState.AwaitingAuthorization ||
+                                          row.State == RecoveryWorkflowState.CommandPending ||
+                                          row.State == RecoveryWorkflowState.AwaitingResult), token));
+        string late = await rig.ProcessAsync(CompensationAuthorizationRequest());
+        Assert.Equal(("LoadCompensationRejected", ServerReasonCodes.RecoverySessionNotOpen),
+            (MessageType(late), FirstPayload(late).GetProperty("problem").GetProperty("reasonCode").GetString()));
+        Assert.Equal(0, await rig.Context.ProtocolOutbox.CountAsync(row => row.MessageType == "LoadCompensationCommand", token));
+    }
+
+    /// <summary>
+    /// Brief step 8: what a real onboard reports for the whole drive while it carries a movement order of this server's -- the
+    /// session not ready, DEPARTURE_SAFETY_NOT_READY on VEHICLE_NOT_READY -- changes nothing: a granted session opens offering
+    /// what the grant names, and the sweep closes it when the grant ends (cs#797 review probe P2).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task OnASessionNotReadyOnTheServersOwnOrderTheGrantStillOpensAndEndsTheSession()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using GrantRig rig = await GrantRig.FailedLoadAsync();
+        SessionRecoveryRow recovery = await rig.Context.SessionRecoveries.SingleAsync(row => row.AgvId == AgvId, token);
+        recovery.Readiness = SessionReadiness.RecoveryRequired;
+        recovery.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        recovery.DepartureSafe = false;
+        recovery.SafetyReasonCodesJson = $"[\"{OwnOrderNotReadyReason}\"]";
+        recovery.SafetyUnknownPresent = true;
+        await rig.Context.SaveChangesAsync(token);
+        rig.Context.ChangeTracker.Clear();
+
+        rig.Grant(SeededJourneyId);
+        Assert.Equal("ExceptionRecoverySessionOpened", MessageType(await rig.ProcessAsync(RecoverySessionRequest(GrantProof))));
+        Assert.Equal(["RESUME_AFTER_REPAIR"], (await LatestSessionSnapshotAsync(rig.Context)).Allowed);
+
+        rig.Registry.Revoke(AgvId);
+        int sentBefore = rig.Peer.Lines.Count;
+        await rig.SweepAsync();
+
+        (string State, string[] _, string? ClosedReason) closed = await LatestSessionSnapshotAsync(rig.Context);
+        Assert.Equal(("CLOSED", "RECOVERY_AUTHENTICATION_FAILED"), (closed.State, closed.ClosedReason));
+        Assert.Equal("ExceptionRecoverySessionSnapshot", MessageType(Assert.Single(rig.Peer.Lines.Skip(sentBefore))));
     }
 
     /// <summary>A resend of an action accepted before the grant ended is answered as it was, and runs nothing a second time.</summary>

@@ -1284,11 +1284,13 @@ public sealed class ManualStationClearanceTests : IDisposable
             ControlServer.Host.Runtime.Fleet.VehicleRoster roster = new(Options.Create(fleet.Options));
 
             var unauthenticated = await ChargingStationEndpoints.ClearAsync(
-                HttpContextFor(null, IPAddress.Loopback), request, Clearance(fleet), roster, options, fleet.Clock, Token);
+                HttpContextFor(null, IPAddress.Loopback), request, Clearance(fleet), roster, options, fleet.Clock, Audit(fleet.Context), TestRecoveryGrants.NotRequired(fleet.Context),
+                Token);
             Assert.IsType<UnauthorizedHttpResult>(unauthenticated.Result);
 
             var confirmed = await ChargingStationEndpoints.ClearAsync(
-                HttpContextFor(null, IPAddress.Loopback, "cs406-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Token);
+                HttpContextFor(null, IPAddress.Loopback, "cs406-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Audit(fleet.Context), TestRecoveryGrants.NotRequired(fleet.Context),
+                Token);
 
             Ok<ChargingStationClearanceResponse> ok = Assert.IsType<Ok<ChargingStationClearanceResponse>>(confirmed.Result);
             Assert.Equal((FieldConfirmationDecision.Confirmed, true), (ok.Value!.Outcome, ok.Value.StationReleased));
@@ -1326,23 +1328,23 @@ public sealed class ManualStationClearanceTests : IDisposable
             FleetVehicleOptions vehicle = fleet.Options.Fleet.Single(item => item.AgvId == AgvA);
 
             var ungranted = await ChargingStationEndpoints.ClearAsync(
-                HttpContextFor(null, IPAddress.Loopback, "cs797-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Token,
-                gate);
+                HttpContextFor(null, IPAddress.Loopback, "cs797-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Audit(fleet.Context), gate,
+                Token);
             ProblemHttpResult refused = Assert.IsType<ProblemHttpResult>(ungranted.Result);
             Assert.Equal((StatusCodes.Status403Forbidden, "RECOVERY_GRANT_MISSING"), (refused.StatusCode, refused.ProblemDetails.Detail));
             Assert.NotNull(await HolderAsync(fleet, Near.StationId));
 
             registry.Grant(Grant(vehicle, ["RESUME_AFTER_REPAIR"], fleet.Clock.GetUtcNow()));
             var otherAction = await ChargingStationEndpoints.ClearAsync(
-                HttpContextFor(null, IPAddress.Loopback, "cs797-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Token,
-                gate);
+                HttpContextFor(null, IPAddress.Loopback, "cs797-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Audit(fleet.Context), gate,
+                Token);
             Assert.Equal("RECOVERY_GRANT_ACTION_NOT_GRANTED", Assert.IsType<ProblemHttpResult>(otherAction.Result).ProblemDetails.Detail);
             Assert.NotNull(await HolderAsync(fleet, Near.StationId));
 
             registry.Grant(Grant(vehicle, ["CONFIRM_CHARGING_STATION_CLEARANCE"], fleet.Clock.GetUtcNow()));
             var confirmed = await ChargingStationEndpoints.ClearAsync(
-                HttpContextFor(null, IPAddress.Loopback, "cs797-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Token,
-                gate);
+                HttpContextFor(null, IPAddress.Loopback, "cs797-secret"), request, Clearance(fleet), roster, options, fleet.Clock, Audit(fleet.Context), gate,
+                Token);
             Assert.Equal(FieldConfirmationDecision.Confirmed, Assert.IsType<Ok<ChargingStationClearanceResponse>>(confirmed.Result).Value!.Outcome);
             Assert.Null(await HolderAsync(fleet, Near.StationId));
         }

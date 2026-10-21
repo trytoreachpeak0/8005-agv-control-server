@@ -436,7 +436,8 @@ public sealed class ChargingInterruptionTests
             var vehicle = await ChargingStationEndpoints.RecoverVehicleAsync(
                 HttpContextFor("cs407-secret"), new VehicleChargingEligibilityRecoveryHttpRequest(AgvA, "op-r11", "电池检查 B-1", null),
                 secondHolds, new ControlServer.Host.Runtime.Fleet.VehicleRoster(Options.Create(second.Options)), Audit(second), options,
-                second.Clock, NullLogger<VehicleChargingEligibilityRecoveryHttpRequest>.Instance, Token);
+                second.Clock, NullLogger<VehicleChargingEligibilityRecoveryHttpRequest>.Instance, TestRecoveryGrants.NotRequired(second.Context),
+                Token);
             Assert.Equal(StatusCodes.Status200OK, ((IStatusCodeHttpResult)vehicle.Result).StatusCode);
             Assert.Single(await secondHolds.ListActiveStationHoldsAsync(Map, Near.StationId, Token));
             await RoundAsync(second);
@@ -469,7 +470,8 @@ public sealed class ChargingInterruptionTests
                 string? bearer, VehicleChargingEligibilityRecoveryHttpRequest request) =>
                 ChargingStationEndpoints.RecoverVehicleAsync(
                     HttpContextFor(bearer), request, holds, roster, Audit(fleet), options, fleet.Clock,
-                    NullLogger<VehicleChargingEligibilityRecoveryHttpRequest>.Instance, Token);
+                    NullLogger<VehicleChargingEligibilityRecoveryHttpRequest>.Instance, TestRecoveryGrants.NotRequired(fleet.Context),
+                    Token);
             VehicleChargingEligibilityRecoveryHttpRequest good = new(AgvA, "op-r11", "电池检查 B-1", "维护管理员");
 
             Assert.IsType<UnauthorizedHttpResult>((await Recover(null, good)).Result);
@@ -526,7 +528,7 @@ public sealed class ChargingInterruptionTests
             Task<Results<Ok<VehicleChargingEligibilityRecoveryResponse>, UnauthorizedHttpResult, ProblemHttpResult>> Recover() =>
                 ChargingStationEndpoints.RecoverVehicleAsync(
                     HttpContextFor("cs797-secret"), good, holds, roster, Audit(fleet), options, fleet.Clock,
-                    NullLogger<VehicleChargingEligibilityRecoveryHttpRequest>.Instance, Token, gate);
+                    NullLogger<VehicleChargingEligibilityRecoveryHttpRequest>.Instance, gate, Token);
 
             ProblemHttpResult refused = Assert.IsType<ProblemHttpResult>((await Recover()).Result);
             Assert.Equal((StatusCodes.Status403Forbidden, "RECOVERY_GRANT_MISSING"), (refused.StatusCode, refused.ProblemDetails.Detail));

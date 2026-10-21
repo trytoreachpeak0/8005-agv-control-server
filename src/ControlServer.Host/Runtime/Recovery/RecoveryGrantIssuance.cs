@@ -106,6 +106,7 @@ public sealed class RecoveryGrantIssuance(
     public const string DurationOutOfRange = "RECOVERY_GRANT_DURATION_OUT_OF_RANGE";
     public const string JourneyNotFound = "RECOVERY_GRANT_JOURNEY_NOT_FOUND";
     public const string JourneyCompleted = "RECOVERY_GRANT_JOURNEY_COMPLETED";
+    public const string JourneyRequired = "RECOVERY_GRANT_JOURNEY_REQUIRED";
     public const string FieldTooLong = "RECOVERY_GRANT_FIELD_TOO_LONG";
     public const string ConfirmationStale = "RECOVERY_GRANT_CONFIRMATION_STALE";
     public const string NotInEffect = "RECOVERY_GRANT_NOT_IN_EFFECT";
@@ -157,6 +158,11 @@ public sealed class RecoveryGrantIssuance(
         if (vehicle is not null)
         {
             vehicleJourney = await UnfinishedJourneyAsync(vehicle.AgvId, cancellationToken).ConfigureAwait(false);
+            // cs#797 review L3: an action on a journey, asked for without one while the vehicle has a journey, could only ever
+            // be refused on that journey; say so now rather than grant something that covers nothing. A vehicle with no
+            // unfinished journey may be granted those actions vehicle-wide (a session with no demand).
+            if (journeyId is null && vehicleJourney is not null && actions.Any(RecoveryGrantActions.ActsOnJourney))
+                codes.Add(JourneyRequired);
             if (journeyId is not null && fits)
             {
                 JourneyRuntimeRow? row = await dbContext.JourneyRuntimes.AsNoTracking()
