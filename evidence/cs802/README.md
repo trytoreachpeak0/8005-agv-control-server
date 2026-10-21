@@ -14,3 +14,11 @@ All runs: `dotnet test tests/ControlServer.Tests -c Release --filter ...` throug
   `summary.txt` lists which test went red. `no-unload-type` and `any-baseline-slot` survived the first pass; the tests were
   sharpened (`86ea3ebea`) and the `-2` runs show them killed. The summary's first line after the first block is a repeat of
   `no-time-order` from the second script's header, run against the same code.
+
+## Review round (Coordinator13's independent review of `cf90362cf`)
+
+- `review/class.txt` -- the class after `e74385efc` added `AnUnloadAppliedByTheStoreBringsBackSlotsLoadedBeforeAReconnect`
+  (the unload goes through the real `WireToGateStore.ApplyOperationResultAsync`): 20 passed.
+- `review/store-path-on-base-reader.txt` -- that test with `OnboardDispatchFactsReader.cs` put back to `7bf593fef`:
+  the after-the-baseline row is red (`3,4,5,6,7,8` read where `1..8` is expected), the tie row green.
+- `review/time-ge-store-path.txt` (+ `.diff`) -- `>` mutated to `>=`: the tie row is red.
