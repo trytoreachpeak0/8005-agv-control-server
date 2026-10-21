@@ -271,11 +271,13 @@ public sealed class InTransitDoorUnknownGraceTests
     /// <summary>
     /// 同一条规则从库里读一遍（cs#839 第二次复审）：车载端存下的「没锁」带 <c>vehicleStopped=true</c> 时，接着的「读不到」照样宽限，
     /// 不当场交出；同一条不带 vehicleStopped 时当场交出。钉住的是从摘要里解析出的那一列，不是内存里手搭的样本。
+    /// 宽限照给，但之后的自动解除被解除前的全量复查挡住：在途期间任何一条「没锁」都交人解除，车停着时的也算（第三次复审，用户 10-21 定）。
     /// </summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
     [Trait("Requirement", "REQ-0246")]
+    [Trait("Requirement", "REQ-0167")]
     public async Task ADoorReadNotLockedWhileStandingStillAsStoredIsGracedWhenAnUnknownFollows(bool stopped)
     {
         await using RuntimeFixture fixture = await DrivingAsync("behind-gate");
@@ -288,14 +290,25 @@ public sealed class InTransitDoorUnknownGraceTests
         await ReportUnknownAsync(fixture);
         await DriveOneRoundAsync(fixture);
 
-        if (stopped)
-        {
-            await AssertNothingRaisedAsync(fixture);
-        }
-        else
+        if (!stopped)
         {
             await AssertHeldThenStoppedAsync(fixture, upperId);
+            return;
         }
+
+        // The grace is still given; the release after it is not (cs#839 third re-review, the user's ruling of 2026-10-21: a
+        // door read not locked anywhere in transit keeps the stop with a person, standing still or not).
+        await AssertNothingRaisedAsync(fixture);
+        for (int round = 0; round < 6 && await InTransitDoorReadingRestoredReleaseTests.CountAsync(
+                 fixture, RiotCommandTypeNames.TriggerEmergency) == 0; round++)
+        {
+            await DriveOneRoundAsync(fixture);
+        }
+
+        await InTransitDoorReadingRestoredReleaseTests.LatchAsync(fixture);
+        await ReportLockedAsync(fixture);
+        await InTransitDoorReadingRestoredReleaseTests.DriveRoundsAsync(fixture, 20);
+        Assert.Equal(0, await InTransitDoorReadingRestoredReleaseTests.CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
     }
 
     /// <summary>窗口是滑动的：第 1 次宽限开始 10 分钟之后，又能给 1 次。</summary>

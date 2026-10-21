@@ -425,6 +425,158 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
     }
 
     /// <summary>
+    /// 故障期间车载端报了一条「没锁」，下一轮来时这一代已 7 秒没有消息、读数判为过时（cs#839 第三次复审 H1、探针 Q1）：过时那一轮不判状态，
+    /// 却照样把读到的时刻推过了那条「没锁」；之后读回锁闭也不自动解除——解除前的全量复查读得到它。不走过时那一轮的对照同样不解除。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ANotLockedReadAsTheFactThatWentStaleKeepsTheStopWithAPerson(bool staleRound)
+    {
+        await using RuntimeFixture fixture = await LatchedForUnreadDoorsAsync();
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 2);
+        await ReportNotLockedAsync(fixture);
+        if (staleRound)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(7));
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Context.ChangeTracker.Clear();
+        }
+        else
+        {
+            await DriveOneRoundAsync(fixture);
+        }
+
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 宽限中两轮之间报了一条车停着时的「没锁」，又回到「读不到」，宽限用完交出（第三次复审 M2、探针 Q2）：用户 10-21 定「车停着时的也算」，
+    /// 读回锁闭也不自动解除。行驶中的同一条同样不解除。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ANotLockedReadWhileStandingStillInsideAGraceKeepsTheStopWithAPerson(bool stopped)
+    {
+        await using RuntimeFixture fixture = await DrivingBetweenStationsAsync(behindTheReadinessGate: false);
+        await ReportUnknownAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED"], vehicleStopped: stopped);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await ReportUnknownAsync(fixture);
+        for (int round = 0; round < 6 && await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency) == 0; round++)
+        {
+            await DriveOneRoundAsync(fixture);
+        }
+
+        await LatchAsync(fixture);
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 服务端刚重启，新进程第一轮之前车载端先后报了行驶中的「没锁」、「锁闭」、「读不到」（第三次复审 M1、探针 Q5，即第二次复审的 P6）：
+    /// 倒查「读不到」那一段的断点只看得到「锁闭」，故障被记成只是读不到；读回锁闭也不自动解除——解除前的全量复查读得到那条「没锁」。
+    /// 不重启的对照同样不解除。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ANotLockedThenLockedThenUnreadJustAfterARestartKeepsTheStopWithAPerson(bool restart)
+    {
+        await using RuntimeFixture fixture = await DrivingBetweenStationsAsync(behindTheReadinessGate: false);
+        if (restart)
+        {
+            fixture.DoorReadings = new InTransitDoorReadings(Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
+            await fixture.RecreateEngineAsync();
+        }
+
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        await ReportNotLockedAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        await ReportLockedAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        await ReportUnknownAsync(fixture);
+        for (int round = 0; round < 7 && await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency) == 0; round++)
+        {
+            await DriveOneRoundAsync(fixture);
+        }
+
+        await LatchAsync(fixture);
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 解除前的全量复查要从本单在途起点读起；库里起点之前已经没有任何一条摘要时，它证明不了起点那一刻门是什么状态，不自动解除，交人处理
+    /// （第三次复审，用户 10-21 定：取不到完整窗口也不解除）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task NoAutomaticReleaseWhenTheInboxNoLongerReachesBackToTheStartOfTheLeg()
+    {
+        await using RuntimeFixture fixture = await LatchedForUnreadDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        await using (ControlServerDbContext db = new(fixture.DbOptionsForTests))
+        {
+            DateTimeOffset legStart = (await db.OrderIntents.AsNoTracking()
+                .SingleAsync(row => row.UpperId == latched.UpperId, Token)).CreatedAt;
+            ProtocolInboxRow[] before = [.. (await db.ProtocolInbox
+                    .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
+                    .ToArrayAsync(Token))
+                .Where(row => row.ReceivedAt < legStart)];
+            Assert.NotEmpty(before);
+            db.ProtocolInbox.RemoveRange(before);
+            await db.SaveChangesAsync(Token);
+        }
+
+        fixture.Context.ChangeTracker.Clear();
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 故障期间 IO 一直读不到、车载端很久没有新摘要（心跳照常、每分钟一轮），之后读回锁闭（第三次复审 L1、探针 Q4）：安静超过 10 分钟不是
+    /// 读漏了什么，读回锁闭满 10 秒照样自动解除。修之前「上一轮以来」被截到 10 分钟就当历史不明，11 分钟那一格永远不解除。
+    /// </summary>
+    [Theory]
+    [InlineData(9)]
+    [InlineData(11)]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ALongQuietUnreadSpellIsStillReleasedOnceTheDoorsReadLocked(int quietMinutes)
+    {
+        await using RuntimeFixture fixture = await LatchedForUnreadDoorsAsync();
+        for (int minute = 0; minute < quietMinutes; minute++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(59));
+            await DriveOneRoundAsync(fixture);
+        }
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 11);
+
+        Assert.True(await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency) > 0);
+    }
+
+    /// <summary>
     /// 自动解除的四个前提单独核（审查 M4）：本代 Hold 回查未确认、故障已到第二级（隔离）、RIoT 上这张单不是 7、读到的是另一张单——
     /// 任一条不满足都没有放行条件；全部满足才有，而且挂在本代故障下。
     /// </summary>
@@ -674,7 +826,7 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
     }
 
     /// <summary>已经按住、急停之后：RIoT 停住单，闩锁锁上，车停下，再跑一轮把触发确认下来。前置都在这里断。</summary>
-    private static async Task LatchAsync(RuntimeFixture fixture)
+    internal static async Task LatchAsync(RuntimeFixture fixture)
     {
         Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.OrderHold));
         Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
@@ -695,7 +847,7 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
             upperId, (await reading.OrderIntents.AsNoTracking().SingleAsync(row => row.UpperId == upperId, Token)).OrderId!);
     }
 
-    private static async Task DriveRoundsAsync(RuntimeFixture fixture, int rounds)
+    internal static async Task DriveRoundsAsync(RuntimeFixture fixture, int rounds)
     {
         for (int round = 0; round < rounds; round++)
         {
@@ -703,7 +855,7 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
         }
     }
 
-    private static async Task<int> CountAsync(RuntimeFixture fixture, string commandType)
+    internal static async Task<int> CountAsync(RuntimeFixture fixture, string commandType)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.RiotOrderCommandAudit.AsNoTracking().CountAsync(row => row.CommandType == commandType, Token);
