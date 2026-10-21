@@ -35,3 +35,20 @@ Each mutation changed exactly one file and was restored with `git checkout -- <f
 
 Synthetic `charging-full-cycle` (`SUMMARY.md`, `assertions.json` only). Green: all six criteria PASS. Red (M1 applied
 to the product): L2-CFC-06 FAIL, expected `0 / NO_CHARGE / OCCUPIED … | COMPLETE`, actual `0 / NO_CHARGE / (none) | NOT_CHARGING`.
+
+## Review rework (independent review of `72ce1f04`: M1, M2)
+
+| Commit | What |
+| --- | --- |
+| `d5cf2718` | L1: M1 (warned on the charger, then stuck at no station: warned again) and M2 (failed cycle at no station) |
+| `6b431c35` | fix M1: the at-no-station case has its own say-once key, timed from the first reading at 0 |
+
+- `red/05-review-tests-at-d5cf27188.txt`: M1 test fails (`Expected: 2, Actual: 1` warnings 2249); the M2 test passes:
+  it pins existing behaviour (reservation kept at 0, own verdict `CHARGING_VEHICLE_STILL_HOLDS_CHARGER`, 2247 says
+  "at no station", released once at 12).
+- `green/05-review-tests-at-6b431c359.txt`: the 7 cs#801 tests: 7/7.
+- `green/06-affected-classes-at-6b431c359.txt`: 21 related classes (now also the charging dashboard): 1112/1112.
+- `red/06-mutation-M4-shared-key.txt`: at-no-station uses the old key again: M1 test fails (1 warning).
+- `red/07-mutation-M5-clock-from-completion.txt`: at-no-station timed from the completion: M1 test fails at the
+  "no warning in the first five minutes after leaving" step.
+- `green/07-format-at-6b431c359.txt`: same two pre-existing `IdleReturnExecutionTests.cs` lines only.
