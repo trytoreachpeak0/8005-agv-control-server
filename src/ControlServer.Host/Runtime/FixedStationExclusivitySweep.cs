@@ -290,8 +290,11 @@ internal sealed class FixedStationExclusivitySweep(
 
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(row.VehicleKey, cancellationToken)
             .ConfigureAwait(false);
+        // control-server#801: RIoT's currentPosition 0 is no station, not another one -- a vehicle just off the point is still
+        // in its way. Left means read standing at another station, as for a charger.
         return vehicle.Connected &&
                vehicle.CurrentStationId is int current &&
+               current > Charging.ChargerOccupancyReader.NoStation &&
                current != row.StationId;
     }
 

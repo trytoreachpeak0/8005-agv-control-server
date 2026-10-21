@@ -559,7 +559,267 @@ public sealed class StagingDepartureFullOrNoFitTests
         Assert.Contains(expected, html, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// control-server#780（v5 生产 10-19 06:17 那一次的形状）：装上一篮后判为 <c>VEHICLE_FULL</c>，同站追加的需求新开了第 2 个停靠，车「到」第 2 停靠后
+    /// 客户点出发。照样 <c>ACCEPTED</c>、放回没装的那条、装货阶段不改判；这一轮不抛、不整轮失败，发给车的每一行都在发件箱里。
+    /// </summary>
+    /// <remarks>
+    /// 修之前这一轮抛 <c>KeyNotFoundException</c>：出发那一支按第 2 停靠与当前基准重算一个装货阶段 id 去发，而 <c>VEHICLE_FULL</c> 时什么都没暂存，
+    /// 第 2 停靠上按那个号落库的是到站那一张（停靠自己的 id），不是装货阶段那一张。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task DepartureAtAnAppendedStopAfterTheVehicleWasJudgedFullSendsOnlyRowsOnFile()
+    {
+        await using RuntimeFixture fixture = await FullThenAtTheAppendedStopAsync(loadedBeforeFull: true);
+        int businessBefore = await BusinessStatesOnFileAsync(fixture);
+
+        string departureRequestId = await StagingDepartureRequestTests.RequestDepartureAsync(fixture);
+        await StagingDepartureRequestTests.RunAsync(fixture);
+
+        await AssertFullDepartureAcceptedAsync(fixture, departureRequestId, businessBefore);
+    }
+
+    /// <summary>
+    /// control-server#780（v5 生产 10-20 01:26 那一次的形状）：车到待送点时一篮未装就判为 <c>VEHICLE_FULL</c>（判满口径是 control-server#800 的事，
+    /// 这里只借它的结果），之后在本站装上锚需求、同站追加的需求新开第 2 个停靠，到第 2 停靠后客户点出发。与装满后判出的那一种同一个结论。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task DepartureAfterTheVehicleWasJudgedFullWithNothingLoadedSendsOnlyRowsOnFile()
+    {
+        await using RuntimeFixture fixture = await FullThenAtTheAppendedStopAsync(loadedBeforeFull: false);
+        int businessBefore = await BusinessStatesOnFileAsync(fixture);
+
+        string departureRequestId = await StagingDepartureRequestTests.RequestDepartureAsync(fixture);
+        await StagingDepartureRequestTests.RunAsync(fixture);
+
+        await AssertFullDepartureAcceptedAsync(fixture, departureRequestId, businessBefore);
+    }
+
+    /// <summary>
+    /// control-server#780 回归：没判满时受理出发，装货阶段以 <c>OPERATOR_DEPARTED</c> 关闭的那张业务状态快照照旧暂存、在同一轮发出，
+    /// 发出去的就是暂存的那一行（id 由停靠与它自己的修订号派生）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task DepartureWhenNotFullSendsTheLoadingPhaseSnapshotItStaged()
+    {
+        await using RuntimeFixture fixture = await LoadedAsync(StopKind.StagingRulesOn);
+        fixture.Catalog.Set(StagingDemand(fixture), StagingDemand(fixture, SecondDemand, SecondSublot, Now.AddMinutes(-9)));
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        JourneyStopRow standing = await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, Demand);
+        int linesBefore = fixture.Peer.Lines.Count;
+
+        string departureRequestId = await StagingDepartureRequestTests.RequestDepartureAsync(fixture);
+        await StagingDepartureRequestTests.RunAsync(fixture);
+
+        Assert.Equal(
+            "ACCEPTED",
+            (await StagingDepartureRequestTests.ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+        ProtocolOutboxRow closed = Assert.Single(
+            await StagedLoadingPhaseRowsAsync(fixture),
+            row => ClosedReasonOf(row.PayloadJson) == LoadingClosedReasons.OperatorDeparted);
+        Assert.Equal(
+            JourneyPlanBuilder.StableGuid($"{standing.StopId}|{RevisionOf(closed.PayloadJson)}", "loading-phase"),
+            closed.MessageId);
+        Assert.Contains(closed.MessageId, SentMessageIds(fixture, linesBefore));
+        await AssertEverySentLineIsOnFileAsync(fixture);
+    }
+
+    /// <summary>
+    /// control-server#780 重放：判满后在追加停靠上受理了出发，之后服务端重启。重启后的第一轮不抛，不去发一行不存在的报文；车照常离站。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AfterARestartTheFirstRoundSendsNothingThatIsNotOnFile()
+    {
+        await using RuntimeFixture fixture = await FullThenAtTheAppendedStopAsync(loadedBeforeFull: true);
+        string departureRequestId = await StagingDepartureRequestTests.RequestDepartureAsync(fixture);
+        await StagingDepartureRequestTests.RunAsync(fixture);
+        Assert.Equal(
+            "ACCEPTED",
+            (await StagingDepartureRequestTests.ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+
+        fixture.SlotGroupFullness = new SlotGroupFullnessBoard();
+        await fixture.RecreateEngineAsync();
+        await StagingDepartureRequestTests.RunAsync(fixture);
+        await StagingDepartureRequestTests.RunAsync(fixture);
+
+        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
+        AssertNeverBlocked(journey);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+        await AssertEverySentLineIsOnFileAsync(fixture);
+    }
+
+    /// <summary>
+    /// control-server#780：判满后在追加停靠上，车的会话因本服务端自己的在途单而未就绪（<see cref="PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync"/>）
+    /// 时点了出发。不论这一轮答成什么，都不抛、不去发一行不存在的报文；会话回到就绪之后的一轮同样如此。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task DepartureWhileTheSessionIsNotReadyOnTheOwnOrderSendsOnlyRowsOnFile()
+    {
+        await using RuntimeFixture fixture = await FullThenAtTheAppendedStopAsync(loadedBeforeFull: true);
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        string departureRequestId = await StagingDepartureRequestTests.RequestDepartureAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await AssertEverySentLineIsOnFileAsync(fixture);
+
+        await fixture.RestoreSessionReadyAsync();
+        await StagingDepartureRequestTests.RunAsync(fixture);
+        await StagingDepartureRequestTests.RunAsync(fixture);
+
+        Assert.Equal(
+            "ACCEPTED",
+            (await StagingDepartureRequestTests.ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+        AssertNeverBlocked(await fixture.RuntimeAsync());
+        await AssertEverySentLineIsOnFileAsync(fixture);
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 判为 <c>VEHICLE_FULL</c> 之后同站追加一条（新开第 2 个停靠），车离开第 1 停靠、「到」第 2 停靠，停在等录入（第 2 停靠上一篮没装）。
+    /// <paramref name="loadedBeforeFull"/> 为真：锚需求装上之后才判满（10-19）；为假：到站时一篮未装就判满，锚需求在判满之后装上（10-20）。
+    /// </summary>
+    private static async Task<RuntimeFixture> FullThenAtTheAppendedStopAsync(bool loadedBeforeFull)
+    {
+        RuntimeFixture fixture;
+        const string correctionId = "70000000-0000-4000-8000-000000000780";
+        if (loadedBeforeFull)
+        {
+            fixture = await LoadedAsync(StopKind.StagingRulesOn);
+            await FillFrontAsync(fixture);
+            // 判满的那一轮车就会走：开着一个纠错把它扣在本站，追加进来之后再关（与上面那条「判满后追加」同一个做法）。
+            await OpenCorrectionAsync(fixture, correctionId);
+            RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo));
+            await TickAsync(fixture);
+        }
+        else
+        {
+            fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+            await AllowEnRouteAppendAsync(fixture);
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            await FillFrontAsync(fixture);
+            JourneyRuntimeRow driving = await fixture.RuntimeAsync();
+            fixture.Riot.SetSuccessfulArrival("TO_PICKUP", driving.PickupStationRiotId);
+            fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = driving.PickupStationRiotId };
+            for (int round = 0; round < 2; round++)
+            {
+                RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo));
+                await TickAsync(fixture);
+            }
+            Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+            Assert.Empty(await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .Where(row => row.Status == JourneyDemandStatuses.Loaded)
+                .ToArrayAsync(Token));
+        }
+        Assert.Equal(LoadingPhaseStates.VehicleFull, (await fixture.RuntimeAsync()).LoadingPhaseState);
+
+        fixture.Catalog.Set(StagingDemand(fixture), StagingDemand(fixture, SecondDemand, SecondSublot, Now.AddMinutes(-9)));
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        string secondStop = (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == SecondDemand, Token)).PickupStopId;
+        Assert.NotEqual(secondStop, (await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, Demand)).StopId);
+
+        if (loadedBeforeFull)
+        {
+            await CloseCorrectionAsync(fixture, correctionId);
+        }
+        else
+        {
+            // 判满已锁住（判出来就不再改判）；现场那辆车实际有空仓，之后照样装上了货。把前仓放开，让锚需求装得上。
+            await SetSlotAvailabilityAsync(fixture, [1, 2, 3, 4], "ENABLED");
+            await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
+                fixture, Demand, "SUBLOT-001", Batch7StopDrivenAdvanceDriver.FirstSubmissionId);
+            await fixture.ApplySafeResultAsync(
+                await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load, SlotBusinessState.Occupied);
+        }
+        RecordRound(fixture, Waiting(StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupOccupiedByOwnCargo));
+        await TickAsync(fixture);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == Demand, Token)).Status);
+        Assert.Equal([StagingStationName], await DepartureTargetsAsync(fixture));
+
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(fixture, Demand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, Demand, "TO_GATE");
+        Assert.Equal(secondStop, (await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, Demand)).StopId);
+        JourneyRuntimeRow atSecond = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, atSecond.Stage);
+        Assert.Equal(LoadingPhaseStates.VehicleFull, atSecond.LoadingPhaseState);
+        await fixture.ProveSlotDoorsClosedAsync();
+        return fixture;
+    }
+
+    /// <summary>判满之后受理的出发：答复 <c>ACCEPTED</c>，没装的那条放回，装货阶段不改判、这一轮不另暂存业务快照，发给车的每一行都在发件箱里；车照常进离站。</summary>
+    private static async Task AssertFullDepartureAcceptedAsync(RuntimeFixture fixture, string departureRequestId, int businessBefore)
+    {
+        Assert.Equal(
+            "ACCEPTED",
+            (await StagingDepartureRequestTests.ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+        Assert.NotNull((await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == SecondDemand, Token)).RemovedAt);
+        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
+        AssertNeverBlocked(journey);
+        Assert.Equal(LoadingPhaseStates.VehicleFull, journey.LoadingPhaseState);
+        Assert.Equal(businessBefore, await BusinessStatesOnFileAsync(fixture));
+        await AssertEverySentLineIsOnFileAsync(fixture);
+
+        await StagingDepartureRequestTests.RunAsync(fixture);
+        AssertNeverBlocked(await fixture.RuntimeAsync());
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.RuntimeAsync()).Stage);
+        await AssertEverySentLineIsOnFileAsync(fixture);
+    }
+
+    private static Task<int> BusinessStatesOnFileAsync(RuntimeFixture fixture) =>
+        fixture.Context.ProtocolOutbox.AsNoTracking().CountAsync(row => row.MessageType == "VehicleBusinessStateSnapshot", Token);
+
+    /// <summary>车载端收到的每一行报文，发件箱里都有同一个 messageId 的那一行。</summary>
+    private static async Task AssertEverySentLineIsOnFileAsync(RuntimeFixture fixture)
+    {
+        string[] onFile = await fixture.Context.ProtocolOutbox.AsNoTracking().Select(row => row.MessageId).ToArrayAsync(Token);
+        Assert.All(SentMessageIds(fixture, 0), id => Assert.Contains(id, onFile));
+    }
+
+    private static string[] SentMessageIds(RuntimeFixture fixture, int from) =>
+    [
+        .. fixture.Peer.Lines.Skip(from).Select(line =>
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            return document.RootElement.GetProperty("messageId").GetString()!;
+        })
+    ];
+
+    private static async Task<ProtocolOutboxRow[]> StagedLoadingPhaseRowsAsync(RuntimeFixture fixture) =>
+    [
+        .. (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "VehicleBusinessStateSnapshot")
+                .ToArrayAsync(Token))
+            .Where(row => ClosedReasonOf(row.PayloadJson) is not null)
+    ];
+
+    private static string? ClosedReasonOf(string json)
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement phase = document.RootElement.GetProperty("payload").GetProperty("loadingPhase");
+        return phase.ValueKind == JsonValueKind.Object && phase.GetProperty("closedReason").ValueKind == JsonValueKind.String
+            ? phase.GetProperty("closedReason").GetString()
+            : null;
+    }
+
+    private static long RevisionOf(string json)
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("payload").GetProperty("vehicleBusinessStateRevision").GetInt64();
+    }
 
     /// <summary>一条 STAGING_TO_WIRE 需求，与 <see cref="StagingPickupNoCountdownTests.ArrangeAsync"/> 放进目录的那一条同一个写法；不给参数就是那一条。</summary>
     private static AcceptedDemandSnapshot StagingDemand(
@@ -658,7 +918,10 @@ public sealed class StagingDepartureFullOrNoFitTests
     /// <summary>
     /// 把车报的会话基线里这几个仓位改成禁用（<c>Batch7CargoHoldingTests.LeaveOnlyTheFirstDemandsSlotsAsync</c> 同一个做法）：账本按它扣空仓。
     /// </summary>
-    private static async Task DisableSlotsAsync(RuntimeFixture fixture, int[] slots)
+    private static Task DisableSlotsAsync(RuntimeFixture fixture, int[] slots) =>
+        SetSlotAvailabilityAsync(fixture, slots, "DISABLED");
+
+    private static async Task SetSlotAvailabilityAsync(RuntimeFixture fixture, int[] slots, string availability)
     {
         ProtocolInboxRow[] rows = await fixture.Context.ProtocolInbox
             .Where(row => row.MessageType == "CapabilitySnapshot" || row.MessageType == "SafetyStateSnapshot")
@@ -670,7 +933,7 @@ public sealed class StagingDepartureFullOrNoFitTests
             {
                 if (slots.Contains(slot!["slotNo"]!.GetValue<int>()))
                 {
-                    slot["administrativeAvailability"] = "DISABLED";
+                    slot["administrativeAvailability"] = availability;
                 }
             }
             row.RequestJson = root.ToJsonString();

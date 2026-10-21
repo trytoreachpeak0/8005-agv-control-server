@@ -1,0 +1,75 @@
+  Failed ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(round: 9) [4 s]
+  Error Message:
+   System.IO.EndOfStreamException : ControlServer closed the connection.
+  Stack Trace:
+     at ControlServer.FakeOnboard.OnboardPeerSession.ReadRequiredAsync(StreamReader reader, String expected, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 891
+   at ControlServer.FakeOnboard.OnboardPeerSession.HandshakeAsync(StreamReader reader, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 139
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 78
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 89
+   at ControlServer.FakeOnboard.OnboardPeerSession.ReconnectAsync() in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 765
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 174
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 209
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(round: 54) [148 ms]
+  Error Message:
+   System.IO.EndOfStreamException : ControlServer closed the connection.
+  Stack Trace:
+     at ControlServer.FakeOnboard.OnboardPeerSession.ReadRequiredAsync(StreamReader reader, String expected, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 891
+   at ControlServer.FakeOnboard.OnboardPeerSession.HandshakeAsync(StreamReader reader, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 121
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 78
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 89
+   at ControlServer.FakeOnboard.OnboardPeerSession.ReconnectAsync() in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 765
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 174
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 209
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(round: 25) [148 ms]
+  Error Message:
+   System.IO.EndOfStreamException : ControlServer closed the connection.
+  Stack Trace:
+     at ControlServer.FakeOnboard.OnboardPeerSession.ReadRequiredAsync(StreamReader reader, String expected, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 891
+   at ControlServer.FakeOnboard.OnboardPeerSession.HandshakeAsync(StreamReader reader, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 121
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 78
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 89
+   at ControlServer.FakeOnboard.OnboardPeerSession.ReconnectAsync() in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 765
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 174
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 209
+--- End of stack trace from previous location ---
+
+  Failed ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(round: 9) [2 s]
+  Error Message:
+   System.IO.EndOfStreamException : ControlServer closed the connection.
+  Stack Trace:
+     at ControlServer.FakeOnboard.OnboardPeerSession.ReadRequiredAsync(StreamReader reader, String expected, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 891
+   at ControlServer.FakeOnboard.OnboardPeerSession.HandshakeAsync(StreamReader reader, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 153
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 78
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 89
+   at ControlServer.FakeOnboard.OnboardPeerSession.ReconnectAsync() in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 765
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 174
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 209
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(round: 41) [69 ms]
+  Error Message:
+   System.IO.EndOfStreamException : ControlServer closed the connection.
+  Stack Trace:
+     at ControlServer.FakeOnboard.OnboardPeerSession.ReadRequiredAsync(StreamReader reader, String expected, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 891
+   at ControlServer.FakeOnboard.OnboardPeerSession.HandshakeAsync(StreamReader reader, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 121
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 78
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 89
+   at ControlServer.FakeOnboard.OnboardPeerSession.ReconnectAsync() in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 765
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 174
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 209
+--- End of stack trace from previous location ---
+
+  Failed ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(round: 9) [2 s]
+  Error Message:
+   System.IO.EndOfStreamException : ControlServer closed the connection.
+  Stack Trace:
+     at ControlServer.FakeOnboard.OnboardPeerSession.ReadRequiredAsync(StreamReader reader, String expected, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 891
+   at ControlServer.FakeOnboard.OnboardPeerSession.HandshakeAsync(StreamReader reader, CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 153
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 78
+   at ControlServer.FakeOnboard.OnboardPeerSession.StartAsync(CancellationToken cancellationToken) in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 89
+   at ControlServer.FakeOnboard.OnboardPeerSession.ReconnectAsync() in C:\work\8005-wt\cs836-8005-agv-control-server\tools\ControlServer.FakeOnboard\OnboardPeerSession.cs:line 765
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 174
+   at ControlServer.Tests.OnboardHandshakePushGateTests.APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt(Int32 round) in C:\work\8005-wt\cs836-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakePushGateTests.cs:line 209
+--- End of stack trace from previous location ---
+
