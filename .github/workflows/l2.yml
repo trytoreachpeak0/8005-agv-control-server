@@ -323,6 +323,10 @@ jobs:
               # still fits the other side is taken, and the vehicle does not leave for the drop-off.
               @{ Name = 'staging-side-full-departs'; Runs = 1 }
               @{ Name = 'staging-other-side-fits-holds'; Runs = 1 }
+              # control-server#800 (CP-0018): at the staging station both sides taken only by reservations, nothing loaded -- not
+              # full; once a reservation is cancelled the vehicle keeps waiting and loads what is appended after it, and does not
+              # leave for the drop-off by itself.
+              @{ Name = 'staging-reservations-not-full'; Runs = 1 }
               # control-server#712: a vehicle that takes only STAGING_TO_WIRE, its journey ended at the staging station, stays
               # there instead of returning to a free waiting point, and takes the next staging demand where it stands.
               @{ Name = 'staging-only-vehicle-stays-at-staging-origin'; Runs = 1 }
