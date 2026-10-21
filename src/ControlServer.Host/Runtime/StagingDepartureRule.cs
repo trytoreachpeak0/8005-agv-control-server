@@ -62,7 +62,11 @@ public static class StagingDepartureRule
     /// <summary>
     /// 一侧的仓位余量，判一条候选被什么挡住用。
     /// </summary>
-    /// <param name="Usable">这一侧能用的仓：会话基线里的（禁用的不在里面），加上这一侧已装货物占着的（装货途中重连，新会话的基线里没有它们）。</param>
+    /// <param name="Usable">
+    /// 这一侧能用的仓＝（会话基线 \ 已装）＋本侧已装：会话基线里的仓（禁用的不在里面）先去掉已装货物占着的，再把这一侧已装货物占着的全部加回来。
+    /// 没重连时已装的仓就在基线里，这样算不会多算一遍；装货途中重连，新会话的基线里没有它们，这样算才把它们算进来。不能写成「基线个数加本侧已装个数」
+    /// （cs#800 复审 L3：同一侧既有已装货又有禁用仓时，会把只被禁用仓挡住的候选算成容量）。
+    /// </param>
     /// <param name="FreeOfLoadedCargo">这一侧只扣已装货物还空着的仓：会话基线里的，去掉已装货物占着的。</param>
     public sealed record SlotRoom(int Usable, int FreeOfLoadedCargo);
 

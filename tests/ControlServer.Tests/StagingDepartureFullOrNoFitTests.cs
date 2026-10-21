@@ -172,6 +172,28 @@ public sealed class StagingDepartureFullOrNoFitTests
     }
 
     /// <summary>
+    /// cs#800 复审 L3（审查人的探针，变异 mI 下存活后补的守护）：没有重连，同一侧既有已装货（已装的仓在会话基线里）又有禁用仓。等着的一条要这一侧
+    /// 「已装篮数 + 2」篮，派车判 <c>SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE</c>：这一侧能用的仓只有已装那几格加 1 格空仓，比它要的少，挡住它的只是禁用仓，
+    /// 不计入，车不带着一批就走。能用的仓若写成「基线个数加本侧已装个数」，已装的会被算两遍，这条就红。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task SameSideLoadedAndDisabledWithoutReconnectDoesNotSendItOn()
+    {
+        await using RuntimeFixture fixture = await LoadedAsync(StopKind.StagingRulesOn);
+        int[] own = await OwnSlotsAsync(fixture);
+        Assert.All(own, slot => Assert.InRange(slot, 1, 4));
+        await DisableSlotsAsync(fixture, [.. Enumerable.Range(1, 4).Except(own).Skip(1)]);
+        RecordRound(fixture, Waiting(
+            StopKind.StagingRulesOn, "W-1", "FRONT", DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable, baskets: own.Length + 2));
+        await TickAsync(fixture);
+        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
+        Assert.NotEqual(LoadingPhaseStates.VehicleFull, journey.LoadingPhaseState);
+        Assert.False(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture), "Disabled slots on the loaded side sent the vehicle on.");
+    }
+
+    /// <summary>
     /// cs#800 独立审查 M1 的另一半：装货途中重连，新会话的基线里没有已装的那一格（会话建立时它有货）。前仓可用的仓只剩基线里 1 格，等着的一条要前仓 2 篮，
     /// 派车同样判 <c>SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE</c>——但这一侧算上已装的那一格有 2 格，挡住它的是已装货物，算容量：判满，离站。
     /// </summary>
