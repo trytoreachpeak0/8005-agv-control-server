@@ -947,6 +947,56 @@ public sealed class StagingDepartureFullOrNoFitTests
     }
 
     /// <summary>
+    /// cs#800 返工（调度 10-21，分票王同步进票面验收）：等着的候选只因途中追加的 9 段上限被拒，按 CP-0018 仍算容量（协议 legs 上限是 9），车上 0 篮也判满。
+    /// 但车要在原地把已承诺的需求装完才走：锚需求没装之前不发离站核验，不会空车离开。那条候选取消（下一轮不再等着）就撤回判满；再出现、锚需求装上之后，
+    /// 车带着货离站。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task FullOnlyByThePlanLimitTheVehicleLoadsWhatItPromisedBeforeLeaving()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        JourneyRuntimeRow driving = await fixture.RuntimeAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", driving.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = driving.PickupStationRiotId };
+        for (int round = 0; round < 5; round++)
+        {
+            RecordPlanLimitWaiting(fixture);
+            await TickAsync(fixture);
+        }
+        JourneyRuntimeRow full = await fixture.RuntimeAsync();
+        Assert.Equal(LoadingPhaseStates.VehicleFull, full.LoadingPhaseState);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, full.Stage);
+        Assert.False(await Batch7CargoHoldingTests.DepartureCheckSentAsync(fixture), "A vehicle full only on the plan limit left with nothing on board.");
+
+        RecordRound(fixture);
+        await TickAsync(fixture);
+        JourneyRuntimeRow withdrawn = await fixture.RuntimeAsync();
+        Assert.NotEqual(LoadingPhaseStates.VehicleFull, withdrawn.LoadingPhaseState);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, withdrawn.Stage);
+
+        RecordPlanLimitWaiting(fixture);
+        await TickAsync(fixture);
+        Assert.Equal(LoadingPhaseStates.VehicleFull, (await fixture.RuntimeAsync()).LoadingPhaseState);
+        RecordPlanLimitWaiting(fixture);
+        await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
+            fixture, Demand, "SUBLOT-001", Batch7StopDrivenAdvanceDriver.FirstSubmissionId);
+        await fixture.ApplySafeResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load, SlotBusinessState.Occupied);
+        RecordPlanLimitWaiting(fixture);
+        await TickAsync(fixture);
+
+        JourneyRuntimeRow left = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == Demand, Token)).Status);
+        Assert.Equal(LoadingPhaseStates.VehicleFull, left.LoadingPhaseState);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, left.Stage);
+    }
+
+    /// <summary>
     /// 现场回放（v5 生产 2026-10-21 14:31:59，agv02 旅程 2413d3b7，读库坐实见 cs#800 评论）：车到 217 时一篮没装，只挂一条预留未装的需求；同站等着的候选
     /// 因本车占位被拒（那一侧扣掉预留不够它的篮数，扣掉已装还够）。旧口径判 <c>VEHICLE_FULL</c>，清单一装完车就自己走（只带 3 篮）。新口径：只被预留挡住，不计入，
     /// 不判满，车持货等单。夹具的区表只有前仓：锚需求预留前仓一篮，候选要前仓四篮。
