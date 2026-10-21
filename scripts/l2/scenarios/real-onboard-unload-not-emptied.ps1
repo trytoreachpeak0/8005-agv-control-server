@@ -105,11 +105,11 @@ for ($round = 1; $round -le $reopenRounds; $round++) {
     $assertions.Add(
         "L2-UE-$('{0:d2}' -f (2 + $round))",
         "第 $round 轮带货关门：车载端不自己重开（关门后 5 秒门关着、锁扣上、没有 UNLOCKING）；按「重新开门」后开锁一次（UNLOCKING +1）、门又弹开（模拟器 OPEN、货还在、开锁输出复位）、再次等操作员",
-        ($reopen.HeldShut -and $null -ne $reopen.PressedAt -and
+        ($reopen.HeldShut -and $reopen.Reopened -and
             $reopen.After.Unlocking -eq $reopen.Before.Unlocking + 1 -and $reopen.After.Waiting -gt $reopen.Before.Waiting -and
             $reopen.After.Physical -eq 'OPEN/OCCUPIED/0/0'),
-        "关门后车没有自己重开 / 按了重新开门 / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/OCCUPIED/0/0",
-        "$(Format-L2HeldShut $reopen) / $(if ($reopen.PressedAt) { '按了重新开门' } else { '没按' }) / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.After.Unlocking) / WAITING_OPERATOR $($reopen.Before.Waiting)→$($reopen.After.Waiting) / $($reopen.After.Physical)")
+        "关门后车没有自己重开 / 按了重新开门、重开 / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/OCCUPIED/0/0",
+        "$(Format-L2HeldShut $reopen) / $(Format-L2Press $reopen) / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.After.Unlocking) / WAITING_OPERATOR $($reopen.Before.Waiting)→$($reopen.After.Waiting) / $($reopen.After.Physical)")
 }
 
 # 卸货没有取消分支，也没有确定失败：两轮之后不许出现任何一种结算。否定判据先让运行时再转几轮。

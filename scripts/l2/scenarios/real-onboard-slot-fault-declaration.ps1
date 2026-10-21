@@ -19,8 +19,12 @@ SLOT_FAULT_DECLARED）→ 服务端仓位操作 RecoveryRequired、旅程 Blocke
   没人按本来就不开，那样判不管判定有没有中止执行器都绿（PR onboard-hmi#390 审查 M2）。所以 `L2-RSFD-07` 判定后空关一次，
   再看屏上：执行器已中止就不给「重新开门」（AutomationId `ReopenOperation` 不在或不可按），这是一种过法；屏上若给了，
   就照操作员那样按下去，过法是按了被拒（弹「无法重新开门」）或这一仓不开锁。两种过法都要门仍关着、这次尝试的
-  UNLOCKING 进度条数与判定前相同，走的是哪一种写进日志与「实际」栏。车载端在按键之后、脉冲之前才查判定闸门，而
-  UNLOCKING 进度先于闸门发出，所以「判定没有中止执行器」的车载端按了也会多一条 UNLOCKING，本条红。
+  UNLOCKING 进度条数与判定前相同，走的是哪一种写进日志与「实际」栏。
+  **本条依赖车载端「先发 UNLOCKING 进度、后过判定闸门」的顺序**（`WireToGateSlotOperationExecutor` 里 `SendProgressAsync`
+  在 `_declarationGate` 下的 `ThrowIfDeclared` 之前）：判定没有中止执行器的车载端，按下后门照样关着（脉冲被闸门拒了），
+  只多一条 UNLOCKING，本条靠这一条变红（CI run 39553412432）。车载端哪天改成先查闸门再发进度，按键在这里只留下
+  「无法重新开门」框或什么都不留，本条就要另找证人。写法在 `L2RealStation.psm1` 的 `Test-L2NoUnlockAfterDeclaration`，
+  与 `g3-slot-fault-declaration` 的 `G3-07-70` 共用。
 - 读取纪律（`scripts/l2/README.md` 第 14 条）：旅程 Blocked 是引擎的一轮，判定记录的 APPLIED 是处理器收下判定结果那一次，
   两者不在同一次写入里，所以 Blocked 之后判定记录用 `Wait-L2ConditionOrLast` 另等。
 - 红证据由 onboard-hmi#215 取（车载端缺陷版本：收到判定只回 APPLIED、不中止不出结果，L2-RSFD-03 变红）。
@@ -42,7 +46,6 @@ $journal = $Context.Journal
 $assertions = $Context.Assertions
 $simulator = $Context.Simulator
 $connection = $Context.Connection
-$onboard = $Context.Onboard
 $agvId = [string]$Context.AgvId
 
 if ([string]::IsNullOrEmpty([string]$Context.OnboardJournalPath)) {
@@ -63,7 +66,6 @@ $declarationUri = "http://127.0.0.1:$($Context.HealthPort)/api/safety/v1/slot-fa
 # 空关之后看屏多久、按下「重新开门」之后又等多久再看门。CP-0019 之前车几秒内就自己重开（real-onboard-expected-action-overdue
 # 的 L2-EAO-01）；执行器还在跑的车载端，空关后的「重新开门」与按下后的 UNLOCKING 也是同一量级。这里各给 10 秒。
 $reopenWindow = [TimeSpan]::FromSeconds(10)
-$refusedTitle = '无法重新开门'
 
 $demandGuid = [guid]::NewGuid()
 $demandIdWire = $demandGuid.ToString('N')
@@ -198,52 +200,11 @@ $assertions.Add(
 
 # --- 5. 判定之后零开锁：空关一次，屏上不给「重新开门」；给了就按，按了也不开 ----------------------------------------
 
-# 按下后若被拒，车载端弹一个只有「确定」的 MessageBox（MainWindow.OnReopenOperationClick）。它的确定键是哪个 Win32
-# 控件号随 MessageBox 的按钮组合而定，先试 IDCANCEL（2）再试 IDOK（1），按 AutomationId 找的理由见 README 第 12 条。
-function Close-RefusedReopenDialog {
-    foreach ($id in '2', '1') {
-        try {
-            $null = $onboard.Confirm($refusedTitle, $id, 5)
-            return "弹出「$refusedTitle」（已按 $id 关闭）"
-        } catch {
-            if ($_.Exception.Message -notlike '*has no button*') { return "没有弹出「$refusedTitle」" }
-        }
-    }
-    return "弹出「$refusedTitle」，找不到确定键"
-}
-
-$journal.Note("The operator shuts slot $slotNo's door over nothing; before the declaration this left 重新开门 on the screen.")
-$null = $simulator.Command('Post', "slots/$slotNo/close-door", @{})
-$shutAt = [DateTimeOffset]::UtcNow
-# 第一段：整整一个窗口看屏上给不给「重新开门」，每一轮询都看；给了就停。
-$offeredAt = $null
-do {
-    if (Test-L2ReopenOffered -Onboard $onboard) { $offeredAt = [DateTimeOffset]::UtcNow; break }
-    Start-Sleep -Milliseconds 250
-} while ([DateTimeOffset]::UtcNow -lt $shutAt.Add($reopenWindow))
-$shutHold = Watch-L2SlotHeldShut -Connection $connection -Simulator $simulator -AttemptId $attemptId -SlotNo $slotNo `
-    -Unlocking $unlockingsBefore -Seconds 1
-if ($null -eq $offeredAt) {
-    $path = "空关后 $([int]$reopenWindow.TotalSeconds) 秒屏上没有「重新开门」"
-    $pressHold = $shutHold
-} else {
-    # 第二段：照操作员那样按下去，再看一个窗口：门关着、锁扣上、没有新的 UNLOCKING。
-    $journal.Note("重新开门 was offered $([math]::Round(($offeredAt - $shutAt).TotalSeconds, 1)) s after the shut; pressing it.")
-    Invoke-L2ReopenButton -Onboard $onboard
-    $dialog = Close-RefusedReopenDialog
-    $pressHold = Watch-L2SlotHeldShut -Connection $connection -Simulator $simulator -AttemptId $attemptId -SlotNo $slotNo `
-        -Unlocking $unlockingsBefore -Seconds ([int]$reopenWindow.TotalSeconds)
-    $path = "空关后 $([math]::Round(($offeredAt - $shutAt).TotalSeconds, 1)) 秒屏上给了「重新开门」，按下：$dialog"
-}
-$journal.Observe('rsfd07-path', $path, $null)
-$journal.Observe('rsfd07-hold-after-shut', $shutHold, $null)
-$journal.Observe('rsfd07-hold-after-press', $pressHold, $null)
-$physical = Get-L2SlotPhysical -Simulator $simulator -SlotNo $slotNo
-$unlockingsAfter = Get-L2PhaseCount -Connection $connection -AttemptId $attemptId -Phase 'UNLOCKING'
+# 写法在 L2RealStation.psm1 的 Test-L2NoUnlockAfterDeclaration，与 g3-slot-fault-declaration 的 G3-07-70 共用一份。
+$noUnlock = Test-L2NoUnlockAfterDeclaration -Context $Context -AttemptId $attemptId -SlotNo $slotNo `
+    -UnlockingBefore $unlockingsBefore -Criterion 'L2-RSFD-07' -WindowSeconds ([int]$reopenWindow.TotalSeconds)
 $assertions.Add(
     'L2-RSFD-07', "判定之后零开锁：空关后屏上不给「重新开门」，或给了、按下被拒或这一仓不开锁；门一直关着、锁扣上，这次装货的 UNLOCKING 进度条数与判定前相同",
-    ($shutHold.HeldShut -and $pressHold.HeldShut -and $physical -like 'CLOSED/*/1/0' -and $unlockingsAfter -eq $unlockingsBefore),
-    "不给重新开门，或按下不开 / 门一直 CLOSED/*/1/0 / UNLOCKING $unlockingsBefore",
-    "$path / 空关后 $($shutHold.Readings)$(if ($null -ne $offeredAt) { "；按键后 $($pressHold.Readings)" }) / $physical / UNLOCKING $unlockingsAfter（窗口内最多 $([math]::Max($shutHold.UnlockingAfter, $pressHold.UnlockingAfter))）")
+    $noUnlock.Passed, "不给重新开门，或按下不开 / 门一直 CLOSED/*/1/0 / UNLOCKING $unlockingsBefore", $noUnlock.Actual)
 
 $journal.Note('Scenario finished at Blocked; the recovery exit is the existing exception recovery session.')

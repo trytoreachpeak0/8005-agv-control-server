@@ -12,7 +12,8 @@ G3 `FP-IS-02` 的第二条场景：装载进行中由操作员取消，全部仓
 两道门同时开着的只有「装载命令已下、结果还没出」这一段，也就是操作员站在开着的仓门前的时候。
 
 **先按取消、等授权，再关空门（control-server#128 改）。**2026-09-18 之前这里是先把空仓门带上再点取消。onboard-hmi#72
-之后 v2 车载端读到「门关了、货没放」会自己重开，先关门就会被当成又一次空关、门又弹开；onboard-hmi#78 第 5 项之后，
+之后 v2 车载端读到「门关了、货没放」会自己重开，先关门就会被当成又一次空关、门又弹开（CP-0019、onboard-hmi#385 之后
+不再自己重开，改为锁着门等操作员按「重新开门」，先关门同样不是取消的起点）；onboard-hmi#78 第 5 项之后，
 取消授权到了车载端先中止原执行器（`AbortOperationAsync`），取消执行器接手开着的仓门、不再打脉冲。所以顺序反过来：
 门开着时按取消，服务端授权之后操作员再把空门带上，取消执行器据此证空。与 `real-onboard-load-door-closed-empty-reopens`
 （control-server#86）同一个顺序。
@@ -248,7 +249,7 @@ if ($request -is [string]) {
 }
 $cancellationId = [string]$request.Payload.cancellationId
 
-# 授权到了再关门：之前关，车载端会把它当成又一次空关、自己重开。
+# 授权到了再关门：之前关，车载端会把它当成又一次空关、锁着门等「重新开门」（CP-0019 之前是自己重开）。
 $null = Wait-L2Condition -Description 'the server answered the cancellation request' `
     -Journal $journal -Criterion 'cancellation-answered' -TimeoutSeconds 30 `
     -Probe { @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object { [string]$_.Payload.cancellationId -eq $cancellationId -and $_.Response })[0] } `

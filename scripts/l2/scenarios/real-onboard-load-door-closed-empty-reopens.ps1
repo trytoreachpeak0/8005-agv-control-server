@@ -128,11 +128,11 @@ $assertions.Add(
 $first = Invoke-L2CloseOverOppositeState -Context $Context -AttemptId $attemptId -SlotNo $slotNo -Criterion 'reopen-before-deadline'
 $assertions.Add(
     'L2-DC-02', '期限之前空关：车载端不自己重开（空关后 5 秒门关着、锁扣上、没有 UNLOCKING）；操作员按「重新开门」后车开锁一次（UNLOCKING +1）、门又弹开（模拟器 OPEN、开锁输出复位）、再次等操作员',
-    ($first.HeldShut -and $null -ne $first.PressedAt -and
+    ($first.HeldShut -and $first.Reopened -and
         $first.After.Unlocking -eq $first.Before.Unlocking + 1 -and $first.After.Waiting -gt $first.Before.Waiting -and
         $first.After.Physical -eq 'OPEN/EMPTY/0/0' -and $null -ne $first.ReopenedAt -and $first.ReopenedAt -lt $deadline),
-    "空关后车没有自己重开 / 按了重新开门 / UNLOCKING $($first.Before.Unlocking)→$($first.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开早于期限",
-    "$(Format-L2HeldShut $first) / $(if ($first.PressedAt) { '按了重新开门' } else { '没按' }) / UNLOCKING $($first.Before.Unlocking)→$($first.After.Unlocking) / WAITING_OPERATOR $($first.Before.Waiting)→$($first.After.Waiting) / $($first.After.Physical) / 重开于期限前 $(if ($first.ReopenedAt) { [math]::Round(($deadline - $first.ReopenedAt).TotalSeconds, 1) }) s")
+    "空关后车没有自己重开 / 按了重新开门、重开 / UNLOCKING $($first.Before.Unlocking)→$($first.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开早于期限",
+    "$(Format-L2HeldShut $first) / $(Format-L2Press $first) / UNLOCKING $($first.Before.Unlocking)→$($first.After.Unlocking) / WAITING_OPERATOR $($first.Before.Waiting)→$($first.After.Waiting) / $($first.After.Physical) / 重开于期限前 $(if ($first.ReopenedAt) { [math]::Round(($deadline - $first.ReopenedAt).TotalSeconds, 1) }) s")
 
 # --- 3. 期限过去：服务端与车载端都认定了 -----------------------------------------------------------
 
@@ -153,11 +153,11 @@ for ($round = 1; $round -le $postDeadlineRounds; $round++) {
     $assertions.Add(
         "L2-DC-$('{0:d2}' -f (3 + $round))",
         "期限之后第 $round 次空关：车载端照样不自己重开；按「重新开门」后照样开锁一次（UNLOCKING +1、门又弹开、再次等操作员），重开发生在期限之后",
-        ($reopen.HeldShut -and $null -ne $reopen.PressedAt -and
+        ($reopen.HeldShut -and $reopen.Reopened -and
             $reopen.After.Unlocking -eq $reopen.Before.Unlocking + 1 -and $reopen.After.Waiting -gt $reopen.Before.Waiting -and
             $reopen.After.Physical -eq 'OPEN/EMPTY/0/0' -and $null -ne $reopen.ReopenedAt -and $reopen.ReopenedAt -ge $deadline),
-        "空关后车没有自己重开 / 按了重新开门 / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开晚于期限",
-        "$(Format-L2HeldShut $reopen) / $(if ($reopen.PressedAt) { '按了重新开门' } else { '没按' }) / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.After.Unlocking) / WAITING_OPERATOR $($reopen.Before.Waiting)→$($reopen.After.Waiting) / $($reopen.After.Physical) / 重开于期限后 $(if ($reopen.ReopenedAt) { [math]::Round(($reopen.ReopenedAt - $deadline).TotalSeconds, 1) }) s")
+        "空关后车没有自己重开 / 按了重新开门、重开 / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开晚于期限",
+        "$(Format-L2HeldShut $reopen) / $(Format-L2Press $reopen) / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.After.Unlocking) / WAITING_OPERATOR $($reopen.Before.Waiting)→$($reopen.After.Waiting) / $($reopen.After.Physical) / 重开于期限后 $(if ($reopen.ReopenedAt) { [math]::Round(($reopen.ReopenedAt - $deadline).TotalSeconds, 1) }) s")
 }
 
 # 否定判据要有界：让运行时又转几轮，再说什么都没被结算。
