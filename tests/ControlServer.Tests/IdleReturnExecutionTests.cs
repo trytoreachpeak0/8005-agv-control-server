@@ -301,8 +301,8 @@ public sealed partial class IdleReturnExecutionTests
         {
             await RoundAsync(fleet);
         }
-        StationExclusivityRow held = (await StationAsync(fleet, Near.StationId))!;
-        Assert.Equal((StationExclusivityStates.Occupied, KeyA), (held.State, held.VehicleKey));
+        StationExclusivityRow? held = await StationAsync(fleet, Near.StationId);
+        Assert.Equal((StationExclusivityStates.Occupied, KeyA), (held?.State, held?.VehicleKey));
 
         MoveTo(fleet, KeyA, 12, speed: 0);
         await RoundAsync(fleet);

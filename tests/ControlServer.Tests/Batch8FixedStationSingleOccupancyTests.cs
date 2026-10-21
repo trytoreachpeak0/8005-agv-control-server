@@ -362,7 +362,7 @@ public sealed class Batch8FixedStationSingleOccupancyTests
         {
             await fixture.Engine.ExecuteOnceAsync(Token);
         }
-        Assert.Equal(StationExclusivityStates.Occupied, (await HeldAsync(fixture))!.State);
+        Assert.Equal(StationExclusivityStates.Occupied, (await HeldAsync(fixture))?.State);
 
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = Machine, Speed = 0, ProcState = "IDLE" };
         await fixture.Engine.ExecuteOnceAsync(Token);
