@@ -173,6 +173,8 @@ public sealed class ChargingAllocationBoard
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _waiting = new(StringComparer.Ordinal);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _absentSince =
         new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _atNoStationSince =
+        new(StringComparer.Ordinal);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _said = new(StringComparer.Ordinal);
 
     /// <summary>
@@ -292,6 +294,29 @@ public sealed class ChargingAllocationBoard
     public static string ReservationStuckKey(string journeyId) => ReservationStuckPrefix + journeyId;
 
     /// <summary>
+    /// 「持有车不在任何站、桩放不掉」已告警过的那趟充电旅程的键（事件 2247、2249；control-server#801 审查 M1）：与
+    /// <see cref="ReservationStuckKey"/> 分开，站在桩上已经报过一次之后，车离桩卡在两站之间还会再报一次。
+    /// </summary>
+    public static string AtNoStationStuckKey(string journeyId) => AtNoStationStuckPrefix + journeyId;
+
+    /// <summary>这趟旅程的持有车从哪一刻起一直被读到不在任何站：第一次读到时记下，之后每次都答同一个时刻。进程重启后从头计。</summary>
+    public DateTimeOffset AtNoStationSince(string journeyId, DateTimeOffset now) => _atNoStationSince.GetOrAdd(journeyId, now);
+
+    /// <summary>持有车这一次读到的不是「不在任何站」：重新计时，那条告警之后可以再说。</summary>
+    public void NoLongerAtNoStation(string journeyId)
+    {
+        _atNoStationSince.TryRemove(journeyId, out _);
+        Unsay(AtNoStationStuckKey(journeyId));
+    }
+
+    /// <summary>这趟旅程的桩已经放了（或交给了再充电）：两条「放不掉」告警与计时都撤掉。</summary>
+    public void ReservationSettled(string journeyId)
+    {
+        Unsay(ReservationStuckKey(journeyId));
+        NoLongerAtNoStation(journeyId);
+    }
+
+    /// <summary>
     /// 丢掉已经了结的事的键（增量审查低项）：旅程不再开着的「证明不了停稳」，桩预占已不在的「放不掉」。旅程或预占走别的路了结时——人工清除
     /// 故障、人工清桩——没有人来 <see cref="Unsay"/>，键会一直留在这块单例板上。
     /// </summary>
@@ -306,9 +331,18 @@ public sealed class ChargingAllocationBoard
             if ((key.StartsWith(EndNotProvenPrefix, StringComparison.Ordinal) &&
                  !openJourneyIds.Contains(key[EndNotProvenPrefix.Length..])) ||
                 (key.StartsWith(ReservationStuckPrefix, StringComparison.Ordinal) &&
-                 !heldReservationJourneyIds.Contains(key[ReservationStuckPrefix.Length..])))
+                 !heldReservationJourneyIds.Contains(key[ReservationStuckPrefix.Length..])) ||
+                (key.StartsWith(AtNoStationStuckPrefix, StringComparison.Ordinal) &&
+                 !heldReservationJourneyIds.Contains(key[AtNoStationStuckPrefix.Length..])))
             {
                 _said.TryRemove(key, out _);
+            }
+        }
+        foreach (string journeyId in _atNoStationSince.Keys)
+        {
+            if (!heldReservationJourneyIds.Contains(journeyId))
+            {
+                _atNoStationSince.TryRemove(journeyId, out _);
             }
         }
     }
@@ -323,6 +357,7 @@ public sealed class ChargingAllocationBoard
 
     private const string EndNotProvenPrefix = "charging-end-not-proven:";
     private const string ReservationStuckPrefix = "charger-reservation-stuck:";
+    private const string AtNoStationStuckPrefix = "charger-reservation-stuck-at-no-station:";
 }
 
 /// <summary>
@@ -969,16 +1004,13 @@ public sealed class ChargingAllocator(
                 }
 
                 reads.Occupancy ??= await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
-                string stuckKey = ChargingAllocationBoard.ReservationStuckKey(row.JourneyId);
                 string? missing = WhyNotYetReleasable(row, reads.Occupancy);
                 if (missing is not null)
                 {
                     // Independent review M2(c): nothing releases it but the three confirmations, and a vehicle switched off or
                     // towed away never gives them. Past the repeat window somebody is told, once; the manual release of a
                     // charger is control-server#406's.
-                    if (cycle.EndedAt is { } endedAt &&
-                        timeProvider.GetUtcNow() - endedAt > _runtime.OwnOrderRebuildRepeatWindow &&
-                        board.FirstTime(stuckKey))
+                    if (cycle.EndedAt is { } endedAt && StuckPastTheWindow(row, missing, endedAt))
                     {
                         LogReservationStuck(logger, row.MapId, row.StationId, row.VehicleKey, endedAt, missing, null);
                     }
@@ -989,7 +1021,7 @@ public sealed class ChargingAllocator(
                         row.MapId, row.StationId, row.JourneyId, timeProvider.GetUtcNow(),
                         ChargingExecutionReasons.ReservationReleasedAfterEndedCycle, cancellationToken).ConfigureAwait(false))
                 {
-                    board.Unsay(stuckKey);
+                    board.ReservationSettled(row.JourneyId);
                     LogReservationReleased(logger, row.MapId, row.StationId, row.VehicleKey, row.JourneyId, null);
                 }
             }
@@ -1005,6 +1037,9 @@ public sealed class ChargingAllocator(
     /// <c>REQ-0173</c> 的三项确认缺哪一项（都在答空）：充电已停止（新鲜读数不是 <c>CHARGING</c>）、原车已离开（读到停在另一个站上；0 是不在任何站，不算，control-server#801）、
     /// 桩位可确认空闲（与分配同一个占用判法）。车读不到也不算离开。失败周期与充满离桩用同一个判法。
     /// </summary>
+    private const string AtNoStationNotYetLeft =
+        "the vehicle is read at no station (currentPosition 0), so it is not known to have left the charger";
+
     private string? WhyNotYetReleasable(StationExclusivityRow row, ChargerOccupancySnapshot occupancyFacts) =>
         !occupancyFacts.Vehicles.TryGetValue(row.VehicleKey, out RiotVehicleObservation? vehicle)
             ? $"the vehicle cannot be read from RIoT (offline, or its position is missing; unknown: {DescribeUnknown(occupancyFacts, row.VehicleKey)})"
@@ -1019,7 +1054,7 @@ public sealed class ChargingAllocator(
         // Left means read standing at another station. Only this vehicle's own departure: another vehicle at 0 blocks
         // nothing (control-server#772).
         : vehicle.CurrentStationId is not > ChargerOccupancyReader.NoStation
-            ? "the vehicle is read at no station (currentPosition 0), so it is not known to have left the charger"
+            ? AtNoStationNotYetLeft
         : occupancyFacts.Judge(row.MapId, row.StationId, askingVehicleKey: null) is { } occupied
             ? occupied == ChargingAllocationReasons.ChargerOccupancyUnknown
                 ? $"the charger is not confirmed free ({occupied}; unknown: {occupancyFacts.UnknownDetail})"
@@ -1055,9 +1090,7 @@ public sealed class ChargingAllocator(
             // Independent review S1: nothing releases it but the three confirmations, and a vehicle switched off on the charger,
             // or one simply given no work, never gives them. Past the repeat window from the completion somebody is told,
             // once, like the reservation of a failed cycle (event 2247).
-            if (cycle.CompletedAt is { } completedAt &&
-                timeProvider.GetUtcNow() - completedAt > _runtime.OwnOrderRebuildRepeatWindow &&
-                board.FirstTime(ChargingAllocationBoard.ReservationStuckKey(row.JourneyId)))
+            if (cycle.CompletedAt is { } completedAt && StuckPastTheWindow(row, missing, completedAt))
             {
                 LogDepartureNotConfirmed(logger, row.MapId, row.StationId, row.VehicleKey, completedAt, missing, null);
             }
@@ -1068,7 +1101,7 @@ public sealed class ChargingAllocator(
                 row, cycle, ChargingExecutionReasons.ChargerReleasedOnDeparture, ChargingExecutionReasons.Departed, departed: true,
                 cancellationToken).ConfigureAwait(false))
         {
-            board.Unsay(ChargingAllocationBoard.ReservationStuckKey(row.JourneyId));
+            board.ReservationSettled(row.JourneyId);
             LogReleasedOnDeparture(logger, row.MapId, row.StationId, row.VehicleKey, row.JourneyId, null);
         }
     }
@@ -1129,7 +1162,7 @@ public sealed class ChargingAllocator(
         {
             return false;
         }
-        board.Unsay(ChargingAllocationBoard.ReservationStuckKey(held.JourneyId));
+        board.ReservationSettled(held.JourneyId);
         LogHandedOverForRecharge(
             logger, held.MapId, held.StationId, held.VehicleKey, held.JourneyId, vehicle.BatteryPercent ?? -1, null);
         return true;
@@ -1307,6 +1340,25 @@ public sealed class ChargingAllocator(
                     .ToArrayAsync(cancellationToken).ConfigureAwait(false),
                 StringComparer.Ordinal);
         board.ForgetSettled(open, new HashSet<string>(held.Select(row => row.JourneyId), StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// 放不掉的桩这一轮要不要告警（2247、2249）：从 <paramref name="since"/>（周期失败收尾或充满）起过了窗口，只报一次。持有车不在任何站
+    /// （control-server#801 审查 M1）另算：从第一次读到它不在任何站起计时、单独一个键——站在桩上已报过之后，离桩卡在两站之间还会再报一次；
+    /// 刚离桩那一段从头计，不会一读到 0 就报。
+    /// </summary>
+    private bool StuckPastTheWindow(StationExclusivityRow row, string missing, DateTimeOffset since)
+    {
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        if (string.Equals(missing, AtNoStationNotYetLeft, StringComparison.Ordinal))
+        {
+            return now - board.AtNoStationSince(row.JourneyId, now) > _runtime.OwnOrderRebuildRepeatWindow &&
+                   board.FirstTime(ChargingAllocationBoard.AtNoStationStuckKey(row.JourneyId));
+        }
+
+        board.NoLongerAtNoStation(row.JourneyId);
+        return now - since > _runtime.OwnOrderRebuildRepeatWindow &&
+               board.FirstTime(ChargingAllocationBoard.ReservationStuckKey(row.JourneyId));
     }
 
     private bool StandsOn(RiotVehicleObservation vehicle, StationExclusivityRow charger) =>
