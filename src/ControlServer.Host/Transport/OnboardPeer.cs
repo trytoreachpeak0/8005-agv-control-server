@@ -138,7 +138,10 @@ public sealed class OnboardPeer : IOnboardPeer, IOnboardConnectionPresence
             // One vehicle, one live connection. Two sockets claiming the same agvId is not a fleet, it is the ambiguity the
             // single-connection version refused. A newer session wins (control-server#310): normally its SessionHello has
             // already taken the route over (TakeOver), and this covers an older connection whose handshake finished after
-            // that. A connection for the same or an older generation is still refused.
+            // that. A connection for an older generation is still refused, and so is one for the same generation: that
+            // only comes of a replayed SessionHello (the server answers a repeated messageId with the generation it first
+            // gave), neither connection can be told to be the real one, so the routable one keeps the route and the
+            // vehicle's next fresh hello takes over normally.
             if (_connections.TryGetValue(agvId, out (OnboardPeerConnection Connection, long SessionGeneration) existing) &&
                 !ReferenceEquals(existing.Connection, connection))
             {

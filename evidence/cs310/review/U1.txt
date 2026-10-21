@@ -1,0 +1,15 @@
+  Passed ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne [15 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AHandshakeMarkEndsWhenItsConnectionIsAttachedOrEnds [1 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection [20 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.NonLoopbackListenerStartsAndAcceptsPlaintextConnections [27 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AVehicleIsHandshakingFromItsSessionHelloUntilItsConnectionEnds [2 s]
+  Passed ControlServer.Tests.OnboardTcpServerTests.ConcurrentNewerSessionsAlwaysEndOnTheHighestGeneration [41 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AReplayedSessionHelloDoesNotTakeOverTheLiveConnection(attachedAhead: 0) [112 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AReplayedSessionHelloDoesNotTakeOverTheLiveConnection(attachedAhead: 5) [106 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: True) [89 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: False) [73 ms]
+  Failed ControlServer.Tests.OnboardTcpServerTests.AnAttachInTheSameGenerationIsRefusedAndLeavesTheRouteAlone [1 ms]
+  Error Message:
+  Passed ControlServer.Tests.OnboardTcpServerTests.ATakeoverNeverMovesTheRouteBackwards [< 1 ms]
+     Passed: 11
+     Failed: 1
