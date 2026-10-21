@@ -284,9 +284,9 @@ public sealed class InTransitDoorUnknownGraceTests
         InTransitDoorVerdict unknown = new(InTransitDoorState.SlotStateUnknown, 1, 1, Now);
 
         Assert.Equal(InTransitDoorAction.InGrace, readings.Observe("AGV-A", unknown, false, Now.AddSeconds(2.5)).Action);
-        Assert.Equal(Now.AddSeconds(3), readings.NextDueAt);
+        Assert.Equal(Now.AddSeconds(3), readings.NextDueAfter(Now.AddSeconds(2.5)));
         Assert.Equal(InTransitDoorAction.HandToFault, readings.Observe("AGV-A", unknown, false, Now.AddSeconds(3)).Action);
-        Assert.Null(readings.NextDueAt);
+        Assert.Null(readings.NextDueAfter(Now.AddSeconds(3)));
     }
 
     /// <summary>
@@ -328,7 +328,7 @@ public sealed class InTransitDoorUnknownGraceTests
             InTransitDoorAction.InGrace,
             readings.Observe("AGV-B", new InTransitDoorVerdict(InTransitDoorState.SlotStateUnknown, 1, 1, Now.AddSeconds(10)), false, Now.AddSeconds(10.2)).Action);
 
-        DateTimeOffset askedAt = Now.AddSeconds(12.2);
+        DateTimeOffset askedAt = Now.AddMilliseconds(12_200);
         Assert.Equal(Now.AddSeconds(13), readings.NextDueAfter(askedAt));
         Assert.Equal(
             TimeSpan.FromSeconds(0.8),

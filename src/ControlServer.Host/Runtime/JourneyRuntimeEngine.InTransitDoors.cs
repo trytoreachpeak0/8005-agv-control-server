@@ -102,8 +102,21 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();
-        InTransitDoorVerdict doors = await InTransitDoorFacts.ReadAsync(dbContext, runtime.AgvId, now, cancellationToken)
+        // Every summary received since the open episode's last round as well as the one in force (cs#839 review H1).
+        InTransitDoorVerdict doors = await InTransitDoorFacts.ReadAsync(
+                dbContext, runtime.AgvId, now, _doorReadings.SinceFor(runtime.AgvId), cancellationToken)
             .ConfigureAwait(false);
+        if (_doorReadings.NeedsGraceHistory(runtime.AgvId))
+        {
+            // A process that has just started counts the graces the inbox shows were given in the window (cs#839 review M2),
+            // all but the run the verdict is in, which this round's grace counts itself.
+            IReadOnlyList<DateTimeOffset> starts = await InTransitDoorFacts.ReadUnknownRunStartsAsync(
+                    dbContext, runtime.AgvId, now - _doorReadings.GraceWindow, cancellationToken)
+                .ConfigureAwait(false);
+            _doorReadings.SeedGraceStarts(
+                runtime.AgvId, starts.Where(start => doors.UnknownSince is not DateTimeOffset current || start < current));
+        }
+
         bool doorFaultInEffect = await dbContext.VehicleFaultStates.AsNoTracking()
             .AnyAsync(
                 row => row.AgvId == runtime.AgvId &&

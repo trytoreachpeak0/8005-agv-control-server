@@ -136,7 +136,8 @@ public sealed class JourneyRuntimeWorker(
         async Task<bool> NextRoundAsync()
         {
             tick ??= timer.WaitForNextTickAsync(stoppingToken).AsTask();
-            if (EarlyRoundAfter(doorReadings?.NextDueAt, timeProvider.GetUtcNow(), runtime.PollInterval) is TimeSpan wait)
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            if (EarlyRoundAfter(doorReadings?.NextDueAfter(now), now, runtime.PollInterval) is TimeSpan wait)
             {
                 Task delay = Task.Delay(wait, timeProvider, stoppingToken);
                 try

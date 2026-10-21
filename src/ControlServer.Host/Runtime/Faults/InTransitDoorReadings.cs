@@ -33,6 +33,7 @@ public sealed record InTransitDoorReading(
     TimeSpan? GraceEndedAfter = null,
     string? HandedBecause = null);
 
+
 /// <summary>
 /// The door readings of driving vehicles across rounds: the grace for a slot that cannot be read (REQ-0246 as revised by
 /// CP-0017), and whether a door fault was raised only for doors that could not be read (REQ-0167 as revised by CP-0017)
@@ -47,25 +48,34 @@ public sealed record InTransitDoorReading(
 /// that dropped, in either order, is never taken for a reading that merely came back.
 /// </para>
 /// <para>
-/// <b>The grace</b> counts from when this server received the unknown (CP-0017 section 5, item 6), carried on the verdict,
-/// so neither the round that first saw it nor a restart can lengthen it. It ends on the first locked reading, and hands on
-/// at once on a door read not locked, on the grace running out, or when the vehicle has started
-/// <see cref="VehicleFaultOptions.DoorUnknownGraceLimit"/> graces within <see cref="VehicleFaultOptions.DoorUnknownGraceWindow"/>
-/// -- every grace started counts, whether it recovered or ran out (revision one, note 7). Counted per vehicle, not per
-/// order: an IO or a link that drops is the vehicle's, and a new order would not mend it. <see cref="NextDueAt"/> lets the
-/// worker run the round that judges it when it runs out rather than up to a poll interval later (revision one, note 5).
+/// <b>Every summary of the episode, not one per round</b> (cs#839 review H1). Onboard sends a summary on every change; a round
+/// reads the one in force and, through <see cref="SinceFor"/>, every other one received since the episode's last round
+/// (<see cref="InTransitDoorVerdict.Between"/>). A door read not locked between two rounds hands a grace on at once and keeps
+/// the fault with a person; a slot unread between two locked readings starts the ten seconds again.
 /// </para>
 /// <para>
-/// <b>A restart</b> forgets all of it, and each half forgets in the safe direction where it can. A grace in progress is
-/// started again from the receipt time of the summary in force, so it is not lengthened. The count starts from zero -- the
-/// one way a restart is more lenient: at most two more graces in the first ten minutes. A door fault standing at the restart
-/// has no history in this process, and is taken to have read a door not locked: no automatic release, a person releases it
-/// as before CP-0017.
+/// <b>The grace</b> counts from when this server received the first unknown of the run (CP-0017 section 5, item 6;
+/// <see cref="InTransitDoorVerdict.UnknownSince"/>, cs#839 review M3), so neither the round that first saw it nor a restart
+/// can lengthen it. It ends on the first locked reading, and hands on at once on a door read not locked, on the grace running
+/// out, or when the vehicle has started <see cref="VehicleFaultOptions.DoorUnknownGraceLimit"/> graces within
+/// <see cref="VehicleFaultOptions.DoorUnknownGraceWindow"/> -- every grace started counts, whether it recovered or ran out
+/// (revision one, note 7). Counted per vehicle, not per order: an IO or a link that drops is the vehicle's, and a new order
+/// would not mend it. <see cref="NextDueAfter"/> lets the worker run the round that judges it when it runs out rather than up
+/// to a poll interval later (revision one, note 5). A grace no round has looked at for <see cref="UnobservedGraceTimeout"/>
+/// -- the order went HANG, the vehicle arrived -- is dropped, and is judged afresh from the inbox the next time.
+/// </para>
+/// <para>
+/// <b>A restart</b> forgets all of it in this process, and each half is rebuilt on the safe side (CP-0017 section 6, item 1;
+/// cs#839 review M2). A grace in progress is started again from the first unknown's receipt time, so it is not lengthened. The
+/// count is rebuilt from the inbox the first time a vehicle is looked at (<see cref="NeedsGraceHistory"/>,
+/// <see cref="InTransitDoorFacts.ReadUnknownRunStartsAsync"/>): every run of unknown summaries in the window counts as a grace
+/// given, also one that was handed on at once. A door fault standing at the restart has no history in this process, and is
+/// taken to have read a door not locked: no automatic release, a person releases it as before CP-0017.
 /// </para>
 /// <para>
 /// <b>Not on the fault fact.</b> CP-0017 leaves to the implementation how the sub-cause is recorded. Writing it to
 /// <c>VehicleFaultStates</c> takes a migration; held here it costs, on a restart, only the release CP-0011 already gave to a
-/// person. Rounds run one at a time under the journey mutation gate; the lock is for the worker's read of <see cref="NextDueAt"/>.
+/// person. Rounds run one at a time under the journey mutation gate; the lock is for the worker's read of the due time.
 /// </para>
 /// </remarks>
 public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
@@ -82,36 +92,80 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
     /// <summary>Doors still not proven locked when a door fault this episode handed on is no longer standing.</summary>
     public const string HandAfterFault = "DOOR_STILL_NOT_PROVEN_LOCKED";
 
+    /// <summary>How long a grace in progress may go without a round looking at it before it is dropped (cs#839 review M1).</summary>
+    internal static readonly TimeSpan UnobservedGraceTimeout = TimeSpan.FromSeconds(10);
+
     private readonly VehicleFaultOptions faultOptions = options.Value;
     private readonly Dictionary<string, Vehicle> vehicles = new(StringComparer.Ordinal);
 
     /// <summary>The configured grace (<see cref="VehicleFaultOptions.DoorUnknownGrace"/>).</summary>
     public TimeSpan Grace => faultOptions.DoorUnknownGrace;
 
-    /// <summary>The earliest moment a grace in progress runs out, or null when none is in progress.</summary>
-    public DateTimeOffset? NextDueAt
-    {
-        get
-        {
-            lock (vehicles)
-            {
-                DateTimeOffset? due = null;
-                foreach (Vehicle vehicle in vehicles.Values)
-                {
-                    if (vehicle.Episode is { Handed: false, UnknownSince: DateTimeOffset since } &&
-                        (due is null || since + Grace < due))
-                    {
-                        due = since + Grace;
-                    }
-                }
+    /// <summary>The configured window the grace limit counts in (<see cref="VehicleFaultOptions.DoorUnknownGraceWindow"/>).</summary>
+    public TimeSpan GraceWindow => faultOptions.DoorUnknownGraceWindow;
 
-                return due;
+    /// <summary>
+    /// The earliest moment after <paramref name="now"/> a grace in progress runs out, or null when none does (cs#839 review
+    /// M1). One already past is a grace whose round has run, or that no round reaches; it must not hide another vehicle's.
+    /// </summary>
+    public DateTimeOffset? NextDueAfter(DateTimeOffset now)
+    {
+        lock (vehicles)
+        {
+            DateTimeOffset? due = null;
+            foreach (Vehicle vehicle in vehicles.Values)
+            {
+                if (vehicle.Episode is { Handed: false, UnknownSince: DateTimeOffset since } &&
+                    since + Grace > now &&
+                    (due is null || since + Grace < due))
+                {
+                    due = since + Grace;
+                }
             }
+
+            return due;
         }
     }
 
-    /// <summary>The earliest grace in progress that runs out after <paramref name="now"/>.</summary>
-    public DateTimeOffset? NextDueAfter(DateTimeOffset now) => NextDueAt;
+    /// <summary>
+    /// The moment the next read of <paramref name="agvId"/>'s doors asks for the summaries received after
+    /// (<see cref="InTransitDoorFacts.ReadAsync(ControlServer.Infrastructure.Persistence.ControlServerDbContext, string, DateTimeOffset, DateTimeOffset?, CancellationToken)"/>):
+    /// the latest receipt the open episode has read; null while none is open.
+    /// </summary>
+    public DateTimeOffset? SinceFor(string agvId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        lock (vehicles)
+        {
+            return vehicles.TryGetValue(agvId, out Vehicle? vehicle) ? vehicle.Episode?.ReadUpTo : null;
+        }
+    }
+
+    /// <summary>Whether this process has not looked at <paramref name="agvId"/> yet, and its grace count is to be rebuilt.</summary>
+    public bool NeedsGraceHistory(string agvId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        lock (vehicles)
+        {
+            return !vehicles.ContainsKey(agvId);
+        }
+    }
+
+    /// <summary>The graces a process that has just started counts as given to <paramref name="agvId"/> (cs#839 review M2).</summary>
+    public void SeedGraceStarts(string agvId, IEnumerable<DateTimeOffset> starts)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentNullException.ThrowIfNull(starts);
+        lock (vehicles)
+        {
+            if (!vehicles.ContainsKey(agvId))
+            {
+                Vehicle vehicle = new();
+                vehicle.GraceStarts.AddRange(starts);
+                vehicles.Add(agvId, vehicle);
+            }
+        }
+    }
 
     /// <summary>
     /// Takes this round's reading of a driving vehicle's doors, and whether a door fault stands for it, and says what the
@@ -130,9 +184,22 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
                 vehicles.Add(agvId, vehicle);
             }
 
-            return doorFaultInEffect
+            if (vehicle.Episode is { Handed: false } && vehicle.LastObservedAt is DateTimeOffset last &&
+                now - last > UnobservedGraceTimeout)
+            {
+                vehicle.Episode = null;
+            }
+
+            vehicle.LastObservedAt = now;
+            InTransitDoorReading reading = doorFaultInEffect
                 ? WhileFaulted(vehicle, doors, now)
                 : BeforeFault(vehicle, doors, now);
+            if (vehicle.Episode is Episode episode)
+            {
+                episode.ReadUpTo = Latest(episode.ReadUpTo, doors);
+            }
+
+            return reading;
         }
     }
 
@@ -154,6 +221,13 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
     private InTransitDoorReading BeforeFault(Vehicle vehicle, InTransitDoorVerdict doors, DateTimeOffset now)
     {
         Episode? episode = vehicle.Episode;
+        if (episode is not null && ReadNotLockedBetween(doors))
+        {
+            // A door read not locked since the episode's last round, whatever reads now: never graced (cs#839 review H1).
+            episode.SawNotLocked = true;
+            return Hand(episode, HandReadNotLocked);
+        }
+
         switch (doors.State)
         {
             case InTransitDoorState.ProvenLocked:
@@ -181,7 +255,8 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
 
                 if (episode is null)
                 {
-                    DateTimeOffset since = doors.ReceivedAt is DateTimeOffset received && received < now ? received : now;
+                    DateTimeOffset received = doors.UnknownSince ?? doors.ReceivedAt ?? now;
+                    DateTimeOffset since = received < now ? received : now;
                     vehicle.GraceStarts.RemoveAll(start => start <= now - faultOptions.DoorUnknownGraceWindow);
                     episode = vehicle.Episode = new Episode(historyKnown: true) { UnknownSince = since };
                     if (Grace <= TimeSpan.Zero || vehicle.GraceStarts.Count >= faultOptions.DoorUnknownGraceLimit)
@@ -216,6 +291,22 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
         // to have read a door not locked.
         Episode episode = vehicle.Episode ??= new Episode(historyKnown: false);
         episode.Handed = true;
+
+        // What arrived since the last round first (cs#839 review H1): a door read not locked there is read, and anything but
+        // locked there breaks the run of locked readings, though the summary in force reads locked again.
+        foreach (InTransitDoorSample sample in doors.Between ?? [])
+        {
+            if (sample.State == InTransitDoorState.NotLocked)
+            {
+                episode.SawNotLocked = true;
+            }
+
+            if (sample.State != InTransitDoorState.ProvenLocked)
+            {
+                episode.LockedSince = null;
+            }
+        }
+
         switch (doors.State)
         {
             case InTransitDoorState.ProvenLocked:
@@ -239,6 +330,24 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
             ReadingRestored: restored);
     }
 
+    private static bool ReadNotLockedBetween(InTransitDoorVerdict doors) =>
+        doors.Between?.Any(sample => sample.State == InTransitDoorState.NotLocked) == true;
+
+    private static DateTimeOffset? Latest(DateTimeOffset? readUpTo, InTransitDoorVerdict doors)
+    {
+        DateTimeOffset? latest = readUpTo;
+        foreach (DateTimeOffset received in (doors.Between ?? []).Select(sample => sample.ReceivedAt)
+                     .Append(doors.ReceivedAt ?? DateTimeOffset.MinValue))
+        {
+            if (latest is null || received > latest)
+            {
+                latest = received;
+            }
+        }
+
+        return latest == DateTimeOffset.MinValue ? null : latest;
+    }
+
     private static InTransitDoorReading Hand(Episode episode, string because)
     {
         bool first = !episode.Handed;
@@ -252,6 +361,9 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
         public List<DateTimeOffset> GraceStarts { get; } = [];
 
         public Episode? Episode { get; set; }
+
+        /// <summary>The last round that looked at this vehicle's doors.</summary>
+        public DateTimeOffset? LastObservedAt { get; set; }
     }
 
     private sealed class Episode(bool historyKnown)
@@ -270,5 +382,8 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
 
         /// <summary>The first round of the current unbroken run of locked readings under the fault; null when there is none.</summary>
         public DateTimeOffset? LockedSince { get; set; }
+
+        /// <summary>The latest receipt time of a summary the episode has read: the next round reads every one after it.</summary>
+        public DateTimeOffset? ReadUpTo { get; set; }
     }
 }

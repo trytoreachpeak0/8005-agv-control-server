@@ -63,7 +63,25 @@ public sealed record InTransitDoorVerdict(
     /// </para>
     /// </remarks>
     public bool ReadUnknown => State == InTransitDoorState.SlotStateUnknown;
+
+    /// <summary>
+    /// The vehicle's other summaries received after the moment the caller asked from, oldest first; null when it asked from
+    /// none (control-server#789, cs#839 review H1). Onboard sends a summary on every change and this server stores every one,
+    /// while a round reads only the one in force: a door read not locked between two rounds, or a slot unread between two
+    /// locked readings, is only seen here.
+    /// </summary>
+    public IReadOnlyList<InTransitDoorSample>? Between { get; init; }
+
+    /// <summary>
+    /// When the verdict is <see cref="InTransitDoorState.SlotStateUnknown"/>: when this server received the first summary of
+    /// the unbroken run of unknown summaries it ends -- the moment CP-0017's grace counts from, whichever of them a round
+    /// happened to see first (cs#839 review M3). Null otherwise.
+    /// </summary>
+    public DateTimeOffset? UnknownSince { get; init; }
 }
+
+/// <summary>One stored summary's door reading, without the freshness of the session it came on.</summary>
+public sealed record InTransitDoorSample(InTransitDoorState State, DateTimeOffset ReceivedAt);
 
 /// <summary>
 /// Reads whether a vehicle's doors are proven locked while it drives, from the safety summaries Onboard sends
@@ -113,10 +131,28 @@ public static class InTransitDoorFacts
     /// <summary>The safety reason onboard-hmi reports for a slot whose IO reading is missing or stale.</summary>
     public const string SlotStateUnknownReason = "SLOT_STATE_UNKNOWN";
 
+    /// <summary>
+    /// How far back the run of unknown summaries is followed for <see cref="InTransitDoorVerdict.UnknownSince"/>. Any run that
+    /// long is far past every grace, so stopping there changes no decision and keeps the read bounded.
+    /// </summary>
+    internal static readonly TimeSpan UnknownRunLookBack = TimeSpan.FromMinutes(10);
+
+    public static Task<InTransitDoorVerdict> ReadAsync(
+        ControlServerDbContext dbContext,
+        string agvId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken) =>
+        ReadAsync(dbContext, agvId, now, since: null, cancellationToken);
+
+    /// <summary>
+    /// The verdict, and with <paramref name="since"/> also every other summary of the vehicle received after it
+    /// (<see cref="InTransitDoorVerdict.Between"/>, control-server#789).
+    /// </summary>
     public static async Task<InTransitDoorVerdict> ReadAsync(
         ControlServerDbContext dbContext,
         string agvId,
         DateTimeOffset now,
+        DateTimeOffset? since,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
@@ -130,19 +166,64 @@ public static class InTransitDoorFacts
         }
 
         Summary? fact = null;
+        List<Summary>? between = since is null ? null : [];
+        DateTimeOffset? unknownSince = null;
         if (session.SafetyRevision is long revision)
         {
             // The session's own summary, read newest first and stopped at (control-server#597): this runs every round of every
             // leg, and used to load and parse every safety message ever received. None matching means the row and the inbox
-            // disagree, which proves nothing.
+            // disagree, which proves nothing. Past it the read goes on only as far as the caller's moment and the run of unknown
+            // summaries it ends (control-server#789): the summaries a round never saw, and where the grace counts from.
+            bool followingUnknownRun = false;
             await foreach (ProtocolInboxRow row in SafetyMessagesNewestFirst.Read(dbContext)
                                .WithCancellation(cancellationToken)
                                .ConfigureAwait(false))
             {
-                if (Parse(row, agvId) is { } summary &&
-                    summary.Generation == session.SessionGeneration && summary.Version == revision)
+                if (Parse(row, agvId) is not { } summary)
                 {
-                    fact = summary;
+                    continue;
+                }
+
+                bool afterSince = since is DateTimeOffset from && summary.ReceivedAt > from;
+                if (fact is null)
+                {
+                    if (summary.Generation == session.SessionGeneration && summary.Version == revision)
+                    {
+                        fact = summary;
+                        followingUnknownRun = summary.SlotStateUnknown;
+                        unknownSince = summary.SlotStateUnknown ? summary.ReceivedAt : null;
+                        if (!followingUnknownRun && since is null)
+                        {
+                            break;
+                        }
+                    }
+                    else if (afterSince)
+                    {
+                        between!.Add(summary);
+                    }
+
+                    continue;
+                }
+
+                if (afterSince)
+                {
+                    between!.Add(summary);
+                }
+
+                if (followingUnknownRun)
+                {
+                    if (summary.SlotStateUnknown && summary.ReceivedAt >= fact.ReceivedAt - UnknownRunLookBack)
+                    {
+                        unknownSince = summary.ReceivedAt;
+                    }
+                    else
+                    {
+                        followingUnknownRun = false;
+                    }
+                }
+
+                if (!afterSince && !followingUnknownRun)
+                {
                     break;
                 }
             }
@@ -165,21 +246,79 @@ public static class InTransitDoorFacts
             }
         }
 
+        IReadOnlyList<InTransitDoorSample>? samples = between is null
+            ? null
+            : [.. Enumerable.Reverse(between).Select(summary => new InTransitDoorSample(StateOf(summary), summary.ReceivedAt))];
         if (fact is null)
         {
-            return new InTransitDoorVerdict(InTransitDoorState.Unobserved, null, null);
+            return new InTransitDoorVerdict(InTransitDoorState.Unobserved, null, null) { Between = samples };
         }
 
         if (!await SessionLiveness.HeardFromAsync(dbContext, agvId, fact.Generation, now, cancellationToken).ConfigureAwait(false))
         {
-            return new InTransitDoorVerdict(InTransitDoorState.Stale, fact.Generation, fact.Version, fact.ReceivedAt);
+            return new InTransitDoorVerdict(InTransitDoorState.Stale, fact.Generation, fact.Version, fact.ReceivedAt)
+            {
+                Between = samples,
+            };
         }
 
-        InTransitDoorState state = fact.SlotStateUnknown
-            ? InTransitDoorState.SlotStateUnknown
-            : fact.AllTargetSlotsLocked ? InTransitDoorState.ProvenLocked : InTransitDoorState.NotLocked;
-        return new InTransitDoorVerdict(state, fact.Generation, fact.Version, fact.ReceivedAt);
+        return new InTransitDoorVerdict(StateOf(fact), fact.Generation, fact.Version, fact.ReceivedAt)
+        {
+            Between = samples,
+            UnknownSince = unknownSince,
+        };
     }
+
+    /// <summary>
+    /// When this server received the first summary of each run of unknown summaries of the vehicle since
+    /// <paramref name="from"/>, oldest first: the graces a process that has just started may have to count as given
+    /// (cs#839 review M2, CP-0017 section 6, item 1). Every run counts, also one that was handed on at once; a run already
+    /// open at <paramref name="from"/> counts at its first summary inside -- both on the side of fewer graces.
+    /// </summary>
+    public static async Task<IReadOnlyList<DateTimeOffset>> ReadUnknownRunStartsAsync(
+        ControlServerDbContext dbContext,
+        string agvId,
+        DateTimeOffset from,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+
+        List<Summary> newestFirst = [];
+        await foreach (ProtocolInboxRow row in SafetyMessagesNewestFirst.Read(dbContext)
+                           .WithCancellation(cancellationToken)
+                           .ConfigureAwait(false))
+        {
+            if (row.ReceivedAt < from)
+            {
+                break;
+            }
+
+            if (Parse(row, agvId) is { } summary)
+            {
+                newestFirst.Add(summary);
+            }
+        }
+
+        List<DateTimeOffset> starts = [];
+        bool inRun = false;
+        foreach (Summary summary in Enumerable.Reverse(newestFirst))
+        {
+            if (summary.SlotStateUnknown && !inRun)
+            {
+                starts.Add(summary.ReceivedAt);
+            }
+
+            inRun = summary.SlotStateUnknown;
+        }
+
+        return starts;
+    }
+
+    private static InTransitDoorState StateOf(Summary summary) =>
+        summary.SlotStateUnknown
+            ? InTransitDoorState.SlotStateUnknown
+            : summary.AllTargetSlotsLocked ? InTransitDoorState.ProvenLocked : InTransitDoorState.NotLocked;
 
     /// <summary>Ordered by generation, then by the vehicle's own version; never by receive time.</summary>
     private static bool Newer(Summary candidate, Summary? best) =>
