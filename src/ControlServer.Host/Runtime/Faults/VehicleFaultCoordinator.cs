@@ -134,6 +134,10 @@ public sealed record FaultedVehicleCargoFacts(
     bool CargoStateKnown);
 
 /// <summary>What one fault evaluation established and did.</summary>
+/// <param name="ResumedByOwnContinue">
+/// The order runs on a continue this server sent in this fault generation and RIoT did not refuse (control-server#835): the
+/// motion is this server's resumption, not a vehicle nobody let go.
+/// </param>
 public sealed record VehicleFaultDecision(
     VehicleFaultLevel Level,
     long FaultGeneration,
@@ -145,7 +149,8 @@ public sealed record VehicleFaultDecision(
     IReadOnlyList<string> Reasons,
     string? AlarmCode = null,
     bool ReleasedOnConfirmation = false,
-    bool ReleasedOnDoorReading = false)
+    bool ReleasedOnDoorReading = false,
+    bool ResumedByOwnContinue = false)
 {
     /// <summary>
     /// True whenever a fault fact is held. New dispatch is blocked at either level — REQ-0234 does
@@ -816,6 +821,15 @@ public sealed class VehicleFaultCoordinator(
                 .ConfigureAwait(false);
         }
 
+        // A vehicle moving because this server continued its held order is not one nobody let go (control-server#835): the
+        // continue goes out with the fault still in effect, and the fault is cleared only once it is confirmed, so every round
+        // in between -- the read-back window, or until a person asks again -- read the motion the continue caused as motion
+        // under a fault, stopped the vehicle again and refused the continue (RESUME_EMERGENCY_STOP_OPEN). Doors not proven
+        // locked still stop it: they are REQ-0246's own trigger, and a resumed vehicle is no exception to them.
+        bool resumedByOwnContinue = !emergency.IsLatched &&
+            await OwnContinueRunsTheOrderAsync(fault, context, cancellationToken).ConfigureAwait(false);
+        bool motionIsOwnContinue = resumedByOwnContinue && !context.DoorsNotProvenLocked;
+
         // Two ways to ask for the stop (REQ-0246, REQ-0248 as revised by CP-0011), and neither for an order FAILED
         // (StopRequired). An unlatched vehicle that cannot be proven stopped is escalated as before. A vehicle somebody else
         // has already latched -- a button, a bumper, RIoT, Matrix -- gets this server's class recorded on that latch the
@@ -827,9 +841,9 @@ public sealed class VehicleFaultCoordinator(
         // person's release through the class-three entry ends this server's class for the generation, and a later latch by
         // someone else is theirs.
         bool escalated = stopRequired &&
-            (RequiresEscalation(
+            ((!motionIsOwnContinue && RequiresEscalation(
                 hold == RiotOrderCommandOutcome.Confirmed, proof, latest, emergency.IsLatched,
-                (releasedOnConfirmation || releasedOnDoorReading) && !context.DoorsNotProvenLocked) ||
+                (releasedOnConfirmation || releasedOnDoorReading) && !context.DoorsNotProvenLocked)) ||
              (emergency.IsLatched && fault.EscalatedAt is null));
         if (escalated)
         {
@@ -865,7 +879,57 @@ public sealed class VehicleFaultCoordinator(
 
         return new VehicleFaultDecision(
             fault.Level, fault.FaultGeneration, evidenceCode, hold, cargo, proof, escalated, reasons, alarm, releasedOnConfirmation,
-            releasedOnDoorReading);
+            releasedOnDoorReading, resumedByOwnContinue);
+    }
+
+    /// <summary>
+    /// Whether the order this fault is about runs now on a continue this server sent for it in this fault generation, not
+    /// refused (control-server#835).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Read from the command audit, not from memory</b>: the continue's attempt is armed before it goes out and outlives a
+    /// restart, so a continue still open when the process stopped is recognised after it. Only the generation's last continue
+    /// counts, and only while it is open or confirmed: one RIoT refused (Failed) let nothing go, and an order that runs after it
+    /// was run by somebody else -- that is still <c>HELD_ORDER_RESUMED_WITHOUT_CONTINUE</c> and still a stop.
+    /// </para>
+    /// <para>
+    /// <b>And RIoT reports this very order executing, read after the motion sample.</b> An open continue under an order still
+    /// HELD explains no motion -- the continue has not run it. Read here rather than taken from the caller, whose read came
+    /// before the sample: RIoT turns the order 7 -> 3 and the vehicle drives off at once, and a caller's HELD read a moment before
+    /// would stop the vehicle the continue had just let go. Asked only when such a continue exists, so it costs a read only
+    /// while a resumption is under way.
+    /// </para>
+    /// <para>
+    /// What it cannot tell apart: somebody at RIoT pausing the order again after this server's continue and then continuing it
+    /// themselves, with the fault still standing. The confirmed continue clears the fault straight away
+    /// (<see cref="ResumeAsync"/>), so that takes a process stopped between the confirmation and the clearing, or a person's
+    /// second request still to come.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> OwnContinueRunsTheOrderAsync(
+        VehicleFaultFact fault,
+        FaultedVehicleContext context,
+        CancellationToken cancellationToken)
+    {
+        if (context.CurrentOrder is not RiotOrderCommandTarget target)
+        {
+            return false;
+        }
+
+        IReadOnlyList<RiotOrderCommandAttempt> attempts = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.OrderContinue, target.UpperId, cancellationToken).ConfigureAwait(false);
+        RiotOrderCommandAttempt? last = attempts.LastOrDefault(attempt => attempt.FaultGeneration == fault.FaultGeneration);
+        if (last is null || last.Outcome == RiotOrderCommandOutcome.Failed)
+        {
+            return false;
+        }
+
+        RiotOrderObservation order = await movement
+            .ReconcileByUpperIdAsync(target.UpperId, cancellationToken).ConfigureAwait(false);
+        return order.Kind == RiotOrderObservationKind.Active &&
+               order.OrderState == RiotOrderState.Executing &&
+               string.Equals(order.OrderId, target.OrderId, StringComparison.Ordinal);
     }
 
     /// <summary>
