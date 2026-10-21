@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs b/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
+index 739299255..da32a442f 100644
+--- a/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
++++ b/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
+@@ -375,7 +375,7 @@ public static class InTransitDoorFacts
+             slotStateUnknown,
+             row.ReceivedAt,
+             // Read as moving unless the vehicle said it stood still: a reading is never discounted for want of the field.
+-            safety.TryGetProperty("vehicleStopped", out JsonElement stopped) && stopped.ValueKind == JsonValueKind.True);
++            false);
+     }
+ 
+     private sealed record Summary(

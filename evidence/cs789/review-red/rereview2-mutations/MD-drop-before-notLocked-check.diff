@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs b/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
+index 341168192..2eed7af3b 100644
+--- a/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
++++ b/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
+@@ -239,7 +239,7 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
+         // is read -- whether or not a grace is open, and before an unwatched grace is dropped below (cs#839 review H1,
+         // re-review cases a and b): never graced, and the fault it raises is one that read a door not locked. A blip that was
+         // locked again by now, with nothing else open, is left as it always was (see the remarks on the residual).
+-        if ((ReadNotLockedWhileMovingBetween(doors) && (episode is not null || doors.State != InTransitDoorState.ProvenLocked)) ||
++        if ((ReadNotLockedWhileMovingBetween(doors) && ((episode is not null && !(episode is { Handed: false } && vehicle.LastObservedAt is DateTimeOffset l0 && now - l0 > UnobservedGraceTimeout)) || doors.State != InTransitDoorState.ProvenLocked)) ||
+             (doors.State == InTransitDoorState.SlotStateUnknown && doors.UnknownRunAfterNotLocked))
+         {
+             episode ??= vehicle.Episode = new Episode(historyKnown: true);
