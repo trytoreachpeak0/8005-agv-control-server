@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-clearance-skips-stood-on-waiting-point",
+  "runId": "20261021T165431788Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "batchId": "unspecified",
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261021T165431788Z",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "controlServerCommit": "3df9bc59e50c51065970c6d2f051cce25b4ff6b3"
+  },
+  "assertions": [
+    {
+      "id": "L2-CSO-01",
+      "description": "A 在 211 上充不上，周期清桩中；B 接了搬运需求、旅程在途，停在 214 上（RIoT 报的当前站），214 没有占用行",
+      "outcome": "PASS",
+      "expected": "CLEARING / AGV-L2-002 AwaitingPickupArrival / 214 (none)",
+      "actual": "CLEARING / AGV-L2-002 AwaitingPickupArrival VEHICLE_WAITING_AT_CHECKPOINT / 214 (none)"
+    },
+    {
+      "id": "L2-CSO-02",
+      "description": "旧单结束、B 站在 214 上（没有占用行）、215 不可达：A 原地排队（CHARGING_CLEARANCE_NO_WAITING_POINT），另等十秒没有清桩移动意图、214 一直没有占用行；告警里 214 的逐点原因是 WAITING_POINT_STOOD_ON",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival CHARGING_CLEARANCE_NO_WAITING_POINT | 0 clearance intents | 214 (none) / 214=WAITING_POINT_STOOD_ON",
+      "actual": "AwaitingPickupArrival CHARGING_CLEARANCE_NO_WAITING_POINT | 0 clearance intents | 214 (none) / CHARGING_CLEARANCE_NO_WAITING_POINT: vehicle BROKERX-L2-0001 (journey charging:BROKERX-L2-0001:20261021T165443838Z) may leave its charger for a waiting point, but none is eligible (214=WAITING_POINT_STOOD_ON, 215=WAITING_POINT_UNREACHABLE). It stays where it is and no other station is guessed (REQ-0178); a manual station clearance still completes it."
+    },
+    {
+      "id": "L2-CSO-03",
+      "description": "B 离开 214（回到 210，旅程照旧在途）：A 预占 214（点上没车、没有占用行时照常派，不误伤）",
+      "outcome": "PASS",
+      "expected": "RESERVED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261021T165443838Z",
+      "actual": "RESERVED BROKERX-L2-0001 charging:BROKERX-L2-0001:20261021T165443838Z"
+    }
+  ]
+}
