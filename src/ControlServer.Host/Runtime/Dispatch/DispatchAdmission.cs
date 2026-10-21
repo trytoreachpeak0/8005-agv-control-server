@@ -73,6 +73,15 @@ public sealed record DispatchRoundFacts(
     public IReadOnlyDictionary<string, long> RedispatchGenerations { get; init; } =
         new Dictionary<string, long>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 目录时间窗（REQ-0366，control-server#827），派车轮按 <see cref="JourneyRuntimeOptions.CatalogAgeWindow"/> 填。
+    /// </summary>
+    /// <remarks>
+    /// 与目录、策略同理读一次：判据、受理前重判、轮末两个汇总都按同一个值判。缺省是产品默认的 30 分钟而不是零：
+    /// 不经派车轮构造的轮次（单元测试）拿到的是线上默认，不会因为漏传而把每条需求都判成超窗。
+    /// </remarks>
+    public TimeSpan CatalogAgeWindow { get; init; } = JourneyRuntimeOptions.DefaultCatalogAgeWindow;
+
     /// <summary>这条需求这一次受理派生身份所用的键，见 <see cref="JourneyIdentity.DerivationKey"/>。</summary>
     public string DerivationKeyOf(string demandId) =>
         JourneyIdentity.DerivationKey(

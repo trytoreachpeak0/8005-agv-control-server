@@ -1,0 +1,6 @@
+CI test.yml run 39563428505 at ffd87a5d9: Failed 1, Passed 5826 of 5827
+  Failed ControlServer.Tests.ChargingCycleProgressTests.AFullVehicleWarnedWhileWaitingOnItsChargerIsWarnedAgainOnceItIsStuckAtNoStation [1 s]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: [Tuple ("BROKERX-0001", "W2G-CHARGE-0f6b49a8-20260908T060001000Z", 211)]
+Cause: the test (from cs#801, merged in 2c0f6616a) advances the clock 25+ minutes, then publishes FleetFixture.Demand whose createdAt is the fixture start minus 10 minutes, so it is past the 30-minute catalog age window and correctly not dispatched. Fixed in the test: createdAt = clock - 1 minute.

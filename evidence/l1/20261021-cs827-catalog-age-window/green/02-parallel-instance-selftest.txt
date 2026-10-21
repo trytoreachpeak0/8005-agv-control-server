@@ -1,0 +1,9 @@
+1320 passed, 0 failed (Test-ParallelInstance.ps1)
+  PASS  catalog age window: 00:30:00 (String) is accepted
+  PASS  catalog age window: 02:00:00 (String) is accepted
+  PASS  catalog age window: 00:00:00 (String) is refused
+  PASS  catalog age window: 30 (String) is refused
+  PASS  catalog age window: 1800 (Int32) is refused
+  PASS  catalog age window: -00:30:00 (String) is refused
+  PASS  catalog age window: the overlay writes 00:30:00 when the definition leaves it out (control-server#827)
+  PASS  catalog age window: the overlay writes the definition's value

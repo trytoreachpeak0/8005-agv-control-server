@@ -54,7 +54,7 @@ public sealed class StarvationEscalationSink(
         // 与排序同一份排除集合（StarvationExclusions），只是取本轮结构性汇总写完之后的状态（组合里它排在前面）：
         // 本轮刚立的不告警，本轮刚解除的照常判。键被抑制、键已被别的 DemandId 受理的也在里面（批次7-05 审查中 1）。
         HashSet<string> notCandidates = await StarvationExclusions
-            .ReadAsync(dbContext, round.Catalog.Items, cancellationToken).ConfigureAwait(false);
+            .ReadAsync(dbContext, round, cancellationToken).ConfigureAwait(false);
         Dictionary<string, (AcceptedDemandSnapshot Demand, TaskStarvationStanding Standing)> overdue = new(StringComparer.Ordinal);
         foreach (AcceptedDemandSnapshot demand in round.Catalog.Items)
         {

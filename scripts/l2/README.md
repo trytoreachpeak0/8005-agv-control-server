@@ -869,6 +869,10 @@ DispatchZoneParameters = @{
 - `ClearanceToWaitingPointEnabled`（control-server#409） —— 写 `$true` 时编排器传 `JourneyRuntime__ClearanceToWaitingPointEnabled=True`：
   清桩中的车在旧单结束之后由服务端开往等待点，到点即完成清桩。服务端默认关，关着时清桩中只等人工。用它的场景是
   `charging-clearance-to-waiting-point`；它还要 `IdleReturn`、`RouteGraph` 与带 `Node` 的等待点，理由同空闲返回。
+- `CatalogAgeWindow`（control-server#827，REQ-0366） —— `'hh:mm:ss'`，必须为正，映射成 `JourneyRuntime__CatalogAgeWindow`。
+  服务端默认 30 分钟：假 MesIngest 的 `createdAt` 早于此刻 30 分钟以上的未受理需求不派车，积压原因 `DEMAND_OLDER_THAN_CATALOG_WINDOW`。
+  假 MesIngest 不写 `createdAt` 时给「此刻减十分钟」，所以一般场景不用管；把建单时刻写死在 30 分钟前、测的又不是时间窗的场景
+  （`task-type-priority-band`、`starvation-threshold-escalation`、`transport-demand-key-suppressed`）写 `'02:00:00'`。
 
 下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键的结构（仓号、字段名、键之间的组合规则，含
 `OnboardPeers` 各项自带的 `SlotStates`）都在启动任何进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」；

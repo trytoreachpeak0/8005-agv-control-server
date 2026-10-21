@@ -492,6 +492,10 @@ jobs:
               # under a new DemandId, the unrelated demand behind it is still taken, and a demand gone from the catalog
               # before acceptance suppresses nothing.
               @{ Name = 'transport-demand-key-suppressed'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#827, REQ-0366 (CP-0020): with the shipped 30-minute catalog age window, a demand MesIngest first
+              # read 40 minutes ago is not taken by an idle vehicle and stays on the backlog card with its reason; a fresh one
+              # is taken and delivered, and the stale one is judged again afterwards and still not taken.
+              @{ Name = 'catalog-age-window'; Runs = 3 }
               # control-server#212, the two vehicle-full ones of the five above.
               @{ Name = 'vehicle-full-ignores-oversized-and-gated'; Runs = 3; BatchId = 'batch-7' }
               @{ Name = 'vehicle-full-still-appends-before-departure'; Runs = 3; BatchId = 'batch-7' }

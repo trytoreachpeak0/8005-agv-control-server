@@ -139,6 +139,9 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("CHARGING_POLICY_ENTRY_NOT_ABOVE_RESCUE_LINE", DispatchReasonClass.Backlog)]
     // control-server#686（REQ-0259、REQ-0263）：仓位配置未确认的车不接搬运。车辆侧，别的车照接，逐仓核验通过即解除，归普通积压。
     [InlineData("SLOT_CONFIGURATION_NOT_CONFIRMED", DispatchReasonClass.Backlog)]
+    // control-server#827（REQ-0366）：目录时间窗。用户定的有意不派，不是故障：普通积压、看板列出，不立结构性阻断。
+    [InlineData("DEMAND_OLDER_THAN_CATALOG_WINDOW", DispatchReasonClass.Backlog)]
+    [InlineData("DEMAND_CATALOG_CREATED_AT_MISSING", DispatchReasonClass.Backlog)]
     public void EveryReasonCodeHasItsClassAndARationale(string reasonCode, DispatchReasonClass expected)
     {
         DispatchReasonClassification row = Assert.Contains(reasonCode, StructuralDispatchClassification.ByCode);

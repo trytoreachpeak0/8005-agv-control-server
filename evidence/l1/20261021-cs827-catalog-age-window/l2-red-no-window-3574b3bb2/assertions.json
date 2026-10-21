@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "catalog-age-window",
+  "runId": "20261021T083220576Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261021T083220576Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "batchId": "unspecified",
+    "controlServerCommit": "3574b3bb288c1990a38d7a0b21ec9feffa0d9690"
+  },
+  "assertions": [
+    {
+      "id": "L2-CAW-01",
+      "description": "首次读到在 40 分钟前的 STALE，车空着也不派：积压原因 DEMAND_OLDER_THAN_CATALOG_WINDOW，没有旅程、没有订单意图（REQ-0366）",
+      "outcome": "FAIL",
+      "expected": "DEMAND_OLDER_THAN_CATALOG_WINDOW / not accepted / 0 journeys / 0 intents",
+      "actual": "DEMAND_ALREADY_ACCEPTED / AcceptedAt='2026-10-21 08:32:40.7752396+00:00' / 1 journeys / 1 intents"
+    },
+    {
+      "id": "L2-CAW-02",
+      "description": "/api/dashboard/dispatch-backlog 列出 STALE，原因码 DEMAND_OLDER_THAN_CATALOG_WINDOW 带中文说明（仍在等车列表里，不像离开目录那样消失）",
+      "outcome": "FAIL",
+      "expected": "one row / DEMAND_OLDER_THAN_CATALOG_WINDOW / Chinese description",
+      "actual": "0 rows"
+    },
+    {
+      "id": "L2-CAW-03",
+      "description": "首次读到在 1 分钟前的 FRESH 被受理并送达（旅程 Completed）",
+      "outcome": "FAIL",
+      "expected": "Completed",
+      "actual": "(no journey)"
+    }
+  ]
+}

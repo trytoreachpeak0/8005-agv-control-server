@@ -76,6 +76,32 @@ public static class DispatchReasonCodes
     public const string DemandLeftCatalog = "DEMAND_LEFT_CATALOG";
 
     /// <summary>
+    /// <b>Not dispatched, by design.</b> The demand has not been accepted, and MesIngest first read it (its <c>createdAt</c>, the
+    /// start of REQ-0201's waiting age) longer ago than the catalog age window (REQ-0366, CP-0020, control-server#827).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Unlike <see cref="DemandLeftCatalog"/> the demand is still in the catalog and still listed as waiting on the dashboard:
+    /// the window only gates dispatch, it takes nothing out of the catalog. The first-read time of one <c>DemandId</c> never
+    /// changes, so once past the window the demand never comes back, whatever MES updates; a demand that left the catalog and
+    /// returns does so under a new <c>DemandId</c> and a new first-read time.
+    /// </para>
+    /// <para>
+    /// Ordinary backlog in the structural classification, but never a structural dispatch block, never a starvation escalation
+    /// and never a manual-carry alarm (<see cref="CatalogAgeWindowRefusals"/>): it is the user's decision not to dispatch it,
+    /// and the backlog card is where the floor sees it.
+    /// </para>
+    /// </remarks>
+    public const string DemandOlderThanCatalogWindow = "DEMAND_OLDER_THAN_CATALOG_WINDOW";
+
+    /// <summary>
+    /// <b>Not dispatched, by design.</b> The catalog item carries no <c>createdAt</c>, so its age against the catalog age window
+    /// cannot be told; REQ-0366 refuses it rather than guess (CP-0020 section 5, item 4). Same treatment as
+    /// <see cref="DemandOlderThanCatalogWindow"/> otherwise.
+    /// </summary>
+    public const string DemandCatalogCreatedAtMissing = "DEMAND_CATALOG_CREATED_AT_MISSING";
+
+    /// <summary>
     /// The rule table does not know the demand's task type, or the deployment's <c>AllowedWorkTypes</c> leaves it
     /// out. Configuration, not a fault.
     /// </summary>
@@ -292,4 +318,14 @@ public static class DispatchReasonCodes
 
     /// <summary>Whether <paramref name="reasonCode"/> is one of <see cref="Silent"/>.</summary>
     public static bool IsSilent(string reasonCode) => Silent.Contains(reasonCode);
+
+    /// <summary>
+    /// The two catalog age window refusals (REQ-0366, control-server#827). Listed on the backlog card like any waiting demand, but
+    /// never alarmed: the structural summary treats a demand refused with one of them like a silent one.
+    /// </summary>
+    public static IReadOnlySet<string> CatalogAgeWindowRefusals { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { DemandOlderThanCatalogWindow, DemandCatalogCreatedAtMissing };
+
+    /// <summary>Whether <paramref name="reasonCode"/> is one of <see cref="CatalogAgeWindowRefusals"/>.</summary>
+    public static bool IsCatalogAgeWindowRefusal(string reasonCode) => CatalogAgeWindowRefusals.Contains(reasonCode);
 }

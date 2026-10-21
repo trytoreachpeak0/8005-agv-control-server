@@ -1339,7 +1339,9 @@ public sealed class ChargingCycleProgressTests
             Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2249).Message,
             StringComparison.Ordinal);
 
-        fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        // control-server#827：钟已走过 25 分钟，FleetFixture.Demand 的建单时刻按夹具起点算会超过目录时间窗（REQ-0366，30 分钟）而不派；
+        // 这里测的是充电告警，不是时间窗，所以这条需求按此刻刚被 MesIngest 读到摆。
+        fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0) with { CreatedAt = fleet.Clock.GetUtcNow().AddMinutes(-1) }]);
         for (int round = 0; round < 3; round++)
         {
             await RoundAsync(fleet);

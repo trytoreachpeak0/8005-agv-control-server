@@ -83,6 +83,9 @@ public static class DispatchAdmissionCriteria
             new SublotTaskTypeConflictCriterion(),
             new AreaAssignmentLookupCriterion(),
             new AreaScopeCriterion(),
+            // REQ-0366（CP-0020，control-server#827）：目录时间窗，序号 45。必填：它是用户定的派车范围，一个可以漏传的调用方就会把
+            // 超窗的需求派出去。排在范围类判据（任务类型 20、AREA 40）之后、站点解析（60）之前，理由见判据本身。
+            new CatalogAgeWindowCriterion(),
             new AreaEqpUniqueCriterion(),
             new StationResolutionCriterion(stationResolver, options),
             new DispatchZoneVehicleCriterion(),
@@ -160,6 +163,7 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, AlreadyAcceptedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeySuppressedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeyAlreadyAcceptedCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, CatalogAgeWindowCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, IdleReturnCommitmentCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, ChargingStandingCriterion>();

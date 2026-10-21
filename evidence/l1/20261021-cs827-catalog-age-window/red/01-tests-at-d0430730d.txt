@@ -1,0 +1,43 @@
+  Failed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "DEMAND_OLDER_THAN_CATALOG_WINDOW", expected: Backlog) [3 ms]
+  Error Message:
+   Assert.Contains() Failure: Key not found in dictionary
+  Failed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "DEMAND_CATALOG_CREATED_AT_MISSING", expected: Backlog) [< 1 ms]
+  Error Message:
+   Assert.Contains() Failure: Key not found in dictionary
+  Failed ControlServer.Tests.CatalogAgeWindowTests.ADemandReleasedBackForRedispatchIsRedispatchedWhateverItsAge [3 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.StructuralDispatchBlockTests.TheTableCoversEveryReasonCodeTheChainAndTheIntakeBehindItWrite [20 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 18
+  Failed ControlServer.Tests.CatalogAgeWindowTests.TheDashboardListsBothRefusalsWithAChineseDescription(reasonCode: "DEMAND_OLDER_THAN_CATALOG_WINDOW", descriptionMentions: "时间窗") [139 ms]
+  Error Message:
+   Assert.True() Failure
+  Failed ControlServer.Tests.CatalogAgeWindowTests.TheDashboardListsBothRefusalsWithAChineseDescription(reasonCode: "DEMAND_CATALOG_CREATED_AT_MISSING", descriptionMentions: "首次读到") [104 ms]
+  Error Message:
+   Assert.True() Failure
+  Failed ControlServer.Tests.CatalogAgeWindowTests.TheSameKeyBackUnderANewDemandIdIsTimedFromItsOwnFirstRead [169 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.CatalogAgeWindowTests.TheWindowIsJudgedAgainWhenIntakeRereadsTheCatalog [169 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.CatalogAgeWindowTests.ADemandPastTheWindowRaisesNoStructuralBlockAndLosesTheOneItHad [158 ms]
+  Error Message:
+   Assert.All() Failure: 1 out of 1 items in the collection did not pass.
+  Failed ControlServer.Tests.CatalogAgeWindowTests.ADemandFirstReadThirtyOneMinutesAgoIsNotDispatchedAndWaitsWithItsReason [152 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.CatalogAgeWindowTests.AnUpdateFromMesDoesNotPutADemandPastTheWindowBack [259 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.CatalogAgeWindowTests.ADemandPastTheWindowIsNeverEscalatedForStarvation [202 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.CatalogAgeWindowTests.ADemandWithoutAFirstReadTimeIsNotDispatchedAndWaitsWithItsOwnReason [138 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.CatalogAgeWindowTests.TheWindowDefaultsToThirtyMinutesMustBePositiveAndIsShippedInAppSettings [4 ms]
+  Error Message:
+   Assert.Contains() Failure: Item not found in collection
+Failed!  - Failed:    14, Passed:   115, Skipped:     0, Total:   129, Duration: 5 s - ControlServer.Tests.dll (net8.0)

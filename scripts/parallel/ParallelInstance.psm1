@@ -218,7 +218,8 @@ $script:AllowedKeys = [ordered]@{
         'maximumEvidenceAge', 'departureSafetyResultWait', 'stationDepartureWaitTimeout',
         'sameStationAppendCorrectionGrace', 'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
         'admissionPolicyVersion', 'admissionPolicyDeploymentId', 'checkpointWaitBudget',
-        'areaEndAdmissionRevokedTimeout', 'clearanceToWaitingPointEnabled', 'stationTimeoutRedispatchLimit', 'stagingDepartureRules')
+        'areaEndAdmissionRevokedTimeout', 'clearanceToWaitingPointEnabled', 'stationTimeoutRedispatchLimit', 'stagingDepartureRules',
+        'catalogAgeWindow')
     # control-server#454. credentialEnvironmentVariable is deliberately absent: the overlay writes
     # this instance's own variable name, so no definition can point the service at the MVP's.
     'vehicleFaultRecovery' = @('enabled')
@@ -1245,6 +1246,15 @@ function Test-ParallelInstanceDefinition {
             if (-not (($limit -is [int] -or $limit -is [long]) -and $limit -eq 0)) {
                 $failures += "journeyRuntime.stationTimeoutRedispatchLimit must be the JSON integer 0 (REQ-0365: the first station deadline ends the demand), got '$limit'."
             }
+        }
+
+        # control-server#827. The catalog age window (JourneyRuntimeOptions.CatalogAgeWindow, REQ-0366): an unaccepted demand
+        # MesIngest first read longer ago than this is not dispatched. Optional -- absent, the overlay writes the default
+        # 00:30:00 -- but when written it is a positive hh:mm:ss, for the reason ConvertTo-ParallelCatalogSpan gives. Any other
+        # value than thirty minutes takes the user's approval (REQ-0366: a commissioning value); this does not check that.
+        if ((Test-KeyPresent -Node $journey -Key 'catalogAgeWindow') -and
+            ($null -eq ($windowSpan = ConvertTo-ParallelCatalogSpan $journey['catalogAgeWindow']) -or $windowSpan -le [timespan]::Zero)) {
+            $failures += "journeyRuntime.catalogAgeWindow must be a positive string hh:mm:ss, got '$($journey['catalogAgeWindow'])'."
         }
 
         # program#184. The staging station's departure rules (JourneyRuntimeOptions.StagingDepartureRules, control-server#709):
@@ -3233,6 +3243,9 @@ function New-ParallelInstanceConfigurationOverlay {
     # earlier install (or a hand edit, or a v4 package's 2) must not survive a reinstall in appsettings.Production.json unseen.
     # 0 is the package default since control-server#751 and the only value the definition check accepts (REQ-0365).
     $journeyOverlay['stationTimeoutRedispatchLimit'] = $journey.Contains('stationTimeoutRedispatchLimit') ? $journey['stationTimeoutRedispatchLimit'] : 0
+    # control-server#827. Always written too, 00:30:00 (REQ-0366's default) when the definition leaves it out, for the same
+    # reason: a widened window from an earlier install must not survive a reinstall in appsettings.Production.json unseen.
+    $journeyOverlay['catalogAgeWindow'] = $journey.Contains('catalogAgeWindow') ? $journey['catalogAgeWindow'] : '00:30:00'
 
     $routeGraphOverlay = [ordered]@{}
     foreach ($key in $routeGraph.Keys) { $routeGraphOverlay[$key] = $routeGraph[$key] }
