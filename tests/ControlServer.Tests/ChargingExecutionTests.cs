@@ -1526,6 +1526,46 @@ public sealed class ChargingExecutionTests
     }
 
     /// <summary>
+    /// 充电单在途中被取消（周期按失败收尾），车停在两站之间、RIoT 报 0（control-server#801 审查 M2）：预占不放，与充满离桩同一条离开判据；
+    /// 这辆车自己的分配结论是「仍持有桩」。超过窗口 2247 报一次、写明「不在任何站」；RIoT 一报出它在别的站，下一轮就放。
+    /// </summary>
+    /// <remarks>
+    /// 旧预占挡住它自己再充电，在这一段不额外少充一次：车报 0 时路网不认识 0 号站，每个桩都答 <c>CHARGER_UNREACHABLE</c>，
+    /// 没有这份预占也分不到；放掉之后还有失败冷却（<c>CHARGING_COOLDOWN_AFTER_FAILED_CYCLE</c>）。
+    /// </remarks>
+    [Fact]
+    public async Task AReservationLeftByAFailedCycleIsKeptWhileTheVehicleIsAtNoStationAndReleasedOnceItIsPlacedElsewhere()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = ChargerOccupancyReader.NoStation };
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            ChargingExecutionReasons.OrderEnded,
+            (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(Token)).EndReason);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(ChargingAllocationReasons.VehicleStillHoldsCharger, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromMinutes(1));
+        await RoundAsync(fleet);
+
+        var alarm = Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2247);
+        Assert.Contains("at no station", alarm.Message, StringComparison.Ordinal);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12 };
+        await RoundAsync(fleet);
+
+        StationExclusivityRecordRow record = await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journey.JourneyId, Token);
+        Assert.Equal(ChargingExecutionReasons.ReservationReleasedAfterEndedCycle, record.ReleaseReason);
+    }
+
+    /// <summary>
     /// control-server#645 审查 S2（变异 E、F）：失败周期留下的预占放不掉时，2247 写明缺的那一项里是哪一样事实没读到——
     /// 桩不能确认空闲是因为清单读不全（第几页没对上），或者车本身读不到（哪辆车、为什么）。
     /// </summary>

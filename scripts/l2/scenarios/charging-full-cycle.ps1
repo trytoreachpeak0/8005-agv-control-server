@@ -17,7 +17,11 @@ import-charger-roster 导入名册。编排器的默认测试策略：强制充�
 停止充电）、车到了机台 12：另等释放，原因 CHARGER_RELEASED_ON_DEPARTURE，周期以 CHARGING_DEPARTED 收尾、回 NOT_CHARGING。
 队首的 act(78,2,0) 只作为 RIoT 行为的观测记下，不当离桩证据（调度 09-29，PR #414 审查）。
 
-**红证据（缺陷版本）**：离桩清扫把「这辆车已有下一趟旅程」当成离桩证据（下达即释放），L2-CFC-04 变红。
+车开动时假 RIoT 报 `currentPosition` 0、不再充电（离桩动作做完、车还在桩口）：另等十秒，211 仍是占用、周期仍是 COMPLETE（L2-CFC-06，
+control-server#801）。
+
+**红证据（缺陷版本）**：离桩清扫把「这辆车已有下一趟旅程」当成离桩证据（下达即释放），L2-CFC-04 变红；把 0 当成「已离开」
+（control-server#801 之前的离开判据），L2-CFC-06 变红。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -214,10 +218,26 @@ $assertions.Add(
 # --- 4. 离桩：RIoT 执行那张单（离桩动作停止充电），车到机台 12；三项确认之后才释放 ---------------------------------
 
 $null = $riot.Command('Put', "orders/$($pickup.UpperId)", @{ orderState = 3; executeVehicleKey = $vehicleKey })
+# The departure action has run: no longer charging, and RIoT places the vehicle at no station (currentPosition 0) while it is
+# still between 211 and its exit 212 -- the reading that released 211 under agv01 in production on 10-20 (control-server#801).
 $null = $riot.Command('Put', 'vehicle', @{
     vehicleKey = $vehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.8
     processingOrder = $true; orderTaskId = [string]$pickup.OrderId
+    currentPosition = 0; batteryState = 'NO_CHARGE'
 })
+$atNoStation = Wait-L2ConditionOrLast -Description 'the charger was released while RIoT placed the vehicle at no station (it must not)' `
+    -Journal $journal -Criterion 'occupied-at-no-station' -TimeoutSeconds 10 `
+    -Probe { "$(Get-ChargerHeld) | $([string](Get-Cycle).WireState)" } `
+    -Until { param($v) $v -ne "OCCUPIED $vehicleKey $journeyId | COMPLETE" }
+$vehicle = Get-Vehicle
+$assertions.Add(
+    'L2-CFC-06',
+    '离桩动作做完、不再充电、RIoT 报 currentPosition 0（不在任何站，车还在桩口）：另等十秒，211 一直是充电那一趟的占用、周期一直是 COMPLETE（control-server#801）',
+    ([string]$vehicle.currentPosition -eq '0' -and [string]$vehicle.batteryState -eq 'NO_CHARGE' -and
+        $atNoStation -eq "OCCUPIED $vehicleKey $journeyId | COMPLETE"),
+    "0 / NO_CHARGE / OCCUPIED $vehicleKey $journeyId | COMPLETE",
+    "$($vehicle.currentPosition) / $($vehicle.batteryState) / $atNoStation")
+
 $null = $riot.Command('Put', 'vehicle', @{
     vehicleKey = $vehicleKey; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0
     currentPosition = $machine; processingOrder = $false; clearOrderTaskId = $true
