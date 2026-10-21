@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-unload-not-emptied",
+  "runId": "20261021T124504307Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "unspecified",
+    "stageRoot": "C:\\actions-runner\\vmwin01-control-server-desktop\\_work\\_temp\\real-rig-39601806455-1\\_stage\\l2-20261021T124504307Z",
+    "onboardHmiCommit": "968d213707786dea63ccbdf12421aad42e9857e4",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "RealOnboard",
+    "controlServerCommit": "72180e86c0d7eeadd7256d04af935d3141e80296"
+  },
+  "assertions": [
+    {
+      "id": "L2-UE-01",
+      "description": "前置：装货正常提交，仓位关门、锁上、有货，旅程进到去关卡那一段",
+      "outcome": "PASS",
+      "expected": "Committed / CLOSED/OCCUPIED/1/0",
+      "actual": "Committed / CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-UE-02",
+      "description": "卸的是装货用的那个仓，车载端说在等操作员时门确实开着、货还在、开锁输出已复位",
+      "outcome": "PASS",
+      "expected": "slot 1 / OPEN/OCCUPIED/0/0",
+      "actual": "slot 1 / OPEN/OCCUPIED/0/0"
+    },
+    {
+      "id": "L2-UE-03",
+      "description": "第 1 轮带货关门：车载端不自己重开（关门后 5 秒门关着、锁扣上、没有 UNLOCKING）；按「重新开门」后开锁一次（UNLOCKING +1）、门又弹开（模拟器 OPEN、货还在、开锁输出复位）、再次等操作员",
+      "outcome": "PASS",
+      "expected": "关门后车没有自己重开 / 按了重新开门、重开 / UNLOCKING 1→2 / WAITING_OPERATOR 增加 / OPEN/OCCUPIED/0/0",
+      "actual": "空关后车没有自己重开（UNLOCKING 1→1；+0s CLOSED/OCCUPIED/0/0 -> +0.2s CLOSED/OCCUPIED/1/0） / 按了重新开门、重开 / UNLOCKING 1→2 / WAITING_OPERATOR 1→3 / OPEN/OCCUPIED/0/0"
+    },
+    {
+      "id": "L2-UE-04",
+      "description": "第 2 轮带货关门：车载端不自己重开（关门后 5 秒门关着、锁扣上、没有 UNLOCKING）；按「重新开门」后开锁一次（UNLOCKING +1）、门又弹开（模拟器 OPEN、货还在、开锁输出复位）、再次等操作员",
+      "outcome": "PASS",
+      "expected": "关门后车没有自己重开 / 按了重新开门、重开 / UNLOCKING 2→3 / WAITING_OPERATOR 增加 / OPEN/OCCUPIED/0/0",
+      "actual": "空关后车没有自己重开（UNLOCKING 2→2；+0s CLOSED/OCCUPIED/0/0 -> +0.2s CLOSED/OCCUPIED/1/0） / 按了重新开门、重开 / UNLOCKING 2→3 / WAITING_OPERATOR 3→5 / OPEN/OCCUPIED/0/0"
+    },
+    {
+      "id": "L2-UE-05",
+      "description": "重开 2 轮之后什么都没结算：卸货仍在途（Prepared）、车载端一份结果都没报、旅程等在 AwaitingUnloadResult、需求 Accepted、没有恢复",
+      "outcome": "PASS",
+      "expected": "Prepared / 0 result / AwaitingUnloadResult / Accepted / 会话 Ready / 恢复会话 0 / 恢复工作流 0",
+      "actual": "Prepared / 0 result / AwaitingUnloadResult / Accepted / 会话 Ready / 恢复会话 0 / 恢复工作流 0"
+    },
+    {
+      "id": "L2-UE-06",
+      "description": "取空后车载端报 COMPLETED（整个卸货 attempt 唯一一份结果），卸货 Committed，仓位空、门关、锁上",
+      "outcome": "PASS",
+      "expected": "COMPLETED / Committed 7a7b5189-1f02-695f-920f-0a041d8b7921 / CLOSED/EMPTY/1/0",
+      "actual": "COMPLETED / Committed 7a7b5189-1f02-695f-920f-0a041d8b7921 / CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-UE-07",
+      "description": "需求完成（Succeeded），旅程 Completed",
+      "outcome": "PASS",
+      "expected": "Succeeded / Completed",
+      "actual": "Succeeded / Completed"
+    },
+    {
+      "id": "L2-UE-08",
+      "description": "全程没有进过恢复",
+      "outcome": "PASS",
+      "expected": "会话 Ready / 恢复会话 0 / 恢复工作流 0",
+      "actual": "会话 Ready / 恢复会话 0 / 恢复工作流 0"
+    }
+  ]
+}

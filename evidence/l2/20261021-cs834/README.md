@@ -9,6 +9,18 @@ artifacts (logs, snapshots, timeline) are on the CI runs.
 | `red-ci-39552278803-old-onboard-2f2ef45` | 39552278803 | `2f2ef45` (before hmi#385, reopens by itself) | load-door-closed-empty-reopens, unload-not-emptied, expected-action-overdue x3 | 5/5 FAIL |
 | `red-ci-39553412432-mutation-no-declaration-abort-27c5fa2` | 39553412432 | `27c5fa2` = `b0cd48f` without `active.Abort.CancelAsync()` in `DeclareSlotFaultAsync` (branch `w2g/cs834-red-no-declaration-abort`, not for merge) | slot-fault-declaration x3 | 3/3 FAIL |
 
+## After the review rework: green (`72180e86c`, onboard `968d213`)
+
+`green-ci-39601806455-rework-968d213`, CI run 39601806455: 8/8 PASS, no onboard session timeout. Dispatched at 20:42:49 CST
+once host CPU had stayed below 50 % for 5 minutes (18.2, 19.7, 17.7 % at 20:37-20:42, `host-cpu-before-dispatch.tsv`);
+during the run it averaged 27 %, peak 85 % (`host-cpu-samples.tsv`).
+
+- Every shut held (lock latched at +0.2 s, no UNLOCKING for 5 s) and reopened on the first press: L2-DC-02/04/05,
+  L2-UE-03/04, L2-EAO-01/13.
+- L2-EAO-02 read 9.8, 9.8 and 10 s before the threshold; the reopen came 8.5-8.6 s after the first unlock; L2-EAO-03
+  -0.02 s from first unlock + threshold, -8.5..-8.6 s from the pressed reopen + threshold.
+- L2-RSFD-07 (all three): no 「重新开门」 for 10 s after the shut, CLOSED/EMPTY/1/0, UNLOCKING 1 = before.
+
 ## After the review rework (`a30ddd724`, onboard `968d213`): two rounds red on rig disconnects, not on a criterion
 
 `968d213` differs from `b0cd48f` only in the button's caption (`check-ui-layout.ps1`, one line each in
