@@ -9,6 +9,17 @@ artifacts (logs, snapshots, timeline) are on the CI runs.
 | `red-ci-39552278803-old-onboard-2f2ef45` | 39552278803 | `2f2ef45` (before hmi#385, reopens by itself) | load-door-closed-empty-reopens, unload-not-emptied, expected-action-overdue x3 | 5/5 FAIL |
 | `red-ci-39553412432-mutation-no-declaration-abort-27c5fa2` | 39553412432 | `27c5fa2` = `b0cd48f` without `active.Abort.CancelAsync()` in `DeclareSlotFaultAsync` (branch `w2g/cs834-red-no-declaration-abort`, not for merge) | slot-fault-declaration x3 | 3/3 FAIL |
 
+## Onboard after the baseline merge: green (`9086018a5`, onboard `315aee2`)
+
+`green-ci-39605880095-onboard-315aee2`, CI run 39605880095: 8/8 PASS, no onboard session timeout. Onboard
+`315aee25083ca6f956e672e10be8b07201aed78a` is PR onboard-hmi#390 after `w2g/fp-v2-impl` was merged into it (28 commits,
+among them #394's reconnect handshake). Dispatched at 21:11:53 CST after host CPU read 42.1 and 27.1 % at 21:10 and 21:11
+(`host-cpu-before-dispatch.tsv`); during the run it averaged 26 %, peak 80 % (`host-cpu-samples.tsv`).
+
+Same readings as the round below: every shut held and reopened on the first press; L2-EAO-02 read 9.7, 9.7 and 9.8 s
+before the threshold, the reopen 8.4-8.6 s after the first unlock, L2-EAO-03 -8.46..-8.58 s from the pressed reopen +
+threshold; L2-RSFD-07 three times "no 「重新开门」 for 10 s", UNLOCKING 1 = before.
+
 ## After the review rework: green (`72180e86c`, onboard `968d213`)
 
 `green-ci-39601806455-rework-968d213`, CI run 39601806455: 8/8 PASS, no onboard session timeout. Dispatched at 20:42:49 CST
