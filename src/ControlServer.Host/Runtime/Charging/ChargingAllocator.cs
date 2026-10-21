@@ -1002,7 +1002,7 @@ public sealed class ChargingAllocator(
     }
 
     /// <summary>
-    /// <c>REQ-0173</c> 的三项确认缺哪一项（都在答空）：充电已停止（新鲜读数不是 <c>CHARGING</c>）、原车已离开（当前站不是这个桩）、
+    /// <c>REQ-0173</c> 的三项确认缺哪一项（都在答空）：充电已停止（新鲜读数不是 <c>CHARGING</c>）、原车已离开（读到停在另一个站上；0 是不在任何站，不算，control-server#801）、
     /// 桩位可确认空闲（与分配同一个占用判法）。车读不到也不算离开。失败周期与充满离桩用同一个判法。
     /// </summary>
     private string? WhyNotYetReleasable(StationExclusivityRow row, ChargerOccupancySnapshot occupancyFacts) =>
@@ -1014,6 +1014,12 @@ public sealed class ChargingAllocator(
             ? "the vehicle reports it is charging"
         : StandsOn(vehicle, row)
             ? "the vehicle is read standing on the charger"
+        // control-server#801: currentPosition 0 says RIoT places it at no station, not that it has left -- right after the
+        // departure action it is still in the charger's exit (10-20 agv01 at 211, 211 handed to agv03, both locked at 212).
+        // Left means read standing at another station. Only this vehicle's own departure: another vehicle at 0 blocks
+        // nothing (control-server#772).
+        : vehicle.CurrentStationId is not > ChargerOccupancyReader.NoStation
+            ? "the vehicle is read at no station (currentPosition 0), so it is not known to have left the charger"
         : occupancyFacts.Judge(row.MapId, row.StationId, askingVehicleKey: null) is { } occupied
             ? occupied == ChargingAllocationReasons.ChargerOccupancyUnknown
                 ? $"the charger is not confirmed free ({occupied}; unknown: {occupancyFacts.UnknownDetail})"
