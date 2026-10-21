@@ -25,7 +25,7 @@ $mutations = @(
        New = "        if (standing.Excludes(reads.Graph.Graph!, vehicle.VehicleKey, stationId) is { } stoodOn && stationId < 0)" }
     # The fleet, not the vehicles handed in.
     @{ Id = 'M4'; File = $standing; Class = $commit; Expect = 'AVehicleNotHandedToTheEvaluationStandingOnTheOnlyPointKeepsOthersOffIt'
-       Old = "observed = await ReadWithinBudgetAsync(vehicle, cancellationToken).ConfigureAwait(false);"; New = "observed = null;" }
+       Old = "observed = await ReadWithinBudgetAsync(vehicle, cancellationToken).ConfigureAwait(false);"; New = "observed = await Task.FromResult<RiotVehicleObservation?>(null).ConfigureAwait(false);" }
     @{ Id = 'M5'; File = $evaluator; Class = 'MultiVehicleExecutionTests'; Expect = 'AVehicleOutsideTheIdleFleetStandingOnTheWaitingPointKeepsTheIdleReturnOffIt'
        Old = ".ReadAsync([.. candidates.Select(item => item.Facts.Vehicle)], cancellationToken)"
        New = ".ReadAsync([.. candidates.Select(item => item.Facts.Vehicle)], cancellationToken).ContinueWith(task => new FleetStanding([.. task.Result.Vehicles.Where(vehicle => candidates.Any(item => item.Vehicle.VehicleKey == vehicle.VehicleKey))], []), cancellationToken)" }
