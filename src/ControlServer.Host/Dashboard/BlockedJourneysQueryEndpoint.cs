@@ -51,12 +51,13 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
     internal const string OwnMovementOrderInFlight = "OWN_MOVEMENT_ORDER_IN_FLIGHT";
 
     /// <summary>
-    /// 行驶中门锁类急停不因门锁读回锁闭而解除（CP-0011，control-server#539）。搬运、空闲返回、充电三份看板的
+    /// 行驶中读到过门锁未锁闭的急停不因门锁读回锁闭而解除（CP-0011，control-server#539）；只因读不到的，读数恢复满 10 秒后服务端自己解除（CP-0017，control-server#789）。搬运、空闲返回、充电三份看板的
     /// <c>VEHICLE_DOOR_NOT_PROVEN_LOCKED</c> 共用这一句和 <see cref="DoorLatchWayOut"/>，只在开往哪里、保持什么那一处不同
     /// （control-server#788：修订前的「门锁恢复后自动解除」三处各写一份，改了一处另两处照旧）。
     /// </summary>
     internal const string DoorLatchNotReleasedByTheLock =
-        "门锁读回锁闭，服务端也不会解除这次急停：锁可能坏了，读到锁闭证明不了门真的锁着。";
+        "读到过门锁未锁闭的，门锁读回锁闭服务端也不会解除这次急停：锁可能坏了，读到锁闭证明不了门真的锁着。"
+        + "只是仓位状态读不到的，读数恢复、连续 10 秒读回全部锁闭后，服务端自己解除急停；单仍停着，要人经故障处置入口「继续原单」车才会再走。";
 
     /// <summary>
     /// 门锁类急停的出路（docs/emergency-stop-field-fallback.md「行驶中因门锁急停」）。2026-10-19 agv01 现场照修订前的说明等
@@ -64,18 +65,18 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
     /// 屏上文案不写票号、文档路径与「调度」，找人写「联系系统维护人员」。
     /// </summary>
     internal const string DoorLatchWayOut =
-        "不要在 RIoT 上解锁：服务端自己的急停还在，RIoT 上一解，服务端立即重新急停。"
-        + "请到现场确认车已停稳、仓门关好、门锁正常，联系系统维护人员：由维护人员确认门锁已检修，经服务端人工确认解除急停；"
+        "不要在 RIoT 上解锁：服务端自己的急停还在，RIoT 上一解，服务端立即重新急停；只是读不到的，等读数恢复后服务端自己解。"
+        + "读到过未锁闭的，或读数一直恢复不了的：请到现场确认车已停稳、仓门关好、门锁正常，联系系统维护人员：由维护人员确认门锁已检修（只是读不到、读数已恢复的不用确认检修），经服务端人工确认解除急停；"
         + "解除后单仍停着，再经故障处置入口「继续原单」车才会再走，或清除故障。"
         + "已经按了车上急停按钮（RIoT 报不可恢复）的，先在车上松开按钮，再走这条路。"
         + "门锁修不好、一直读不到锁闭时，同样联系系统维护人员处理，不要自己在 RIoT 上取消这张单";
 
     /// <summary>
     /// <c>HELD_ORDER_RESUMED_WITHOUT_CONTINUE</c> 在三份看板上共用的部分，前面接「（开往哪里的）车因门锁被按住、急停，」。
-    /// 现行代码里这个码只在人工确认解除（有货入口）之后单仍 HELD、RIoT 却在执行时出现。
+    /// 现行代码里这个码只在人工确认解除（有货入口）之后、或只因读不到的门锁急停读数恢复后服务端自己解除之后（CP-0017，control-server#789），单仍 HELD、RIoT 却在执行时出现。
     /// </summary>
     internal const string HeldOrderResumedWithoutContinueWayOut =
-        "人工确认解除急停之后这张单本应停着，等人在故障处置入口按「继续原单」；RIoT 却报它在执行，而没有人按过继续。"
+        "门锁急停解除之后（人工确认解除，或读数恢复后服务端自己解除）这张单本应停着，等人在故障处置入口按「继续原单」；RIoT 却报它在执行，而没有人按过继续。"
         + "请到现场确认车的状态，并在 RIoT 上核实是谁让这张单继续的。车若在动，服务端会再次急停：不要在 RIoT 上解锁，"
         + "服务端自己的急停还在，RIoT 上一解，服务端立即重新急停；联系系统维护人员，按门锁急停的路再经服务端人工确认解除";
 
@@ -135,7 +136,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             // control-server#335（REQ-0246）：行驶中车载端报门没锁或仓位状态未知——按住本单，证不出停稳就急停。
             // 车载端失联本身不走这里（ONBOARD_SESSION_LOST，用户 09-20 决定留到批次 9）。
             [Runtime.Faults.VehicleFaultEvidence.DoorNotProvenLocked] =
-                "车在行驶中，车载端报门锁未锁闭或仓位状态读不到：服务端已按住本单，证不出停稳即急停，"
+                "车在行驶中，车载端报门锁未锁闭，或仓位状态读不到超过 3 秒（同一车 10 分钟内第 3 次起不等）：服务端已按住本单，证不出停稳即急停，"
                 + "并把车判为疑似故障：不派新单，需求不改派。" + DoorLatchNotReleasedByTheLock + DoorLatchWayOut,
             // control-server#335：门锁急停经人工确认解除（有货入口，CP-0011）、单应仍停着，RIoT 却把它跑了起来，没有人按继续。
             [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =

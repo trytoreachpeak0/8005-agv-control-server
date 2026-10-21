@@ -118,7 +118,7 @@ internal static class ChargingDashboardDescriptions
                 + "先按急停人工解除；然后由现场人员经故障清除入口确认。故障清除后这次充电按失败结束，不会另建一张充电单；30 秒内不给这辆车安排任何充电桩，"
                 + "10 分钟内它的充电再失败一次，就改为人工充电等待",
             [VehicleFaultEvidence.DoorNotProvenLocked] =
-                "车在开往充电桩的途中，车载端报门锁未锁闭或仓位状态读不到：服务端已按住这张单，证不出停稳即急停，并把车判为疑似故障，"
+                "车在开往充电桩的途中，车载端报门锁未锁闭，或仓位状态读不到超过 3 秒（同一车 10 分钟内第 3 次起不等）：服务端已按住这张单，证不出停稳即急停，并把车判为疑似故障，"
                 + "车、桩预占与充电用途都保持。"
                 + BlockedJourneysQueryEndpoint.DoorLatchNotReleasedByTheLock + BlockedJourneysQueryEndpoint.DoorLatchWayOut,
             [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =
@@ -400,8 +400,10 @@ internal static class ChargingDashboardDescriptions
             [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] = "到现场看车是否还在动",
             [VehicleFaultEvidence.OrderFailed] = "到现场排除原因，必要时先人工解除急停，再经故障清除入口确认",
             // control-server#788：门锁类急停不自动解除，急停锁着时续行会被拒（FAULT_RECOVERY_EMERGENCY_LATCHED）：先由人解除，再续行。
+            // control-server#789（CP-0017）：只因读不到的，读数恢复满 10 秒后服务端自己解除，单仍停着，仍要人续行。
             [VehicleFaultEvidence.DoorNotProvenLocked] =
-                "不要在 RIoT 上解锁；联系系统维护人员确认门锁已检修、经服务端人工确认解除急停，再经故障处置入口「继续原单」或清除故障",
+                "不要在 RIoT 上解锁；联系系统维护人员确认门锁已检修、经服务端人工确认解除急停，再经故障处置入口「继续原单」或清除故障；"
+                + "只是仓位状态读不到的，不用确认检修：等读数恢复后服务端自己解除急停，再「继续原单」",
             [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =
                 "到现场确认车的状态，并在 RIoT 上核实是谁让这张单继续的；车被再次急停时不要在 RIoT 上解锁，联系系统维护人员经服务端人工确认解除",
             [JourneyRuntimeEngine.CheckpointWaitReason] = "不用处理：放行后自动继续",

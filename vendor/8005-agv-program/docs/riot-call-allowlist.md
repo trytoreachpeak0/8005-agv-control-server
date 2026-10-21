@@ -9,7 +9,7 @@
 | 维护者 | Zhengyu Shao |
 | 绑定环境 | `RIOT-8005-RUNTIME`，运行 build `v2.2.0.14` |
 | 绑定契约快照 | `RIOT-OPENAPI-8005-202607-EARLY-01` |
-| 本版依据 | 需求基线 `v1.1.0`（SHA-256 `5fe4b701…fb53`，tag `requirements-baseline-v1.1.0`）；第 1.5 节「解除」随需求基线 `v1.3.0`（SHA-256 `ac74c78e…bec7`，tag `requirements-baseline-v1.3.0`，`CP-0003`）跟改；第 1.2 节形态二的载体与第 1.3 节 `CMD_ORDER_CANCEL` 的使用条件随需求基线 `v1.9.0`（tag `requirements-baseline-v1.9.0`，`CP-0010`）跟改；第 1.2 节形态一的「用途」于 2026-10-12 按 `REQ-0178`／`REQ-0179` 补全（汇编纠错，基线不改）；第 1.5 节随需求基线 `v1.10.0`（tag `requirements-baseline-v1.10.0`，`CP-0011`）跟改 |
+| 本版依据 | 需求基线 `v1.1.0`（SHA-256 `5fe4b701…fb53`，tag `requirements-baseline-v1.1.0`）；第 1.5 节「解除」随需求基线 `v1.3.0`（SHA-256 `ac74c78e…bec7`，tag `requirements-baseline-v1.3.0`，`CP-0003`）跟改；第 1.2 节形态二的载体与第 1.3 节 `CMD_ORDER_CANCEL` 的使用条件随需求基线 `v1.9.0`（tag `requirements-baseline-v1.9.0`，`CP-0010`）跟改；第 1.2 节形态一的「用途」于 2026-10-12 按 `REQ-0178`／`REQ-0179` 补全（汇编纠错，基线不改）；第 1.5 节随需求基线 `v1.10.0`（tag `requirements-baseline-v1.10.0`，`CP-0011`）跟改；第 1.5 节「触发」与「自动解除」随需求基线 `v1.16.0`（tag `requirements-baseline-v1.16.0`，`CP-0017`）跟改 |
 | 首次成文 | 2026-09-08 |
 
 ## 这份文档是什么
@@ -183,11 +183,15 @@ Evidence 段落按 `Snapshot SHA-256 = 205a1c4bd5760e3f5a50de3eec050d5d8e99eec4a
   动作时，8005 自动 `triggerEmergency` 并进入持续保持。**不得以 Cancel 代替停车**（`REQ-0246`）。车辆已处于急停
   （`CAN_RECOVER` 或 `CAN_NOT_RECOVER`）时只记下三类、不另发 `triggerEmergency`。三类生效期间急停状态回到 `OK` 而不是
   8005 解除的，不论经哪个接口，立即重触发并告警（`REQ-0248`）。由订单 FAILED 形成的故障不升级急停（`REQ-0246`）。
+  车辆行驶中车载端报仓位状态未知（`SLOT_STATE_UNKNOWN`）、且没有任何仓门读到明确未锁闭时，自服务端首次收到起连续不超过
+  3 秒的不触发，只告警；读到明确未锁闭或连续未知满 3 秒即照上文触发；同一车辆任意 10 分钟内第 3 次起不再宽限（`REQ-0246`，`v1.16.0`）。
 - **解除**：只由服务端调用 `cancelEmergency`，只从 `CAN_RECOVER` 解除；**`CAN_NOT_RECOVER` 时禁止调用**，
   转 RIoT 人员处理。解除后必须回查 `emergencyState=OK`，未回查到不算解除。急停状态经回查确认为
   `CAN_RECOVER`／`CAN_NOT_RECOVER` 即视为车辆已停稳（`REQ-0247`）。两条路径：
-  - **自动解除**（`REQ-0167`）：三类急停原原因消除且全部安全条件通过，叠着的二类一并解除。行驶中仓门未能证明锁闭
-    引起的三类除外：锁反馈恢复不算原因消除，不自动解除，人员确认门锁已检修后经 `REQ-0356` 解除。
+  - **自动解除**（`REQ-0167`）：三类急停原原因消除且全部安全条件通过，叠着的二类一并解除。行驶中读到仓门明确未锁闭
+    引起的三类除外（整次故障里读到过一次即算）：锁反馈恢复不算原因消除，不自动解除，人员确认门锁已检修后经 `REQ-0356` 解除。
+    只因读不到锁反馈引起的，锁反馈恢复、连续 10 秒读回全部锁闭、车停稳、8005 为该故障暂停的订单仍为 HELD 时自动解除，
+    订单仍 HELD，续行要人发起；条件不满足的经 `REQ-0356` 解除（`v1.16.0`）。
   - **人工确认解除**（`REQ-0356`）：服务端已登录且具有车辆查看权限的人员，对明确选中的车辆确认急停原因
     已消除、车上无货且全部仓门已关闭，并记下身份；该车仍有未进入终态的订单时不得调用，须先取消该订单。
     车载端不能确认，不要求二次认证、审批或第二人确认。这样解除的不属于原因消除前的意外恢复，不重触发
@@ -331,6 +335,7 @@ Facade，全部在第一节的表里：
 | `requirements/change-proposals/CP-0003.md` | 1.5「解除」按修订后的 `REQ-0247`／`REQ-0248` 与新增的 `REQ-0356` 跟改的依据（需求基线 `v1.3.0`） |
 | `requirements/change-proposals/CP-0006.md` | 1.3 `CMD_ORDER_CANCEL` 可作用于已证明外来运行订单的依据（需求基线 `v1.5.0`）；这半句当时没有抄进本文档，随 `CP-0010` 补上 |
 | `requirements/change-proposals/CP-0010.md` | 1.2 形态二写进 `REQ-0147`、1.3 `CMD_ORDER_CANCEL` 可作用于本服务端自建充电订单的依据（需求基线 `v1.9.0`） |
+| `requirements/change-proposals/CP-0017.md` | 1.5「触发」加行驶中仓位未知宽限 3 秒、「自动解除」的门锁例外收窄到读到过没锁的、只因读不到的读数恢复后自动解除的依据（需求基线 `v1.16.0`） |
 | `requirements/change-proposals/CP-0011.md` | 1.5 急停分三类、车已锁住时只记三类、被二类入口解开时重触发、三类自动解除与门锁例外、有货时的受治理人工解除、订单 FAILED 不升级急停的依据（需求基线 `v1.10.0`） |
 | [票据 37](../.scratch/current-requirements-baseline/issues/37-decide-riot-api-allowlist-and-call-safety-boundary.md) | 冻结证据；1.5 与 1.6 的部分内容目前只有这一个来源 |
 | `.scratch/8005-full-product/issues/04-answer.md` 第 1.6 节 | 充电订单形态二 |

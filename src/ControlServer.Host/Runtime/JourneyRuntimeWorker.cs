@@ -7,7 +7,8 @@ public sealed class JourneyRuntimeWorker(
     JourneyMutationGate mutationGate,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
-    ILogger<JourneyRuntimeWorker> logger) : BackgroundService
+    ILogger<JourneyRuntimeWorker> logger,
+    Faults.InTransitDoorReadings? doorReadings = null) : BackgroundService
 {
     private static readonly Action<ILogger, Exception?> LogDisabled = LoggerMessage.Define(
         LogLevel.Warning,
@@ -37,6 +38,7 @@ public sealed class JourneyRuntimeWorker(
         }
 
         using PeriodicTimer timer = new(runtime.PollInterval, timeProvider);
+        Task<bool>? tick = null;
         do
         {
             // The whole round -- engine, then release service -- holds the gate a person's fault recovery takes
@@ -125,6 +127,52 @@ public sealed class JourneyRuntimeWorker(
                 }
             }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
+        while (await NextRoundAsync().ConfigureAwait(false));
+
+        // The next round runs on the timer's tick, or earlier when a driving vehicle's door grace runs out before it
+        // (control-server#789, CP-0017 revision one, note 5: judged when the 3 s are up, not up to a poll interval later). An
+        // early round leaves the tick pending, so the timer's rhythm is kept. A due time already past waits for the tick: the
+        // round that was due has run, and a vehicle it did not reach (arrived, order ended) must not spin the loop.
+        async Task<bool> NextRoundAsync()
+        {
+            tick ??= timer.WaitForNextTickAsync(stoppingToken).AsTask();
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            if (EarlyRoundAfter(doorReadings?.NextDueAfter(now), now, runtime.PollInterval) is TimeSpan wait)
+            {
+                Task delay = Task.Delay(wait, timeProvider, stoppingToken);
+                try
+                {
+                    if (await Task.WhenAny(tick, delay).ConfigureAwait(false) == delay && !tick.IsCompleted)
+                    {
+                        await delay.ConfigureAwait(false);
+                        return true;
+                    }
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return false;
+                }
+            }
+
+            try
+            {
+                return await tick.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return false;
+            }
+            finally
+            {
+                tick = null;
+            }
+        }
     }
+
+    /// <summary>
+    /// How long the worker waits before its next round when a door grace runs out at <paramref name="graceDue"/>: the time to it
+    /// when that is sooner than the next tick, null to wait for the tick (control-server#789).
+    /// </summary>
+    internal static TimeSpan? EarlyRoundAfter(DateTimeOffset? graceDue, DateTimeOffset now, TimeSpan pollInterval) =>
+        graceDue - now is TimeSpan wait && wait > TimeSpan.Zero && wait < pollInterval ? wait : null;
 }

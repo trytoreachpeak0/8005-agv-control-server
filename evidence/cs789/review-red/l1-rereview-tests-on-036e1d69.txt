@@ -1,0 +1,10 @@
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.ALockedReadingBetweenTwoRoundsSplitsTheGraceIntoTwo [31 ms]
+Expected: Tuple (InGrace, True)
+Actual:   Tuple (InGrace, False)
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.ANotLockedThenAnUnreadBetweenTwoRoundsBeforeAnyFaultKeepsTheStopWithAPerson [5 s]
+Expected: 1
+Actual:   0
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.ANotLockedReadWhileAGraceWentUnobservedIsNotForgotten [8 ms]
+Expected: Tuple (HandToFault, "DOOR_READ_NOT_LOCKED")
+Actual:   Tuple (HandToFault, "DOOR_UNKNOWN_GRACE_EXPIRED")
+Failed!  - Failed:     3, Passed:     0, Skipped:     0, Total:     3, Duration: 5 s - ControlServer.Tests.dll (net8.0)

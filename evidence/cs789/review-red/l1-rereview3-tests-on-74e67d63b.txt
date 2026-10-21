@@ -1,0 +1,19 @@
+  Failed ControlServer.Tests.InTransitDoorUnknownGraceTests.ADoorReadNotLockedWhileStandingStillAsStoredIsGracedWhenAnUnknownFollows(stopped: True) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.ANotLockedReadWhileStandingStillInsideAGraceKeepsTheStopWithAPerson(stopped: True) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.ALongQuietUnreadSpellIsStillReleasedOnceTheDoorsReadLocked(quietMinutes: 11) [2 s]
+  Error Message:
+   Assert.True() Failure
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.ANotLockedReadAsTheFactThatWentStaleKeepsTheStopWithAPerson(staleRound: True) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.ANotLockedThenLockedThenUnreadJustAfterARestartKeepsTheStopWithAPerson(restart: True) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.InTransitDoorReadingRestoredReleaseTests.NoAutomaticReleaseWhenTheInboxNoLongerReachesBackToTheStartOfTheLeg [2 s]
+  Error Message:
+   Assert.NotEmpty() Failure: Collection was empty
+Failed!  - Failed:     6, Passed:    89, Skipped:     0, Total:    95, Duration: 1 m 17 s - ControlServer.Tests.dll (net8.0)

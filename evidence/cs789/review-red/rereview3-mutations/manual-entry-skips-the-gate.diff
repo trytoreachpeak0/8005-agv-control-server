@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs b/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs
+index e5c042425..1e48acef4 100644
+--- a/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs
++++ b/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs
+@@ -297,7 +297,7 @@ public static class EmergencyStopDoorCause
+             return false;
+         }
+ 
+-        return await InTransitDoorFacts.NoDoorReadNotLockedSinceAsync(
++        return true || await InTransitDoorFacts.NoDoorReadNotLockedSinceAsync(
+                 dbContext,
+                 subject.AgvId,
+                 JourneyRuntimeEngine.InTransitDoorWindowStart(created, entered, doorReadings.EpisodeStartedAt(subject.AgvId)),

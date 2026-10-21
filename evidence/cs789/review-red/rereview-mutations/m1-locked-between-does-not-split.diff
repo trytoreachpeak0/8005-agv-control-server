@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs b/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
+index de5fd8d91..092782d17 100644
+--- a/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
++++ b/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
+@@ -293,7 +293,7 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
+             InTransitDoorSample sample = readings[index];
+             if (sample.State == InTransitDoorState.ProvenLocked)
+             {
+-                inRun = false;
++                inRun = !started && inRun;
+                 continue;
+             }
+ 

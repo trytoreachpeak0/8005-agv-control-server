@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs b/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
+index de5fd8d91..58325ccad 100644
+--- a/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
++++ b/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
+@@ -145,7 +145,7 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
+         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+         lock (vehicles)
+         {
+-            return vehicles.TryGetValue(agvId, out Vehicle? vehicle) ? vehicle.ReadUpTo : null;
++            return vehicles.TryGetValue(agvId, out Vehicle? vehicle) && vehicle.Episode is not null ? vehicle.ReadUpTo : null;
+         }
+     }
+ 

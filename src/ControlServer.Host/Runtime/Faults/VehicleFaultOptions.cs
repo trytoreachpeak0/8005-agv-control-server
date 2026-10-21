@@ -70,6 +70,25 @@ public sealed class VehicleFaultOptions
     /// <summary>How many reads after the first the budget allows.</summary>
     internal int ResumeConfirmationRereads =>
         (int)Math.Ceiling(ResumeConfirmationBudget / ResumeConfirmationInterval);
+
+    /// <summary>
+    /// How long a driving vehicle's slot may read unknown (<c>SLOT_STATE_UNKNOWN</c>), from the moment this server received
+    /// it, before its doors count as not proven locked (REQ-0246 as revised by CP-0017; control-server#789). Zero gives no
+    /// grace, as before CP-0017. A door read not locked is never graced.
+    /// </summary>
+    public TimeSpan DoorUnknownGrace { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>How many graces one vehicle may start within <see cref="DoorUnknownGraceWindow"/>; the next unknown gets none.</summary>
+    public int DoorUnknownGraceLimit { get; set; } = 2;
+
+    /// <summary>The sliding window <see cref="DoorUnknownGraceLimit"/> counts in.</summary>
+    public TimeSpan DoorUnknownGraceWindow { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How long the doors must read locked without a break before a stop raised only for doors that could not be read is
+    /// released on its own (REQ-0167 as revised by CP-0017).
+    /// </summary>
+    public TimeSpan DoorReadingRestoredFor { get; set; } = TimeSpan.FromSeconds(10);
 }
 
 /// <summary>
@@ -77,6 +96,12 @@ public sealed class VehicleFaultOptions
 /// </summary>
 public sealed class VehicleFaultOptionsValidator : IValidateOptions<VehicleFaultOptions>
 {
+    internal static readonly TimeSpan MaximumDoorUnknownGrace = TimeSpan.FromSeconds(10);
+    internal const int MaximumDoorUnknownGraceLimit = 10;
+    internal static readonly TimeSpan MaximumDoorUnknownGraceWindow = TimeSpan.FromHours(24);
+    internal static readonly TimeSpan MinimumDoorReadingRestoredFor = TimeSpan.FromSeconds(2);
+    internal static readonly TimeSpan MaximumDoorReadingRestoredFor = TimeSpan.FromMinutes(5);
+
     public ValidateOptionsResult Validate(string? name, VehicleFaultOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -122,6 +147,37 @@ public sealed class VehicleFaultOptionsValidator : IValidateOptions<VehicleFault
         if (options.ResumeConfirmationBudget < TimeSpan.Zero)
         {
             failures.Add($"{VehicleFaultOptions.SectionName}:ResumeConfirmationBudget must not be negative.");
+        }
+
+        // CP-0017's values are the defaults. The ceilings keep a typo from turning the grace into a drive with the doors
+        // unread: at the 0.55 m/s the vehicles drive, 10 s is about 5.5 m (control-server#789).
+        if (options.DoorUnknownGrace < TimeSpan.Zero || options.DoorUnknownGrace > MaximumDoorUnknownGrace)
+        {
+            failures.Add(
+                $"{VehicleFaultOptions.SectionName}:DoorUnknownGrace must be between 0 and {MaximumDoorUnknownGrace}; " +
+                "zero gives no grace.");
+        }
+
+        if (options.DoorUnknownGraceLimit < 0 || options.DoorUnknownGraceLimit > MaximumDoorUnknownGraceLimit)
+        {
+            failures.Add(
+                $"{VehicleFaultOptions.SectionName}:DoorUnknownGraceLimit must be between 0 and {MaximumDoorUnknownGraceLimit}; " +
+                "zero gives no grace.");
+        }
+
+        if (options.DoorUnknownGraceWindow <= TimeSpan.Zero || options.DoorUnknownGraceWindow > MaximumDoorUnknownGraceWindow)
+        {
+            failures.Add(
+                $"{VehicleFaultOptions.SectionName}:DoorUnknownGraceWindow must be positive and at most " +
+                $"{MaximumDoorUnknownGraceWindow}.");
+        }
+
+        if (options.DoorReadingRestoredFor < MinimumDoorReadingRestoredFor ||
+            options.DoorReadingRestoredFor > MaximumDoorReadingRestoredFor)
+        {
+            failures.Add(
+                $"{VehicleFaultOptions.SectionName}:DoorReadingRestoredFor must be between {MinimumDoorReadingRestoredFor} and " +
+                $"{MaximumDoorReadingRestoredFor}; one locked reading by chance must not release a stop.");
         }
 
         return failures.Count == 0

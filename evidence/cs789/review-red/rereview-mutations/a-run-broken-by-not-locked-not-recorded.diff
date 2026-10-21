@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs b/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
+index 458a6360c..c7f7fd388 100644
+--- a/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
++++ b/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
+@@ -233,7 +233,7 @@ public static class InTransitDoorFacts
+                         followingUnknownRun = false;
+                         // What broke the run off at its start: a door read not locked while moving is a reading too
+                         // (cs#839 re-review, case a), not only the run's edge.
+-                        unknownRunAfterNotLocked = !summary.SlotStateUnknown && !summary.AllTargetSlotsLocked &&
++                        unknownRunAfterNotLocked = false && !summary.AllTargetSlotsLocked &&
+                             !summary.VehicleStopped;
+                     }
+                 }

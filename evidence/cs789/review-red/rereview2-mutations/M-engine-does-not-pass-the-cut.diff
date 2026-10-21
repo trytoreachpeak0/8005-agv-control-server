@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
+index 25abb33b1..2cb4eb269 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
+@@ -137,7 +137,7 @@ public sealed partial class JourneyRuntimeEngine
+         // (see InTransitDoorVerdict.ReadUnknown). A slot that cannot be read is graced first (CP-0017): no fault, no command,
+         // an alarm. A fault already raised is still driven every round, silent or not.
+         InTransitDoorReading reading = _doorReadings.Observe(
+-            runtime.AgvId, doors, doorFaultInEffect, now, earlierReadingsUnread);
++            runtime.AgvId, doors, doorFaultInEffect, now, false);
+         if (reading.GraceEndedAfter is TimeSpan unread)
+         {
+             LogDoorUnknownGraceEnded(logger, runtime.AgvId, unread.TotalSeconds, null);

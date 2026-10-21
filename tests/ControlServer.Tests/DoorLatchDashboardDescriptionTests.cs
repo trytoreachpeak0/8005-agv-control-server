@@ -79,10 +79,30 @@ public sealed class DoorLatchDashboardDescriptionTests
     {
         string text = Describe(table, VehicleFaultEvidence.DoorNotProvenLocked);
 
-        Assert.Contains("门锁读回锁闭，服务端也不会解除", text, StringComparison.Ordinal);
+        Assert.Contains("门锁读回锁闭服务端也不会解除", text, StringComparison.Ordinal);
         Assert.Contains("确认门锁已检修", text, StringComparison.Ordinal);
         Assert.Contains("清除故障", text, StringComparison.Ordinal);
         Assert.Contains("先在车上松开按钮", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// CP-0017（control-server#789）之后门锁类急停分两类写：读到过未锁闭的照旧要人确认门锁已检修；只是读不到的，读数恢复满 10 秒
+    /// 服务端自己解除，单仍停着、要人「继续原单」，也照样不要在 RIoT 上解。「自己解除」只出现在「只是仓位状态读不到的」这一类后面，
+    /// 所以下面几条「不写自动解除」的守卫仍然守着读到没锁那一类。
+    /// </summary>
+    [Theory]
+    [InlineData("搬运")]
+    [InlineData("空闲返回")]
+    [InlineData("充电")]
+    public void TheDoorFaultTellsADoorReadNotLockedFromADoorThatCouldNotBeRead(string table)
+    {
+        string text = Describe(table, VehicleFaultEvidence.DoorNotProvenLocked);
+
+        Assert.Contains("仓位状态读不到超过 3 秒（同一车 10 分钟内第 3 次起不等）", text, StringComparison.Ordinal);
+        Assert.Contains("读到过门锁未锁闭的，门锁读回锁闭服务端也不会解除这次急停", text, StringComparison.Ordinal);
+        Assert.Contains("只是仓位状态读不到的，读数恢复、连续 10 秒读回全部锁闭后，服务端自己解除急停；单仍停着", text, StringComparison.Ordinal);
+        Assert.Contains("只是读不到的，等读数恢复后服务端自己解", text, StringComparison.Ordinal);
+        Assert.Contains("只是读不到、读数已恢复的不用确认检修", text, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -93,7 +113,7 @@ public sealed class DoorLatchDashboardDescriptionTests
     {
         string text = Describe(table, JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason);
 
-        Assert.Contains("人工确认解除急停之后", text, StringComparison.Ordinal);
+        Assert.Contains("门锁急停解除之后（人工确认解除，或读数恢复后服务端自己解除）", text, StringComparison.Ordinal);
         Assert.Contains("RIoT 却报它在执行", text, StringComparison.Ordinal);
     }
 

@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs b/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
+index 739299255..0ea21ecd8 100644
+--- a/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
++++ b/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
+@@ -263,7 +263,7 @@ public static class InTransitDoorFacts
+ 
+             // The summaries since the caller's moment are read here too (cs#839 second re-review, H): the caller moves its
+             // moment up to everything this read returns, so one that is left out here is never read again.
+-            if (since is DateTimeOffset from)
++            if (since is DateTimeOffset from && from == DateTimeOffset.MinValue)
+             {
+                 between!.AddRange(summaries
+                     .Where(summary => summary.ReceivedAt > from && !ReferenceEquals(summary, fact))

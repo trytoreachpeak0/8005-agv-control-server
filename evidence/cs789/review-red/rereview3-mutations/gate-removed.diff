@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/VehicleFaultCoordinator.cs b/src/ControlServer.Host/Runtime/Faults/VehicleFaultCoordinator.cs
+index 426bfba1f..1185a2a8b 100644
+--- a/src/ControlServer.Host/Runtime/Faults/VehicleFaultCoordinator.cs
++++ b/src/ControlServer.Host/Runtime/Faults/VehicleFaultCoordinator.cs
+@@ -907,8 +907,7 @@ public sealed class VehicleFaultCoordinator(
+         // after every other premise has held. Three reviews in a row found a way the rounds' incremental reading missed a door
+         // read not locked; this read does not depend on it.
+         if (allowance is null ||
+-            context.NoDoorReadNotLockedInTransit is not { } noDoorReadNotLocked ||
+-            !await noDoorReadNotLocked(fault.EnteredAt, cancellationToken).ConfigureAwait(false))
++            context.NoDoorReadNotLockedInTransit is null)
+         {
+             return null;
+         }

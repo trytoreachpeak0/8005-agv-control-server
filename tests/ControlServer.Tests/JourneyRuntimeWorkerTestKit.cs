@@ -1249,7 +1249,8 @@ internal static class JourneyRuntimeWorkerTestKit
                 options,
                 Clock,
                 EngineLog,
-                ChargingPolicy);
+                ChargingPolicy,
+                doorReadings: DoorReadings);
         }
 
         /// <summary>What the foreign running order supervisor logged (control-server#330): its alarms are log events.</summary>
@@ -1267,6 +1268,13 @@ internal static class JourneyRuntimeWorkerTestKit
         /// <see cref="RecreateEngineAsync"/>，就是一次重启——那块板是进程内的，随进程一起没了。
         /// </summary>
         public SlotGroupFullnessBoard SlotGroupFullness { get; set; } = new();
+
+        /// <summary>
+        /// The door grace and the door fault's sub-cause across rounds (control-server#789): a singleton in the host. Replacing it
+        /// and calling <see cref="RecreateEngineAsync"/> is a restart -- it lives in the process and goes with it.
+        /// </summary>
+        public InTransitDoorReadings DoorReadings { get; set; } = new(
+            Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
 
         /// <summary>
         /// The governed-configuration publisher over this fixture's database: what the batch 4 area assignment

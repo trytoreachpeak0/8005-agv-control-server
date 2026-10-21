@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs b/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
+index 341168192..9555e4d7c 100644
+--- a/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
++++ b/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
+@@ -202,7 +202,7 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
+                 vehicles.Add(agvId, vehicle);
+             }
+ 
+-            if (doorFaultInEffect && earlierReadingsUnread && vehicle.Episode is not null)
++            if (doorFaultInEffect && earlierReadingsUnread && !earlierReadingsUnread && vehicle.Episode is not null)
+             {
+                 vehicle.Episode.HistoryKnown = false;
+             }

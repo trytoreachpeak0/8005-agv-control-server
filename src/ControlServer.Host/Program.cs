@@ -114,6 +114,9 @@ builder.Services.AddScoped<SlotFaultDeclarationService>();
 // statement about a stretch this process actually watched.
 builder.Services.AddSingleton<VehicleRoster>();
 builder.Services.AddSingleton<CheckpointWaitLedger>();
+// control-server#789: the door grace and the door fault's sub-cause outlive the per-round engine; the worker reads it to wake
+// when a grace runs out.
+builder.Services.AddSingleton<InTransitDoorReadings>();
 builder.Services.AddScoped<IVehicleDispatchPolicyStore, VehicleDispatchPolicyStore>();
 builder.Services.AddScoped<VehicleDispatchPolicyAccess>();
 builder.Services.AddScoped<IPackageCapacityStore, PackageCapacityStore>();
