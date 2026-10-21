@@ -276,15 +276,18 @@ public sealed partial class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
-    /// control-server#797: with per-vehicle proofs listed, the vehicle's own proof is accepted, and neither the shared one nor
-    /// another vehicle's.
+    /// control-server#797: with per-vehicle proofs listed, the vehicle's own standing proof is accepted and another vehicle's is
+    /// not; the shared one only while its variable is set -- on the v2 instance, only while the 18-set-v2-recovery-window
+    /// fallback holds the window open.
     /// </summary>
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-07")]
-    [InlineData("own", true)]
-    [InlineData("shared", false)]
-    [InlineData("other-vehicle", false)]
-    public async Task WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(string presented, bool accepted)
+    [InlineData("own", true, true)]
+    [InlineData("own", false, true)]
+    [InlineData("other-vehicle", true, false)]
+    [InlineData("shared", true, true)]
+    [InlineData("shared", false, false)]
+    public async Task WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(string presented, bool windowOpen, bool accepted)
     {
         string own = "CONTROL_SERVER_TEST_RECOVERY_PROOF_VEHICLE_" + Guid.NewGuid().ToString("N");
         string other = "CONTROL_SERVER_TEST_RECOVERY_PROOF_VEHICLE_" + Guid.NewGuid().ToString("N");
@@ -300,6 +303,7 @@ public sealed partial class RecoveryStateMachineG2Tests
                 ["Recovery:VehicleProofs:1:proofEnvironmentVariable"] = other,
             });
             rig.Grant(SeededJourneyId);
+            if (!windowOpen) Environment.SetEnvironmentVariable(GrantProofVariable, null);
             string proof = presented switch
             {
                 "own" => "own-vehicle-proof",

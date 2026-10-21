@@ -3314,29 +3314,32 @@ public sealed class OnboardRecoveryCoordinator(
     }
 
     /// <summary>
-    /// Whether the session's proof is accepted. With <c>Recovery:VehicleProofs</c> listed (control-server#797), each vehicle has a
-    /// proof of its own, named by its <c>VehicleKey</c>: only that vehicle's is accepted, and the shared one is not -- a vehicle
-    /// the list leaves out, or one this server cannot name, is refused. With none listed, the shared
-    /// <c>Recovery:AuthenticationProofEnvironmentVariable</c> answers for every vehicle, as before.
+    /// Whether the session's proof is accepted (control-server#797). With <c>Recovery:VehicleProofs</c> listed, each vehicle has a
+    /// standing proof of its own, named by its <c>VehicleKey</c>: that vehicle's is accepted and no other vehicle's. The shared
+    /// <c>Recovery:AuthenticationProofEnvironmentVariable</c> is accepted as well, but only while it is set -- which, on the v2
+    /// instance, is only while the 18-set-v2-recovery-window fallback holds the window open (it writes the variable on opening
+    /// and removes it on closing). With none listed, the shared one answers for every vehicle, as before. The grant is checked
+    /// on top of either.
     /// </summary>
     private bool RecoveryProofAccepted(string agvId, string supplied)
     {
         IConfigurationSection[] perVehicle = [.. configuration.GetSection(VehicleProofsKey).GetChildren()];
-        string? variable;
         if (perVehicle.Length > 0)
         {
             string? vehicleKey = roster?.ByAgvId(agvId)?.VehicleKey;
-            variable = vehicleKey is null
+            string? own = vehicleKey is null
                 ? null
                 : perVehicle.FirstOrDefault(entry => string.Equals(entry["vehicleKey"], vehicleKey, StringComparison.Ordinal))
                     ?["proofEnvironmentVariable"];
-            if (string.IsNullOrWhiteSpace(variable)) return false;
+            if (!string.IsNullOrWhiteSpace(own) && ProofMatches(own, supplied)) return true;
         }
-        else
-        {
-            variable = configuration["Recovery:AuthenticationProofEnvironmentVariable"]
-                ?? "CONTROL_SERVER_RECOVERY_AUTHENTICATION_PROOF";
-        }
+        return ProofMatches(
+            configuration["Recovery:AuthenticationProofEnvironmentVariable"] ?? "CONTROL_SERVER_RECOVERY_AUTHENTICATION_PROOF",
+            supplied);
+    }
+
+    private static bool ProofMatches(string variable, string supplied)
+    {
         string? expected = Environment.GetEnvironmentVariable(variable);
         if (string.IsNullOrEmpty(expected)) return false;
         byte[] expectedBytes = Encoding.UTF8.GetBytes(expected);
@@ -3344,7 +3347,6 @@ public sealed class OnboardRecoveryCoordinator(
         return expectedBytes.Length == suppliedBytes.Length &&
                CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes);
     }
-
     /// <summary>
     /// Takes a current MECHANICALLY_ISOLATED forced result as the vehicle reporting its generation (control-server#556): the
     /// onboard raises its generation only by binding the ForcedMechanicalRecoveryCommand, and it reports MECHANICALLY_ISOLATED
