@@ -4,6 +4,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Dashboard;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.IdleReturn;
@@ -279,6 +280,37 @@ public sealed partial class IdleReturnExecutionTests
             JourneyRuntimeStage.AwaitingSublot,
             (await fleet.Context.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == pickup.JourneyId, Token)).Stage);
         Assert.NotEmpty(await PayloadsAsync(fleet, AgvA, "SublotEntryRequested"));
+    }
+
+    /// <summary>
+    /// 车开离等待点、RIoT 报 <c>currentPosition</c> 0（不在任何站）：还没离开，占用不放（control-server#801，与充电桩同一条离开判据）；
+    /// RIoT 报出它停在另一个站上，下一轮才放。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleAtNoStationAfterLeavingItsWaitingPointKeepsItUntilRiotPlacesItAtAnotherStation()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
+        await ArriveAsync(fleet, journey, KeyA, Near.StationId);
+        fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await RoundAsync(fleet);
+        Assert.Contains(fleet.Riot.Creates, create => create.VehicleKey == KeyA && create.DestinationStationId == 12);
+
+        MoveTo(fleet, KeyA, ChargerOccupancyReader.NoStation, speed: 300, procState: "RUNNING");
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+        StationExclusivityRow held = (await StationAsync(fleet, Near.StationId))!;
+        Assert.Equal((StationExclusivityStates.Occupied, KeyA), (held.State, held.VehicleKey));
+
+        MoveTo(fleet, KeyA, 12, speed: 0);
+        await RoundAsync(fleet);
+
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        StationExclusivityRecordRow passage = await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journey.JourneyId, Token);
+        Assert.Equal(FixedStationExclusivity.ReleasedOnDepartureEvidence, passage.ReleaseReason);
     }
 
     // ---- 失败分流 ------------------------------------------------------------------------------------------------------

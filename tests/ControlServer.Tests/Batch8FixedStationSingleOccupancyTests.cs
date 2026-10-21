@@ -345,6 +345,31 @@ public sealed class Batch8FixedStationSingleOccupancyTests
     }
 
     /// <summary>
+    /// 车离开公共站点、在去机台的路上，RIoT 报 <c>currentPosition</c> 0（不在任何站）：还没离开，占用不放（control-server#801，与充电桩同一条离开判据）；
+    /// RIoT 报出它停在机台上，下一轮才放。
+    /// </summary>
+    [Fact]
+    public async Task APublicStationIsKeptWhileRiotPlacesTheDepartingVehicleAtNoStation()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, FixtureDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.AdvanceToGateArrivalAsync()).Stage);
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0, Speed = 300, ProcState = "RUNNING" };
+        for (int round = 0; round < 3; round++)
+        {
+            await fixture.Engine.ExecuteOnceAsync(Token);
+        }
+        Assert.Equal(StationExclusivityStates.Occupied, (await HeldAsync(fixture))!.State);
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = Machine, Speed = 0, ProcState = "IDLE" };
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Null(await HeldAsync(fixture));
+    }
+
+    /// <summary>
     /// FAILED／UNKNOWN：车装完离开了公共站点（那个停靠已完成），在去机台的路上旅程阻断了（订单结果未知、要人介入），RIoT 报它在别的站——
     /// 离点证据的另两条都成立，独占仍不放：阻断的旅程等的是人，车可能还在动。与等待点同一条规则。
     /// </summary>

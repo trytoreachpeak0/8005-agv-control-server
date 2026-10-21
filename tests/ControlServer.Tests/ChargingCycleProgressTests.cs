@@ -571,6 +571,78 @@ public sealed class ChargingCycleProgressTests
         Assert.Null(await StationAsync(fleet, Near.StationId));
     }
 
+    public static TheoryData<string> LeftTheChargerForNoStation => ["driving-off", "session-not-ready-on-our-own-order"];
+
+    /// <summary>
+    /// 离桩动作做完、RIoT 报 <c>currentPosition</c> 0（不在任何站）、不再充电：车还在桩口，没有离开（control-server#801，10-20 生产 agv01 在 211
+    /// 这样被判离开，桩分给 agv03，两车在桩口 212 互锁）。桩一直记在它名下、周期仍是 <c>COMPLETE</c>，直到 RIoT 报出它停在另一个站上。
+    /// 真车载端在本服务端自己的单在途时整段未就绪（control-server#314），离开只看 RIoT 的证据，与会话无关。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(LeftTheChargerForNoStation))]
+    public async Task AFullVehicleAtNoStationAfterLeavingItsChargerKeepsItUntilRiotPlacesItAtAnotherStation(string shape)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow charging = await CompletedAsync(fleet);
+        fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+        Assert.Contains(fleet.Riot.Creates, create => create.VehicleKey == KeyA && create.DestinationStationId == 12);
+        if (shape == "session-not-ready-on-our-own-order")
+        {
+            await DropSessionOnOwnOrderAsync(fleet);
+        }
+
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
+        {
+            CurrentStationId = ChargerOccupancyReader.NoStation, BatteryState = NotCharging, Speed = 300, ProcState = "RUNNING",
+        };
+        for (int round = 0; round < 4; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        Assert.Equal((KeyA, StationExclusivityStates.Occupied), await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet, KeyA)).WireState);
+        Assert.DoesNotContain(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2248);
+
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12, BatteryState = NotCharging };
+        await RoundAsync(fleet);
+
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        StationExclusivityRecordRow record = await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == charging.JourneyId, Token);
+        Assert.Equal(ChargingExecutionReasons.ChargerReleasedOnDeparture, record.ReleaseReason);
+        Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2248);
+    }
+
+    /// <summary>
+    /// 只管持有这个桩的那辆车：另一辆车在路上报 0（不在任何站、不在充电）挡不住释放（control-server#772 的口径：0 只是「不在任何站」）。
+    /// </summary>
+    [Fact]
+    public async Task AnotherVehicleDrivingAtNoStationDoesNotKeepALeftChargerFromBeingReleased()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await CompletedAsync(fleet);
+        fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        fleet.Riot.VehicleOverrides[KeyB] = seen => seen with
+        {
+            CurrentStationId = ChargerOccupancyReader.NoStation, BatteryState = NotCharging, Speed = 300, ProcState = "RUNNING",
+        };
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12, BatteryState = NotCharging };
+        await RoundAsync(fleet);
+
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2248);
+    }
+
     // ---- 失联三分（REQ-0287）-------------------------------------------------------------------------------------------
 
     /// <summary>
