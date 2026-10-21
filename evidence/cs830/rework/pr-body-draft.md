@@ -1,7 +1,7 @@
 ## 进度
-- 当前提交：审查返工 543e5dd15（返工用例 c440225fa 在先、先红）；此前 da8f95417（合入 fp/v2-impl 20df70a70）、测试提交 487d5f13a、实现提交 08a8b3c15
+- 当前提交：整数组修复 bd701b7f0 与证据（CI test 39646836303 在整数组自检上红，见下表）；返工证据 95a52b8e6；返工实现 543e5dd15、返工用例 c440225fa 在先且先红；此前 da8f95417（合入 fp/v2-impl 20df70a70）、测试提交 487d5f13a、实现提交 08a8b3c15
 - 证据：`evidence/cs830/`（测试提交上的红、绿、变异、合成 L2 红绿；返工的红、绿与 16 个变异在 `rework/`）
-- 下一步：返工已报调度复核；放行后推送、转 ready、跑唯一一轮 CI
+- 下一步：调度已复核放行返工，转 ready 跑唯一一轮 CI；CI 绿后不合，等与 hmi#388 同一组提交联跑 G3 与真装置（M3 两条不跑），联跑过了再合入
 
 实现 trytoreachpeak0/8005-agv-control-server#830（进 fp/v2-impl，需手动关票）。追踪 trytoreachpeak0/8005-agv-program#210；语义 CP-0021（trytoreachpeak0/8005-agv-program#213，REQ-0367、修订后的 REQ-0211 与 REQ-0352）；协议 trytoreachpeak0/8005-agv-protocol#26。
 
@@ -48,6 +48,7 @@
 | 变异（取红：去掉授权路径等） | `evidence/cs830/mutations/SUMMARY.txt`，10 个全红：M1 不核授权就结算、M2 不释放归属行仓位、M3 去掉授权路径、M4 锁闭先于 UNKNOWN、M5 用过期读数、M6 减篮不挡取消、M7 重提不重放、M8 允许第二次授权、M9 不核剩余仓为空、M10 取消授权带仓位（schema 收尾判红） |
 | 审查返工的红 | `evidence/cs830/rework/red-at-test-commit-c440225fa.txt`：返工用例先提交，在旧实现上 M2（`AnUnansweredSnapshotRequestIsAskedAgainAfterTheReaskInterval`）与 M1（`ADuringLoadCancellationReportedAllEmptyReconcilesWithOrWithoutSlotResults(perSlot: False)`）两条红；U1、U3、M4 补的用例在旧实现上本来就绿，它们的红由对应变异给出 |
 | 审查返工的绿与变异 | `evidence/cs830/rework/skip-tests-green.txt`：减篮 44/44；`evidence/cs830/rework/targeted-1315.txt`：上面那组相关类再加安全读数、补偿、故障货物、强制机械、纠错，`Passed: 1315`、退出码 0；`evidence/cs830/rework/mutations/SUMMARY.txt`：16 个全红——原 M1～M10，加审查点名的 U1（去掉「此前没有结果」，复工替换结果重用授权）、U2（不核剩余仓锁闭与输出复位，新增两格 `remaining-slot-unlocked`／`remaining-slot-output-active`）、U3（不按会话代次筛读数），与 R1（空报 ALL_EMPTY 不看读数）、R2（看读数但不核 EMPTY/LOCKED/RESET）、R3（过期读数不按间隔重要快照）；M5 现在作用在共享的 `SessionSlotReadings` 上，同时打红减篮与空报取消的过期读数用例 |
+| 整数组自检（CI test 39646836303 红） | `load-remaining-baskets-skipped.ps1` 两处 `@(Invoke-L2Query ...)` 改为先赋值（`bd701b7f0`），`Test-L2WholeArrayReturn.ps1` 退出码 0。`evidence/cs830/rework/whole-array/measured.txt` 用与 `Invoke-L2Query` 同返回形状的替身实测场景原式：1、2 行时旧写法计数正确（随后的 `$_.PayloadJson` 成员访问把内层数组展开了），空结果时旧写法抛 `The property 'PayloadJson' cannot be found`、而不是让 `L2-RB-02`/`L2-RB-04` 判红；新写法空结果计 0，判据照常红 |
 | 合成 L2 红绿 | 绿 `evidence/cs830/l2/green`（6/6）；红 `evidence/cs830/l2/red-m2-no-release`（去掉释放：`L2-RB-03` 实际 `[1,2,3]`、`L2-RB-04` 实际 `UNLOAD [1,2,3] x3`） |
 | 受影响 G3 | 待与 hmi#388 联跑（见上；`g3-load-cancellation` 另等 cs#837、hmi#392）。staged G3 的内容冲突自检 `Test-StagedG3ContentConflict.ps1` 的共享载荷版本表补 `'6.0.0' = 7`（审查 H1），`probe-identity.ps1` 退出码 0 |
 | CI | 审查放行后转 ready 跑唯一一轮 |

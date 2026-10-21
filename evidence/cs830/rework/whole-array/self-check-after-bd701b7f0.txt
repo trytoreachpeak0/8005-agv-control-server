@@ -1,0 +1,49 @@
+Self-test: fixtures (verdict of the scan, and rows the caller saw for a reader returning 0 / 1 / 3 rows)
+  ok   wrapped.ps1                            scan=wrapped  saw=1,1,1            @( ) straight around the helper -- the 35 sites of control-server#428, verbatim
+  ok   wrapped-multiline-lowercase.ps1        scan=wrapped  saw=1,1,1            the same across lines, with backtick continuations, extra spaces and all lower case
+  ok   wrapped-call-operator.ps1              scan=wrapped  saw=1,1,1            through the call operator and a quoted name: @(& 'Read-Shared' ...)
+  ok   wrapped-module-qualified-scope.ps1     scan=wrapped  saw=1,1,1            a whole-array function this file defines with a scope prefix, then wraps
+  ok   pass-through-return.ps1                scan=wrapped  saw=1,1,1            the wrapping survives one return: function Get-Mine { return Read-Shared }, then @(Get-Mine)
+  ok   pass-through-two-levels.ps1            scan=wrapped  saw=1,1,1            through two levels, neither with the return keyword, the second inside an if
+  ok   bare-comma.ps1                         scan=wrapped  saw=1,1,1            a function handing back with a bare unary comma, no return keyword
+  ok   no-enumerate.ps1                       scan=wrapped  saw=1,1,1            a function handing back with Write-Output -NoEnumerate
+  ok   wrapped-inside-return.ps1              scan=wrapped  saw=1,1,1            the helper wraps inside its own return , @(...) -- L2TaskTypeJourney.psm1, verbatim
+  ok   wrapped-loop.ps1                       scan=wrapped  saw=1,1,1            a loop inside @( ) whose body hands back one whole result per round
+  ok   wrapped-module-qualified.ps1           scan=wrapped  saw=1,1,1            the helper called by its module-qualified name: @(Reader\Read-Shared ...)
+  ok   wrapped-relay.ps1                      scan=wrapped  saw=1,1,1            @( ) around a relay whose -Probe block ends in the helper -- g3-reversed-direction-journey.ps1:165, which the first version of the scan walked past
+  ok   wrapped-relay-prefix.ps1               scan=wrapped  saw=1,1,1            the same with the parameter abbreviated, in lower case, and the block ending in a local pass-through function
+  ok   piped.ps1                              scan=piped    saw=1,1,1            piped straight on: $_ in Where-Object is the whole result
+  ok   foreach.ps1                            scan=foreach  saw=1,1,1            straight after the in of a foreach: one round
+  ok   reshaped-stub.ps1                      scan=reshaped saw=0,1,3            a stub replaces the module's whole-array reader with an unrolling one: the wrapping mistake behind it measures right
+  ok   miss-name-in-variable.ps1              scan=clean    saw=1,1,1            KNOWN MISS: the helper is called through a variable, @(& $reader ...)
+  ok   miss-alias.ps1                         scan=clean    saw=1,1,1            KNOWN MISS: the helper is called through an alias
+  ok   miss-script-block-variable.ps1         scan=clean    saw=1,1,1            KNOWN MISS: a script block held in a variable hands the helper's output on, and is wrapped
+  ok   miss-subexpression-loop.ps1            scan=clean    saw=2,2,2            KNOWN MISS: $( ) collecting a loop that calls the helper each round
+  ok   miss-get-command.ps1                   scan=clean    saw=1,1,1            KNOWN MISS: the helper reached through Get-Command, @(& (Get-Command Helper) ...)
+  ok   miss-inline-script-block.ps1           scan=clean    saw=1,1,1            KNOWN MISS: an inline script block, @(& { Helper })
+  ok   miss-foreach-object-block.ps1          scan=clean    saw=1,1,1            KNOWN MISS: the helper inside a ForEach-Object block, @(1 | ForEach-Object { Helper })
+  ok   miss-invoke-command.ps1                scan=clean    saw=1,1,1            KNOWN MISS: @(Invoke-Command { Helper })
+  ok   miss-relay-positional.ps1              scan=clean    saw=1,1,1            KNOWN MISS: a relay given its block positionally rather than by parameter name
+  ok   miss-switch.ps1                        scan=clean    saw=1,1,1            KNOWN MISS: switch (Helper ...) { } runs its clause once, on the whole result
+  ok   miss-return-parenthesised-comma.ps1    scan=clean    saw=1,1,1            KNOWN MISS: a whole-array return written return (, $x) is not classified, so wrapping it is not reported
+  ok   miss-return-array-of-comma.ps1         scan=clean    saw=1,1,1            KNOWN MISS: the same written return @(, $x)
+  ok   miss-return-ternary-comma.ps1          scan=clean    saw=1,1,1            KNOWN MISS: the same with the unary comma inside a ternary
+  ok   miss-function-drive-stub.ps1           scan=wrapped  saw=0,1,3            KNOWN MISS: a stand-in written ${function:Helper} = { ... } that unrolls is not reported as reshaped
+  ok   assigned.ps1                           scan=clean    saw=0,1,3            assigned directly -- the right way
+  ok   parenthesised.ps1                      scan=clean    saw=0,1,3            parenthesised, then .Count
+  ok   parenthesised-then-piped.ps1           scan=clean    saw=0,1,3            parenthesised, then piped, inside @( ): legal, used by L2RealStation.psm1, one pair of parentheses away from piped
+  ok   relay-assigned-then-wrapped.ps1        scan=clean    saw=0,1,3            a relay's result assigned first and wrapped afterwards: the one form right on both of its paths (g3-multi-stop-plan.ps1)
+  ok   relay-of-unrolled-block.ps1            scan=clean    saw=0,1,3            a relay whose block hands back unrolled rows: wrapping it is correct
+  ok   assigned-then-wrapped.ps1              scan=clean    saw=0,1,3            assigned, then the variable wrapped in @( )
+  ok   assigned-then-foreach.ps1              scan=clean    saw=0,1,3            assigned, then foreach over the variable
+  ok   stub-same-shape.ps1                    scan=clean    saw=0,1,3            a stub that replaces the module's reader and keeps its shape (return , $r): legal, and direct assignment measures right
+  ok   unrolling-function-wrapped.ps1         scan=clean    saw=0,1,3            a function that hands back unrolled (return $r): wrapping it in @( ) is correct
+  ok   comma-inside-assignment.ps1            scan=clean    saw=0,1,3            a unary comma inside an if on the right of an assignment: not the function's output
+  ok   script-block.ps1                       scan=clean    saw=0,1,3            the helper called inside a script block whose result is assigned
+  ok   mentioned-not-called.ps1               scan=clean    saw=0,1,3            @(Read-Shared ...) in a comment and in a string: the four lines a text search counted
+
+Self-test: classifier (14 functions, 9 of them whole-array)
+  ok   classified exactly the Whole-* functions; the Unrolled-* ones and the class method were left out
+
+Scan: 291 scripts under C:\work\8005-wt\cs-830-8005-agv-control-server\scripts, 159 functions return their array whole (42 of them in shared files).
+No call enumerates a whole-array function, and no stand-in changes the shape of one.
