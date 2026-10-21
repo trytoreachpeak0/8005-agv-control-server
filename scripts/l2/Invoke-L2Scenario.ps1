@@ -221,6 +221,12 @@ $vehicleFaultRecovery = ($setup.ContainsKey('VehicleFaultRecovery') -and $setup.
 $faultRecoveryCredentialVariable = 'CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL'
 # Not a secret either.
 $faultRecoveryCredential = 'l2-fault-recovery-credential-not-a-production-secret'
+# control-server#797's recovery grant requirement (ADR-cross-0066). Off in the product, on in the v2 instance definitions once
+# the recovery entries are; a scenario that proves the grant turns it on here. A grant is given through the recovery entries.
+$recoveryGrantRequired = ($setup.ContainsKey('RecoveryGrantRequired') -and $setup.RecoveryGrantRequired)
+if ($recoveryGrantRequired -and -not $vehicleFaultRecovery) {
+    throw 'RecoveryGrantRequired needs VehicleFaultRecovery: a grant is given through the Host recovery entries.'
+}
 # control-server#383's slot fault declaration entry point (REQ-0359). Off in the product: it stops a slot operation on a
 # vehicle, and an onboard that does not know the command yet (before onboard-hmi#215) would drop its session over it.
 $slotFaultDeclaration = ($setup.ContainsKey('SlotFaultDeclaration') -and $setup.SlotFaultDeclaration)
@@ -821,6 +827,9 @@ try {
         $serverEnvironment['VehicleFaultRecovery__enabled'] = 'true'
         $serverEnvironment['VehicleFaultRecovery__credentialEnvironmentVariable'] = $faultRecoveryCredentialVariable
         $serverEnvironment[$faultRecoveryCredentialVariable] = $faultRecoveryCredential
+    }
+    if ($recoveryGrantRequired) {
+        $serverEnvironment['RecoveryGrant__required'] = 'true'
     }
     if ($slotFaultDeclaration) {
         $serverEnvironment['SlotFaultDeclaration__enabled'] = 'true'
