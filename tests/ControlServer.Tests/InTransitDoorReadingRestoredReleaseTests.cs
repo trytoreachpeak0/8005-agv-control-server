@@ -225,6 +225,33 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
     }
 
     /// <summary>
+    /// 两轮之间：行驶中「没锁」、「读不到」、「锁闭」、又「读不到」——那条「没锁」不紧挨着这一轮的「读不到」段，倒查断点看不到它，只有
+    /// 按车保存的「上一轮以来」读得到：照样当场按读到没锁交出，不自动解除（复审修法第 2 条，since 不跟 episode 走）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ANotLockedEarlierBetweenTwoRoundsIsReadThoughALockedReadingCameAfterIt()
+    {
+        await using RuntimeFixture fixture = await DrivingBetweenStationsAsync(behindTheReadinessGate: false);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        await ReportNotLockedAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        await ReportUnknownAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        await ReportLockedAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        await ReportUnknownAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        await LatchAsync(fixture);
+
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
     /// 同一形发生在服务端刚重启之后：这一进程还没看过这台车，没有「上一轮以来」可读；倒查连续「读不到」那一段时，断开它的是一条行驶中的
     /// 「没锁」，照样按读到没锁交出，不自动解除（复审修法第 3 条）。
     /// </summary>
