@@ -168,7 +168,7 @@ public sealed class SafetyStateLatestFirstReadTests
 
         InTransitDoorVerdict verdict = await InTransitDoorFacts.ReadAsync(database.Context, AgvId, Now, Token);
 
-        Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation, Revision), verdict);
+        Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation, Revision), verdict with { ReceivedAt = null });
     }
 
     /// <summary>同一收件时间、同一类的两行都匹配：今天挑先写入的那一行。</summary>
@@ -210,7 +210,7 @@ public sealed class SafetyStateLatestFirstReadTests
 
         InTransitDoorVerdict verdict = await InTransitDoorFacts.ReadAsync(database.Context, AgvId, Now, Token);
 
-        Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation, Revision), verdict);
+        Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation, Revision), verdict with { ReceivedAt = null });
     }
 
     /// <summary>
@@ -232,7 +232,7 @@ public sealed class SafetyStateLatestFirstReadTests
 
         InTransitDoorVerdict verdict = await InTransitDoorFacts.ReadAsync(database.Context, AgvId, Now, Token);
 
-        Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation - 1, 9), verdict);
+        Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation - 1, 9), verdict with { ReceivedAt = null });
     }
 
     // ---- 索引与迁移 -------------------------------------------------------------------------------------------
@@ -295,7 +295,7 @@ public sealed class SafetyStateLatestFirstReadTests
         Assert.Equal(
             ["IX_ProtocolInbox_MessageType", "IX_ProtocolInbox_MessageType_ReceivedAtUtcTicks", "IX_ProtocolInbox_ReceivedAtUtcTicks"],
             indexesUp);
-        Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation, Revision), verdict);
+        Assert.Equal(new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, Generation, Revision), verdict with { ReceivedAt = null });
     }
 
     private static async Task<string[]> ProtocolInboxIndexesAsync(Batch7JourneyFixture fixture) =>
