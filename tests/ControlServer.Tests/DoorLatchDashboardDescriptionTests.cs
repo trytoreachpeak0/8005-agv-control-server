@@ -98,18 +98,91 @@ public sealed class DoorLatchDashboardDescriptionTests
     }
 
     /// <summary>
-    /// 守卫：三份描述表里凡是讲门锁与急停的说明，都不出现「自动解除」。只看两个码挡不住下一个新加的门锁类码照抄旧句。
+    /// 守卫：三份描述表、充电告警卡的「现场该做什么」与空闲返回的步骤说明里，凡是讲门锁与急停的，都不出现「自动解除」。只看两个码挡不住下一个新加的门锁类码照抄旧句。
     /// </summary>
     [Fact]
     public void NoDescriptionThatTalksAboutTheDoorsAndTheEmergencyStopSaysItReleasesAutomatically()
     {
+        (string Table, IReadOnlyDictionary<string, string> Descriptions)[] tables =
+        [
+            .. Tables,
+            ("充电告警现场动作", ChargingDashboardDescriptions.FieldActions),
+            ("空闲返回步骤", IdleReturnsQueryEndpoint.StepDescriptions),
+        ];
+
         string[] offending =
         [
-            .. Tables.SelectMany(table => table.Descriptions
+            .. tables.SelectMany(table => table.Descriptions
                 .Where(entry => entry.Value.Contains("门锁", StringComparison.Ordinal)
                     && entry.Value.Contains("急停", StringComparison.Ordinal)
                     && entry.Value.Contains("自动解除", StringComparison.Ordinal))
                 .Select(entry => $"{table.Table}:{entry.Key}")),
+        ];
+
+        Assert.Empty(offending);
+    }
+
+    /// <summary>
+    /// 充电告警卡「现场该做什么」那一列（<see cref="ChargingDashboardDescriptions.FieldActions"/>）和说明配在同一张卡上。审查 H-1：
+    /// 说明改了，这一列还写着「门已锁好，再「继续原单」」——急停锁着时续行会被拒，也跳过了人工确认解除、没说别在 RIoT 上解。
+    /// </summary>
+    [Theory]
+    [InlineData(VehicleFaultEvidence.DoorNotProvenLocked)]
+    [InlineData(JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason)]
+    public void TheChargingAlarmFieldActionForADoorCodeSaysNotToUnlockOnRiotAndGoesThroughAPersonsRelease(string code)
+    {
+        Assert.True(ChargingDashboardDescriptions.FieldActions.TryGetValue(code, out string? text), $"no field action for {code}");
+
+        Assert.DoesNotContain("自动解除", text, StringComparison.Ordinal);
+        Assert.Contains("不要在 RIoT 上解锁", text, StringComparison.Ordinal);
+        Assert.Contains("联系系统维护人员", text, StringComparison.Ordinal);
+        Assert.Contains("人工确认解除", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheChargingAlarmFieldActionForTheDoorFaultReleasesBeforeItResumes()
+    {
+        string text = ChargingDashboardDescriptions.FieldActions[VehicleFaultEvidence.DoorNotProvenLocked];
+
+        Assert.Contains("确认门锁已检修", text, StringComparison.Ordinal);
+        int release = text.IndexOf("人工确认解除", StringComparison.Ordinal);
+        int resume = text.IndexOf("「继续原单」", StringComparison.Ordinal);
+        Assert.True(release >= 0 && resume > release, $"release must come before resume: {text}");
+    }
+
+    /// <summary>
+    /// 空闲返回卡片的「失败待人工」一步，门锁类急停也落在这里（审查 L-1）：要先由人解除急停，并写明别在 RIoT 上解锁。
+    /// </summary>
+    [Fact]
+    public void TheIdleReturnFailedAwaitingManualStepSaysToReleaseThroughAPersonAndNotOnRiot()
+    {
+        string text = IdleReturnsQueryEndpoint.StepDescriptions[IdleReturnsQueryEndpoint.StepFailedAwaitingManual];
+
+        Assert.Contains("不要在 RIoT 上解锁", text, StringComparison.Ordinal);
+        Assert.Contains("人工确认解除", text, StringComparison.Ordinal);
+        Assert.Contains("联系系统维护人员", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 守卫：三份描述表加充电告警卡的「现场该做什么」，凡是门锁类码的文本都写「不要在 RIoT 上解锁」、都不写「自动解除」。
+    /// 审查 H-1 那一句旧出路里没有「自动解除」四个字，只扫这个词挡不住它。
+    /// </summary>
+    [Fact]
+    public void EveryDoorCodeTextOnEveryDashboardTableSaysNotToUnlockOnRiot()
+    {
+        (string Table, IReadOnlyDictionary<string, string> Texts)[] tables =
+        [
+            .. Tables,
+            ("充电告警现场动作", ChargingDashboardDescriptions.FieldActions),
+        ];
+
+        string[] offending =
+        [
+            .. tables.SelectMany(table => DoorCodes
+                .Where(code => !table.Texts.TryGetValue(code, out string? text)
+                    || !text.Contains("不要在 RIoT 上解锁", StringComparison.Ordinal)
+                    || text.Contains("自动解除", StringComparison.Ordinal))
+                .Select(code => $"{table.Table}:{code}")),
         ];
 
         Assert.Empty(offending);
