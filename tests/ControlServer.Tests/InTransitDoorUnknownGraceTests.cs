@@ -241,6 +241,33 @@ public sealed class InTransitDoorUnknownGraceTests
             (InTransitDoorAction.HandToFault, InTransitDoorReadings.HandGraceLimitReached), (third.Action, third.HandedBecause));
     }
 
+    /// <summary>
+    /// 故障之前，两轮之间那条「没锁」是车停着时报的（站内授权装卸开着门），不算行驶中读到没锁：接着报「读不到」照样宽限，不当场交出。
+    /// 同一条若是行驶中报的，当场交出（复审情况 a）。
+    /// </summary>
+    [Theory]
+    [InlineData(false, InTransitDoorAction.HandToFault)]
+    [InlineData(true, InTransitDoorAction.InGrace)]
+    [Trait("Requirement", "REQ-0246")]
+    public void BeforeAFaultADoorReadNotLockedCountsOnlyFromAMovingVehicle(bool stopped, InTransitDoorAction expected)
+    {
+        InTransitDoorReadings readings = new(Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
+        Assert.Equal(InTransitDoorAction.Nothing, readings.Observe(
+            "AGV-A", new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, 1, 1, Now), false, Now.AddSeconds(0.2)).Action);
+
+        InTransitDoorReading reading = readings.Observe(
+            "AGV-A",
+            new InTransitDoorVerdict(InTransitDoorState.SlotStateUnknown, 1, 3, Now.AddSeconds(0.8))
+            {
+                UnknownSince = Now.AddSeconds(0.8),
+                Between = [new(InTransitDoorState.NotLocked, Now.AddSeconds(0.5), Moving: !stopped)],
+            },
+            false,
+            Now.AddSeconds(1.2));
+
+        Assert.Equal(expected, reading.Action);
+    }
+
     /// <summary>窗口是滑动的：第 1 次宽限开始 10 分钟之后，又能给 1 次。</summary>
     [Fact]
     [Trait("Requirement", "REQ-0246")]

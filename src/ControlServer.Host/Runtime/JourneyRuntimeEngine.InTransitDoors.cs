@@ -102,9 +102,15 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();
-        // Every summary received since the open episode's last round as well as the one in force (cs#839 review H1).
-        InTransitDoorVerdict doors = await InTransitDoorFacts.ReadAsync(
-                dbContext, runtime.AgvId, now, _doorReadings.SinceFor(runtime.AgvId), cancellationToken)
+        // Every summary received since the vehicle's last round as well as the one in force (cs#839 review H1), but not further
+        // back than the run look-back: a vehicle back on the road after an hour at a station has nothing older to tell.
+        DateTimeOffset? since = _doorReadings.SinceFor(runtime.AgvId);
+        if (since < now - InTransitDoorFacts.UnknownRunLookBack)
+        {
+            since = now - InTransitDoorFacts.UnknownRunLookBack;
+        }
+
+        InTransitDoorVerdict doors = await InTransitDoorFacts.ReadAsync(dbContext, runtime.AgvId, now, since, cancellationToken)
             .ConfigureAwait(false);
         if (_doorReadings.NeedsGraceHistory(runtime.AgvId))
         {

@@ -78,10 +78,21 @@ public sealed record InTransitDoorVerdict(
     /// happened to see first (cs#839 review M3). Null otherwise.
     /// </summary>
     public DateTimeOffset? UnknownSince { get; init; }
+
+    /// <summary>
+    /// When the verdict is <see cref="InTransitDoorState.SlotStateUnknown"/>: the summary just before that run read a door not
+    /// locked while the vehicle moved (cs#839 re-review, case a). A process that reads the vehicle for the first time sees no
+    /// <see cref="Between"/>; this is how it still learns that the run began on a door read not locked.
+    /// </summary>
+    public bool UnknownRunAfterNotLocked { get; init; }
 }
 
 /// <summary>One stored summary's door reading, without the freshness of the session it came on.</summary>
-public sealed record InTransitDoorSample(InTransitDoorState State, DateTimeOffset ReceivedAt);
+/// <param name="Moving">
+/// The summary did not say the vehicle stood still. Before any fault a door read not locked counts only from a moving vehicle:
+/// at a station the doors are open for an authorised load (REQ-0246's source decision, answer 3).
+/// </param>
+public sealed record InTransitDoorSample(InTransitDoorState State, DateTimeOffset ReceivedAt, bool Moving = true);
 
 /// <summary>
 /// Reads whether a vehicle's doors are proven locked while it drives, from the safety summaries Onboard sends
@@ -168,6 +179,7 @@ public static class InTransitDoorFacts
         Summary? fact = null;
         List<Summary>? between = since is null ? null : [];
         DateTimeOffset? unknownSince = null;
+        bool unknownRunAfterNotLocked = false;
         if (session.SafetyRevision is long revision)
         {
             // The session's own summary, read newest first and stopped at (control-server#597): this runs every round of every
@@ -219,6 +231,10 @@ public static class InTransitDoorFacts
                     else
                     {
                         followingUnknownRun = false;
+                        // What broke the run off at its start: a door read not locked while moving is a reading too
+                        // (cs#839 re-review, case a), not only the run's edge.
+                        unknownRunAfterNotLocked = !summary.SlotStateUnknown && !summary.AllTargetSlotsLocked &&
+                            !summary.VehicleStopped;
                     }
                 }
 
@@ -248,7 +264,7 @@ public static class InTransitDoorFacts
 
         IReadOnlyList<InTransitDoorSample>? samples = between is null
             ? null
-            : [.. Enumerable.Reverse(between).Select(summary => new InTransitDoorSample(StateOf(summary), summary.ReceivedAt))];
+            : [.. Enumerable.Reverse(between).Select(summary => new InTransitDoorSample(StateOf(summary), summary.ReceivedAt, !summary.VehicleStopped))];
         if (fact is null)
         {
             return new InTransitDoorVerdict(InTransitDoorState.Unobserved, null, null) { Between = samples };
@@ -266,6 +282,7 @@ public static class InTransitDoorFacts
         {
             Between = samples,
             UnknownSince = unknownSince,
+            UnknownRunAfterNotLocked = unknownRunAfterNotLocked,
         };
     }
 
@@ -347,9 +364,16 @@ public static class InTransitDoorFacts
             payload.GetProperty("safetyStateVersion").GetInt64(),
             safety.GetProperty("allTargetSlotsLocked").GetBoolean(),
             slotStateUnknown,
-            row.ReceivedAt);
+            row.ReceivedAt,
+            // Read as moving unless the vehicle said it stood still: a reading is never discounted for want of the field.
+            safety.TryGetProperty("vehicleStopped", out JsonElement stopped) && stopped.ValueKind == JsonValueKind.True);
     }
 
     private sealed record Summary(
-        long Generation, long Version, bool AllTargetSlotsLocked, bool SlotStateUnknown, DateTimeOffset ReceivedAt);
+        long Generation,
+        long Version,
+        bool AllTargetSlotsLocked,
+        bool SlotStateUnknown,
+        DateTimeOffset ReceivedAt,
+        bool VehicleStopped);
 }

@@ -216,7 +216,31 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
         await ReportUnknownAsync(fixture);
         await DriveOneRoundAsync(fixture);
         Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
-        await DriveRoundsAsync(fixture, 2);
+        await LatchAsync(fixture);
+
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 同一形发生在服务端刚重启之后：这一进程还没看过这台车，没有「上一轮以来」可读；倒查连续「读不到」那一段时，断开它的是一条行驶中的
+    /// 「没锁」，照样按读到没锁交出，不自动解除（复审修法第 3 条）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ANotLockedJustBeforeTheUnreadRunIsReadAfterARestartToo()
+    {
+        await using RuntimeFixture fixture = await DrivingBetweenStationsAsync(behindTheReadinessGate: false);
+        fixture.DoorReadings = new InTransitDoorReadings(Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
+        await fixture.RecreateEngineAsync();
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await ReportNotLockedAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await ReportUnknownAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
         await LatchAsync(fixture);
 
         await ReportLockedAsync(fixture);
