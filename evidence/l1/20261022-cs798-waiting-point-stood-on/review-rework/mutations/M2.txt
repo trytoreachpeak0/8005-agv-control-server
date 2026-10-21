@@ -1,0 +1,22 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ClearanceMove.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ClearanceMove.cs
+index e81f7b7dd..0a490dbc3 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ClearanceMove.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ClearanceMove.cs
+@@ -228,7 +228,7 @@ public sealed partial class JourneyRuntimeEngine
+                 ? IdleReturnReasons.PointFailedLastAttempt
+                 : await IdleReturnEvaluator.ExcludePointAsync(
+                         registration, fixedTaskStations, currentMap, runtime.MapId, graph.Graph!, point, runtime.VehicleKey, origin,
+-                        standing,
++                        new FleetStanding([], []),
+                         async (stationId, token) => await dbContext.Set<StationExclusivityRow>().AsNoTracking()
+                             .AnyAsync(row => row.MapId == runtime.MapId && row.StationId == stationId, token).ConfigureAwait(false),
+                         cancellationToken)
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AVehicleOutsideTheIdleFleetStandingOnAPointKeepsTheClearingVehicleOffIt(why: "offline") [3 s]
+   Assert.Equal() Failure: Values differ
+Expected: 214
+Actual:   300
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AVehicleOutsideTheIdleFleetStandingOnAPointKeepsTheClearingVehicleOffIt(why: "foreign-order") [155 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 214
+Actual:   300
+Failed!  - Failed:     2, Passed:     0, Skipped:     0, Total:     2, Duration: 3 s - ControlServer.Tests.dll (net8.0)

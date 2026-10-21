@@ -27,6 +27,9 @@ internal static class IdleReturnModule
         services.AddSingleton<IdleReturnVerdictBoard>();
         // 单例：连续物化失败的轮数要跨轮次记着（审查 L3）。
         services.AddSingleton<IdleReturnMaterializationFailures>();
+        // 选等待点时的全车队位置（control-server#798）：每辆车上一次读到的站要跨轮次记着（读不到时按它算），读取器随评估器每轮一个。
+        services.AddSingleton<FleetStandingMemory>();
+        services.AddScoped<FleetStandingReader>();
         services.AddScoped<IdleReturnEvaluator>();
         return services;
     }

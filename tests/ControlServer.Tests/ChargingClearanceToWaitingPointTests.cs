@@ -336,10 +336,14 @@ public sealed partial class ChargingClearanceToWaitingPointTests
     /// <summary>
     /// 同一个等待点集合：空闲返回的 B 刚预占了 214，清桩的 A 只能拿剩下的 300——不另立清桩专用点，也不与 B 抢。
     /// </summary>
+    /// <remarks>
+    /// B 停在 12 上，不在 300：车队默认停在 300，B 还停在那里的话 300 就是「点上有车」（control-server#798），A 一个点都不剩。
+    /// </remarks>
     [Fact]
     public async Task TheClearingVehicleTakesWhatAnIdleReturnLeftOfTheSameWaitingPoints()
     {
         await using FleetFixture fleet = await ClearanceFleetAsync(vehicles: 2, points: [Point214, Point300]);
+        fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = 12 };
         JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
         Assert.Equal(VehiclePurposeAcquisitionOutcome.Acquired, await IdleReturnCommitAsync(fleet, KeyB, 214));
         fleet.Riot.CancelOrder(journey.PickupUpperId);

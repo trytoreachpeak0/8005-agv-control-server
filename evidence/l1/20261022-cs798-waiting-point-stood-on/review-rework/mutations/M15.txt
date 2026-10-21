@@ -1,0 +1,15 @@
+diff --git a/src/ControlServer.Host/Dashboard/IdleReturnCodeDescriptions.cs b/src/ControlServer.Host/Dashboard/IdleReturnCodeDescriptions.cs
+index 9ef99fba6..4cd3d0c0c 100644
+--- a/src/ControlServer.Host/Dashboard/IdleReturnCodeDescriptions.cs
++++ b/src/ControlServer.Host/Dashboard/IdleReturnCodeDescriptions.cs
+@@ -103,7 +103,7 @@ internal static class IdleReturnCodeDescriptions
+                 + "窗口过去也不会自己解除：这辆车被派了一趟搬运（或别的旅程）之后才重新开始自动空闲返回。"
+                 + "请到现场与 RIoT 查明为什么反复取消；车停在原地不影响派搬运",
+             [IdleReturnReasons.PointTaken] = "这个等待点此刻被别的承诺预占或占用着",
+-            [IdleReturnReasons.PointStoodOn] =
++            ["X_" + IdleReturnReasons.PointStoodOn] =
+                 "这个等待点没有占用记录，但车队里另一辆车此刻就停在点上（或停在与它路程为 0 的站上）：派车过去会停在点前等放行、堵在路上，所以不派。"
+                 + "外来订单占着的车、在跑旅程的车都算；这一轮读不到位置的车按它上一次读到的站算。服务端日志里逐点原因后面括号写着是哪辆车、位置从哪来"
+                 + "（read 读到的、offline 离线车最后的位置、last-known 按上一次位置算）。那辆车开走后自动恢复，不需要人处理；"
+  Failed ControlServer.Tests.VehiclePurposeDashboardTests.EveryIdleReturnVerdictCodeHasAChineseDescription [16 ms]
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 28 ms - ControlServer.Tests.dll (net8.0)

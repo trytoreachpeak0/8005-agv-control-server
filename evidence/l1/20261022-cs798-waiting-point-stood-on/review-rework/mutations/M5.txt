@@ -1,0 +1,22 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+index 74d00974e..7c4f98903 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+@@ -195,7 +195,7 @@ public sealed class IdleReturnEvaluator(
+                 // 后一辆要看得见。
+                 reads ??= await ReadRoundAsync(cancellationToken).ConfigureAwait(false);
+                 standing ??= await fleetStanding
+-                    .ReadAsync([.. candidates.Select(item => item.Facts.Vehicle), .. fleetReadThisRound], cancellationToken)
++                    .ReadAsync([.. candidates.Select(item => item.Facts.Vehicle), .. fleetReadThisRound], cancellationToken).ContinueWith(task => new FleetStanding([.. task.Result.Vehicles.Where(vehicle => candidates.Any(item => item.Vehicle.VehicleKey == vehicle.VehicleKey))], []), cancellationToken)
+                     .ConfigureAwait(false);
+                 verdicts.Add(await SelectAndCommitAsync(candidate, currentMap, reads, standing, cancellationToken).ConfigureAwait(false));
+             }
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleOutsideTheIdleFleetStandingOnTheWaitingPointKeepsTheIdleReturnOffIt(why: "journey") [3 s]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleOutsideTheIdleFleetStandingOnTheWaitingPointKeepsTheIdleReturnOffIt(why: "foreign-order") [64 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+Failed!  - Failed:     2, Passed:     0, Skipped:     0, Total:     2, Duration: 3 s - ControlServer.Tests.dll (net8.0)

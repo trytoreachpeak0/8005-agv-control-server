@@ -1,0 +1,17 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index 0c8161af1..13541957a 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -217,7 +217,6 @@ public sealed class FleetStandingMemory
+             {
+                 _lastSeen.Remove(vehicleKey);
+             }
+-            _warned.Remove(vehicleKey);
+         }
+     }
+ 
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint [4 s]
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   1
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 4 s - ControlServer.Tests.dll (net8.0)

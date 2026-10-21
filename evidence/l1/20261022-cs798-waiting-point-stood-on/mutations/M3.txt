@@ -1,0 +1,18 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+index 761b46584..697f81b8d 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+@@ -590,7 +590,7 @@ public sealed class IdleReturnEvaluator(
+             return IdleReturnReasons.PointTaken;
+         }
+ 
+-        if (standing.Excludes(reads.Graph.Graph!, vehicle.VehicleKey, stationId) is { } stoodOn)
++        if (standing.Excludes(reads.Graph.Graph!, vehicle.VehicleKey, stationId) is { } stoodOn && stationId < 0)
+         {
+             return stoodOn;
+         }
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AStagingOriginAnotherVehicleStandsOnIsNotTakenAndTheVehicleFallsBackToAWaitingPoint [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("IDLE_RETURN_COMMITTED", 214)
+Actual:   Tuple ("IDLE_RETURN_COMMITTED", 215)
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 2 s - ControlServer.Tests.dll (net8.0)

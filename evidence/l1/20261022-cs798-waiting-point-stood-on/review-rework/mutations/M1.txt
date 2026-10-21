@@ -1,0 +1,16 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+index 74d00974e..e8b44b1b2 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+@@ -671,7 +671,7 @@ public sealed class IdleReturnEvaluator(
+             return IdleReturnReasons.PointTaken;
+         }
+ 
+-        if (standing.Excludes(graph, vehicleKey, point.StationId) is { } stoodOn)
++        if (standing.Excludes(graph, vehicleKey, point.StationId) is { } stoodOn && origin < 0)
+         {
+             return stoodOn;
+         }
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AnIdleVehicleStandingOnTheOnlyPointWithoutARowKeepsTheClearingVehicleOffItUntilItLeaves [3 s]
+   Assert.Empty() Failure: Collection was not empty
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 3 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,17 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+index 74d00974e..e2e324185 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/IdleReturnEvaluator.cs
+@@ -449,7 +449,7 @@ public sealed class IdleReturnEvaluator(
+                 vehicle,
+                 IdleReturnReasons.NoWaitingPointAvailable,
+                 (excluded.Count == 0 ? "No waiting point is registered on this Map." : string.Join(", ", excluded)) +
+-                (standing.UnlocatedNote is { } unlocated ? "; " + unlocated : ""));
++                "");
+         }
+ 
+         DateTimeOffset now = timeProvider.GetUtcNow();
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint [2 s]
+   Assert.EndsWith() Failure: String end does not match
+Expected end: "; unlocated=AGV-VK-B"
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 2 s - ControlServer.Tests.dll (net8.0)

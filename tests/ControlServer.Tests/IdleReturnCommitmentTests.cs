@@ -1055,6 +1055,23 @@ public sealed partial class IdleReturnCommitmentTests
         /// <summary>跨评估保留，像宿主里的单例。</summary>
         public IdleReturnVerdictBoard VerdictBoard { get; } = new();
 
+        /// <summary>
+        /// 车队里不交来评估的车（外来订单占着的、有旅程的）此刻的 RIoT 读数（control-server#798）；抛出即读不到。交来的车不在这里读。
+        /// </summary>
+        public Dictionary<string, Func<RiotVehicleObservation>> Others { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>跨评估保留，像宿主里的单例。</summary>
+        /// <summary>车队里读取会挂住、直到被取消的车（control-server#798 审查 M2）；它们也要在 <see cref="Others"/> 里，好进名册。</summary>
+        public HashSet<string> Hanging { get; } = new(StringComparer.Ordinal);
+
+        public FleetStandingMemory StandingMemory { get; } = new();
+
+        public EventRecordingLogger<FleetStandingReader> StandingLog { get; } = new();
+
+        /// <summary>停在 <paramref name="station"/> 上的一辆不交来评估的车的读数。</summary>
+        public RiotVehicleObservation Observed(string vehicleKey, int? station, bool connected = true, string? map = null) =>
+            new(vehicleKey, connected, true, "PROCESSING_ORDER", map ?? Options.MapIdentity, station, 80, "NO_CHARGE", 0, Now);
+
         public JourneyRuntimeOptions Options { get; } = new()
         {
             MapId = Map,
@@ -1105,6 +1122,22 @@ public sealed partial class IdleReturnCommitmentTests
                 Microsoft.Extensions.Options.Options.Create(new IdleReturnOptions { Enabled = Enabled }),
                 Microsoft.Extensions.Options.Options.Create(Options),
                 VerdictBoard,
+                IdleReturnTestKit.StandingReader(
+                    new JourneyRuntimeOptions
+                    {
+                        MapId = Map,
+                        MapIdentity = Options.MapIdentity,
+                        MaximumEvidenceAge = Options.MaximumEvidenceAge,
+                        Fleet =
+                        [
+                            .. candidates.Select(candidate => candidate.Vehicle.VehicleKey).Concat(Others.Keys).Distinct()
+                                .Select(key => new FleetVehicleOptions { AgvId = AgvIdOf(key), VehicleKey = key, AgvLifecycleGeneration = 1 }),
+                        ],
+                    },
+                    new FixedClock(Now),
+                    new OtherVehicleFacts(Others, Hanging),
+                    StandingMemory,
+                    StandingLog),
                 new FixedClock(Now),
                 Log);
             return await evaluator.EvaluateAsync(

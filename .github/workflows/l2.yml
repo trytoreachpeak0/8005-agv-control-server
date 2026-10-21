@@ -575,6 +575,9 @@ jobs:
               # control-server#409, REQ-0178/0179: the clearing vehicle queues when no waiting point is eligible, wins the
               # last one in the round it frees, drives there, and the charger is released only in the arrival's round.
               @{ Name = 'charging-clearance-to-waiting-point'; Runs = 3; BatchId = 'batch-9' }
+              # control-server#798: a vehicle on a transport journey stands on the only reachable waiting point with no
+              # exclusivity row -- the clearing vehicle is not sent there and queues; once it leaves, the point is taken.
+              @{ Name = 'charging-clearance-skips-stood-on-waiting-point'; Runs = 1 }
               # Batch 10 (program#169), specification 8.3 batch 10: the four same-direction task types. control-server#546:
               # none of the four bound -- each refused with TASK_TYPE_BINDING_MISSING while WIRE_TO_GATE runs; each bound --
               # loads at the AREA machine into the group its AREA is assigned and unloads at its bound station; and one

@@ -1,0 +1,31 @@
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleOutsideTheIdleFleetStandingOnTheWaitingPointKeepsTheIdleReturnOffIt(why: "journey") [3 s]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleOutsideTheIdleFleetStandingOnTheWaitingPointKeepsTheIdleReturnOffIt(why: "foreign-order") [108 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_NOT_LEFT_OVER_BY_TRANSPORT"
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleThatCannotBeReadCountsWhereItWasLastSeen [10 ms]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("IDLE_RETURN_COMMITTED", 215)
+Actual:   Tuple ("IDLE_RETURN_COMMITTED", 214)
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNotHandedToTheEvaluationStandingOnTheOnlyPointKeepsOthersOffIt(connected: False) [10 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNotHandedToTheEvaluationStandingOnTheOnlyPointKeepsOthersOffIt(connected: True) [10 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint [13 ms]
+   Assert.Single() Failure: The collection was empty
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleNotHandedToTheEvaluationOnAStationAtThePointsNodeKeepsOthersOffThePoint [12 ms]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("IDLE_RETURN_COMMITTED", 215)
+Actual:   Tuple ("IDLE_RETURN_COMMITTED", 214)
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AVehicleThatCannotBeReadCountsWhereItWasLastSeen [151 ms]
+   Assert.Empty() Failure: Collection was not empty
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AnIdleVehicleStandingOnTheOnlyPointWithoutARowKeepsTheClearingVehicleOffItUntilItLeaves [148 ms]
+   Assert.Empty() Failure: Collection was not empty
+Failed!  - Failed:     9, Passed:   139, Skipped:     0, Total:   148, Duration: 13 s - ControlServer.Tests.dll (net8.0)

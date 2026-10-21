@@ -1,0 +1,16 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index f7455aee7..80dbc2db5 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -59,7 +59,7 @@ public sealed class FleetStanding
+ 
+     /// <summary>除 <paramref name="vehicleKey"/> 之外站在这个站上的那辆车；没有答空。</summary>
+     internal StandingVehicle? StoodOnByAnother(Domain.RouteGraph graph, string vehicleKey, int stationId) =>
+-        Vehicles.FirstOrDefault(other => !string.Equals(other.VehicleKey, vehicleKey, StringComparison.Ordinal) &&
++        Vehicles.FirstOrDefault(other => vehicleKey.Length >= 0 &&
+                                          StandsOn(graph, other.StationId, stationId));
+ 
+     /// <summary>
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.TheClearingVehicleDoesNotKeepItselfOffAPointAtItsChargersNode [3 s]
+   Assert.Single() Failure: The collection was empty
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 3 s - ControlServer.Tests.dll (net8.0)

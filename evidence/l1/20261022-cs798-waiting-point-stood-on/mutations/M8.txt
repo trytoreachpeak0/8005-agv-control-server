@@ -1,0 +1,18 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index 0c8161af1..eb1bcfa61 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -114,7 +114,7 @@ public sealed class FleetStandingReader(
+                 continue;
+             }
+ 
+-            if (memory.LastSeen(key) is int last)
++            if (memory.LastSeen(key) is int last && last < 0)
+             {
+                 standing.Add(new StandingVehicle(key, last, LastKnown: true));
+                 continue;
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleThatCannotBeReadCountsWhereItWasLastSeen [2 s]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 2 s - ControlServer.Tests.dll (net8.0)

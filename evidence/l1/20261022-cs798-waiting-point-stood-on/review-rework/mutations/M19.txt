@@ -1,0 +1,18 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+index f3ff8ac85..3072ac6cb 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+@@ -397,7 +397,7 @@ public sealed class DispatchRoundRunner(
+                 [.. participants.Where(p => !p.UnderWay)
+                     .Select(p => new IdleReturnCandidate(p.Vehicle, p.Facts, p.MayStillTakeWork))],
+                 // control-server#798 review M2: the vehicles under way were read this round too; choosing a point asks RIoT for none of them again.
+-                [.. participants.Where(p => p.UnderWay).Select(p => p.Facts.Vehicle)],
++                [.. participants.Where(p => p.UnderWay).Select(p => p.Facts.Vehicle with { CurrentStationId = 300 })],
+                 cancellationToken)
+             .ConfigureAwait(false);
+ 
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleOutsideTheIdleFleetStandingOnTheWaitingPointKeepsTheIdleReturnOffIt(why: "journey") [3 s]
+   Assert.Equal() Failure: Strings differ
+Expected: "IDLE_RETURN_NO_WAITING_POINT_AVAILABLE"
+Actual:   "IDLE_RETURN_COMMITTED"
+Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, Duration: 4 s - ControlServer.Tests.dll (net8.0)
