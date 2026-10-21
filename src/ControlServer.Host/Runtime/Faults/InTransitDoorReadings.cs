@@ -110,6 +110,9 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
         }
     }
 
+    /// <summary>The earliest grace in progress that runs out after <paramref name="now"/>.</summary>
+    public DateTimeOffset? NextDueAfter(DateTimeOffset now) => NextDueAt;
+
     /// <summary>
     /// Takes this round's reading of a driving vehicle's doors, and whether a door fault stands for it, and says what the
     /// engine does with them.

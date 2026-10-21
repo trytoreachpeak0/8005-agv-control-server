@@ -183,6 +183,128 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
         Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
     }
 
+    /// <summary>
+    /// 两轮之间车载端连发「没锁」「锁闭」两条摘要（锁跳了一下），中间没有一轮读到「没锁」那条：服务端照样算读到过没锁，读回锁闭多久都不自动解除
+    /// （cs#839 审查 H1：每轮只取当前那一条时，这一跳落在两轮之间就看不见，急停被解除）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ANotLockedReadBetweenTwoRoundsKeepsTheStopWithAPerson()
+    {
+        await using RuntimeFixture fixture = await LatchedForUnreadDoorsAsync();
+
+        await ReportNotLockedAsync(fixture);
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>两轮之间夹着一条「读不到」：连续 10 秒读回锁闭从头数，满 10 秒才解除（审查 H1 的另一半）。</summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task AnUnreadReadingBetweenTwoRoundsStartsTheTenSecondsAgain()
+    {
+        await using RuntimeFixture fixture = await LatchedForUnreadDoorsAsync();
+
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 8);
+        await ReportUnknownAsync(fixture);
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 9);
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+
+        await DriveRoundsAsync(fixture, 2);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 故障协调器那一轮读到单是 7，急停监管在 cancelEmergency 之前再读车上未完成单时它已是 3（有人在 RIoT 让它继续了）：不解除
+    /// （cs#839 审查 M4 第 1 条：只靠协调器那一次读，这条单独删掉不会红）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task AHeldOrderThatRunsBetweenTheCoordinatorsReadAndTheReleaseIsNotReleasedPast()
+    {
+        await using RuntimeFixture fixture = await LatchedForUnreadDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        fixture.BeforeUnfinishedOrdersRead = () =>
+            fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Executing, terminal: false);
+
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 12);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 自动解除的四个前提单独核（审查 M4）：本代 Hold 回查未确认、故障已到第二级（隔离）、RIoT 上这张单不是 7、读到的是另一张单——
+    /// 任一条不满足都没有放行条件；全部满足才有，而且挂在本代故障下。
+    /// </summary>
+    [Theory]
+    [InlineData("all-met", true)]
+    [InlineData("hold-pending", false)]
+    [InlineData("hold-unknown", false)]
+    [InlineData("isolated", false)]
+    [InlineData("order-running", false)]
+    [InlineData("another-order", false)]
+    [InlineData("not-restored", false)]
+    [InlineData("released-before", false)]
+    [Trait("Requirement", "REQ-0167")]
+    public void TheDoorReadingReleaseNeedsEveryPremise(string condition, bool earned)
+    {
+        RiotOrderCommandTarget target = new("AGV-X", "W2G-X", "ORDER-X");
+        VehicleFaultFact fault = new(
+            "AGV-X",
+            condition == "isolated" ? VehicleFaultLevel.ConfirmedIsolated : VehicleFaultLevel.SuspectedBlocked,
+            4,
+            VehicleFaultEvidence.DoorNotProvenLocked,
+            false, Now, Now, true, Now, Now, null, null);
+        FaultedVehicleContext context = new(target, null, DoorReadingRestored: condition != "not-restored");
+        RiotOrderCommandOutcome? hold = condition switch
+        {
+            "hold-pending" => RiotOrderCommandOutcome.Pending,
+            "hold-unknown" => RiotOrderCommandOutcome.Unknown,
+            _ => RiotOrderCommandOutcome.Confirmed,
+        };
+        RiotOrderObservation order = new(
+            "W2G-X",
+            RiotOrderObservationKind.Active,
+            condition == "another-order" ? "ORDER-Y" : "ORDER-X",
+            condition == "order-running" ? RiotOrderState.Executing : RiotOrderState.Paused);
+
+        DoorReadingReleaseAllowance? allowance = VehicleFaultCoordinator.DoorReadingRelease(
+            fault, context, hold, order, releasedBefore: condition == "released-before");
+
+        Assert.Equal(earned ? new DoorReadingReleaseAllowance(4, "ORDER-X") : null, allowance);
+    }
+
+    /// <summary>
+    /// 急停监管只认本次急停那一代、也是当前故障那一代的放行条件（审查 M4 第 4 条）：放行条件属于另一代、或当前故障已经换代，都照旧挡在
+    /// 「原因未消除」上；属于这一代时只放过它点名的那张 7。
+    /// </summary>
+    [Theory]
+    [InlineData(4, 4, 4, true)]
+    [InlineData(3, 4, 4, false)]
+    [InlineData(4, 3, 4, false)]
+    [InlineData(4, 4, 5, false)]
+    [Trait("Requirement", "REQ-0167")]
+    public void TheSupervisorTakesAnAllowanceOnlyForTheTriggersAndTheFaultsGeneration(
+        long allowanceGeneration, long triggerGeneration, long faultGeneration, bool released)
+    {
+        VehicleFaultFact fault = new(
+            "AGV-X", VehicleFaultLevel.SuspectedBlocked, faultGeneration, VehicleFaultEvidence.DoorNotProvenLocked,
+            false, Now, Now, true, Now, Now, null, null);
+        RiotVehicleEmergencyObservation latch = new("DEV-X", RiotVehicleEmergencyObservation.CanRecover, Now);
+        RiotVehicleOrderObservation orders = new(
+            "DEV-X", true, ["ORDER-X"], Now, new Dictionary<string, int?> { ["ORDER-X"] = RiotOrderState.Paused });
+
+        IReadOnlyList<string> obstacles = EmergencyStopSupervisor.ReleaseObstacles(
+            latch, triggerGeneration, fault, orders, new DoorReadingReleaseAllowance(allowanceGeneration, "ORDER-X"));
+
+        Assert.Equal(released, obstacles.Count == 0);
+    }
+
     /// <summary>宽限期间读到过一次没锁、随后又只是读不到：同样按「读到没锁」算，不自动解除。</summary>
     [Fact]
     [Trait("Requirement", "REQ-0167")]

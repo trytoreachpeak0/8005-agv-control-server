@@ -99,6 +99,52 @@ public sealed class InTransitDoorUnknownGraceTests
         await AssertHeldThenStoppedAsync(fixture, upperId);
     }
 
+    /// <summary>
+    /// 宽限期间两轮之间车载端报了一条「没锁」又报回「读不到」，没有一轮读到那条「没锁」：照样同一轮交故障模型，不等宽限用完
+    /// （cs#839 审查 H1，宽限这一侧的同一抽样缺口）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task ADoorReadNotLockedBetweenTwoRoundsOfTheGraceIsHandedAtOnce()
+    {
+        await using RuntimeFixture fixture = await DrivingAsync("behind-gate");
+        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+
+        await ReportUnknownAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        await AssertNothingRaisedAsync(fixture);
+        await ReportNotLockedAsync(fixture);
+        await ReportUnknownAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+
+        await AssertHeldThenStoppedAsync(fixture, upperId);
+    }
+
+    /// <summary>
+    /// 宽限从首次收到的那条「未知」起算，不从某一轮看到的那条起算（审查 M3）：两轮之间先后收到两条「未知」，
+    /// 轮次只看到第二条；第一条收到满 3 秒那一轮就交故障模型。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task TheGraceCountsFromTheFirstUnknownReceivedNotTheOneARoundSaw()
+    {
+        await using RuntimeFixture fixture = await DrivingAsync("behind-gate");
+        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+
+        await ReportUnknownAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false,
+            unknownPresent: true,
+            ["SLOT_STATE_UNKNOWN", "LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"],
+            allUnlockOutputsReset: false);
+        await DriveOneRoundAsync(fixture);
+        await AssertNothingRaisedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+
+        await AssertHeldThenStoppedAsync(fixture, upperId);
+    }
+
     /// <summary>读到「没锁」从来不宽限：没有「未知」在前，同一轮按住、急停。拆分「没锁」与「未知」前后这一格行为一样。</summary>
     [Fact]
     [Trait("Requirement", "REQ-0246")]
@@ -264,6 +310,32 @@ public sealed class InTransitDoorUnknownGraceTests
     }
 
     /// <summary>
+    /// 一台车的宽限已经过期、却再没被判过（宽限中断线、单变 HANG、到站），不挡另一台车的宽限按时到期（审查 M1）：引擎循环照样在另一台车
+    /// 满 3 秒那一刻多跑一轮。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public void AnExpiredGraceOfOneVehicleDoesNotHideAnotherVehiclesDueTime()
+    {
+        InTransitDoorReadings readings = new(Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
+        Assert.Equal(
+            InTransitDoorAction.InGrace,
+            readings.Observe("AGV-A", new InTransitDoorVerdict(InTransitDoorState.SlotStateUnknown, 1, 1, Now), false, Now.AddSeconds(0.5)).Action);
+        Assert.Equal(
+            InTransitDoorAction.Nothing,
+            readings.Observe("AGV-A", new InTransitDoorVerdict(InTransitDoorState.Stale, 1, 1, Now), false, Now.AddSeconds(5)).Action);
+        Assert.Equal(
+            InTransitDoorAction.InGrace,
+            readings.Observe("AGV-B", new InTransitDoorVerdict(InTransitDoorState.SlotStateUnknown, 1, 1, Now.AddSeconds(10)), false, Now.AddSeconds(10.2)).Action);
+
+        DateTimeOffset askedAt = Now.AddSeconds(12.2);
+        Assert.Equal(Now.AddSeconds(13), readings.NextDueAfter(askedAt));
+        Assert.Equal(
+            TimeSpan.FromSeconds(0.8),
+            JourneyRuntimeWorker.EarlyRoundAfter(readings.NextDueAfter(askedAt), askedAt, TimeSpan.FromSeconds(2)));
+    }
+
+    /// <summary>
     /// 服务端重启（单例换新、引擎重建）：起点不随进程清零到「重启后第一次看到」，而是重新取那条摘要的收到时刻，所以宽限不被拉长——
     /// 收到后第 1 秒重启，第 3 秒照样交故障模型。
     /// </summary>
@@ -286,15 +358,35 @@ public sealed class InTransitDoorUnknownGraceTests
     }
 
     /// <summary>
-    /// 重启清零的是次数：重启前已用满 2 次，重启后的「未知」又有宽限。偏宽的一面，写进 PR 的剩余风险；这一格把它钉住，免得被误当成缺陷改掉。
+    /// 重启不清零次数（审查 M2，CP-0017 第六节第 1 条要偏保守）：次数从收件箱里本车 10 分钟内收到的「未知」重建——每一段连续的「未知」算开始过
+    /// 一次宽限。重启前已用满 2 次，重启后的「未知」同一轮就交故障模型。
     /// </summary>
     [Fact]
     [Trait("Requirement", "REQ-0246")]
-    public async Task ARestartForgetsHowManyGracesWereGiven()
+    public async Task ARestartRebuildsHowManyGracesWereGivenFromTheInbox()
+    {
+        await using RuntimeFixture fixture = await DrivingAsync("behind-gate");
+        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+        await GraceThatRecoversAsync(fixture);
+        await GraceThatRecoversAsync(fixture);
+        fixture.DoorReadings = new InTransitDoorReadings(Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
+        await fixture.RecreateEngineAsync();
+
+        await ReportUnknownAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+
+        await AssertHeldThenStoppedAsync(fixture, upperId);
+    }
+
+    /// <summary>重建只数窗口里的：重启前那两次都已超过 10 分钟，重启后照样有宽限。</summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task ARestartCountsOnlyTheGracesInsideTheWindow()
     {
         await using RuntimeFixture fixture = await DrivingAsync("behind-gate");
         await GraceThatRecoversAsync(fixture);
         await GraceThatRecoversAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMinutes(11));
         fixture.DoorReadings = new InTransitDoorReadings(Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
         await fixture.RecreateEngineAsync();
 
