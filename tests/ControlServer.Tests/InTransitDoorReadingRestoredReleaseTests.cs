@@ -310,6 +310,36 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
         Assert.Equal(released, obstacles.Count == 0);
     }
 
+    /// <summary>
+    /// 急停监管在 cancelEmergency 之前那一次读到的清单里，放行条件点名的那张单不是 7（3、9、读不出状态）就拒，原因
+    /// <c>EMERGENCY_HELD_ORDER_NOT_PAUSED</c>（审查 M4 第 1 条：协调器读到 7 之后、解除之前单被跑起来）；清单里多出别的单也拒。
+    /// </summary>
+    [Theory]
+    [InlineData(7, false, null)]
+    [InlineData(3, false, EmergencyStopSupervisor.HeldOrderNotPausedReason)]
+    [InlineData(9, false, EmergencyStopSupervisor.HeldOrderNotPausedReason)]
+    [InlineData(null, false, EmergencyStopSupervisor.HeldOrderNotPausedReason)]
+    [InlineData(7, true, "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED")]
+    [Trait("Requirement", "REQ-0167")]
+    public void TheSupervisorReadsTheHeldOrderAgainRightBeforeTheRelease(int? state, bool another, string? obstacle)
+    {
+        VehicleFaultFact fault = new(
+            "AGV-X", VehicleFaultLevel.SuspectedBlocked, 4, VehicleFaultEvidence.DoorNotProvenLocked,
+            false, Now, Now, true, Now, Now, null, null);
+        RiotVehicleEmergencyObservation latch = new("DEV-X", RiotVehicleEmergencyObservation.CanRecover, Now);
+        Dictionary<string, int?> states = new() { ["ORDER-X"] = state };
+        if (another)
+        {
+            states["ORDER-Y"] = RiotOrderState.Executing;
+        }
+
+        IReadOnlyList<string> obstacles = EmergencyStopSupervisor.ReleaseObstacles(
+            latch, 4, fault, new RiotVehicleOrderObservation("DEV-X", true, [.. states.Keys], Now, states),
+            new DoorReadingReleaseAllowance(4, "ORDER-X"));
+
+        Assert.Equal(obstacle is null ? [] : [obstacle], obstacles);
+    }
+
     /// <summary>宽限期间读到过一次没锁、随后又只是读不到：同样按「读到没锁」算，不自动解除。</summary>
     [Fact]
     [Trait("Requirement", "REQ-0167")]
