@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardTcpServer.cs b/src/ControlServer.Host/Transport/OnboardTcpServer.cs
+index fab7c5de8..e6cca08d8 100644
+--- a/src/ControlServer.Host/Transport/OnboardTcpServer.cs
++++ b/src/ControlServer.Host/Transport/OnboardTcpServer.cs
+@@ -123,7 +123,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
+         {
+             // Shutdown.
+         }
+-        catch (Exception error) when (label.Connection?.Superseded == true)
++        catch (Exception error) when (label.Connection is null)
+         {
+             // A newer session took this connection over and closed it (control-server#310); 1007 already said so. Whatever
+             // the closed stream made the loop end with is the takeover, not a protocol or transport error.

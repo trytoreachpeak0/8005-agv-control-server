@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardTcpServer.cs b/src/ControlServer.Host/Transport/OnboardTcpServer.cs
+index fab7c5de8..c8ace1a23 100644
+--- a/src/ControlServer.Host/Transport/OnboardTcpServer.cs
++++ b/src/ControlServer.Host/Transport/OnboardTcpServer.cs
+@@ -225,7 +225,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
+                     {
+                         _peer.EndHandshake(handshakingAgvId, connection);
+                     }
+-                    _peer.BeginHandshake(helloAgvId, connection);
++                    _peer.BeginHandshake(helloAgvId, connection); _peer.TakeOver(helloAgvId, long.MaxValue, connection);
+                     handshakingAgvId = helloAgvId;
+                 }
+                 long? generationBefore = state.SessionGeneration;

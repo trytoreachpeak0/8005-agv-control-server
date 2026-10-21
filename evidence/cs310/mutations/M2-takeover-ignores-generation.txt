@@ -1,0 +1,21 @@
+  Passed ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne [13 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AHandshakeMarkEndsWhenItsConnectionIsAttachedOrEnds [1 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection [17 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.NonLoopbackListenerStartsAndAcceptsPlaintextConnections [14 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AVehicleIsHandshakingFromItsSessionHelloUntilItsConnectionEnds [942 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: True) [94 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: False) [73 ms]
+  Failed ControlServer.Tests.OnboardTcpServerTests.ATakeoverNeverMovesTheRouteBackwards [1 ms]
+  Error Message:
+   Assert.Null() Failure: Value of type 'Nullable<long>' has a value
+   at ControlServer.Tests.OnboardTcpServerTests.ATakeoverNeverMovesTheRouteBackwards() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 205
+   at ControlServer.Tests.OnboardTcpServerTests.ATakeoverNeverMovesTheRouteBackwards() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 205
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [13 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [8 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [6 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn [5 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [5 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver [5 s]
+Total tests: 14
+     Passed: 13
+     Failed: 1

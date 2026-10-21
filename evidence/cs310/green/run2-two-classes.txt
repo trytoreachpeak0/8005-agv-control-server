@@ -1,0 +1,29 @@
+Test run for C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.32)
+[xUnit.net 00:00:00.79]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:02.65]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:02.78]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne [13 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AHandshakeMarkEndsWhenItsConnectionIsAttachedOrEnds [1 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection [18 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.NonLoopbackListenerStartsAndAcceptsPlaintextConnections [15 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AVehicleIsHandshakingFromItsSessionHelloUntilItsConnectionEnds [983 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: True) [115 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: False) [102 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.ATakeoverNeverMovesTheRouteBackwards [< 1 ms]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [13 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [8 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [6 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn [5 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [5 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver [5 s]
+[xUnit.net 00:00:48.78]   Finished:    ControlServer.Tests (ID = 'db22c7a72712e4d9ac533be10a82e8418d7fa336a68ebe31823a66a89aacd7c4')
+
+Test Run Successful.
+Total tests: 14
+     Passed: 14
+ Total time: 49.0781 Seconds
