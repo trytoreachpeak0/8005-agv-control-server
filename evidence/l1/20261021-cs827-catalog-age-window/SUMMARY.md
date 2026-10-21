@@ -28,3 +28,13 @@
 | --- | --- |
 | `l2-green-b9aa5960a/` | 本机合成装置一次，4 条判据全过：40 分钟前读到的 STALE 空闲车不派、看板列出带中文说明；1 分钟前的 FRESH 派出并送达；送达后 STALE 被重新判过仍不派（第二个事实，`Wait-L2ConditionOrLast`）。服务端是 `b9aa5960a` 加未提交的场景文件，场景随后提交为 `3574b3bb2` |
 | `l2-red-no-window-3574b3bb2/` | 把时间窗整体去掉（`MUTATION.txt`）：STALE 被空闲车接走（`DEMAND_ALREADY_ACCEPTED`、1 趟旅程），看板不再列它，FRESH 没车接；L2-CAW-01～03 红，04 因 FRESH 未受理提前收尾未落 |
+
+## 审查返工（M1、L1、L2、L4）
+
+| 变异 | 改了什么 | 变红的用例 |
+| --- | --- | --- |
+| M10 | 删掉依赖注入里判据的注册（审查 M1） | `TheHostRegistersTheCriterion` |
+| M11 | 在途追加的最终门跳过时间窗（审查 L1） | `AnEnRouteAppendIsJudgedAgainWhenIntakeRereadsTheCatalog`：追加真的发生，旅程挂上两条需求 |
+| M12 | 去掉 24 小时上限（审查 L4） | `TheWindowDefaultsToThirtyMinutesMustBePositiveAtMostADayAndIsShippedInAppSettings`（`"30"` 绑定成 30 天被放过） |
+
+M11 的第一版用例一下拨钟 25 分钟，变异下也红，但红在原因码上：车的动态事实过期，最终门本来就拒，追加没有发生。改成开轮时差半秒满 30 分钟、重读时只拨 2 秒之后，变异下追加真的发生，见 `mutations/M11-append-skips-window.txt`。
