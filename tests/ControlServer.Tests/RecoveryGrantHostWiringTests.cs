@@ -75,7 +75,11 @@ public sealed class RecoveryGrantHostWiringTests : IAsyncDisposable
             "api/field-ops/v1/recovery-grants",
             new
             {
-                vehicleKey = VehicleKey, actions = ClearFault, operatorId = "maintenance-797", reason = "L1", siteVerification = "L1-SITE"
+                vehicleKey = VehicleKey,
+                actions = ClearFault,
+                operatorId = "maintenance-797",
+                reason = "L1",
+                siteVerification = "L1-SITE"
             },
             Token);
         string code = JsonDocument.Parse(await planned.Content.ReadAsStringAsync(Token)).RootElement.GetProperty("confirmationCode").GetString()!;
@@ -83,7 +87,11 @@ public sealed class RecoveryGrantHostWiringTests : IAsyncDisposable
             "api/field-ops/v1/recovery-grants",
             new
             {
-                vehicleKey = VehicleKey, actions = ClearFault, operatorId = "maintenance-797", reason = "L1", siteVerification = "L1-SITE",
+                vehicleKey = VehicleKey,
+                actions = ClearFault,
+                operatorId = "maintenance-797",
+                reason = "L1",
+                siteVerification = "L1-SITE",
                 confirmationCode = code
             },
             Token);

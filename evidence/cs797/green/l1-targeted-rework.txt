@@ -1,0 +1,12 @@
+cs#797 review rework, targeted L1 at 3ad13f9b2 + whitespace-only format of RecoveryGrantHostWiringTests.cs
+filter: RecoveryGrant|RecoveryStateMachineG2Tests|VehicleFaultRecovery|ChargingInterruptionTests|ManualStationClearanceTests|StationExclusivityReleaseEndpointsTests|ForeignRunningOrderManualRelease|ArchitectureTests|OnboardRecovery|FieldOps
+Passed!  - Failed:     0, Passed:   755, Skipped:     0, Total:   755, Duration: 55 s - ControlServer.Tests.dll (net8.0)
+
+RecoveryGrantHostWiringTests after format:
+Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: 3 s - ControlServer.Tests.dll (net8.0)
+
+scripts/parallel/Test-ParallelInstance.ps1:
+1345 passed, 0 failed
+scripts/l2/Test-L2LaneEstimates.ps1: L2_LANE_ESTIMATES_SELFTEST_PASSED
+scripts/Test-L2ScenarioRunScope.ps1: L2_SCENARIO_RUN_SCOPE_SELFTEST_PASSED
+dotnet format --verify-no-changes --include <the 23 .cs files this branch changes>: exit 0
