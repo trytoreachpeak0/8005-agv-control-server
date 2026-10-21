@@ -399,8 +399,11 @@ internal static class ChargingDashboardDescriptions
             [JourneyRuntimeEngine.OrderStateUnrecognizedReason] = "到 RIoT 核实这张单的状态",
             [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] = "到现场看车是否还在动",
             [VehicleFaultEvidence.OrderFailed] = "到现场排除原因，必要时先人工解除急停，再经故障清除入口确认",
-            [VehicleFaultEvidence.DoorNotProvenLocked] = "到现场确认车已停、门已锁好，再经故障处置入口「继续原单」",
-            [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] = "到现场确认车的状态，并在 RIoT 上核实是谁让这张单继续的",
+            // control-server#788：门锁类急停不自动解除，急停锁着时续行会被拒（FAULT_RECOVERY_EMERGENCY_LATCHED）：先由人解除，再续行。
+            [VehicleFaultEvidence.DoorNotProvenLocked] =
+                "不要在 RIoT 上解锁；联系系统维护人员确认门锁已检修、经服务端人工确认解除急停，再经故障处置入口「继续原单」或清除故障",
+            [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =
+                "到现场确认车的状态，并在 RIoT 上核实是谁让这张单继续的；车被再次急停时不要在 RIoT 上解锁，联系系统维护人员经服务端人工确认解除",
             [JourneyRuntimeEngine.CheckpointWaitReason] = "不用处理：放行后自动继续",
             [JourneyRuntimeEngine.CheckpointWaitExceededReason] = "到 RIoT 查看交通管制为什么一直不放行",
             [JourneyRuntimeEngine.AdvanceFailedReason] = "持续不消失找值班工程师看服务端日志事件 2002",
