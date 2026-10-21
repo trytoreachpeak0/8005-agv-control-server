@@ -2361,6 +2361,9 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>Every vehicle read, in the order it was asked, so a test can see the segments.</summary>
         public List<string> VehicleReads { get; } = [];
 
+        /// <summary>Runs as each vehicle read is asked, given the vehicle key, before it answers.</summary>
+        public Action<string>? OnVehicleRead { get; set; }
+
         /// <summary>The battery each vehicle reports (control-server#403); a vehicle not listed reports 80.</summary>
         public Dictionary<string, int?> BatteryByVehicle { get; } = new(StringComparer.Ordinal);
 
@@ -2372,6 +2375,7 @@ public sealed partial class MultiVehicleExecutionTests
             CancellationToken cancellationToken)
         {
             VehicleReads.Add(vehicleKey);
+            OnVehicleRead?.Invoke(vehicleKey);
             if (string.Equals(HangOn, vehicleKey, StringComparison.Ordinal))
             {
                 await HangAsync(nameof(HangOn), hook => HangCeilingReached = hook, cancellationToken)

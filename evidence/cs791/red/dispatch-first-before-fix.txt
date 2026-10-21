@@ -1,0 +1,13 @@
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AJourneyThatEndsBetweenTheAppendDecisionAndTheAppendIsSkippedForTheRound [3 s]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+             ↓ (pos 0)
+Collection: [Entry { EventId = LogVehicleRoundFailed, Level = Warning, Message = Vehicle 老厂前线新多仓位1 could not be served this round: InvalidOperationException. The round moved on to the remaining vehicles., Error = System.InvalidOperationException: Sequence contains no elements
+   at System.Linq.ThrowHelper.ThrowNoElementsException()
+   at System.Linq.Enumerable.First[TSource](IEnumerable`1 source)
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.AppendToJourneyAsync(EligibleVehicleOffer selected, JourneyExecutionPlan plan, DateTimeOffset intakeAt, Int64 expectedSessionGeneration, CancellationToken cancellationToken) in C:\work\8005-wt\cs791-8005-agv-control-server\src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 1123
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.DispatchSelectedCoreAsync(DispatchRoundFacts round, EligibleVehicleOffer selected, Boolean participantUnderWay, HashSet`1 acceptedDemandIds, HashSet`1 claimsIntakeRefused, List`1 claimedHere, DateTimeOffset now, CancellationToken cancellationToken) in C:\work\8005-wt\cs791-8005-agv-control-server\src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 1022
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.DispatchSelectedAsync(DispatchRoundFacts round, CandidateOffer winner, HashSet`1 acceptedDemandIds, HashSet`1 claimsIntakeRefused, Dictionary`2 backlogByDemandId, DateTimeOffset now, CancellationToken cancellationToken) in C:\work\8005-wt\cs791-8005-agv-control-server\src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 896 }]
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.AJourneyThatEndsBetweenTheAppendDecisionAndTheAppendIsSkippedForTheRound() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 557
+   at ControlServer.Tests.MultiVehicleExecutionTests.AJourneyThatEndsBetweenTheAppendDecisionAndTheAppendIsSkippedForTheRound() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 567
