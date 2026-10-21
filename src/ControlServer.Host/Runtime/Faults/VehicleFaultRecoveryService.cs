@@ -425,6 +425,11 @@ public sealed partial class VehicleFaultRecoveryService(
         }
 
         Reading reading = await ReadAsync(subject, fault, cancellationToken).ConfigureAwait(false);
+        // A continue an earlier request sent under this fault and which has since taken effect (control-server#791): the order
+        // no longer reads HELD and does not need to. A RIoT read, so taken here, before the gate; the gate's re-read of the
+        // fault and the intent is what keeps it about the same order and the same fault.
+        bool continued = reading.Intent is { UpperId: string continuedUpperId } &&
+            await coordinator.ContinueConfirmedAsync(reading.Fault, continuedUpperId, cancellationToken).ConfigureAwait(false);
 
         List<string> reasons = [.. person];
         VehicleFaultResumption? resumption = null;
@@ -476,7 +481,8 @@ public sealed partial class VehicleFaultRecoveryService(
                     journey.DemandId,
                     transportDemandKey,
                     $"{ResumedByOperatorReason}:{request.OperatorId}");
-                reasons.AddRange(VehicleFaultCoordinator.ResumeRefusals(subject, resumption, standing.Fault, cargo, order));
+                reasons.AddRange(VehicleFaultCoordinator.ResumeRefusals(
+                    subject, resumption, standing.Fault, cargo, order, continued));
             }
 
             if (reasons.Count == 0)

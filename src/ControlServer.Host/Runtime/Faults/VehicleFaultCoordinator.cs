@@ -213,6 +213,19 @@ public sealed class VehicleFaultCoordinator(
     /// <summary>Raised when a vehicle reaches the second level.</summary>
     public const string IsolatedAlarm = "VEHICLE_FAULT_ISOLATED";
 
+    /// <summary>
+    /// Raised when a repair resumption's continue went out and RIoT accepted it, but the order had not been read as running
+    /// by the end of the read-back budget (control-server#791). The fault, the cargo binding and the block all stay; asking
+    /// for the resumption again settles it.
+    /// </summary>
+    public const string ContinueAwaitingConfirmationAlarm = "VEHICLE_FAULT_RESUME_AWAITING_CONFIRMATION";
+
+    /// <summary>The resumption's refusal for <see cref="ContinueAwaitingConfirmationAlarm"/>.</summary>
+    public const string ContinueAwaitingConfirmation = "RESUME_CONTINUE_AWAITING_CONFIRMATION";
+
+    /// <summary>The resumption's refusal when the order ended some other way after the continue: cancelled, failed.</summary>
+    public const string ContinueNotConfirmed = "RESUME_CONTINUE_NOT_CONFIRMED";
+
     private static readonly Action<ILogger, string, string, string, long, Exception?> LogFaultLevel =
         LoggerMessage.Define<string, string, string, long>(
             LogLevel.Warning,
@@ -396,10 +409,14 @@ public sealed class VehicleFaultCoordinator(
             .ConfigureAwait(false);
         FaultedCargoBinding? cargo = await faults.ReadLiveCargoAsync(subject.AgvId, cancellationToken)
             .ConfigureAwait(false);
+        // A continue this fault already sent, settled now (control-server#791): the process stopped after it went out, or it
+        // was still awaited when the last request answered. Its order no longer reads HELD, and must not need to.
+        bool continued = await ContinueConfirmedAsync(fault, resumption.Order.UpperId, cancellationToken)
+            .ConfigureAwait(false);
         RiotOrderObservation observation = await movement
             .ReconcileByUpperIdAsync(resumption.Order.UpperId, cancellationToken).ConfigureAwait(false);
 
-        List<string> refusals = ResumeRefusals(subject, resumption, fault, cargo, observation);
+        List<string> refusals = ResumeRefusals(subject, resumption, fault, cargo, observation, continued);
         // The last read before the continue goes out, and it is the emergency state (control-server#335). The recovery
         // service checked it too, but before its gate, and the continue leaves after that gate is released: a runtime round
         // can re-trigger the stop in between (the door exemption failing does exactly that), and so can anyone at RIoT.
@@ -436,20 +453,24 @@ public sealed class VehicleFaultCoordinator(
             return new VehicleFaultResumeDecision(false, null, refusals);
         }
 
-        RiotOrderCommandRecord record = await commands.IssueAsync(
-            RiotOrderCommandKind.ContinueFromHeld,
-            resumption.Order,
-            resumption.Reason,
-            fault!.FaultGeneration,
-            cancellationToken).ConfigureAwait(false);
-        if (!record.Succeeded)
+        RiotOrderCommandOutcome outcome = continued
+            ? RiotOrderCommandOutcome.Confirmed
+            : await ContinueAndConfirmAsync(fault!, resumption, cancellationToken).ConfigureAwait(false);
+        if (outcome == RiotOrderCommandOutcome.Failed)
         {
-            // Not cleared, not released, still blocked. An unconfirmed continue is exactly the
-            // state where the order may or may not be running, and REQ-0239 keeps the cargo
-            // protected through it.
-            Alarm(OrderNotProtectedAlarm, subject.AgvId, ["RESUME_CONTINUE_NOT_CONFIRMED"]);
-            return new VehicleFaultResumeDecision(
-                false, record.Outcome, ["RESUME_CONTINUE_NOT_CONFIRMED"]);
+            // Not cleared, not released, still blocked: the order ended some other way and the continue no longer can
+            // resume it.
+            Alarm(OrderNotProtectedAlarm, subject.AgvId, [ContinueNotConfirmed]);
+            return new VehicleFaultResumeDecision(false, outcome, [ContinueNotConfirmed]);
+        }
+
+        if (outcome != RiotOrderCommandOutcome.Confirmed)
+        {
+            // Not cleared, not released, still blocked. An unconfirmed continue is exactly the state where the order may or
+            // may not be running, and REQ-0239 keeps the cargo protected through it. It went out and RIoT accepted it, so
+            // this says so rather than that the order is unprotected; the next request settles it (control-server#791).
+            Alarm(ContinueAwaitingConfirmationAlarm, subject.AgvId, [ContinueAwaitingConfirmation]);
+            return new VehicleFaultResumeDecision(false, outcome, [ContinueAwaitingConfirmation]);
         }
 
         if (cargo is not null)
@@ -463,12 +484,101 @@ public sealed class VehicleFaultCoordinator(
 
         await faults.ClearAsync(
             subject.AgvId,
-            fault.FaultGeneration,
+            fault!.FaultGeneration,
             resumption.Reason,
             timeProvider.GetUtcNow(),
             cancellationToken).ConfigureAwait(false);
         ledger.Forget(subject.DeviceKey);
-        return new VehicleFaultResumeDecision(true, record.Outcome, []);
+        return new VehicleFaultResumeDecision(true, outcome, []);
+    }
+
+    /// <summary>
+    /// Sends the continue, then reads the order back until RIoT has acted on it or the budget is spent (control-server#791).
+    /// </summary>
+    /// <remarks>
+    /// RIoT accepts CONTINUE_FROM_HELD before it moves the order. On agv01 on 2026-10-19 the read inside the command service,
+    /// 50 ms after the call, still said HELD; the order read SUCCESS from the next second on, and nothing read it again, so
+    /// the fault stood until a person cleared it. The reads settle the attempt's own audit row through
+    /// <see cref="RiotOrderCommandService.ReconcileAsync"/>, read back from the store each time so that the receipt the call
+    /// wrote stays on it. Any open outcome is read again; Confirmed and Failed are final.
+    /// </remarks>
+    private async Task<RiotOrderCommandOutcome> ContinueAndConfirmAsync(
+        VehicleFaultFact fault,
+        VehicleFaultResumption resumption,
+        CancellationToken cancellationToken)
+    {
+        RiotOrderCommandRecord record = await commands.IssueAsync(
+            RiotOrderCommandKind.ContinueFromHeld,
+            resumption.Order,
+            resumption.Reason,
+            fault.FaultGeneration,
+            cancellationToken).ConfigureAwait(false);
+        RiotOrderCommandOutcome outcome = record.Outcome;
+        for (int reread = 0;
+             reread < faultOptions.ResumeConfirmationRereads &&
+             outcome is RiotOrderCommandOutcome.Pending or RiotOrderCommandOutcome.Unknown;
+             reread++)
+        {
+            await Task.Delay(faultOptions.ResumeConfirmationInterval, timeProvider, cancellationToken).ConfigureAwait(false);
+            outcome = await SettleContinueAsync(fault.FaultGeneration, resumption.Order.UpperId, cancellationToken)
+                .ConfigureAwait(false) ?? outcome;
+        }
+
+        return outcome;
+    }
+
+    /// <summary>
+    /// Whether a continue this fault generation sent for <paramref name="upperId"/> has been confirmed, settling the last
+    /// open one first (control-server#791).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same read-back control-server#527 gave the hold. It is what finishes a resumption cut short after its continue
+    /// went out -- the process stopped before the outcome was written, or after the confirmation was written and before the
+    /// fault was cleared -- and one still awaited when the budget ran out: the order has moved on from HELD by then, and
+    /// without this the only way out would be a person clearing the fault.
+    /// </para>
+    /// <para>
+    /// <b>Only this generation's continues count.</b> A continue confirmed under an earlier fault resumed that fault's
+    /// order; it says nothing about whether this one's was.
+    /// </para>
+    /// </remarks>
+    internal async Task<bool> ContinueConfirmedAsync(
+        VehicleFaultFact? fault,
+        string upperId,
+        CancellationToken cancellationToken)
+    {
+        if (fault is null || fault.Level == VehicleFaultLevel.None)
+        {
+            return false;
+        }
+
+        return await SettleContinueAsync(fault.FaultGeneration, upperId, cancellationToken).ConfigureAwait(false)
+            == RiotOrderCommandOutcome.Confirmed;
+    }
+
+    /// <summary>
+    /// The outcome of this generation's continues for <paramref name="upperId"/>: Confirmed if any was, otherwise the last
+    /// one's, re-read when still open; null when none was sent.
+    /// </summary>
+    private async Task<RiotOrderCommandOutcome?> SettleContinueAsync(
+        long faultGeneration,
+        string upperId,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<RiotOrderCommandAttempt> attempts = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.OrderContinue, upperId, cancellationToken).ConfigureAwait(false);
+        RiotOrderCommandAttempt[] thisEpisode =
+            [.. attempts.Where(attempt => attempt.FaultGeneration == faultGeneration)];
+        if (thisEpisode.Any(attempt => attempt.Outcome == RiotOrderCommandOutcome.Confirmed))
+        {
+            return RiotOrderCommandOutcome.Confirmed;
+        }
+
+        // ReconcileAsync returns a Failed attempt as it is, without a read.
+        return thisEpisode.Length == 0
+            ? null
+            : await commands.ReconcileAsync(thisEpisode[^1], cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -477,13 +587,17 @@ public sealed class VehicleFaultCoordinator(
     /// <remarks>
     /// Pure, and returns every mismatch rather than the first: whoever has to decide what to do
     /// with a vehicle that cannot resume needs to know whether one fact disagrees or three do.
+    /// <paramref name="continueConfirmed"/> is a continue this fault already sent for the order and has since confirmed
+    /// (<see cref="ContinueConfirmedAsync"/>): the order then runs or has finished, and is not required to read HELD.
+    /// Everything else still has to agree.
     /// </remarks>
     internal static List<string> ResumeRefusals(
         EmergencyStopSubject subject,
         VehicleFaultResumption resumption,
         VehicleFaultFact? fault,
         FaultedCargoBinding? cargo,
-        RiotOrderObservation observation)
+        RiotOrderObservation observation,
+        bool continueConfirmed = false)
     {
         ArgumentNullException.ThrowIfNull(subject);
         ArgumentNullException.ThrowIfNull(resumption);
@@ -502,7 +616,7 @@ public sealed class VehicleFaultCoordinator(
             refusals.Add("RESUME_VEHICLE_MISMATCH");
         }
 
-        if (observation.OrderState != RiotOrderState.Paused)
+        if (!continueConfirmed && observation.OrderState != RiotOrderState.Paused)
         {
             // Covers "not HELD" and "we could not read it" alike, and deliberately: REQ-0239 asks
             // for the order to be *confirmed* HELD, so an unreadable order fails it the same way a

@@ -1120,11 +1120,19 @@ public sealed class DispatchRoundRunner(
             ?? throw new InvalidOperationException("An appended demand has a placement.");
         string demandId = selected.Candidate.Snapshot.DemandId;
         // 客户端排序，理由与 ReadEnRoutePlanAsync 那一处相同：SQLite 的 ORDER BY 接不了 DateTimeOffset。
-        JourneyRuntimeRow runtime = (await dbContext.JourneyRuntimes.AsNoTracking()
+        JourneyRuntimeRow? runtime = (await dbContext.JourneyRuntimes.AsNoTracking()
                 .Where(row => row.AgvId == selected.Vehicle.AgvId && row.Stage != JourneyRuntimeStage.Completed)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .OrderBy(row => row.CreatedAt)
-            .First();
+            .FirstOrDefault();
+        if (runtime is null)
+        {
+            // 这一轮读到它在途之后，旅程已经结束了（操作员取消、收尾）：不问它追加，与 ReadEnRoutePlanAsync 读不出计划时一样。
+            // 这是正常竞态，不是这辆车出了错；原先 First() 在这里抛，记成 2123（control-server#791，10-19 agv02）。
+            // 按受理拒收处理：轮末这条需求不算接走，积压行记「最终动态事实不就绪」，下一轮按空闲车重新判。
+            return new JourneyIntakeResult(DemandIntakeOutcome.FinalAdmissionRejected, null);
+        }
+
         // 这里<b>不</b>判旅程还接不接得下追加，那件事在 WireToGateStore.StageAndCommitAppendAsync 的事务里判
         // （批次7-06，control-server#211）。在这里判会挡住一部分、放过另一部分：从这一读到那一写之间，
         // 车载端的一条入站消息仍然可以把旅程置成 Blocked，而这里已经判完了。一个挡得住一半的判据比没有更糟，

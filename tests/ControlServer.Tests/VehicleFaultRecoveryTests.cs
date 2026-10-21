@@ -1561,17 +1561,18 @@ public sealed class VehicleFaultRecoveryTests
         VehicleFaultStateRow fault = await FaultAsync(fixture);
         Assert.Equal(VehicleFaultLevel.None, fault.Level);
 
+        // 10-19 那张单起点终点同站，车本来就在那一站：引擎下一轮读到单 SUCCESS、车在站，照常到站进「等录入」。
         fixture.Context.ChangeTracker.Clear();
-        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow journey = await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_PICKUP");
         await TickAndRunAsync(fixture);
 
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
         VehicleFaultStateRow after = await FaultAsync(fixture);
         Assert.Equal((VehicleFaultLevel.None, fault.FaultGeneration), (after.Level, after.FaultGeneration));
-        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
-        Assert.Equal(faulted.JourneyId, journey.JourneyId);
-        Assert.NotEqual(JourneyRuntimeStage.AwaitingPickupArrival, journey.Stage);
-        Assert.Null(journey.BlockReasonCode);
+        journey = await fixture.RuntimeAsync();
+        Assert.Equal(
+            (faulted.JourneyId, JourneyRuntimeStage.AwaitingSublot, (string?)null),
+            (journey.JourneyId, journey.Stage, journey.BlockReasonCode));
     }
 
     /// <summary>
