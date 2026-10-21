@@ -1,0 +1,45 @@
+# cs#797 red evidence on 5b87f556d976135a485f0d7644fe04bb8f57c672: scripts/parallel/Test-ParallelInstance.ps1 before the psm1 change
+  FAIL  the whitelist has a recoveryGrant section
+        missing or empty
+  FAIL  every recoveryGrant key names a RecoveryGrantOptions property
+        no such property: 
+--
+  PASS  gate change: the restart after the write throws -> GATE_RESTART_FAILED, naming the value written and the service that did not start
+  PASS  gate refusal: an open refused for a sent order gives the way out: RIoT first, then the hand edit (section 10), then the V2 restart only
+--
+  FAIL  recovery grant: left out with the entries off: off, and the overlay writes exactly that
+        threw: Cannot index into a null array.
+  FAIL  recovery grant: left out with the entries on: on, so turning the entries on cannot leave grants off, and the overlay writes exactly that
+        threw: Cannot index into a null array.
+  FAIL  recovery grant: stated false with the entries on: off (a rig's choice), and the overlay writes exactly that
+        threw: Cannot index into a null array.
+  FAIL  recovery grant: stated true with the entries on: on, and the overlay writes exactly that
+        threw: Cannot index into a null array.
+  FAIL  recovery grant: true with the entries off is refused: no session could ever open
+        failures: recoveryGrant is not a key this deployment knows. Unknown keys are refused rather than passed through; if it is a real option, add it to the whitelist in ParallelInstance.psm1.
+  FAIL  recovery grant: a string "true" is refused, not bound as on behind the check
+        failures: recoveryGrant is not a key this deployment knows. Unknown keys are refused rather than passed through; if it is a real option, add it to the whitelist in ParallelInstance.psm1.
+  FAIL  recovery grant: a section without required is refused
+        failures: recoveryGrant is not a key this deployment knows. Unknown keys are refused rather than passed through; if it is a real option, add it to the whitelist in ParallelInstance.psm1.
+--
+  FAIL  recovery grant: a bare true instead of an object is refused
+        failures: recoveryGrant is not a key this deployment knows. Unknown keys are refused rather than passed through; if it is a real option, add it to the whitelist in ParallelInstance.psm1.
+  FAIL  recovery grant: an earlier install's required=false does not survive a reinstall of a definition that turns the entries on
+        threw: Cannot index into a null array.
+--
+  FAIL  recovery grant environment override: RecoveryGrant and Recovery:VehicleProofs keys are refused, the shared proof name is not
+        got: 
+  FAIL  recovery proofs overlay: one variable per roster row, named by its RIoT id; a single car writes an empty list
+        threw: Cannot index into a null array.
+  FAIL  recovery proofs: supplied for both cars, each lands under its own variable
+        threw: The property 'Proofs' cannot be found on this object. Verify that the property exists.
+  FAIL  recovery proofs: none supplied, the service's own carried over; a car with neither is reported, not refused
+        threw: The property 'Missing' cannot be found on this object. Verify that the property exists.
+  FAIL  recovery proofs: two cars with one value are refused, naming the cars and never the value
+        error: The term 'Resolve-ParallelRecoveryProof' is not recognized as a name of a cmdlet, function, script file, or executable program.
+--
+  FAIL  recovery proofs: the configuration step writes each car's proof and drops one for a car the roster no longer names
+        threw: A parameter cannot be found that matches parameter name 'RecoveryProofs'.
+  FAIL  recovery proofs: the installer resolves them and passes them to every configuration step
+        calls: Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials -EmergencyReleaseCredentials $emergencyReleaseCredentials || Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials -EmergencyReleaseCredentials $emergencyReleaseCredentials
+1322 passed, 18 failed

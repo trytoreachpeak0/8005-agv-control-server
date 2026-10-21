@@ -107,6 +107,61 @@ if ($unknown -ne 'UNKNOWN / RecoveryRequired / Blocked') {
     return
 }
 
+# --- 1b. 服务端要授权时（-granted 变体，control-server#797）：先不下授权按一次被拒，再下授权 --------------------------
+
+# 原场景（服务端不要授权）不走这一段。变体的 setup 打开 RecoveryGrantRequired，此处先证反面：没有授权，车载端按「补偿清空」
+# 发出的开会话请求被以 RECOVERY_AUTHENTICATION_FAILED 拒掉，补偿不发生；再像维护人员那样给这辆车、这一趟旅程下授权，
+# 之后照原场景走。车载端在按键时才申请会话，被拒后入口还在（onboard-hmi#391），所以第二次按就是 10-21 agv02 的那一形。
+if ($Context.RecoveryGrantRequired) {
+    Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealStation.psm1') -Force
+    $grantLaterIds = @('L2-CR-G1', 'L2-CR-G2') + $laterIds
+    $offeredUngranted = Wait-L2RealButtonOffered $onboard $journal '补偿清空' 'onboard-compensation-entry-ungranted' 90
+    if (-not $offeredUngranted) {
+        Add-L2RealNotReached $assertions $grantLaterIds '车载端没有给出「补偿清空」入口'
+        return
+    }
+    $null = Invoke-L2RealConfirmedButton $onboard $journal '补偿清空' '补偿清空'
+    $refusal = Wait-L2RealOrLast -Description 'the server answered the ungranted session request' `
+        -Journal $journal -Criterion 'ungranted-session-refused' -TimeoutSeconds 60 `
+        -Probe {
+            $answered = @((Get-L2RealInbound $connection 'ExceptionRecoverySessionRequested') | Where-Object {
+                    [string]$_.Payload.demandId -eq $demandId -and $_.Response })
+            if ($answered.Count -eq 0) { '(no answer)' }
+            else {
+                $payload = $answered[0].ResponsePayload
+                $problem = if ($null -ne $payload -and $payload.PSObject.Properties['problem']) { [string]$payload.problem.reasonCode } else { '' }
+                "$($answered[0].Response) $problem".Trim()
+            }
+        } `
+        -Until { param($v) $v -ne '(no answer)' }
+    # The refusal box the onboard raises (MainWindow.xaml.cs, 补偿清空失败); not a criterion, only out of the way.
+    $dismissed = $false
+    try { $dismissed = Confirm-L2RealNotice $onboard $journal '补偿清空失败' 15 } catch { $journal.Note("Refusal notice: $($_.Exception.Message)") }
+    $journal.Note("Refusal notice dismissed: $dismissed.")
+    $compensatedUngranted = @((Get-L2RealInbound $connection 'LoadCompensationResult') | Where-Object { [string]$_.Payload.demandId -eq $demandId }).Count
+    $stageUngranted = Get-L2RealStage $connection $demandId
+    $assertions.Add(
+        'L2-CR-G1', '服务端要授权、没有授权：按「补偿清空」发出的开会话请求被以 RECOVERY_AUTHENTICATION_FAILED 拒，补偿没有发生，旅程仍停摆',
+        ($refusal -eq 'ExceptionRecoverySessionRejected RECOVERY_AUTHENTICATION_FAILED' -and $compensatedUngranted -eq 0 -and $stageUngranted -eq 'Blocked'),
+        'ExceptionRecoverySessionRejected RECOVERY_AUTHENTICATION_FAILED / 0 LoadCompensationResult / Blocked',
+        "$refusal / $compensatedUngranted LoadCompensationResult / $stageUngranted")
+
+    $journeyId = Get-L2RealScalar $connection "SELECT JourneyId AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    $grant = Grant-L2Recovery -Context $Context -JourneyId $journeyId -Label 'compensate after the refusal'
+    $grantActions = if ($null -ne $grant.Grant) { @($grant.Grant.actions | ForEach-Object { [string]$_ }) } else { @() }
+    $grantJourney = if ($null -ne $grant.Grant) { [string]$grant.Grant.journeyId } else { '' }
+    $granted = ($grant.Status -eq 200 -and $grant.Outcome -eq 'GRANTED' -and $grantJourney -eq $journeyId -and
+        $grantActions -contains 'COMPENSATE_LOAD_ALL_EMPTY' -and $grantActions -contains 'RESUME_AFTER_REPAIR')
+    $assertions.Add(
+        'L2-CR-G2', '维护人员演练、带码给这辆车这一趟旅程下授权（RESUME_AFTER_REPAIR、COMPENSATE_LOAD_ALL_EMPTY）',
+        $granted, "200 / GRANTED / $journeyId / COMPENSATE_LOAD_ALL_EMPTY,RESUME_AFTER_REPAIR",
+        "$($grant.Status) / $($grant.Outcome) / $grantJourney / $($grantActions -join ',')")
+    if (-not $granted) {
+        Add-L2RealNotReached $assertions $laterIds '授权没有下成'
+        return
+    }
+}
+
 # --- 2. 维护人员按「补偿清空」，补偿对账 ------------------------------------------------------------------------
 
 $offered = Wait-L2RealButtonOffered $onboard $journal '补偿清空' 'onboard-compensation-entry' 90

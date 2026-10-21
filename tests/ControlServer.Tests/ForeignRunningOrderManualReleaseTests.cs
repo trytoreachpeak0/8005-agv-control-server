@@ -380,6 +380,7 @@ public sealed class ForeignRunningOrderManualReleaseTests
         builder.Services.AddScoped<ControlServer.Host.Runtime.Faults.VehicleFaultRecoveryService>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<WaitingPointArrivalSettlement>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoverySessionAdministratorClose>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoveryGrantGate>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<ForeignRunningOrderManualRelease>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<VehicleRoster>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<ControlServerDbContext>(_ => throw new InvalidOperationException("not resolved"));

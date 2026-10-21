@@ -89,6 +89,11 @@ internal static partial class Program
         {
             return await ReleaseStationExclusivityViaServerAsync(options);
         }
+        // control-server#797: a recovery grant lives in the running server only, so these verbs never open a database.
+        if (IsRecoveryGrantCommand(args[0]))
+        {
+            return await RecoveryGrantViaServerAsync(args[0], options);
+        }
 
         if (!options.TryGetValue("database", out string? databasePath))
         {
@@ -742,7 +747,8 @@ internal static partial class Program
             + "|release-task-type-station-hold|accept-map-name|close-task-type-station-activation|task-type-stations"
             + "|import-dispatch-zone-parameters|dispatch-zone-parameters|release-station-exclusivity"
             + "|import-waiting-points|read-waiting-points|import-charger-roster|charger-roster|import-charging-policy"
-            + "|approve-charging-policy|activate-charging-policy|charging-policy|plan-journey-withdrawal|withdraw-journey>"
+            + "|approve-charging-policy|activate-charging-policy|charging-policy|plan-journey-withdrawal|withdraw-journey"
+            + "|grant-recovery|revoke-recovery|recovery-grants>"
             + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");

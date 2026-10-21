@@ -21,7 +21,9 @@ public sealed class OnboardRecoveryCoordinator(
     IConfiguration configuration,
     ILogger<OnboardRecoveryCoordinator>? logger = null,
     PlanRevisionRoutingSource? planRevisionRouting = null,
-    Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions>? runtimeOptions = null)
+    Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions>? runtimeOptions = null,
+    RecoveryGrantRegistry? recoveryGrants = null,
+    Runtime.Fleet.VehicleRoster? roster = null)
 {
     // 待送点规则（control-server#709 的开关）：本票让待送点上的两种取消改了做法（control-server#713），开关关着时一字不变。
     private readonly StagingDepartureRulesOptions _stagingRules =
@@ -119,6 +121,27 @@ public sealed class OnboardRecoveryCoordinator(
                 "Vehicle {AgvId}: {MessageType} for workflow {WorkflowId} ended demand {DemandId}, whose slot operation " +
                 "the journey was blocked on ({BlockReasonCode}); the journey carries other demands and goes back to " +
                 "{Stage} (control-server#499).");
+
+    private static readonly Action<ILogger, string, string, string, Exception?> LogSessionRefusedWithoutGrant =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(9797, nameof(LogSessionRefusedWithoutGrant)),
+            "Vehicle {AgvId}: exception recovery session request {RequestId} refused, {GrantCode}: no recovery grant covers it " +
+            "(control-server#797). The vehicle is told RECOVERY_AUTHENTICATION_FAILED.");
+
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogActionRefusedWithoutGrant =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Warning,
+            new EventId(9798, nameof(LogActionRefusedWithoutGrant)),
+            "Vehicle {AgvId}: exception recovery session {SessionId} refused {Action}, {GrantCode}: the recovery grant in " +
+            "effect does not cover it (control-server#797).");
+
+    private static readonly Action<ILogger, string, string, string, Exception?> LogSessionClosedOutsideGrant =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(9799, nameof(LogSessionClosedOutsideGrant)),
+            "Exception recovery session {SessionId} of vehicle {AgvId} closed, {GrantCode}: its recovery grant ended, was " +
+            "revoked or no longer covers it, or the server restarted (control-server#797, REQ-0279).");
 
     private static readonly Action<ILogger, string, Exception?> LogClosingSnapshotNotSent =
         LoggerMessage.Define<string>(
@@ -678,7 +701,8 @@ public sealed class OnboardRecoveryCoordinator(
             closed.UpdatedAt = timeProvider.GetUtcNow();
             await SettleAnsweredCommandAsync(closed, cancellationToken).ConfigureAwait(false);
         }
-        await AdvanceSessionAfterResultAsync(workflow, connection!.SessionGeneration, cancellationToken).ConfigureAwait(false);
+        await AdvanceSessionAfterResultAsync(workflow, connection!.SessionGeneration, cancellationToken, closedByAdministrator: true)
+            .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new AdministratorCloseDecision([], session.ExceptionRecoverySessionId);
 
@@ -939,7 +963,7 @@ public sealed class OnboardRecoveryCoordinator(
         string reason = RequiredString(payload, "reason");
         string businessHash = PayloadHash(payload);
         if (administratorRole is not ("MAINTENANCE_ADMINISTRATOR" or "SYSTEM_ADMINISTRATOR") ||
-            !RecoveryProofAccepted(RequiredString(payload, "authenticationProof")))
+            !RecoveryProofAccepted(agvId, RequiredString(payload, "authenticationProof")))
         {
             return Response(root, "ExceptionRecoverySessionRejected", new
             {
@@ -983,6 +1007,21 @@ public sealed class OnboardRecoveryCoordinator(
             {
                 requestId,
                 problem = Problem(validation, "payload", "Recovery scope does not match persisted journey facts.")
+            });
+        }
+        // control-server#797 (ADR-cross-0066 decision 4): beside the proof, a grant in effect for this vehicle -- and, for a
+        // session on a demand, for that demand's journey -- naming at least one action a session can take. Refused under the
+        // code the proof is refused under: the protocol does not change (CP-0022 section 3.4).
+        if (GrantRequired &&
+            SessionGrantRefusal(agvId, await SessionJourneyIdAsync(agvId, demandId, cancellationToken).ConfigureAwait(false))
+                is { } ungranted)
+        {
+            LogSessionRefusedWithoutGrant(logger ?? (ILogger)NullLogger.Instance, agvId, requestId, ungranted, null);
+            return Response(root, "ExceptionRecoverySessionRejected", new
+            {
+                requestId,
+                problem = Problem(ServerReasonCodes.RecoveryAuthenticationFailed, "payload.authenticationProof",
+                    "No recovery grant for this vehicle and journey is in effect.")
             });
         }
         DateTimeOffset now = timeProvider.GetUtcNow();
@@ -1039,6 +1078,18 @@ public sealed class OnboardRecoveryCoordinator(
                     "RecoveryActionId was replayed with different content.");
             // What the workflow recorded, not a fresh lookup (8005-agv-program#95).
             return AcceptedAction(root, session, actionId, action, replay.SlotOperationAttemptId);
+        }
+
+        // control-server#797 (ADR-cross-0066 decision 4): every action of a session is checked against the grant in effect now,
+        // not only the opening -- a grant naming the repair resume alone does not let the session take a forced recovery. A
+        // resend of an action already accepted is answered above as it was.
+        if (GrantRequired &&
+            await ActionGrantRefusalAsync(session, action, cancellationToken).ConfigureAwait(false) is { } ungranted)
+        {
+            LogActionRefusedWithoutGrant(
+                logger ?? (ILogger)NullLogger.Instance, session.AgvId, recoverySessionId, action, ungranted, null);
+            return RejectedAction(
+                root, actionId, recoverySessionId, session.Revision, ServerReasonCodes.RecoveryAuthenticationFailed);
         }
 
         // The workflow's attempt is what RecoveryActionAccepted names and what compensation is later
@@ -1523,16 +1574,17 @@ public sealed class OnboardRecoveryCoordinator(
             workflow.State is not (RecoveryWorkflowState.AwaitingAuthorization or RecoveryWorkflowState.CommandPending
                 or RecoveryWorkflowState.AwaitingResult))
         {
-            // A compensation an administrator closed while it awaited its authorization (control-server#484): its session is
-            // what ended, and the refusal says so, as it does for a session closed on another result below.
-            bool closedByAdministrator = workflow?.Outcome == AdministratorClosedOutcome &&
-                                         workflow.State == RecoveryWorkflowState.RecoveryRequired;
+            // A compensation an administrator closed while it awaited its authorization (control-server#484), or spent when its
+            // session's recovery grant ended (control-server#797): its session is what ended, and the refusal says so, as it
+            // does for a session closed on another result below.
+            bool sessionEnded = workflow?.Outcome is AdministratorClosedOutcome or GrantEndedOutcome &&
+                                workflow.State == RecoveryWorkflowState.RecoveryRequired;
             return Response(root, "LoadCompensationRejected", new
             {
                 recoveryActionId = actionId,
-                problem = closedByAdministrator
+                problem = sessionEnded
                     ? Problem(ServerReasonCodes.RecoverySessionNotOpen, "payload",
-                        "The recovery session this compensation belongs to was closed by an administrator.")
+                        "The recovery session this compensation belongs to has ended.")
                     : Problem(ServerReasonCodes.ActionNotAllowedInState, "payload",
                         "Load compensation is not authorized.")
             });
@@ -1795,7 +1847,8 @@ public sealed class OnboardRecoveryCoordinator(
     private async Task AdvanceSessionAfterResultAsync(
         RecoveryWorkflowRow workflow,
         long sessionGeneration,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool closedByAdministrator = false)
     {
         if (workflow.ExceptionRecoverySessionId is null) return;
         ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.SingleAsync(
@@ -1815,13 +1868,20 @@ public sealed class OnboardRecoveryCoordinator(
         session.ClosedReason = workflow.State == RecoveryWorkflowState.Reconciled
             ? null
             : ServerReasonCodes.RecoveryActionResultNotReconciled;
-        if (session.ClosedReason is not null)
+        // control-server#797 (ADR-cross-0066 decision 5): a session whose grant ended while its action was under way closes,
+        // once that action's result is in, under RECOVERY_AUTHENTICATION_FAILED -- it ended because its grant did; the result
+        // itself is reconciled on the workflow as always. Judged by the vehicle having no grant in effect, not by the journey:
+        // a resume that completes its demand takes the demand off the journey before this runs. An administrator's closing
+        // keeps its own reason.
+        if (!closedByAdministrator && GrantRequired && recoveryGrants?.Current(session.AgvId) is null)
+            session.ClosedReason = ServerReasonCodes.RecoveryAuthenticationFailed;
+        if (workflow.State != RecoveryWorkflowState.Reconciled)
         {
             // Written before the caller's save: should that transaction roll back, this line names a closing that
             // did not happen. The store, not the log, is the record.
             LogSessionClosedNotReconciled(
                 logger ?? (ILogger)NullLogger.Instance,
-                session.ExceptionRecoverySessionId, session.ClosedReason, workflow.WorkflowType,
+                session.ExceptionRecoverySessionId, session.ClosedReason ?? string.Empty, workflow.WorkflowType,
                 workflow.WorkflowId, workflow.Outcome, workflow.DemandId, null);
         }
         await QueueSessionSnapshotAsync(session, sessionGeneration, cancellationToken).ConfigureAwait(false);
@@ -1904,6 +1964,20 @@ public sealed class OnboardRecoveryCoordinator(
     }
 
     private async Task<string[]> AllowedActionsAsync(
+        ExceptionRecoverySessionRow session,
+        StationOperationRow? operation,
+        CancellationToken cancellationToken)
+    {
+        string[] offered = await OfferedActionsAsync(session, operation, cancellationToken).ConfigureAwait(false);
+        if (!GrantRequired)
+            return offered;
+        // control-server#797: what the session offers is what the facts allow and the grant names (ADR-cross-0066 decision 4).
+        string? journeyId = await SessionJourneyIdAsync(session.AgvId, session.DemandId, cancellationToken).ConfigureAwait(false);
+        RecoveryGrant? grant = recoveryGrants?.Current(session.AgvId);
+        return grant is null ? [] : [.. offered.Where(action => grant.RefusalFor(action, journeyId) is null)];
+    }
+
+    private async Task<string[]> OfferedActionsAsync(
         ExceptionRecoverySessionRow session,
         StationOperationRow? operation,
         CancellationToken cancellationToken)
@@ -3104,10 +3178,182 @@ public sealed class OnboardRecoveryCoordinator(
                                    RequiredString(item, "unlockOutputState") == "RESET");
     }
 
-    private bool RecoveryProofAccepted(string supplied)
+    /// <summary>The per-vehicle proofs (control-server#797): a list of <c>{ vehicleKey, proofEnvironmentVariable }</c>.</summary>
+    internal const string VehicleProofsKey = "Recovery:VehicleProofs";
+
+    /// <summary>The outcome a repair release awaiting its hardware record is spent under when its grant ends (control-server#797).</summary>
+    internal const string GrantEndedOutcome = "RECOVERY_GRANT_ENDED";
+
+    private bool GrantRequired => configuration.GetValue<bool>(RecoveryGrantOptions.RequiredKey);
+
+    /// <summary>
+    /// The journey a session acts on: its demand's, by the membership in force (one or none, DemandJourneyLookup), on this vehicle;
+    /// none for a session without a demand. A demand that left the journey -- released, or handed off and ended -- leaves its
+    /// session on no journey, so a grant naming one no longer covers it.
+    /// </summary>
+    private async Task<string?> SessionJourneyIdAsync(string agvId, string? demandId, CancellationToken cancellationToken) =>
+        demandId is null
+            ? null
+            : await DemandJourneyLookup.JourneyOf(dbContext, demandId).AsNoTracking()
+                .Where(row => row.AgvId == agvId)
+                .Select(row => row.JourneyId)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Why a session on <paramref name="journeyId"/> may not be open on the vehicle, or null when its grant covers it.</summary>
+    private string? SessionGrantRefusal(string agvId, string? journeyId)
     {
-        string variable = configuration["Recovery:AuthenticationProofEnvironmentVariable"]
-            ?? "CONTROL_SERVER_RECOVERY_AUTHENTICATION_PROOF";
+        RecoveryGrant? grant = recoveryGrants?.Current(agvId);
+        if (grant is null) return RecoveryGrantCodes.Missing;
+        if (!string.Equals(grant.JourneyId, journeyId, StringComparison.Ordinal)) return RecoveryGrantCodes.JourneyMismatch;
+        return grant.Actions.Overlaps(RecoveryGrantActions.SessionActions) ? null : RecoveryGrantCodes.ActionNotGranted;
+    }
+
+    private async Task<string?> ActionGrantRefusalAsync(
+        ExceptionRecoverySessionRow session,
+        string action,
+        CancellationToken cancellationToken)
+    {
+        RecoveryGrant? grant = recoveryGrants?.Current(session.AgvId);
+        return grant is null
+            ? RecoveryGrantCodes.Missing
+            : grant.RefusalFor(
+                action,
+                await SessionJourneyIdAsync(session.AgvId, session.DemandId, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Ends every session its grant no longer covers -- the grant ran out, was revoked, was renewed for another journey, or the
+    /// server restarted -- and tells an open session a renewal changed what it offers (control-server#797, REQ-0279 as CP-0022
+    /// revised it, ADR-cross-0066 decision 5). Returns the vehicles that were sent a new snapshot.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>No new action, the one under way finishes.</b> A session with nothing sent to the vehicle -- open, a compensation still
+    /// awaiting its authorization, a repair release still awaiting its hardware record -- closes at once, CLOSED under
+    /// RECOVERY_AUTHENTICATION_FAILED; the release awaiting its record is spent, so a record arriving now is refused. A session
+    /// whose action's command is out (CommandPending or AwaitingResult) is left as it is: its result is reconciled and closes it the
+    /// way every result does, and nothing new is taken meanwhile, because every submission is checked against the grant.
+    /// </para>
+    /// <para>
+    /// <b>Only under the caller's write transaction</b>, as <see cref="CloseSessionAwaitingResultAsync"/>: an inbound action
+    /// that commits first is seen here, and one that commits after is checked against the grant, which is already gone.
+    /// </para>
+    /// </remarks>
+    internal async Task<IReadOnlyList<string>> EndSessionsOutsideGrantsAsync(CancellationToken cancellationToken)
+    {
+        if (!GrantRequired) return [];
+        if (dbContext.Database.CurrentTransaction is null)
+            throw new InvalidOperationException(
+                "Sessions outside their grant are ended only under the caller's write transaction.");
+
+        ExceptionRecoverySessionRow[] sessions = await dbContext.ExceptionRecoverySessions
+            .Where(row => row.State != "CLOSED")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        List<string> told = [];
+        foreach (ExceptionRecoverySessionRow session in sessions)
+        {
+            string? journeyId = await SessionJourneyIdAsync(session.AgvId, session.DemandId, cancellationToken)
+                .ConfigureAwait(false);
+            long? generation = await dbContext.SessionRecoveries.AsNoTracking()
+                .Where(row => row.AgvId == session.AgvId)
+                .Select(row => (long?)row.SessionGeneration)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+            if (generation is null) continue;
+            string? refusal = SessionGrantRefusal(session.AgvId, journeyId);
+            if (refusal is null)
+            {
+                if (session.State == "OPEN" && await OfferChangedAsync(session, cancellationToken).ConfigureAwait(false))
+                {
+                    session.Revision++;
+                    session.UpdatedAt = timeProvider.GetUtcNow();
+                    await QueueSessionSnapshotAsync(session, generation.Value, cancellationToken).ConfigureAwait(false);
+                    told.Add(session.AgvId);
+                }
+                continue;
+            }
+            RecoveryWorkflowRow[] workflows = await dbContext.RecoveryWorkflows
+                .Where(row => row.ExceptionRecoverySessionId == session.ExceptionRecoverySessionId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+            if (workflows.Any(row => row.WorkflowType != RepairReleaseAction &&
+                                     row.State is RecoveryWorkflowState.CommandPending or RecoveryWorkflowState.AwaitingResult))
+                continue;
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            // Spent with the session (cs#797 review M1), as an administrator's closing spends them (CloseSessionAwaitingResultAsync):
+            // a repair release still awaiting its hardware record, and a compensation still awaiting its authorization -- left
+            // as they were, they would count as an open recovery of this vehicle that nothing can end.
+            foreach (RecoveryWorkflowRow spent in workflows.Where(row =>
+                         (row.WorkflowType == RepairReleaseAction && row.State == RecoveryWorkflowState.CommandPending) ||
+                         row.State == RecoveryWorkflowState.AwaitingAuthorization))
+            {
+                spent.State = RecoveryWorkflowState.RecoveryRequired;
+                spent.Outcome = GrantEndedOutcome;
+                spent.UpdatedAt = now;
+            }
+            session.State = "CLOSED";
+            session.ClosedReason = ServerReasonCodes.RecoveryAuthenticationFailed;
+            session.Revision++;
+            session.UpdatedAt = now;
+            LogSessionClosedOutsideGrant(
+                logger ?? (ILogger)NullLogger.Instance, session.ExceptionRecoverySessionId, session.AgvId, refusal, null);
+            await QueueSessionSnapshotAsync(session, generation.Value, cancellationToken).ConfigureAwait(false);
+            told.Add(session.AgvId);
+        }
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return told;
+    }
+
+    /// <summary>Whether what an open session would offer now differs from what its latest snapshot offered.</summary>
+    private async Task<bool> OfferChangedAsync(ExceptionRecoverySessionRow session, CancellationToken cancellationToken)
+    {
+        StationOperationRow? operation = await SessionOperationAsync(session, cancellationToken).ConfigureAwait(false);
+        string[] now = await AllowedActionsAsync(session, operation, cancellationToken).ConfigureAwait(false);
+        string[] payloads = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "ExceptionRecoverySessionSnapshot")
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        (long Revision, string[] Allowed)[] sent = [.. payloads
+            .Select(json =>
+            {
+                using JsonDocument document = JsonDocument.Parse(json);
+                JsonElement payload = document.RootElement.GetProperty("payload");
+                return (Id: RequiredString(payload, "exceptionRecoverySessionId"),
+                    Revision: payload.GetProperty("recoverySessionRevision").GetInt64(),
+                    Allowed: payload.GetProperty("allowedActions").EnumerateArray().Select(item => item.GetString()!).ToArray());
+            })
+            .Where(item => item.Id == session.ExceptionRecoverySessionId)
+            .Select(item => (item.Revision, item.Allowed))];
+        return sent.Length == 0 ||
+               !sent.MaxBy(item => item.Revision).Allowed.Order(StringComparer.Ordinal)
+                   .SequenceEqual(now.Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// Whether the session's proof is accepted (control-server#797). With <c>Recovery:VehicleProofs</c> listed, each vehicle has a
+    /// standing proof of its own, named by its <c>VehicleKey</c>: that vehicle's is accepted and no other vehicle's. The shared
+    /// <c>Recovery:AuthenticationProofEnvironmentVariable</c> is accepted as well, but only while it is set -- which, on the v2
+    /// instance, is only while the 18-set-v2-recovery-window fallback holds the window open (it writes the variable on opening
+    /// and removes it on closing). With none listed, the shared one answers for every vehicle, as before. The grant is checked
+    /// on top of either.
+    /// </summary>
+    private bool RecoveryProofAccepted(string agvId, string supplied)
+    {
+        IConfigurationSection[] perVehicle = [.. configuration.GetSection(VehicleProofsKey).GetChildren()];
+        if (perVehicle.Length > 0)
+        {
+            string? vehicleKey = roster?.ByAgvId(agvId)?.VehicleKey;
+            string? own = vehicleKey is null
+                ? null
+                : perVehicle.FirstOrDefault(entry => string.Equals(entry["vehicleKey"], vehicleKey, StringComparison.Ordinal))
+                    ?["proofEnvironmentVariable"];
+            if (!string.IsNullOrWhiteSpace(own) && ProofMatches(own, supplied)) return true;
+        }
+        return ProofMatches(
+            configuration["Recovery:AuthenticationProofEnvironmentVariable"] ?? "CONTROL_SERVER_RECOVERY_AUTHENTICATION_PROOF",
+            supplied);
+    }
+
+    private static bool ProofMatches(string variable, string supplied)
+    {
         string? expected = Environment.GetEnvironmentVariable(variable);
         if (string.IsNullOrEmpty(expected)) return false;
         byte[] expectedBytes = Encoding.UTF8.GetBytes(expected);
@@ -3115,7 +3361,6 @@ public sealed class OnboardRecoveryCoordinator(
         return expectedBytes.Length == suppliedBytes.Length &&
                CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes);
     }
-
     /// <summary>
     /// Takes a current MECHANICALLY_ISOLATED forced result as the vehicle reporting its generation (control-server#556): the
     /// onboard raises its generation only by binding the ForcedMechanicalRecoveryCommand, and it reports MECHANICALLY_ISOLATED

@@ -425,6 +425,13 @@ try {
     $emergencyReleaseCredentials = Resolve-ParallelEmergencyReleaseCredential -Definition $definition -Supplied $config `
         -ServiceEnvironment @(Get-ServiceEnvironment)
 
+    # control-server#797: every roster vehicle's exception recovery proof -- deploy-config.json's recoveryProofs (the control
+    # host's DPAPI store), else what the service already holds. Two vehicles with one value refuse here; a vehicle with none is
+    # only reported (RECOVERY_PROOF_MISSING below): the Host then refuses every recovery session it opens.
+    $recoveryProofResolution = Resolve-ParallelRecoveryProof -Definition $definition `
+        -Supplied (($null -ne $config -and $config.PSObject.Properties.Name -contains 'recoveryProofs') ? $config.recoveryProofs : $null) `
+        -ServiceEnvironment @(Get-ServiceEnvironment)
+
     # The MesIngest shared secret (control-server#535): deploy-config.json's on an install, what the service
     # already holds on a rollback. 'production' refuses here without one -- every read would be 401.
     $mesIngestSecretVariable = 'CONTROL_SERVER_MES_INGEST_SHARED_SECRET'
@@ -559,7 +566,9 @@ try {
             # the step deletes every per-vehicle variable the service holds as stale, and the new service refuses to start.
             [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.IDictionary] $OnboardSafetyCredentials,
             # workspace#49: required for the same reason -- a call that leaves it out must fail, not write none.
-            [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.IDictionary] $EmergencyReleaseCredentials
+            [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.IDictionary] $EmergencyReleaseCredentials,
+            # control-server#797: required for the same reason -- a call that leaves it out must fail, not delete every proof.
+            [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.IDictionary] $RecoveryProofs
         )
 
         $configurationPath = Join-Path $installRoot 'appsettings.Production.json'
@@ -569,7 +578,8 @@ try {
         # before any restart -- and only then restart (ParallelHost.psm1).
         $readiness = Invoke-ParallelInstanceConfigurationStep -ConfigurationPath $configurationPath -Definition $definition `
             -Credential $FaultRecoveryCredential -CredentialVariable (Get-ParallelInstanceName).FaultRecoveryCredentialVariable `
-            -RosterPath $rosterPath -OnboardSafetyCredentials $OnboardSafetyCredentials -EmergencyReleaseCredentials $EmergencyReleaseCredentials -Actions @{
+            -RosterPath $rosterPath -OnboardSafetyCredentials $OnboardSafetyCredentials -EmergencyReleaseCredentials $EmergencyReleaseCredentials `
+            -RecoveryProofs $RecoveryProofs -Actions @{
                 GetEnvironment = { Get-ServiceEnvironment }
                 SetEnvironment = { param([string[]] $Environment) Set-ServiceEnvironment $Environment }
                 RestartService = { Restart-Service -Name $serviceName -Force }
@@ -588,6 +598,18 @@ try {
         $releaseLine = Format-ParallelEmergencyReleaseLine -Definition $definition -EnvironmentNames $populatedNames -RosterText $rosterText
         Write-Step $releaseLine
         Write-Output $releaseLine
+        # control-server#797: whether recovery needs a grant and which vehicles have a recovery proof of their own, names only.
+        $proofLine = 'RECOVERY_GRANT_READINESS required={0} vehicleProofs={1} missing={2}' -f
+            (Test-ParallelRecoveryGrantRequired -Definition $definition),
+            (@($RecoveryProofs.Keys).Count ? (@($RecoveryProofs.Keys) -join ',') : 'none'),
+            (@($recoveryProofResolution.Missing).Count ? (@($recoveryProofResolution.Missing) -join ';') : 'none')
+        Write-Step $proofLine
+        Write-Output $proofLine
+        if (@($recoveryProofResolution.Missing).Count -gt 0) {
+            Write-Warning ("RECOVERY_PROOF_MISSING ($(@($recoveryProofResolution.Missing) -join '; ')): these vehicles cannot open an exception " +
+                'recovery session on this server. On the control host: Set-ControlServerSecret.ps1 -NewVehicleRecoveryProof <alias>, ' +
+                'then deploy again and redeploy that vehicle''s onboard half.')
+        }
         if (@($readiness.Reasons).Count -gt 0) {
             Write-Warning ("CLEARANCE_EXIT_UNAVAILABLE ($(@($readiness.Reasons) -join ',')): a vehicle that cannot charge stays on " +
                 'ORDER_HANG and isolation is not written (server alarms 2271/2272). Intended in phase 1; otherwise fill in ' +
@@ -818,7 +840,7 @@ try {
         # The overlay is reapplied: an upgrade keeps the existing appsettings.Production.json, but a
         # rollback to a generation installed before some overlay key existed would otherwise come
         # back without it.
-        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials -EmergencyReleaseCredentials $emergencyReleaseCredentials
+        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials -EmergencyReleaseCredentials $emergencyReleaseCredentials -RecoveryProofs $recoveryProofResolution.Proofs
         if ($productionSource) {
             # A rollback that lands in the product's first-install branch rebuilds the Environment; the
             # token the service held (checked above) is written back so the production reads keep working.
@@ -894,7 +916,7 @@ try {
         }
         Write-Step "Installer result written to $resultPath"
 
-        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials -EmergencyReleaseCredentials $emergencyReleaseCredentials
+        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential -OnboardSafetyCredentials $onboardSafetyCredentials -EmergencyReleaseCredentials $emergencyReleaseCredentials -RecoveryProofs $recoveryProofResolution.Proofs
 
         # ------------------------------------------------- MesIngest bearer token ---
 

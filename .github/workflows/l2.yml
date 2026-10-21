@@ -467,6 +467,9 @@ jobs:
               # demand on the vehicle and rebuilds its order after the delay; the same request twice does nothing, and an
               # unsigned one is still refused.
               @{ Name = 'vehicle-fault-operator-clearance'; Runs = 1 }
+              # control-server#797: with recovery grants required, CLEAR_FAULT without a grant is refused; a grant is rehearsed,
+              # given for CLEAR_FAULT only (another action still refused), revoked, and a short one runs out on the server.
+              @{ Name = 'vehicle-fault-recovery-needs-grant'; Runs = 1 }
               # control-server#539 review S-4: the door half of the clearance, beside the FAILED half above.
               @{ Name = 'vehicle-fault-operator-clearance-door'; Runs = 1 }
               # control-server#345 (before the v2 vehicle trial): an own order rebuilt after a cancellation is cancelled again
@@ -975,6 +978,11 @@ jobs:
               # suppressed, the rest of the rows go on with a refreshed worklist and entry request, and cancelling the last row with
               # cargo on board ends the stop and leaves 出发. Needs an onboard_ref that contains onboard-hmi#353 (the row's 取消).
               @{ Name = 'real-onboard-staging-row-cancel';                   Runs = 1 }
+              # control-server#797 (onboard half onboard-hmi#391): real-onboard-compensate-then-reconnect with recovery grants
+              # required -- the ungranted compensation is refused RECOVERY_AUTHENTICATION_FAILED, a grant for the vehicle and
+              # journey is given, then the original criteria. NamedOnly: runs only when -f scenarios names it, never in a whole
+              # round or a batch, because it needs an onboard_ref that contains onboard-hmi#391.
+              @{ Name = 'real-onboard-compensate-then-reconnect-granted';    Runs = 1; NamedOnly = $true }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
@@ -993,6 +1001,8 @@ jobs:
 
           $runList = @(foreach ($scenario in $scenarios) {
               if ($only.Count -gt 0 -and $scenario.Name -notin $only) { continue }
+              # A NamedOnly scenario runs only when scenarios names it (control-server#797).
+              if ($only.Count -eq 0 -and $scenario.ContainsKey('NamedOnly') -and $scenario.NamedOnly) { continue }
               $runs = switch ($env:RIG_MODE) {
                   'consecutive'     { $scenario.Runs }
                   'consecutive-all' { [Math]::Max(3, $scenario.Runs) }

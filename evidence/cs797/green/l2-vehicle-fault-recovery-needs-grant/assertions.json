@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "scenario": "vehicle-fault-recovery-needs-grant",
+  "runId": "20261021T150041733Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "b15e0703cbac87b6f33d5cc6d32ecc9f07d643f4",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261021T150041733Z",
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "L2-VRG-00",
+      "description": "订单 FAILED：故障记为 SuspectedBlocked（后面每一步拿这个故障当对象）",
+      "outcome": "PASS",
+      "expected": "SuspectedBlocked",
+      "actual": "SuspectedBlocked"
+    },
+    {
+      "id": "L2-VRG-01",
+      "description": "没有授权：凭据对、条件齐全的 CLEAR_FAULT 回 403，理由只有 RECOVERY_GRANT_MISSING；又评估 3 轮之后故障仍是 SuspectedBlocked",
+      "outcome": "PASS",
+      "expected": "403 / RECOVERY_GRANT_MISSING / SuspectedBlocked",
+      "actual": "403 / RECOVERY_GRANT_MISSING / SuspectedBlocked"
+    },
+    {
+      "id": "L2-VRG-02",
+      "description": "演练：200 PLANNED，给出 12 位确认码，计划只放 CLEAR_FAULT、5 分钟；服务端一条授权也没有，审计不落行",
+      "outcome": "PASS",
+      "expected": "200 / PLANNED / 12 位码 / CLEAR_FAULT 5 分钟 / 0 条授权 / 0 行审计",
+      "actual": "200 / PLANNED / '035DD3435F4F' / CLEAR_FAULT 5 分钟 / 0 条授权 / 0 行审计"
+    },
+    {
+      "id": "L2-VRG-03",
+      "description": "带码下发：200 GRANTED，只对车（不限旅程）、只放 CLEAR_FAULT；列表里正是这辆车；审计一行 RECOVERY_GRANT Succeeded",
+      "outcome": "PASS",
+      "expected": "200 / GRANTED / 不限旅程 / CLEAR_FAULT / 列表 AGV-L2-001 / RECOVERY_GRANT Succeeded",
+      "actual": "200 / GRANTED / 旅程 '' / CLEAR_FAULT / 列表 AGV-L2-001 / RECOVERY_GRANT Succeeded"
+    },
+    {
+      "id": "L2-VRG-04",
+      "description": "授权只放 CLEAR_FAULT：RESUME_HELD_ORDER 回 403，理由 RECOVERY_GRANT_ACTION_NOT_GRANTED；故障不动",
+      "outcome": "PASS",
+      "expected": "403 / RECOVERY_GRANT_ACTION_NOT_GRANTED / SuspectedBlocked",
+      "actual": "403 / RECOVERY_GRANT_ACTION_NOT_GRANTED / SuspectedBlocked"
+    },
+    {
+      "id": "L2-VRG-05",
+      "description": "点名的 CLEAR_FAULT：200 Cleared，故障 Level None，ClearedReason 记着 L2-OPERATOR-797",
+      "outcome": "PASS",
+      "expected": "200 / Cleared / None / L2-OPERATOR-797",
+      "actual": "200 / Cleared / None / FAULT_CLEARED_BY_OPERATOR:L2-OPERATOR-797"
+    },
+    {
+      "id": "L2-VRG-06",
+      "description": "收回：200 REVOKED，列表为空；同一个 CLEAR_FAULT 再来一次是 403 RECOVERY_GRANT_MISSING，不是 AlreadyCleared（授权在判定之前查）",
+      "outcome": "PASS",
+      "expected": "200 / REVOKED / 0 条 / 403 RECOVERY_GRANT_MISSING",
+      "actual": "200 / REVOKED / 0 条 / 403 RECOVERY_GRANT_MISSING"
+    },
+    {
+      "id": "L2-VRG-07",
+      "description": "1 分钟的授权：有效期内 CLEAR_FAULT 过得了授权这一关（200 AlreadyCleared）；到点后服务端自己列表变空，再来一次 403 RECOVERY_GRANT_MISSING，且是在 expiresAt 之后",
+      "outcome": "PASS",
+      "expected": "200 / 200 AlreadyCleared / 0 条 / 403 RECOVERY_GRANT_MISSING / 已过 expiresAt",
+      "actual": "200 / 200 AlreadyCleared / 0 条 / 403 RECOVERY_GRANT_MISSING / expiresAt 10/21/2026 23:02:10 +08:00"
+    }
+  ]
+}

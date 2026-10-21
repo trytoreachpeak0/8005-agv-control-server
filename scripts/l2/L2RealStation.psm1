@@ -571,8 +571,59 @@ function Test-L2NoUnlockAfterDeclaration {
     return $result
 }
 
+<#
+control-server#797 (ADR-cross-0066). Gives this vehicle a recovery grant the way a maintenance person does on the control
+host: rehearse through POST /api/field-ops/v1/recovery-grants, then send the same request again with the rehearsal's
+confirmation code. Only for a run whose setup turns RecoveryGrantRequired on (with VehicleFaultRecovery, whose credential
+the grant entry shares); without them there is nothing to grant and this throws.
+
+JourneyId names the journey the grant is for; an action on the journey (every onboard recovery session action) needs it
+while the vehicle has an unfinished journey, or the rehearsal answers RECOVERY_GRANT_JOURNEY_REQUIRED. Actions defaults to
+the two the 10-21 agv02 case needs (ADR-cross-0066 decision 2 grants only RESUME_AFTER_REPAIR when none are named).
+
+Returns Status, Outcome, Code (the rehearsal's) and Grant (the server's echo of what was granted, or null); writes both
+answers to the journal. Never asserts: the caller's criterion says what it needs from the grant.
+#>
+function Grant-L2Recovery {
+    param(
+        [Parameter(Mandatory)][object]$Context,
+        [string]$JourneyId,
+        [string[]]$Actions = @('RESUME_AFTER_REPAIR', 'COMPENSATE_LOAD_ALL_EMPTY'),
+        [int]$Minutes = 30,
+        [string]$Label = 'recovery grant'
+    )
+    if (-not $Context.RecoveryGrantRequired -or -not $Context.FaultRecoveryCredential) {
+        throw 'Grant-L2Recovery needs RecoveryGrantRequired = $true and VehicleFaultRecovery = $true in the setup file.'
+    }
+    $journal = $Context.Journal
+    $uri = "http://127.0.0.1:$($Context.HealthPort)/api/field-ops/v1/recovery-grants"
+    $body = @{
+        vehicleKey = [string]$Context.VehicleKey; actions = $Actions; minutes = $Minutes; operatorId = 'maintenance-l2'
+        reason = "L2 $($Context.RunId): $Label"; siteVerification = "L2-SITE-$($Context.RunId)"; claimedRole = 'MAINTENANCE_ADMINISTRATOR'
+    }
+    if ($JourneyId) { $body.journeyId = $JourneyId }
+    $send = {
+        param([hashtable]$request, [string]$step)
+        $response = Invoke-WebRequest -Method Post -Uri $uri -SkipHttpErrorCheck -TimeoutSec 60 -ContentType 'application/json' `
+            -Headers @{ Authorization = "Bearer $($Context.FaultRecoveryCredential)" } -Body ($request | ConvertTo-Json -Depth 5)
+        # A refusal is application/problem+json, which Invoke-WebRequest hands back as bytes.
+        $text = if ($response.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($response.Content) } else { [string]$response.Content }
+        $journal.Note("$Label ($step) -> $([int]$response.StatusCode): $text")
+        return [pscustomobject]@{ Status = [int]$response.StatusCode; Body = $(if ($text) { $text | ConvertFrom-Json } else { $null }) }
+    }
+    $planned = & $send $body 'rehearsal'
+    $code = if ($planned.Body -and $planned.Body.PSObject.Properties.Name -contains 'confirmationCode') { [string]$planned.Body.confirmationCode } else { '' }
+    if (-not $code) {
+        return [pscustomobject]@{ Status = $planned.Status; Outcome = 'NOT_PLANNED'; Code = ''; Grant = $null }
+    }
+    $granted = & $send ($body + @{ confirmationCode = $code }) 'with the code'
+    $outcome = if ($granted.Body -and $granted.Body.PSObject.Properties.Name -contains 'outcome') { [string]$granted.Body.outcome } else { '' }
+    $grant = if ($granted.Body -and $granted.Body.PSObject.Properties.Name -contains 'grant') { $granted.Body.grant } else { $null }
+    return [pscustomobject]@{ Status = $granted.Status; Outcome = $outcome; Code = $code; Grant = $grant }
+}
+
 Export-ModuleMember -Function Get-L2SlotPhysical, Get-L2Inbound, Get-L2OperationProgress, Get-L2PhaseCount,
     Get-L2OperationResults, Get-L2Runtime, Get-L2StationOperation, ConvertTo-L2Instant, Invoke-L2DriveTo,
     Wait-L2ConfirmedIntent, Invoke-L2PickupAndScan, Wait-L2WaitingOperator, Invoke-L2CloseOverOppositeState,
     Test-L2ReopenOffered, Get-L2ReopenScreen, Invoke-L2ReopenButton, Watch-L2SlotHeldShut, Format-L2HeldShut, Format-L2Press,
-    Test-L2NoUnlockAfterDeclaration
+    Test-L2NoUnlockAfterDeclaration, Grant-L2Recovery

@@ -1007,7 +1007,9 @@ function Invoke-ParallelInstanceConfigurationStep {
         # control-server#600: variable -> value, from Resolve-ParallelOnboardSafetyCredential; empty for a single car.
         [System.Collections.IDictionary] $OnboardSafetyCredentials = @{},
         # workspace#49: variable -> value, from Resolve-ParallelEmergencyReleaseCredential; empty when there are none.
-        [System.Collections.IDictionary] $EmergencyReleaseCredentials = @{}
+        [System.Collections.IDictionary] $EmergencyReleaseCredentials = @{},
+        # control-server#797: variable -> value, from Resolve-ParallelRecoveryProof; empty for a single car.
+        [System.Collections.IDictionary] $RecoveryProofs = @{}
     )
     $missing = @('GetEnvironment', 'SetEnvironment', 'RestartService', 'GetMachineEnvironment' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
     if ($missing.Count -gt 0) { throw "Invoke-ParallelInstanceConfigurationStep: missing action(s) $($missing -join ', '); nothing was run." }
@@ -1032,9 +1034,13 @@ function Invoke-ParallelInstanceConfigurationStep {
     # recovery credential, as before, otherwise only when something changed.
     [string[]] $before = @(& $Actions.GetEnvironment)
     $prefix = (Get-ParallelInstanceName).OnboardSafetyCredentialVariablePrefix
+    # control-server#797: the per-vehicle recovery proofs the same way -- one left for a vehicle the roster no longer names goes.
+    $proofPrefix = (Get-ParallelInstanceName).RecoveryProofVariablePrefix
     [string[]] $environment = @($before | Where-Object {
             $null -ne $_ -and -not ($_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -and
-                -not $OnboardSafetyCredentials.Contains(($_ -split '=', 2)[0])) })
+                -not $OnboardSafetyCredentials.Contains(($_ -split '=', 2)[0])) -and
+            -not ($_.StartsWith($proofPrefix, [StringComparison]::OrdinalIgnoreCase) -and
+                -not $RecoveryProofs.Contains(($_ -split '=', 2)[0])) })
     if (-not [string]::IsNullOrWhiteSpace($Credential)) {
         $environment = Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $CredentialVariable -Value $Credential
     }
@@ -1044,6 +1050,10 @@ function Invoke-ParallelInstanceConfigurationStep {
     # workspace#49: the emergency stop release entries' two credentials, under this instance's own names.
     foreach ($variable in @($EmergencyReleaseCredentials.Keys)) {
         $environment = Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $variable -Value ([string] $EmergencyReleaseCredentials[$variable])
+    }
+    # control-server#797: each roster vehicle's exception recovery proof, under this instance's own names.
+    foreach ($variable in @($RecoveryProofs.Keys)) {
+        $environment = Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $variable -Value ([string] $RecoveryProofs[$variable])
     }
     if (-not [string]::IsNullOrWhiteSpace($Credential) -or
         (@($environment) -join "`0") -cne (@($before | Where-Object { $null -ne $_ }) -join "`0")) {

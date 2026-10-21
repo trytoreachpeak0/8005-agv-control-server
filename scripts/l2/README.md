@@ -821,6 +821,11 @@ DispatchZoneParameters = @{
   配一份本装置用的调用凭据，经 `Context.FaultRecoveryCredential` 交给场景。产品里入口默认不挂，凭据与急停解除的分开；
   `vehicle-fault-operator-clearance` 用它（它同时打开 `EmergencyStopRelease`：先人工解除急停，才能清除故障）。
 
+- `RecoveryGrantRequired = $true` —— 打开 control-server#797 的「恢复要按车限时授权」（`RecoveryGrant__required`，
+  ADR-cross-0066）：车上开异常处置会话、故障人工恢复入口、控制端人工清桩与解除车辆充电资格暂停都要先有授权。授权经
+  `/api/field-ops/v1/recovery-grants` 下发，挂在故障人工恢复入口的同一个开关、同一把凭据上，所以必须同时给
+  `VehicleFaultRecovery = $true`，否则编排器直接拒绝。产品缺省关；`vehicle-fault-recovery-needs-grant` 用它。
+
 - `StationDepartureWaitTimeout` —— 服务端 `JourneyRuntime:stationDepartureWaitTimeout`，装载提交后车在取货点
   等多久才请求出发前安全检查（ADR-cross-0055，产品默认 5 分钟）。这段时间是普通放错唯一的修正窗口
   （`REQ-0237`）。本装置不给这个键时用 `00:00:30`（control-server#71 起；原来是 `00:00:05`，为什么改见下面「真装置场景」一段）；

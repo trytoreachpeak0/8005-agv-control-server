@@ -202,7 +202,7 @@ $script:AllowedKeys = [ordered]@{
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
         'journeyRuntime', 'vehicleFaultRecovery', 'foreignRunningOrderRelease', 'fieldOperatorRoles', 'taskTypeStations',
-        'mapStationCatalog', 'productionCutover', 'emergencyStopRelease', 'idleReturn')
+        'mapStationCatalog', 'productionCutover', 'emergencyStopRelease', 'idleReturn', 'recoveryGrant')
     # control-server#564. Who approved the production cutover, when, and where that is recorded; and which phase it is --
     # 'trial' (real MES, simulated slots) or 'production' (cs#564 review S3: the step between them needs a new database).
     # This deployment's, like mesIngest.source -- the overlay does not write it; installed-instance.json keeps it.
@@ -231,6 +231,9 @@ $script:AllowedKeys = [ordered]@{
     # control-server#781. REQ-0291's idle return switch (IdleReturnOptions, section IdleReturn): on, a vehicle with no demand drives
     # itself to a waiting point (agv02 to its STAGING_TO_WIRE origin, CP-0016).
     'idleReturn' = @('enabled')
+    # control-server#797. ADR-cross-0066's per-vehicle, time-limited recovery grant (RecoveryGrantOptions, section RecoveryGrant):
+    # on, an exception recovery session, every fault recovery request and the two vehicle charging confirmations need a grant.
+    'recoveryGrant' = @('required')
     'fieldOperatorRoles' = @('path', 'onboardClearanceEntryDeclared')
     # control-server#518. TaskTypeStationPreset.SettingsFileKey; there is no options class to mirror.
     'taskTypeStations' = @('settingsFile')
@@ -270,6 +273,9 @@ $script:FaultRecoveryCredentialVariable = 'CONTROL_SERVER_V2_FAULT_RECOVERY_CRED
 # control-server#600. One vehicle-safety projection credential per roster row, named by the row's RIoT id (the durable
 # coordinate in remote-ops/fleet.md): RIOT59 is agv02, RIOT60 agv03. This instance's own names, like the one above.
 $script:OnboardSafetyCredentialVariablePrefix = 'CONTROL_SERVER_V2_ONBOARD_SAFETY_CREDENTIAL_RIOT'
+# control-server#797. One exception recovery proof per roster row, named by the row's RIoT id like the one above: the onboard
+# half writes the same value into that vehicle's CONTROL_SERVER_RECOVERY_PROOF, and the Host accepts only that vehicle's.
+$script:RecoveryProofVariablePrefix = 'CONTROL_SERVER_V2_RECOVERY_PROOF_RIOT'
 # workspace#49. The emergency stop release entries' two credentials (empty vehicle; loaded vehicle, CP-0011), under this
 # instance's own names: the product defaults CONTROL_SERVER_EMERGENCY_RELEASE_CREDENTIAL and ..._LOADED_... are the MVP's.
 $script:EmergencyReleaseCredentialVariable = 'CONTROL_SERVER_V2_EMERGENCY_RELEASE_CREDENTIAL'
@@ -1473,7 +1479,41 @@ function Test-ParallelInstanceDefinition {
             $failures += "idleReturn.enabled must be a JSON boolean, got '$($idleNode['enabled'])'."
         }
     }
+    # control-server#797. The recovery grant requirement (RecoveryGrantOptions). Optional: absent, it follows
+    # vehicleFaultRecovery.enabled (Test-ParallelRecoveryGrantRequired) -- with the Host recovery entries on and no grant asked for,
+    # anyone holding the shared credential recovers any vehicle (ADR-cross-0066), so turning the entries on turns grants on with
+    # them. Stated, it is an explicit JSON boolean; true needs those entries, which are where a grant is given.
+    $grantRequired = $false
+    $grantStatedOff = $false
+    if (Test-KeyPresent -Node $Definition -Key 'recoveryGrant') {
+        $grantNode = $Definition['recoveryGrant']
+        if ($grantNode -isnot [System.Collections.IDictionary]) {
+            $failures += 'recoveryGrant must be an object with required.'
+        } elseif (-not (Test-KeyPresent -Node $grantNode -Key 'required')) {
+            $failures += 'recoveryGrant.required must be stated explicitly.'
+        } elseif ($grantNode['required'] -isnot [bool]) {
+            $failures += "recoveryGrant.required must be a JSON boolean, got '$($grantNode['required'])'."
+        } else {
+            $grantRequired = $grantNode['required']
+            $grantStatedOff = -not $grantRequired
+        }
+    }
+    # Not $recovery: Get-Node returns a [hashtable] only, and a section built with [ordered] is not one.
+    $entries = $Definition.Contains('vehicleFaultRecovery') ? $Definition['vehicleFaultRecovery'] : $null
+    if ($grantRequired -and -not ($entries -is [System.Collections.IDictionary] -and $entries.Contains('enabled') -and
+            $entries['enabled'] -is [bool] -and $entries['enabled'])) {
+        $failures += ('RECOVERY_GRANT_WITHOUT_ENTRY: recoveryGrant.required is true while vehicleFaultRecovery.enabled is not: a grant ' +
+            'is given through the Host recovery entries, so no exception recovery session could ever open.')
+    }
     $phaseNode = (Test-KeyPresent -Node $Definition -Key 'productionCutover') ? $Definition['productionCutover'] : $null
+    # Review M2 (2026-10-22): a trial or production instance drives real vehicles, and 06-deploy -RecoveryResume leaves a
+    # vehicle's recovery entry on for good on the promise that this server asks for a grant. Stating it off there is refused; a
+    # rig without productionCutover may still turn it off.
+    if ($grantStatedOff -and $phaseNode -is [System.Collections.IDictionary] -and $script:CutoverPhases -ccontains $phaseNode['phase']) {
+        $failures += ("RECOVERY_GRANT_OFF_IN_CUTOVER: recoveryGrant.required is false while productionCutover.phase is " +
+            "'$($phaseNode['phase'])'. A vehicle deployed with 06-deploy -RecoveryResume keeps its recovery entry on, and only the " +
+            'per-vehicle grant stops anyone with the shared credential recovering it; leave recoveryGrant out or state it true.')
+    }
     if ($phaseNode -is [System.Collections.IDictionary] -and $phaseNode['phase'] -ceq 'production' -and
         -not (Test-ParallelEmergencyReleaseEnabled -Definition $Definition)) {
         $failures += ('EMERGENCY_STOP_RELEASE_REQUIRED_IN_PRODUCTION: productionCutover.phase is production, so emergencyStopRelease.enabled ' +
@@ -2422,6 +2462,7 @@ function Get-ParallelInstanceName {
         FirewallRuleFormat = $script:FirewallRuleFormat
         FaultRecoveryCredentialVariable = $script:FaultRecoveryCredentialVariable
         OnboardSafetyCredentialVariablePrefix = $script:OnboardSafetyCredentialVariablePrefix
+        RecoveryProofVariablePrefix = $script:RecoveryProofVariablePrefix
         EmergencyReleaseCredentialVariable = $script:EmergencyReleaseCredentialVariable
         EmergencyLoadedReleaseCredentialVariable = $script:EmergencyLoadedReleaseCredentialVariable
     }
@@ -3335,6 +3376,15 @@ function New-ParallelInstanceConfigurationOverlay {
         # control-server#781. Always written, false when the definition leaves the section out, so an earlier install's (or a
         # hand edit's) true does not survive a reinstall; the read-back compares what the Host bound ($script:JourneyBindingFields).
         IdleReturn = [ordered]@{ enabled = Test-ParallelIdleReturnEnabled -Definition $Definition }
+        # control-server#797. Always written -- the definition's, or vehicleFaultRecovery.enabled when it states none -- so an earlier
+        # install's value does not survive a reinstall that says otherwise.
+        RecoveryGrant = [ordered]@{ required = Test-ParallelRecoveryGrantRequired -Definition $Definition }
+        # control-server#797. Always written, whole, like OnboardSafetyProjection.vehicleCredentials: a single-car definition writes an
+        # empty list (the shared proof answers), so a list from a two-car install does not survive. Variables named, never valued.
+        Recovery = [ordered]@{
+            vehicleProofs = @(Get-ParallelRecoveryProofSlot -Definition $Definition | ForEach-Object {
+                    [ordered]@{ vehicleKey = $_.VehicleKey; proofEnvironmentVariable = $_.Variable } })
+        }
         FieldOperatorRoles = [ordered]@{
             path = $Definition['fieldOperatorRoles']['path']
             onboardClearanceEntryDeclared = $Definition['fieldOperatorRoles']['onboardClearanceEntryDeclared']
@@ -3471,6 +3521,78 @@ function Resolve-ParallelOnboardSafetyCredential {
     return $result
 }
 
+function Get-ParallelRecoveryProofSlot {
+    <#
+        .SYNOPSIS
+            control-server#797. One exception recovery proof variable per roster row, named by its RIoT id, as for the vehicle-safety
+            projection credentials (Get-ParallelOnboardSafetyCredentialSlot). None for a definition without a roster: the shared
+            proof answers for its one vehicle.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+    foreach ($slot in @(Get-ParallelOnboardSafetyCredentialSlot -Definition $Definition)) {
+        [pscustomobject]@{
+            VehicleKey = $slot.VehicleKey
+            RiotId = $slot.RiotId
+            Variable = "$($script:RecoveryProofVariablePrefix)$($slot.RiotId)"
+        }
+    }
+}
+
+function Resolve-ParallelRecoveryProof {
+    <#
+        .SYNOPSIS
+            control-server#797. Every roster vehicle's exception recovery proof, as an ordered map from service-Environment variable to
+            value, and the vehicles that have none. Throws, naming vehicles and never a value, when two vehicles would share one.
+
+        .DESCRIPTION
+            Per vehicle, as for the projection credentials: -Supplied (deploy-config.json's recoveryProofs, vehicleKey -> value, from
+            the control host's DPAPI store), else what the service's Environment already holds under that vehicle's variable. A
+            vehicle with neither is not refused: the Host then refuses every session that vehicle opens (its listed variable is
+            empty), which is closed, not open; the installer reports it as RECOVERY_PROOF_MISSING. Two vehicles with one value are
+            refused: one vehicle's proof would open the other's sessions.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
+        [AllowNull()] $Supplied,
+        [AllowNull()][AllowEmptyCollection()][string[]] $ServiceEnvironment
+    )
+    $result = [ordered]@{}
+    $missing = @()
+    $slots = @(Get-ParallelRecoveryProofSlot -Definition $Definition)
+    foreach ($slot in $slots) {
+        $value = $null
+        if ($Supplied -is [System.Collections.IDictionary]) {
+            if ($Supplied.Contains($slot.VehicleKey)) { $value = [string] $Supplied[$slot.VehicleKey] }
+        } elseif ($null -ne $Supplied -and $Supplied.PSObject.Properties.Name -ccontains $slot.VehicleKey) {
+            $value = [string] $Supplied.($slot.VehicleKey)
+        }
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            $value = Get-ParallelServiceEnvironmentEntry -Environment $ServiceEnvironment -Name $slot.Variable
+        }
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            $missing += "$($slot.VehicleKey) (riotId $($slot.RiotId), $($slot.Variable))"
+            continue
+        }
+        $result[$slot.Variable] = $value
+    }
+    $shared = @()
+    $present = @($slots | Where-Object { $result.Contains($_.Variable) })
+    for ($i = 0; $i -lt $present.Count; $i++) {
+        for ($j = 0; $j -lt $i; $j++) {
+            if ([string]::Equals($result[$present[$i].Variable], $result[$present[$j].Variable], [StringComparison]::Ordinal)) {
+                $shared += "$($present[$j].VehicleKey) and $($present[$i].VehicleKey) hold one value"
+            }
+        }
+    }
+    if ($shared.Count -gt 0) {
+        throw ("RECOVERY_PROOF_SHARED: $($shared -join '; '). Each vehicle needs a recovery proof of its own, or one vehicle's proof " +
+            'opens the other''s recovery sessions (control-server#797). Nothing was stopped or changed.')
+    }
+    return [pscustomobject]@{ Proofs = $result; Missing = $missing }
+}
+
 function Get-ParallelRollbackTargetRefusal {
     <#
         .SYNOPSIS
@@ -3534,6 +3656,10 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
 
             control-server#781: IdleReturn too. IdleReturn__Enabled=true in an environment layer would turn idle return on --
             vehicles driving themselves with no demand -- whatever the definition says, and only a restart would show it.
+
+            control-server#797: RecoveryGrant and Recovery:VehicleProofs too. RecoveryGrant__Required=false would let any holder of
+            the shared credential recover any vehicle under a definition that asks for grants, and a VehicleProofs entry could
+            give one vehicle another's proof.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -3543,7 +3669,7 @@ function Get-ParallelJourneyRuntimeEnvironmentOverride {
     )
     # control-server#686: Governance:slotConfigurationReadinessGate too -- that key alone, the other Governance keys are the
     # product's. The gate comes from the definition's phase, and an environment layer would bind over it.
-    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:(?:JourneyRuntime|MapStationCatalog|EmergencyStopRelease|IdleReturn)(?:__|:)|Governance(?:__|:)slotConfigurationReadinessGate$))'
+    $pattern = '^(?i:(?:DOTNET_|ASPNETCORE_)?(?:(?:JourneyRuntime|MapStationCatalog|EmergencyStopRelease|IdleReturn|RecoveryGrant|Recovery(?:__|:)VehicleProofs)(?:__|:)|Governance(?:__|:)slotConfigurationReadinessGate$))'
     foreach ($pair in @(@{ Where = 'service'; Entries = $ServiceEnvironment }, @{ Where = 'machine'; Entries = $MachineEnvironment })) {
         foreach ($entry in @($pair.Entries | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
             $name = ($entry -split '=', 2)[0]
@@ -3728,6 +3854,25 @@ function Test-ParallelIdleReturnEnabled {
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
     $node = $Definition.Contains('idleReturn') ? $Definition['idleReturn'] : $null
     return ($node -is [System.Collections.IDictionary] -and $node.Contains('enabled') -and $node['enabled'] -is [bool] -and $node['enabled'])
+}
+
+function Test-ParallelRecoveryGrantRequired {
+    <#
+        .SYNOPSIS
+            control-server#797. Whether the definition asks for recovery grants (RecoveryGrantOptions.Required), as the overlay writes
+            it. recoveryGrant.required when stated (only a JSON true counts); absent, vehicleFaultRecovery.enabled: the entries a
+            grant guards are on exactly then, and an instance that turns them on must not be left taking the shared credential alone.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+    $node = $Definition.Contains('recoveryGrant') ? $Definition['recoveryGrant'] : $null
+    if ($node -is [System.Collections.IDictionary] -and $node.Contains('required')) {
+        return ($node['required'] -is [bool] -and $node['required'])
+    }
+    $recovery = $Definition.Contains('vehicleFaultRecovery') ? $Definition['vehicleFaultRecovery'] : $null
+    return ($recovery -is [System.Collections.IDictionary] -and $recovery.Contains('enabled') -and $recovery['enabled'] -is [bool] -and
+        $recovery['enabled'])
 }
 
 function Test-ParallelEmergencyReleaseEnabled {
@@ -4580,6 +4725,9 @@ Export-ModuleMember -Function @(
     'Resolve-ParallelFaultRecoveryCredential'
     'Test-ParallelEmergencyReleaseEnabled'
     'Test-ParallelIdleReturnEnabled'
+    'Test-ParallelRecoveryGrantRequired'
+    'Get-ParallelRecoveryProofSlot'
+    'Resolve-ParallelRecoveryProof'
     'Resolve-ParallelEmergencyReleaseCredential'
     'Format-ParallelEmergencyReleaseLine'
     'Get-ParallelRosterRoleHolderCount'

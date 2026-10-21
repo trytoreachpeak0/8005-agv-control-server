@@ -1719,6 +1719,8 @@ $optionSources = @(
     @{ Section = 'emergencyStopRelease'; Path = 'src/ControlServer.Host/Runtime/EmergencyStopReleaseOptions.cs'; Class = 'EmergencyStopReleaseOptions'; Excluded = @('CredentialEnvironmentVariable', 'LoadedCredentialEnvironmentVariable') }
     # control-server#781.
     @{ Section = 'idleReturn'; Path = 'src/ControlServer.Host/Runtime/IdleReturn/IdleReturnOptions.cs'; Class = 'IdleReturnOptions'; Excluded = @() }
+    # control-server#797.
+    @{ Section = 'recoveryGrant'; Path = 'src/ControlServer.Host/Runtime/Recovery/RecoveryGrants.cs'; Class = 'RecoveryGrantOptions'; Excluded = @() }
 )
 foreach ($source in $optionSources) {
     $properties = Get-OptionProperty -RelativePath $source.Path -ClassName $source.Class
@@ -7152,6 +7154,149 @@ Invoke-SourceCase 'idle return: only the production stage-3 definition writes it
             $written -is [System.Collections.IDictionary] -and $written['enabled'] -is [bool] -and -not $written['enabled'] -and
             -not (Test-ParallelIdleReturnEnabled -Definition $s3) -and $f.Count -eq 0)
         Detail = "written in: $($writing -join ', '); s3 idleReturn: $(ConvertTo-Json $written -Compress); idleReturn failures: $($f -join ' | ')" }
+}
+
+# ------------------------------------------------------------------------------------------------
+# control-server#797. The recovery grant requirement (RecoveryGrantOptions, section RecoveryGrant; ADR-cross-0066) and the
+# per-vehicle exception recovery proofs (Recovery:VehicleProofs). Absent, the requirement follows vehicleFaultRecovery.enabled, so
+# turning the Host recovery entries on (control-server#844) turns grants on with them; stated, it is a JSON boolean, and true needs
+# the entries. One proof variable per roster row, written whole; two vehicles with one value refused; none only reported.
+# ------------------------------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'Recovery grant and per-vehicle recovery proofs (control-server#797)' -ForegroundColor Cyan
+
+function New-GrantDefinition($From, [object] $EntriesOn, [object] $Section = $null, [switch] $LeaveOut, [string] $Phase = '') {
+    $d = Copy-Definition $From
+    $d['vehicleFaultRecovery'] = [ordered]@{ enabled = $EntriesOn }
+    if (-not $LeaveOut) { $d['recoveryGrant'] = $Section }
+    if ($Phase) {
+        $d['productionCutover'] = [ordered]@{ approvalRecord = 'review M2'; phase = $Phase }
+    } elseif ($d.Contains('productionCutover')) {
+        $d.Remove('productionCutover')
+    }
+    return $d
+}
+function Get-GrantFailure($Definition) {
+    return @(Test-ParallelInstanceDefinition -Definition $Definition | Where-Object { $_ -match 'recoveryGrant|RECOVERY_GRANT' })
+}
+foreach ($case in @(
+        @{ Name = 'left out with the entries off: off'; EntriesOn = $false; LeaveOut = $true; Expect = $false }
+        @{ Name = 'left out with the entries on: on, so turning the entries on cannot leave grants off'; EntriesOn = $true; LeaveOut = $true; Expect = $true }
+        @{ Name = 'stated false with the entries on and no productionCutover: off (a rig''s choice, refused in trial and production below)'; EntriesOn = $true; Section = [ordered]@{ required = $false }; Expect = $false }
+        @{ Name = 'left out with the entries on in production: on, and accepted'; EntriesOn = $true; LeaveOut = $true; Phase = 'production'; Expect = $true }
+        @{ Name = 'stated true with the entries on in trial: on, and accepted'; EntriesOn = $true; Section = [ordered]@{ required = $true }; Phase = 'trial'; Expect = $true }
+        @{ Name = 'stated true with the entries on: on'; EntriesOn = $true; Section = [ordered]@{ required = $true }; Expect = $true })) {
+    Invoke-SourceCase "recovery grant: $($case.Name), and the overlay writes exactly that" {
+        $d = New-GrantDefinition $baseline $case.EntriesOn ($case.ContainsKey('Section') ? $case.Section : $null) -LeaveOut:($case.ContainsKey('LeaveOut') -and $case.LeaveOut) -Phase ($case.ContainsKey('Phase') ? $case.Phase : '')
+        $failures = @(Get-GrantFailure $d)
+        $o = New-ParallelInstanceConfigurationOverlay -Definition $d
+        $v = $o['RecoveryGrant']['required']
+        @{ Ok = ($failures.Count -eq 0 -and $v -is [bool] -and $v -eq $case.Expect -and @($o['RecoveryGrant'].Keys).Count -eq 1 -and
+                (Test-ParallelRecoveryGrantRequired -Definition $d) -eq $case.Expect)
+            Detail = "overlay: $(ConvertTo-Json $o['RecoveryGrant'] -Compress); failures: $($failures -join ' | ')" }
+    }
+}
+foreach ($case in @(
+        @{ Name = 'true with the entries off is refused: no session could ever open'; EntriesOn = $false; Section = [ordered]@{ required = $true }; Says = 'RECOVERY_GRANT_WITHOUT_ENTRY' }
+        @{ Name = 'a string "true" is refused, not bound as on behind the check'; EntriesOn = $true; Section = [ordered]@{ required = 'true' }; Says = 'recoveryGrant.required must be a JSON boolean' }
+        @{ Name = 'a section without required is refused'; EntriesOn = $true; Section = [ordered]@{}; Says = 'recoveryGrant.required must be stated explicitly' }
+        @{ Name = 'an unknown sub-key is refused'; EntriesOn = $true; Section = [ordered]@{ required = $true; minutes = 600 }; Says = 'recoveryGrant' }
+        @{ Name = 'a bare true instead of an object is refused'; EntriesOn = $true; Section = $true; Says = 'recoveryGrant must be an object with required' }
+        @{ Name = 'stated false in production is refused (review M2)'; EntriesOn = $true; Section = [ordered]@{ required = $false }; Phase = 'production'; Says = 'RECOVERY_GRANT_OFF_IN_CUTOVER' }
+        @{ Name = 'stated false in trial is refused (review M2)'; EntriesOn = $true; Section = [ordered]@{ required = $false }; Phase = 'trial'; Says = 'RECOVERY_GRANT_OFF_IN_CUTOVER' }
+        @{ Name = 'stated false in production with the entries off is refused too'; EntriesOn = $false; Section = [ordered]@{ required = $false }; Phase = 'production'; Says = 'RECOVERY_GRANT_OFF_IN_CUTOVER' })) {
+    Invoke-SourceCase "recovery grant: $($case.Name)" {
+        $f = @(Get-GrantFailure (New-GrantDefinition $baseline $case.EntriesOn $case.Section -Phase ($case.ContainsKey('Phase') ? $case.Phase : '')))
+        @{ Ok = ($f.Count -ge 1 -and @($f | Where-Object { $_.Contains($case.Says) }).Count -ge 1); Detail = "failures: $($f -join ' | ')" }
+    }
+}
+Invoke-SourceCase 'recovery grant: an earlier install''s required=false does not survive a reinstall of a definition that turns the entries on' {
+    $off = New-GrantDefinition $baseline $true ([ordered]@{ required = $false })
+    $on = New-GrantDefinition $baseline $true -LeaveOut
+    $earlier = Merge-ConfigurationTree -Base (Copy-Definition $productConfiguration) -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $off)
+    $again = Merge-ConfigurationTree -Base $earlier -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $on)
+    @{ Ok = ($earlier['RecoveryGrant']['required'] -eq $false -and $again['RecoveryGrant']['required'] -eq $true)
+        Detail = "earlier: $($earlier['RecoveryGrant']['required']); reinstalled: $($again['RecoveryGrant']['required'])" }
+}
+Invoke-SourceCase 'recovery grant: every shipped definition passes the grant check (none states true with the entries off)' {
+    $bad = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | Where-Object {
+            @(Get-GrantFailure (Read-ParallelInstanceDefinition -Path $_.FullName)).Count -gt 0 } | ForEach-Object Name)
+    @{ Ok = ($bad.Count -eq 0); Detail = "refused: $($bad -join ', ')" }
+}
+Invoke-SourceCase 'recovery grant environment override: RecoveryGrant and Recovery:VehicleProofs keys are refused, the shared proof name is not' {
+    $found = @(Get-ParallelJourneyRuntimeEnvironmentOverride `
+            -ServiceEnvironment @('RecoveryGrant__Required=false', 'Recovery__VehicleProofs__0__proofEnvironmentVariable=X', 'Recovery__AuthenticationProofEnvironmentVariable=Y') `
+            -MachineEnvironment @('DOTNET_recoverygrant:required=false'))
+    $expected = 'service RecoveryGrant__Required|service Recovery__VehicleProofs__0__proofEnvironmentVariable|machine DOTNET_recoverygrant:required'
+    @{ Ok = (($found -join '|') -ceq $expected); Detail = "got: $($found -join '|')" }
+}
+
+$agv02ProofVariable = 'CONTROL_SERVER_V2_RECOVERY_PROOF_RIOT59'
+$agv03ProofVariable = 'CONTROL_SERVER_V2_RECOVERY_PROOF_RIOT60'
+Invoke-SourceCase 'recovery proofs overlay: one variable per roster row, named by its RIoT id; a single car writes an empty list' {
+    $fleetProofs = @((New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $fleetBaseline))['Recovery']['vehicleProofs'])
+    $singleProofs = @((New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $baseline))['Recovery']['vehicleProofs'])
+    $pairs = @($fleetProofs | ForEach-Object { "$($_['vehicleKey'])=$($_['proofEnvironmentVariable'])" })
+    @{ Ok = (($pairs -join ',') -ceq "$agv02Key=$agv02ProofVariable,$agv03Key=$agv03ProofVariable" -and $singleProofs.Count -eq 0)
+        Detail = "fleet: $($pairs -join ','); single: $($singleProofs.Count)" }
+}
+function Invoke-ProofResolve($Definition, $Supplied, [string[]] $Environment = @()) {
+    try {
+        return @{ Value = (Resolve-ParallelRecoveryProof -Definition $Definition -Supplied $Supplied -ServiceEnvironment $Environment); Error = $null }
+    } catch { return @{ Value = $null; Error = $_.Exception.Message } }
+}
+Invoke-SourceCase 'recovery proofs: supplied for both cars, each lands under its own variable' {
+    $r = Invoke-ProofResolve (Copy-Definition $fleetBaseline) @{ $agv02Key = 'selftest-agv02-proof'; $agv03Key = 'selftest-agv03-proof' }
+    $p = $r.Value.Proofs
+    @{ Ok = ($null -eq $r.Error -and $p[$agv02ProofVariable] -ceq 'selftest-agv02-proof' -and $p[$agv03ProofVariable] -ceq 'selftest-agv03-proof' -and
+            @($r.Value.Missing).Count -eq 0)
+        Detail = "error: $($r.Error); keys: $(@($p.Keys) -join ',')" }
+}
+Invoke-SourceCase 'recovery proofs: none supplied, the service''s own carried over; a car with neither is reported, not refused' {
+    $r = Invoke-ProofResolve (Copy-Definition $fleetBaseline) $null @("$agv02ProofVariable=selftest-carried-proof")
+    @{ Ok = ($null -eq $r.Error -and $r.Value.Proofs[$agv02ProofVariable] -ceq 'selftest-carried-proof' -and
+            -not $r.Value.Proofs.Contains($agv03ProofVariable) -and @($r.Value.Missing).Count -eq 1 -and $r.Value.Missing[0].Contains($agv03Key))
+        Detail = "error: $($r.Error); missing: $(@($r.Value.Missing) -join ';')" }
+}
+Invoke-SourceCase 'recovery proofs: two cars with one value are refused, naming the cars and never the value' {
+    $r = Invoke-ProofResolve (Copy-Definition $fleetBaseline) @{ $agv02Key = 'selftest-one-proof'; $agv03Key = 'selftest-one-proof' }
+    @{ Ok = ($null -ne $r.Error -and $r.Error.StartsWith('RECOVERY_PROOF_SHARED') -and $r.Error.Contains($agv02Key) -and
+            -not $r.Error.Contains('selftest-one-proof'))
+        Detail = "error: $($r.Error)" }
+}
+Invoke-SourceCase 'recovery proofs: the configuration step writes each car''s proof and drops one for a car the roster no longer names' {
+    $directory = Join-Path ([IO.Path]::GetTempPath()) "cs797-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $directory | Out-Null
+    $service = @{ Environment = [string[]] @('CONTROL_SERVER_V2_RECOVERY_PROOF_RIOT58=selftest-retired-proof', 'KEEP=1') }
+    try {
+        $file = Join-Path $directory 'appsettings.Production.json'
+        [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $productConfiguration -Depth 12), [Text.UTF8Encoding]::new($false))
+        $safety = (Invoke-SafetyResolve (Copy-Definition $fleetBaseline) $suppliedBoth).Value
+        $null = Invoke-ParallelInstanceConfigurationStep -ConfigurationPath $file -Definition (Copy-Definition $fleetBaseline) -Credential $null `
+            -CredentialVariable $credentialName -RosterPath (Join-Path $directory 'roles.json') -OnboardSafetyCredentials $safety `
+            -RecoveryProofs ([ordered]@{ $agv02ProofVariable = 'selftest-agv02-proof'; $agv03ProofVariable = 'selftest-agv03-proof' }) -Actions @{
+                GetEnvironment = { $service.Environment }
+                SetEnvironment = { param([string[]] $Environment) $service.Environment = $Environment }
+                RestartService = { }
+                GetMachineEnvironment = { @() }
+            }
+        $onDisk = Get-Content -LiteralPath $file -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    } finally {
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $env = @($service.Environment)
+    @{ Ok = ($env -ccontains "$agv02ProofVariable=selftest-agv02-proof" -and $env -ccontains "$agv03ProofVariable=selftest-agv03-proof" -and
+            $env -ccontains 'KEEP=1' -and -not ($env | Where-Object { $_.StartsWith('CONTROL_SERVER_V2_RECOVERY_PROOF_RIOT58') }) -and
+            @($onDisk['Recovery']['vehicleProofs']).Count -eq 2 -and $onDisk['RecoveryGrant']['required'] -eq (Test-ParallelRecoveryGrantRequired -Definition $fleetBaseline))
+        Detail = "environment names: $(@($env | ForEach-Object { ($_ -split '=', 2)[0] }) -join ','); file: $(ConvertTo-Json $onDisk['Recovery'] -Compress -Depth 5)" }
+}
+Invoke-SourceCase 'recovery proofs: the installer resolves them and passes them to every configuration step' {
+    $installer = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')
+    $calls = [regex]::Matches($installer, 'Set-InstanceConfiguration -FaultRecoveryCredential [^\r\n]*').Value
+    @{ Ok = ($installer.Contains('$recoveryProofResolution = Resolve-ParallelRecoveryProof') -and $calls.Count -eq 2 -and
+            @($calls | Where-Object { $_.Contains('-RecoveryProofs $recoveryProofResolution.Proofs') }).Count -eq 2 -and
+            $installer.Contains('-RecoveryProofs $RecoveryProofs -Actions'))
+        Detail = "calls: $($calls -join ' || ')" }
 }
 
 Write-Host ''

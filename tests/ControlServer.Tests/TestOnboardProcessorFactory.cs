@@ -26,13 +26,17 @@ internal static class TestOnboardProcessorFactory
         ILogger<OnboardMessageProcessor>? logger = null,
         ILogger<OnboardRecoveryCoordinator>? recoveryLogger = null,
         ControlServer.Host.Runtime.Charging.ManualStationClearance? stationClearance = null,
-        ControlServer.Host.Runtime.Charging.UnableToChargeFieldConfirmations? fieldConfirmations = null)
+        ControlServer.Host.Runtime.Charging.UnableToChargeFieldConfirmations? fieldConfirmations = null,
+        ControlServer.Host.Runtime.Recovery.RecoveryGrantRegistry? recoveryGrants = null,
+        ControlServer.Host.Runtime.Fleet.VehicleRoster? roster = null)
     {
         OnboardJourneyPublisher publisher = new(store, peer ?? new SilentPeer(), timeProvider);
         SlotConfigurationActivationDispatcher activationDispatcher = ActivationDispatcher(context, publisher);
         OnboardRecoveryCoordinator coordinator = new(
             context, store, publisher, activationDispatcher, timeProvider, configuration, recoveryLogger,
-            runtimeOptions: runtimeOptions is null ? null : Options.Create(runtimeOptions));
+            runtimeOptions: runtimeOptions is null ? null : Options.Create(runtimeOptions),
+            recoveryGrants: recoveryGrants,
+            roster: roster);
         return new OnboardMessageProcessor(
             context,
             store,
@@ -92,7 +96,9 @@ internal static class TestOnboardProcessorFactory
         WireToGateStore store,
         TimeProvider timeProvider,
         IConfiguration configuration,
-        IOnboardPeer? peer = null)
+        IOnboardPeer? peer = null,
+        ControlServer.Host.Runtime.Recovery.RecoveryGrantRegistry? recoveryGrants = null,
+        ControlServer.Host.Runtime.Fleet.VehicleRoster? roster = null)
     {
         OnboardJourneyPublisher publisher = new(store, peer ?? new SilentPeer(), timeProvider);
         return new OnboardRecoveryCoordinator(
@@ -101,7 +107,9 @@ internal static class TestOnboardProcessorFactory
             publisher,
             ActivationDispatcher(context, publisher),
             timeProvider,
-            configuration);
+            configuration,
+            recoveryGrants: recoveryGrants,
+            roster: roster);
     }
 
     private static SlotConfigurationActivationDispatcher ActivationDispatcher(
@@ -164,4 +172,17 @@ internal sealed class ServedContexts
             await Task.Delay(TimeSpan.FromMilliseconds(10), guard.Token);
         }
     }
+}
+
+/// <summary>
+/// control-server#797: the recovery grant gate the endpoints take, for a test that asks for no grant -- the product default,
+/// <c>RecoveryGrant:required</c> off, under which the gate refuses nothing and reads nothing.
+/// </summary>
+internal static class TestRecoveryGrants
+{
+    public static ControlServer.Host.Runtime.Recovery.RecoveryGrantGate NotRequired(ControlServerDbContext context) =>
+        new(
+            new ControlServer.Host.Runtime.Recovery.RecoveryGrantRegistry(TimeProvider.System),
+            Options.Create(new ControlServer.Host.Runtime.Recovery.RecoveryGrantOptions()),
+            context);
 }

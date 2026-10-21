@@ -1,0 +1,156 @@
+# cs#797 red evidence on 5b87f556d976135a485f0d7644fe04bb8f57c672 (tests + compile-only stubs)
+# dotnet test -c Release --filter "(FullyQualifiedName~RecoveryStateMachineG2Tests&(FullyQualifiedName~Grant|FullyQualifiedName~Renewal|FullyQualifiedName~PerVehicleProofs))|FullyQualifiedName~RecoveryGrantTests|FullyQualifiedName~RecoveryGrantFieldOpsTests|FullyQualifiedName~NeedsAGrant"
+Failed!  - Failed:    50, Passed:    11, Skipped:     0, Total:    61, Duration: 25 s - ControlServer.Tests.dll (net8.0)
+
+  Failed ControlServer.Tests.ChargingInterruptionTests.TheVehicleRecoveryEntryNeedsAGrantForTheVehicleWhenGrantsAreRequired
+  Failed ControlServer.Tests.ManualStationClearanceTests.TheClearanceEntryNeedsAGrantForTheVehicleNamingTheClearanceWhenGrantsAreRequired
+  Failed ControlServer.Tests.RecoveryGrantFieldOpsTests.AWrongCodeIsRejectedWithTheNewCodeAndNothingIsGranted
+  Failed ControlServer.Tests.RecoveryGrantFieldOpsTests.TheVerbsRehearseGrantListAndRevokeThroughTheHost
+  Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "actions")
+  Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "journey-stage")
+  Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "minutes")
+  Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "replaces")
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantRunsOutAtItsTime
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "CLEAR_FAULT", granted: "CLEAR_FAULT", scope: "expired", code: "RECOVERY_GRANT_MISSING")
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "CLEAR_FAULT", granted: "CLEAR_FAULT", scope: "revoked", code: "RECOVERY_GRANT_MISSING")
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "CLEAR_FAULT", granted: "RESUME_AFTER_REPAIR", scope: "journey", code: "RECOVERY_GRANT_ACTION_NOT_GRANTED")
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "RESUME_HELD_ORDER", granted: "RESUME_HELD_ORDER", scope: "other-journey", code: "RECOVERY_GRANT_JOURNEY_MISMATCH")
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "RESUME_HELD_ORDER", granted: "RESUME_HELD_ORDER", scope: "vehicle-wide", code: "RECOVERY_GRANT_JOURNEY_MISMATCH")
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantWithoutOperatorReasonOrSiteVerificationIsRefusedWithEveryCode
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "action-unknown", code: "RECOVERY_GRANT_ACTION_UNKNOWN")
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "journey-completed", code: "RECOVERY_GRANT_JOURNEY_COMPLETED")
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "journey-of-nobody", code: "RECOVERY_GRANT_JOURNEY_NOT_FOUND")
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "too-long", code: "RECOVERY_GRANT_DURATION_OUT_OF_RANGE")
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "vehicle-unknown", code: "RECOVERY_GRANT_VEHICLE_UNKNOWN")
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "zero-minutes", code: "RECOVERY_GRANT_DURATION_OUT_OF_RANGE")
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalShowsThePlanAndItsCodeAndWritesNothing
+  Failed ControlServer.Tests.RecoveryGrantTests.ARenewalReplacesTheGrantAndCountsItsTimeFromThen
+  Failed ControlServer.Tests.RecoveryGrantTests.ARestartedServerHasNoGrant
+  Failed ControlServer.Tests.RecoveryGrantTests.ARevocationEndsTheGrantAndIsAudited
+  Failed ControlServer.Tests.RecoveryGrantTests.AWrongCodeIsRefusedWithTheCurrentPlanAndCodeAndAudited
+  Failed ControlServer.Tests.RecoveryGrantTests.GrantingWithTheRehearsalsCodePutsTheGrantInEffectForThirtyMinutesAndAuditsIt
+  Failed ControlServer.Tests.RecoveryGrantTests.TheGrantEntryAnswersAVehicleItDoesNotDrive404
+  Failed ControlServer.Tests.RecoveryGrantTests.TheGrantEntryRehearsesGrantsAndRevokes
+  Failed ControlServer.Tests.RecoveryGrantTests.WithoutAGrantTheFaultRecoveryEntryRefuses403AndTouchesNothing
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantForTheVehicleAndJourneyOpensTheSessionOfferingOnlyTheRepairResume
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "expired")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "no-session-action")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "other-journey")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "other-vehicle")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "restarted")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "revoked")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "vehicle-wide")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ARenewalKeepsTheSessionOpenAndOffersWhatItAdds
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionAfterTheGrantEndedIsRefusedBeforeTheSweep(revoked: False)
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionAfterTheGrantEndedIsRefusedBeforeTheSweep(revoked: True)
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionTheGrantDoesNotNameIsRefusedAndNothingIsSent
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "expired")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "renewed-for-another-journey")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "restarted")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "revoked")
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.TheSweeperClosesTheSessionWhenTheGrantRunsOut
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "own", accepted: True)
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "shared", accepted: False)
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithoutAGrantTheSessionIsRefusedUnderTheProofsCodeAndNothingIsOpened
+
+## first assertion of each failure
+  Failed ControlServer.Tests.RecoveryGrantFieldOpsTests.TheVerbsRehearseGrantListAndRevokeThroughTheHost [1 s]
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ARenewalKeepsTheSessionOpenAndOffersWhatItAdds [2 s]
+   Assert.Equal() Failure: Collections differ at index 0
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "other-journey") [175 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "expired") [127 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "vehicle-wide") [145 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "restarted") [143 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "other-vehicle") [178 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "revoked") [138 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "no-session-action") [144 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ARestartedServerHasNoGrant [3 s]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantForTheVehicleAndJourneyOpensTheSessionOfferingOnlyTheRepairResume [150 ms]
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "vehicle-unknown", code: "RECOVERY_GRANT_VEHICLE_UNKNOWN") [232 ms]
+   Assert.Contains() Failure: Item not found in collection
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "revoked") [119 ms]
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "restarted") [119 ms]
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "journey-completed", code: "RECOVERY_GRANT_JOURNEY_COMPLETED") [218 ms]
+   Assert.Contains() Failure: Item not found in collection
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "renewed-for-another-journey") [109 ms]
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "expired") [149 ms]
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "zero-minutes", code: "RECOVERY_GRANT_DURATION_OUT_OF_RANGE") [235 ms]
+   Assert.Contains() Failure: Item not found in collection
+  Failed ControlServer.Tests.ChargingInterruptionTests.TheVehicleRecoveryEntryNeedsAGrantForTheVehicleWhenGrantsAreRequired [4 s]
+   Assert.IsType() Failure: Value is not the exact type
+  Failed ControlServer.Tests.ManualStationClearanceTests.TheClearanceEntryNeedsAGrantForTheVehicleNamingTheClearanceWhenGrantsAreRequired [4 s]
+   Assert.IsType() Failure: Value is not the exact type
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithoutAGrantTheSessionIsRefusedUnderTheProofsCodeAndNothingIsOpened [113 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "journey-of-nobody", code: "RECOVERY_GRANT_JOURNEY_NOT_FOUND") [260 ms]
+   Assert.Contains() Failure: Item not found in collection
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "action-unknown", code: "RECOVERY_GRANT_ACTION_UNKNOWN") [168 ms]
+   Assert.Contains() Failure: Item not found in collection
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "shared", accepted: False) [96 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalOfWhatCannotBeGrantedSaysWhy(shape: "too-long", code: "RECOVERY_GRANT_DURATION_OUT_OF_RANGE") [213 ms]
+   Assert.Contains() Failure: Item not found in collection
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "own", accepted: True) [179 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantFieldOpsTests.AWrongCodeIsRejectedWithTheNewCodeAndNothingIsGranted [854 ms]
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionAfterTheGrantEndedIsRefusedBeforeTheSweep(revoked: False) [135 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "CLEAR_FAULT", granted: "CLEAR_FAULT", scope: "expired", code: "RECOVERY_GRANT_MISSING") [362 ms]
+   Assert.IsType() Failure: Value is not the exact type
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionAfterTheGrantEndedIsRefusedBeforeTheSweep(revoked: True) [130 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "CLEAR_FAULT", granted: "CLEAR_FAULT", scope: "revoked", code: "RECOVERY_GRANT_MISSING") [255 ms]
+   Assert.IsType() Failure: Value is not the exact type
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "CLEAR_FAULT", granted: "RESUME_AFTER_REPAIR", scope: "journey", code: "RECOVERY_GRANT_ACTION_NOT_GRANTED") [205 ms]
+   Assert.IsType() Failure: Value is not the exact type
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "RESUME_HELD_ORDER", granted: "RESUME_HELD_ORDER", scope: "vehicle-wide", code: "RECOVERY_GRANT_JOURNEY_MISMATCH") [246 ms]
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "RESUME_HELD_ORDER", granted: "RESUME_HELD_ORDER", scope: "other-journey", code: "RECOVERY_GRANT_JOURNEY_MISMATCH") [219 ms]
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "minutes") [220 ms]
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "journey-stage") [229 ms]
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "actions") [215 ms]
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "replaces") [233 ms]
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.RecoveryGrantTests.TheGrantEntryAnswersAVehicleItDoesNotDrive404 [221 ms]
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ARehearsalShowsThePlanAndItsCodeAndWritesNothing [186 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantTests.WithoutAGrantTheFaultRecoveryEntryRefuses403AndTouchesNothing [179 ms]
+   Assert.IsType() Failure: Value is not the exact type
+  Failed ControlServer.Tests.RecoveryGrantTests.AWrongCodeIsRefusedWithTheCurrentPlanAndCodeAndAudited [181 ms]
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ARevocationEndsTheGrantAndIsAudited [207 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantWithoutOperatorReasonOrSiteVerificationIsRefusedWithEveryCode [203 ms]
+   Assert.Equal() Failure: Collections differ
+  Failed ControlServer.Tests.RecoveryGrantTests.GrantingWithTheRehearsalsCodePutsTheGrantInEffectForThirtyMinutesAndAuditsIt [200 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantTests.AGrantRunsOutAtItsTime [233 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantTests.ARenewalReplacesTheGrantAndCountsItsTimeFromThen [197 ms]
+   Assert.Equal() Failure: Strings differ
+  Failed ControlServer.Tests.RecoveryGrantTests.TheGrantEntryRehearsesGrantsAndRevokes [215 ms]
+   Assert.IsType() Failure: Value is not the exact type
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.TheSweeperClosesTheSessionWhenTheGrantRunsOut [20 s]
+   System.Threading.Tasks.TaskCanceledException : A task was canceled.
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionTheGrantDoesNotNameIsRefusedAndNothingIsSent [62 ms]
+   Assert.Equal() Failure: Strings differ

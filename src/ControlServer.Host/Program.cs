@@ -174,6 +174,17 @@ builder.Services.AddOptions<VehicleFaultRecoveryOptions>()
     .Bind(builder.Configuration.GetSection(VehicleFaultRecoveryOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<VehicleFaultRecoveryOptions>, VehicleFaultRecoveryOptionsValidator>();
+// control-server#797 (ADR-cross-0066): the per-vehicle, time-limited recovery grant, in this process's memory only.
+builder.Services.AddOptions<ControlServer.Host.Runtime.Recovery.RecoveryGrantOptions>()
+    .Bind(builder.Configuration.GetSection(ControlServer.Host.Runtime.Recovery.RecoveryGrantOptions.SectionName))
+    .Validate(
+        options => options.MaximumMinutes >= 1 && options.DefaultMinutes >= 1 && options.DefaultMinutes <= options.MaximumMinutes,
+        "RecoveryGrant DefaultMinutes and MaximumMinutes must be positive, the default no longer than the maximum.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<ControlServer.Host.Runtime.Recovery.RecoveryGrantRegistry>();
+builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoveryGrantIssuance>();
+builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoveryGrantGate>();
+builder.Services.AddHostedService<ControlServer.Host.Runtime.Recovery.RecoveryGrantSweeper>();
 builder.Services.AddOptions<SlotFaultDeclarationOptions>()
     .Bind(builder.Configuration.GetSection(SlotFaultDeclarationOptions.SectionName))
     .ValidateOnStart();

@@ -258,6 +258,7 @@ public sealed class VehicleFaultRecoveryEndpointsTests
                 Enabled = true,
                 CredentialEnvironmentVariable = credentialVariable,
             }),
+            TestRecoveryGrants.NotRequired(fixture.Context),
             Token);
     }
 
