@@ -44,8 +44,8 @@ namespace ControlServer.Tests;
 /// </para>
 /// <para>
 /// <b>判据按事件，不按墙钟。</b>一个旁路观察者每 10 ms 读一次路由表，记下旧代次离开它的那一刻。要求的是：
-/// 断电后的第一次尝试就成功（新代次可路由，并连续三秒不被关）；旧代次不晚于新代次可路由时离开路由表；服务端关掉了
-/// 旧连接（中继读到服务端那一侧的 EOF）。cs#310 之前这里判的是「旧代次离表之后的第一次尝试成功」，那时恢复时刻是双峰的
+/// 断电后的第一次尝试就成功（新代次可路由，并连续三秒不被关）；旧代次离开了路由表；服务端关掉了旧连接（中继读到
+/// 服务端那一侧的 EOF），此后旧连接上再没有收到一行。cs#310 之前这里判的是「旧代次离表之后的第一次尝试成功」，那时恢复时刻是双峰的
 /// （第 3 次约 6 秒，或第 4 次约 9 秒）。墙钟只剩 <see cref="HangGuard"/> 一道挂死保护。
 /// </para>
 /// <para>
@@ -391,11 +391,10 @@ public sealed class OnboardPowerLossReconnectTests
                 "旧连接半开时，断电后的第一次重连没有建起可路由的会话：新连接没有顶替旧连接（control-server#310）。" + trace);
             Assert.True(StayedUp, "新会话可路由之后又被服务端关掉了。" + trace);
 
-            // And the old generation left the table no later than the new one entered it: never two routes, and never a
-            // vehicle whose old connection still holds the route.
-            Assert.True(
-                OldGenerationLeftAfterCut is not null && OldGenerationLeftAfterCut <= RoutableAfterCut,
-                "新代次可路由时旧代次还在路由表里。" + trace);
+            // The table holds one route per vehicle, so the new generation being routable already means the old one left it;
+            // the watcher's sighting is what the old-socket checks are timed against. The two moments are taken by two
+            // pollers and are not compared with each other: which one sees its change first is the polling, not the product.
+            Assert.True(OldGenerationLeftAfterCut is not null, "旧代次一直没离开路由表。" + trace);
         }
 
         public string Describe() =>

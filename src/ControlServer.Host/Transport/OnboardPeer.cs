@@ -132,27 +132,77 @@ public sealed class OnboardPeer : IOnboardPeer, IOnboardConnectionPresence
         }
         string agvId = session.AgvId;
         long generation = session.SessionGeneration.Value;
+        OnboardPeerConnection? superseded = null;
         lock (_gate)
         {
-            // One vehicle, one live connection. Two sockets claiming the same agvId is not a fleet,
-            // it is the ambiguity the single-connection version refused, and it is still refused --
-            // per vehicle now rather than for the server.
-            if (_connections.TryGetValue(agvId, out (OnboardPeerConnection Connection, long) existing) &&
+            // One vehicle, one live connection. Two sockets claiming the same agvId is not a fleet, it is the ambiguity the
+            // single-connection version refused. A newer session wins (control-server#310): normally its SessionHello has
+            // already taken the route over (TakeOver), and this covers an older connection whose handshake finished after
+            // that. A connection for the same or an older generation is still refused.
+            if (_connections.TryGetValue(agvId, out (OnboardPeerConnection Connection, long SessionGeneration) existing) &&
                 !ReferenceEquals(existing.Connection, connection))
             {
-                throw new InvalidOperationException($"An Onboard peer is already attached for '{agvId}'.");
+                if (existing.SessionGeneration >= generation)
+                {
+                    throw new InvalidOperationException($"An Onboard peer is already attached for '{agvId}'.");
+                }
+                superseded = existing.Connection;
+                superseded.MarkSuperseded();
             }
 
             _connections[agvId] = (connection, generation);
             RemoveHandshakingLocked(agvId, connection);
         }
+        superseded?.Close();
         connection.Addressee = $"'{agvId}' (session generation {generation})";
     }
 
-    // Stub for control-server#310's tests; the takeover is not implemented yet.
-    internal ValueTask<long?> TakeOverAsync(string agvId, long generation, OnboardPeerConnection connection) =>
-        _connections.Count < 0 ? default :
-        ValueTask.FromResult<long?>(null);
+    /// <summary>
+    /// The server has accepted a SessionHello from <paramref name="connection"/> that opened session
+    /// <paramref name="generation"/> for <paramref name="agvId"/>: the vehicle's routable connection, if it is another one
+    /// in an older generation, leaves the routing table and is closed (control-server#310). Returns that connection's
+    /// generation, or null when there was nothing to take over.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why at the hello.</b> A vehicle whose CPE roams between access points loses its connection for a second or two and
+    /// opens a new one, while the server still holds the old one half-open -- for up to the six-second silence window
+    /// (ADR-cross-0027). Until then the new connection went through its whole handshake, the vehicle read SessionReadiness,
+    /// and only then was the connection refused at the attach: "ready, then dropped", the replay after the recovery report
+    /// never ran, and the vehicle retried every two seconds until the window let the old connection go -- one roam turned
+    /// into several disconnects in the field. Accepting the hello has already moved the vehicle's session to the new
+    /// generation in the database, so the old connection is stale from that moment: every line it carries is refused as a
+    /// stale generation, and every push built for its generation is refused here. Nothing is lost by closing it.
+    /// </para>
+    /// <para>
+    /// <b>Only an accepted hello, and only forward.</b> A hello the server refuses (a bad credential, another protocol
+    /// release) takes nothing, so it cannot cut a working vehicle off; and the generations the server hands out only grow,
+    /// so a connection never takes the route from a newer session.
+    /// </para>
+    /// <para>
+    /// <b>Closed, not just forgotten.</b> Closing the stream ends the old connection's read and any write in flight on it
+    /// (the same path the write timeout takes), so its loop ends and nothing more is written to it.
+    /// </para>
+    /// </remarks>
+    internal long? TakeOver(string agvId, long generation, OnboardPeerConnection connection)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentNullException.ThrowIfNull(connection);
+        (OnboardPeerConnection Connection, long SessionGeneration) superseded;
+        lock (_gate)
+        {
+            if (!_connections.TryGetValue(agvId, out superseded) ||
+                ReferenceEquals(superseded.Connection, connection) ||
+                superseded.SessionGeneration >= generation)
+            {
+                return null;
+            }
+            _connections.Remove(agvId);
+            superseded.Connection.MarkSuperseded();
+        }
+        superseded.Connection.Close();
+        return superseded.SessionGeneration;
+    }
 
     internal void Detach(string agvId, OnboardPeerConnection connection)
     {
@@ -253,8 +303,9 @@ public sealed class OnboardPeer : IOnboardPeer, IOnboardConnectionPresence
 /// </para>
 /// <para>
 /// <b>Why closing, and not just giving up on the write.</b> A write abandoned half way may have put part of a line on the
-/// wire, and the next line would be read as its tail. And the connection has to leave the routing table, or the vehicle's
-/// reconnect is refused as a second connection for the same vehicle (control-server#276). Closing the stream does both
+/// wire, and the next line would be read as its tail. And the connection has to leave the routing table, or every push
+/// keeps queueing on a socket nobody reads (control-server#276; a reconnect now takes the route over at its hello,
+/// control-server#310, but a vehicle that never reconnects has only this). Closing the stream does both
 /// through the path the silence window already takes: the connection's read fails, its loop ends, and
 /// <c>OnboardTcpServer.HandleClientAsync</c> detaches it. When the loop is itself the one stuck -- on its HeartbeatAck,
 /// behind another sender's write -- that write is bounded here too, and the loop ends through the same exception.
@@ -292,8 +343,15 @@ internal sealed class OnboardPeerConnection : IAsyncDisposable
     /// <summary>Who this connection reaches, for the failures it reports; set once the connection is made routable.</summary>
     internal string Addressee { get; set; } = "(no session yet)";
 
-    // Stub for control-server#310's tests.
-    internal bool Superseded => _writeTimeout < TimeSpan.Zero;
+    private volatile bool _superseded;
+
+    /// <summary>A newer session of the same vehicle took this connection's route and closed it (control-server#310).</summary>
+    internal bool Superseded => _superseded;
+
+    internal void MarkSuperseded() => _superseded = true;
+
+    /// <summary>Ends the connection from this side: its read and any write in flight on it fail.</summary>
+    internal void Close() => _stream.Dispose();
 
     public async Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
     {

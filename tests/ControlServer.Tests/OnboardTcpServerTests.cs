@@ -166,7 +166,7 @@ public sealed class OnboardTcpServerTests
         await using OnboardPeerConnection newer = new(new MemoryStream());
         peer.Attach(Session(7), old);
 
-        long? supersededGeneration = await peer.TakeOverAsync(HandshakeAgvId, 8, newer);
+        long? supersededGeneration = peer.TakeOver(HandshakeAgvId, 8, newer);
 
         Assert.Equal(7, supersededGeneration);
         Assert.True(old.Superseded);
@@ -194,9 +194,9 @@ public sealed class OnboardTcpServerTests
         await using OnboardPeerConnection other = new(new MemoryStream());
         peer.Attach(Session(8), attached);
 
-        Assert.Null(await peer.TakeOverAsync(HandshakeAgvId, 7, other));
-        Assert.Null(await peer.TakeOverAsync(HandshakeAgvId, 8, other));
-        Assert.Null(await peer.TakeOverAsync(HandshakeAgvId, 9, attached));
+        Assert.Null(peer.TakeOver(HandshakeAgvId, 7, other));
+        Assert.Null(peer.TakeOver(HandshakeAgvId, 8, other));
+        Assert.Null(peer.TakeOver(HandshakeAgvId, 9, attached));
 
         Assert.Equal(8, peer.ConnectedSessionGeneration(HandshakeAgvId));
         Assert.True(attachedStream.CanWrite);

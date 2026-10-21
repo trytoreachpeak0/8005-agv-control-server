@@ -123,6 +123,13 @@ public sealed partial class OnboardTcpServer : BackgroundService
         {
             // Shutdown.
         }
+        catch (Exception error) when (label.Connection?.Superseded == true)
+        {
+            // A newer session took this connection over and closed it (control-server#310); 1007 already said so. Whatever
+            // the closed stream made the loop end with is the takeover, not a protocol or transport error.
+            LogSupersededConnectionEnded(
+                _logger, label.AgvId ?? "(no session)", label.State?.SessionGeneration, label.RemoteEndPoint, error);
+        }
         catch (Exception error)
         {
             // control-server#779: until then this named no vehicle, and on 2026-10-19 which car a database fault had cut
@@ -145,6 +152,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
         OnboardMessageProcessor processor = scope.ServiceProvider.GetRequiredService<OnboardMessageProcessor>();
         OnboardConnectionState state = new() { DeferOutboundUntilResponseWritten = true };
         label.State = state;
+        label.Connection = connection;
         string? attachedAgvId = null;
         // The vehicle this connection's SessionHello named while its handshake is not done (control-server#483).
         string? handshakingAgvId = null;
@@ -220,12 +228,22 @@ public sealed partial class OnboardTcpServer : BackgroundService
                     _peer.BeginHandshake(helloAgvId, connection);
                     handshakingAgvId = helloAgvId;
                 }
+                long? generationBefore = state.SessionGeneration;
                 string response = await processor.ProcessAsync(line, state, cancellationToken).ConfigureAwait(false);
                 // Refreshed only once the message has been processed: ADR-cross-0027 counts legal protocol
                 // messages, and a line is not known to be one until the envelope and the session generation
                 // have been checked. A line that throws does not refresh, and it ends the connection anyway.
                 // The window runs from when the line arrived, not from now -- see the stamp above.
                 liveness.RefreshTo(arrivedAt);
+                // An accepted hello opened a new session: it takes the vehicle over from a connection the server still holds
+                // for an older one (control-server#310, OnboardPeer.TakeOver). Before the answer is written, so by the time
+                // the vehicle reads SessionAccepted nothing more can reach the old connection. A refused hello sets no new
+                // generation and takes nothing.
+                if (hello && state.AgvId is { } helloSession && state.SessionGeneration is { } opened && opened != generationBefore &&
+                    _peer.TakeOver(helloSession, opened, connection) is { } supersededGeneration)
+                {
+                    LogConnectionTakenOver(_logger, helloSession, opened, label.RemoteEndPoint, supersededGeneration, null);
+                }
                 // The answer to the line just read. This write and OnboardPeer are the only two ways onto the
                 // socket (OnboardOutboundFunnelArchitectureTests), and this one needs no gate: the vehicle is
                 // waiting for exactly this line.
@@ -310,6 +328,9 @@ public sealed partial class OnboardTcpServer : BackgroundService
         public OnboardConnectionState? State { get; set; }
 
         public string? HelloAgvId { get; set; }
+
+        /// <summary>The connection, to tell an end caused by a takeover (control-server#310) from an error.</summary>
+        public OnboardPeerConnection? Connection { get; set; }
 
         public string? AgvId => State?.AgvId ?? HelloAgvId;
     }
@@ -408,4 +429,17 @@ public sealed partial class OnboardTcpServer : BackgroundService
                   "baseline (control-server#478).")]
     private static partial void LogEndedAfterRefusedBaseline(
         ILogger logger, string agvId, long? sessionGeneration, Exception? error);
+
+    [LoggerMessage(EventId = 1007, Level = LogLevel.Information,
+        Message = "Onboard session for {AgvId} (generation {SessionGeneration}) from {RemoteEndPoint} took the vehicle over " +
+                  "from its connection in generation {SupersededGeneration}, which is closed now (control-server#310). " +
+                  "Usually the vehicle reconnected before the server noticed the old connection was gone.")]
+    private static partial void LogConnectionTakenOver(
+        ILogger logger, string agvId, long sessionGeneration, string remoteEndPoint, long supersededGeneration, Exception? error);
+
+    [LoggerMessage(EventId = 1008, Level = LogLevel.Debug,
+        Message = "Onboard connection for {AgvId} (generation {SessionGeneration}), remote {RemoteEndPoint}, ended after a " +
+                  "newer session took it over (control-server#310).")]
+    private static partial void LogSupersededConnectionEnded(
+        ILogger logger, string agvId, long? sessionGeneration, string remoteEndPoint, Exception error);
 }
