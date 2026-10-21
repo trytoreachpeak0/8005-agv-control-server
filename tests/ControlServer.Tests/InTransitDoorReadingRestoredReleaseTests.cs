@@ -553,6 +553,128 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
     }
 
     /// <summary>
+    /// 本单起点那一刻生效的那条摘要本身读到没锁：它也参与复查，不自动解除（第四次复审 L1，钉住「边界那一行先判没锁、再判是否到起点」）。
+    /// 建单要求出发前门锁已证明锁闭，正常到不了；重建回退时起点那一刻可能正是没锁。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task NoAutomaticReleaseWhenTheSummaryInForceAtTheStartOfTheLegReadNotLocked()
+    {
+        await using RuntimeFixture fixture = await LatchedForUnreadDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        await using (ControlServerDbContext db = new(fixture.DbOptionsForTests))
+        {
+            DateTimeOffset legStart = (await db.OrderIntents.AsNoTracking()
+                .SingleAsync(row => row.UpperId == latched.UpperId, Token)).CreatedAt;
+            ProtocolInboxRow[] atStart = [.. (await db.ProtocolInbox
+                    .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
+                    .ToArrayAsync(Token))
+                .Where(row => row.ReceivedAt <= legStart)];
+            Assert.NotEmpty(atStart);
+            foreach (ProtocolInboxRow row in atStart)
+            {
+                System.Text.Json.Nodes.JsonObject root = System.Text.Json.Nodes.JsonNode.Parse(row.RequestJson)!.AsObject();
+                System.Text.Json.Nodes.JsonObject safety = root["payload"]!["safety"]!.AsObject();
+                safety["allTargetSlotsLocked"] = false;
+                safety["reasonCodes"] = new System.Text.Json.Nodes.JsonArray("LOCK_NOT_CLOSED");
+                row.RequestJson = root.ToJsonString();
+            }
+
+            await db.SaveChangesAsync(Token);
+        }
+
+        fixture.Context.ChangeTracker.Clear();
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 取货站装货时门开过（车停着、没锁），关好锁闭后才离站建关卡腿的单；在途读不到、宽限后急停锁住，读回锁闭（第四次复审 M1）。站上那次开门在本单
+    /// 起点之前，不算在途：四格都要自动解除。修之前「读不到」出现在本腿第一轮时，episode 的起点被拉回站上那条「没锁」的收到时刻，全量复查读到它，
+    /// 永远不解除。夹具的取货腿不跑在途轮，用一次锁闭的 Observe 代表上一腿的最后一轮（它把按车保存的「读到哪里」留在站点之前）。
+    /// </summary>
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ADoorOpenedForTheLoadAtTheStationDoesNotKeepAnUnreadStopWithAPerson(bool doorOpenedAtStation, bool unreadAtOnce)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        await fixture.AdvanceToLoadResultAsync();
+        fixture.Context.ChangeTracker.Clear();
+        fixture.DoorReadings.Observe(
+            fixture.Options.AgvId,
+            new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, 1, 1, fixture.Clock.GetUtcNow()),
+            doorFaultInEffect: false,
+            fixture.Clock.GetUtcNow());
+        Assert.NotNull(fixture.DoorReadings.SinceFor(fixture.Options.AgvId));
+
+        if (doorOpenedAtStation)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+            await fixture.ReportSafetySummaryAsync(
+                allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED"], vehicleStopped: true);
+        }
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.ReportSafetySummaryAsync(allTargetSlotsLocked: true, unknownPresent: false, [], vehicleStopped: true);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        await fixture.ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = runtime.PreDepartureSafetyCheckId,
+                checkPurpose = "DEPARTURE",
+                outcome = "SAFE",
+                observedAt = fixture.Clock.GetUtcNow(),
+                safetyStateVersion = (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).SafetyRevision,
+                validUntil = fixture.Clock.GetUtcNow().AddMinutes(1),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>(),
+                },
+            },
+            runtime.PreDepartureSafetyCheckMessageId);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.RuntimeAsync()).Stage);
+
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+        if (!unreadAtOnce)
+        {
+            await ReportLockedAsync(fixture);
+            await DriveOneRoundAsync(fixture);
+        }
+
+        await ReportUnknownAsync(fixture);
+        await DriveRoundsAsync(fixture, 3);
+        await LatchAsync(fixture);
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.True(await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency) > 0);
+    }
+
+    /// <summary>
     /// 故障期间 IO 一直读不到、车载端很久没有新摘要（心跳照常、每分钟一轮），之后读回锁闭（第三次复审 L1、探针 Q4）：安静超过 10 分钟不是
     /// 读漏了什么，读回锁闭满 10 秒照样自动解除。修之前「上一轮以来」被截到 10 分钟就当历史不明，11 分钟那一格永远不解除。
     /// </summary>
