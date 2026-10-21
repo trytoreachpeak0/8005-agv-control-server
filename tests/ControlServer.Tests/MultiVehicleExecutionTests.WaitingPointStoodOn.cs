@@ -30,6 +30,7 @@ public sealed partial class MultiVehicleExecutionTests
         }
         else
         {
+            fixture.Catalog.Set([]);
             fixture.Context.ForeignRiotOrders.Add(new ForeignRiotOrderRow
             {
                 RiotOrderId = "order-foreign-0798",

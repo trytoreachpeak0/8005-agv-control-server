@@ -92,7 +92,8 @@ public sealed partial class JourneyRuntimeEngine
     /// </para>
     /// <para>
     /// <b>选点</b>：与空闲返回同一个等待点集合、同一个判法（<see cref="IdleReturnEvaluator.ExcludePointAsync"/>：当前地图、专用角色、白名单、实时目录、
-    /// 没被预占或占用、路网可达），排除这个周期查无此单失败过的点，代价最小者、平手取站号小的。没有合格点就原地排队、告警一次，<b>不猜别的站点</b>。
+    /// 没被预占或占用、没有车队里的另一辆车停在上面——control-server#798，全车队的位置与空闲返回同一个读取器——、路网可达），
+    /// 排除这个周期查无此单失败过的点，代价最小者、平手取站号小的。没有合格点就原地排队、告警一次，<b>不猜别的站点</b>。
     /// </para>
     /// <para>
     /// <b>承诺</b>：<see cref="ClearanceWaitingPointCommitment.TryCommitAsync"/>，一次保存；输了（站被别的承诺先拿到）什么也不写，下一轮重评。
@@ -157,7 +158,7 @@ public sealed partial class JourneyRuntimeEngine
             .. released.Where(row => row.ReleaseReason == ClearanceMoveReleaseReasons.NeverAppeared).Select(row => row.StationId),
         ];
         (IdleReturnPointCandidate? chosen, WaitingPointRegistrationVersion? registration, string excluded) =
-            await ChooseClearanceWaitingPointAsync(runtime, vehicle.CurrentStationId!.Value, currentMap, failedBefore, cancellationToken)
+            await ChooseClearanceWaitingPointAsync(runtime, vehicle, currentMap, failedBefore, cancellationToken)
                 .ConfigureAwait(false);
         string noPointKey = "clearance-no-waiting-point:" + runtime.JourneyId;
         if (chosen is null)
@@ -193,11 +194,12 @@ public sealed partial class JourneyRuntimeEngine
     private async Task<(IdleReturnPointCandidate? Chosen, WaitingPointRegistrationVersion? Registration, string Excluded)>
         ChooseClearanceWaitingPointAsync(
             JourneyRuntimeRow runtime,
-            int origin,
+            RiotVehicleObservation vehicle,
             RiotMapStationCatalogSnapshot currentMap,
             HashSet<int> failedBefore,
             CancellationToken cancellationToken)
     {
+        int origin = vehicle.CurrentStationId!.Value;
         RouteGraphAccess access = dispatchRound.Charging.RouteGraph;
         RouteGraphAvailability graph = access.Enabled && access.MapId == runtime.MapId
             ? await access.ReadAsync(cancellationToken).ConfigureAwait(false)
@@ -212,6 +214,10 @@ public sealed partial class JourneyRuntimeEngine
         IReadOnlySet<int> fixedTaskStations = WaitingPointFixedTaskStations.StationIds(
             await WaitingPointFixedTaskStations.ReadAsync(_taskTypeStations.Bindings, runtime.MapId, cancellationToken)
                 .ConfigureAwait(false));
+        // Who stands where across the fleet (control-server#798): before this, only the exclusivity rows were read, and a vehicle
+        // standing on a point without one -- idle, on a journey, held by a foreign order -- did not keep the clearing vehicle off it.
+        FleetStanding standing = await dispatchRound.IdleReturn
+            .ReadFleetStandingAsync([vehicle], cancellationToken).ConfigureAwait(false);
         List<string> excluded = [];
         List<IdleReturnPointCandidate> eligible = [];
         foreach (WaitingPointEntry point in (registration?.Points ?? [])
@@ -222,6 +228,7 @@ public sealed partial class JourneyRuntimeEngine
                 ? IdleReturnReasons.PointFailedLastAttempt
                 : await IdleReturnEvaluator.ExcludePointAsync(
                         registration, fixedTaskStations, currentMap, runtime.MapId, graph.Graph!, point, runtime.VehicleKey, origin,
+                        standing,
                         async (stationId, token) => await dbContext.Set<StationExclusivityRow>().AsNoTracking()
                             .AnyAsync(row => row.MapId == runtime.MapId && row.StationId == stationId, token).ConfigureAwait(false),
                         cancellationToken)

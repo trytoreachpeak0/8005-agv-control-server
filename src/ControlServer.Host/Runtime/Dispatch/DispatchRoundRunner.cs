@@ -293,6 +293,9 @@ public sealed class DispatchRoundRunner(
             }
         }
 
+        // Where each of them stands, for a waiting point selection that cannot read one of them later (control-server#798).
+        idleReturn.RememberWhereVehiclesStand(participants.Select(p => p.Facts.Vehicle));
+
         // 充电分配（批次9-06，control-server#404）：在任务循环之前——强制充电先于普通搬运（REQ-0290）。交过去的是这一轮的空闲车与它们
         // 这一轮读定的事实（电量、策略版本同一份）；取得承诺的车此后这一轮不接搬运（判据 ChargingStandingCriterion），也不被空闲返回选中。
         // 分配器是必填的，理由同下面的空闲返回评估器：可选注入时宿主漏注册会静默成「从不分配」。它自己保存，每辆车的失败只丢它自己的暂存行。
@@ -486,6 +489,11 @@ public sealed class DispatchRoundRunner(
     /// 这一轮用的充电分配器（control-server#404）。引擎的充电分支经它做出发前的桩侧复核——同一条候选链，不另写一份。
     /// </summary>
     public ChargingAllocator Charging => chargingAllocation;
+
+    /// <summary>
+    /// 这一轮用的空闲返回评估器。清桩开往等待点经它读选点用的全车队位置（control-server#798）——与空闲返回同一个读取器、同一个判法。
+    /// </summary>
+    public IdleReturnEvaluator IdleReturn => idleReturn;
 
     private async Task<RoundVehicle?> TryAdmitToRoundAsync(
         FleetVehicle vehicle,

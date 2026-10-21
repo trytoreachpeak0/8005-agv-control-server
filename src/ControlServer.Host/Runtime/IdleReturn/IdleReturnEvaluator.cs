@@ -522,10 +522,12 @@ public sealed class IdleReturnEvaluator(
     private static bool StandsOn(Domain.RouteGraph graph, int from, int stationId) =>
         FleetStanding.StandsOn(graph, from, stationId);
 
-    /// <summary>这一轮交来的另一辆车此刻就站在这个站上（control-server#793）。</summary>
-    private static bool StoodOnByAnother(
-        Domain.RouteGraph graph, FleetStanding standing, string vehicleKey, int stationId) =>
-        standing.StoodOnByAnother(graph, vehicleKey, stationId) is not null;
+    /// <summary>
+    /// 记下派车轮这一轮为参加的车读到的位置（control-server#798）：之后某次选点读不到其中哪辆车时，按它上一次读到的站算。
+    /// 关着也记——清桩开往等待点不看空闲返回的开关。
+    /// </summary>
+    public void RememberWhereVehiclesStand(IEnumerable<RiotVehicleObservation> observations) =>
+        fleetStanding.Remember(observations);
 
     /// <summary>选点用的全车队位置，给清桩开往等待点共用（control-server#798）。</summary>
     internal Task<FleetStanding> ReadFleetStandingAsync(
@@ -561,7 +563,8 @@ public sealed class IdleReturnEvaluator(
     }
 
     /// <summary>
-    /// 待送固定起点此刻能不能接这辆车：在实时目录里、站名与绑定一致，没被别的车预占或占用，路网可达。能接答空。被这辆车自己持有的
+    /// 待送固定起点此刻能不能接这辆车：在实时目录里、站名与绑定一致，没被别的车预占或占用、也没有车队里的另一辆车停在上面
+    /// （<see cref="FleetStanding.Excludes"/>，与等待点同一个判法），路网可达。能接答空。被这辆车自己持有的
     /// （刚离开、离点清扫还没放）不算被占：承诺那一次保存由主键答，下一轮再判。
     /// </summary>
     private async Task<string?> ExcludeStagingOriginAsync(
@@ -582,10 +585,14 @@ public sealed class IdleReturnEvaluator(
         }
 
         if (await stations.ReadAsync(_runtime.MapId, stationId, cancellationToken).ConfigureAwait(false) is { } held &&
-            !string.Equals(held.VehicleKey, vehicle.VehicleKey, StringComparison.Ordinal) ||
-            StoodOnByAnother(reads.Graph.Graph!, standing, vehicle.VehicleKey, stationId))
+            !string.Equals(held.VehicleKey, vehicle.VehicleKey, StringComparison.Ordinal))
         {
             return IdleReturnReasons.PointTaken;
+        }
+
+        if (standing.Excludes(reads.Graph.Graph!, vehicle.VehicleKey, stationId) is { } stoodOn)
+        {
+            return stoodOn;
         }
 
         if (stationId != origin && StandsOn(reads.Graph.Graph!, origin, stationId))
@@ -598,7 +605,7 @@ public sealed class IdleReturnEvaluator(
 
     /// <summary>
     /// 一个等待点能不能接这辆车的新承诺（<c>REQ-0293</c> 前半句）：登记与实时目录（当前地图、专用角色、白名单、站点身份），
-    /// 没被别的承诺预占或占用、也没有这一轮交来的另一辆车停在上面（control-server#793），路网可达，而且不是与车所在的站同一个节点、
+    /// 没被别的承诺预占或占用、也没有车队里的另一辆车停在上面（control-server#793、#798），路网可达，而且不是与车所在的站同一个节点、
     /// 代价为 0 的别的站（#796 审查 M1）。能接答空。
     /// </summary>
     private async Task<string?> ExcludeAsync(
@@ -614,14 +621,15 @@ public sealed class IdleReturnEvaluator(
             : await ExcludePointAsync(
             reads.Registration, reads.FixedTaskStations, currentMap, _runtime.MapId, reads.Graph.Graph!, point, vehicle.VehicleKey,
             origin,
-            async (stationId, token) =>
-                StoodOnByAnother(reads.Graph.Graph!, standing, vehicle.VehicleKey, stationId) ||
-                await stations.ReadAsync(_runtime.MapId, stationId, token).ConfigureAwait(false) is not null,
+            standing,
+            async (stationId, token) => await stations.ReadAsync(_runtime.MapId, stationId, token).ConfigureAwait(false) is not null,
             cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// 一个等待点能不能接这辆车的新承诺：上面那一个判法本身，抽出来给清桩开往等待点共用（批次9-11，control-server#409：「同一个等待点集合、
     /// 同一个判法」，只改可见性与签名）。<paramref name="isHeld"/> 现读这个站此刻有没有被预占或占用——前一辆刚预占的点后一辆要看得见。
+    /// 没有独占行、却有车队里的另一辆车停在上面的点也不接（<paramref name="standing"/>，control-server#798）：开过去的车会停在点前等放行，
+    /// 占着点的若是外来订单的车、故障车或卡住的旅程，就一直堵在路上。
     /// </summary>
     internal static async Task<string?> ExcludePointAsync(
         WaitingPointRegistrationVersion? registration,
@@ -632,11 +640,13 @@ public sealed class IdleReturnEvaluator(
         WaitingPointEntry point,
         string vehicleKey,
         int origin,
+        FleetStanding standing,
         Func<int, CancellationToken, Task<bool>> isHeld,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(point);
+        ArgumentNullException.ThrowIfNull(standing);
         ArgumentNullException.ThrowIfNull(isHeld);
         WaitingPointEligibilityDecision decision = WaitingPointEligibility.Judge(
             registration, fixedTaskStations, currentMap, mapId, point.StationId, vehicleKey);
@@ -648,6 +658,11 @@ public sealed class IdleReturnEvaluator(
         if (await isHeld(point.StationId, cancellationToken).ConfigureAwait(false))
         {
             return IdleReturnReasons.PointTaken;
+        }
+
+        if (standing.Excludes(graph, vehicleKey, point.StationId) is { } stoodOn)
+        {
+            return stoodOn;
         }
 
         return graph.Traverse(origin, point.StationId).Reachable ? null : IdleReturnReasons.PointUnreachable;

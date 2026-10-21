@@ -102,11 +102,14 @@ internal static class IdleReturnCodeDescriptions
                 + "两次以单被取消、删除或失败收尾，说明有人要它别动，服务端不再自动让它回等待点，并在服务端日志里告警（事件 2227）。"
                 + "窗口过去也不会自己解除：这辆车被派了一趟搬运（或别的旅程）之后才重新开始自动空闲返回。"
                 + "请到现场与 RIoT 查明为什么反复取消；车停在原地不影响派搬运",
-            [IdleReturnReasons.PointTaken] = "这个等待点此刻被别的承诺预占或占用着，或者另一辆车此刻就停在点上",
+            [IdleReturnReasons.PointTaken] = "这个等待点此刻被别的承诺预占或占用着",
+            [IdleReturnReasons.PointStoodOn] =
+                "这个等待点没有占用记录，但车队里另一辆车此刻就停在点上（或停在与它路程为 0 的站上）：派车过去会停在点前等放行、堵在路上，所以不派。"
+                + "外来订单占着的车、在跑旅程的车都算；这一轮读不到位置的车按它上一次读到的站算。那辆车开走后自动恢复，不需要人处理",
             [IdleReturnReasons.PointUnreachable] = "路网上从车的位置到不了这个等待点，或它不在路网上",
             [IdleReturnReasons.PointAtVehicleNode] =
                 "车此刻停的站与这个点在路网上吸附到同一个位置（路程为 0）、却不是同一个站：保守起见不让车开过去。"
-                + "这辆车本轮也在评估中时，这个点也不派给别的车",
+                + "这个点也不派给别的车（见「点上有车」）",
             [IdleReturnReasons.PointFailedLastAttempt] = "这辆车上一次开往这个等待点已确认失败：这一次排除它",
         };
 

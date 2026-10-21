@@ -86,11 +86,11 @@ public static class IdleReturnReasons
     /// </summary>
     public const string StoppedAfterRepeatedEndedOrders = "IDLE_RETURN_STOPPED_AFTER_REPEATED_ENDED_ORDERS";
 
-    // 候选等待点被排除的原因：前五个是 WaitingPointEligibilityReasons（批次8-17）的码，原样沿用；下面两个是本票的。
+    // 候选等待点被排除的原因：前五个是 WaitingPointEligibilityReasons（批次8-17）的码，原样沿用；下面是空闲返回自己的。
 
     /// <summary>
-    /// 这个等待点此刻被别的承诺预占或占用着，或者这一轮交来评估的另一辆车此刻就停在点上（或与点同一个路网节点、代价为 0 的站上），
-    /// 哪怕它没有独占行（control-server#793）。
+    /// 这个等待点此刻被别的承诺预占或占用着（有独占行）。没有独占行、却有车停在上面的点答 <see cref="PointStoodOn"/>（control-server#798；
+    /// 此前 control-server#793 把这种情况也记成这个码）。
     /// </summary>
     public const string PointTaken = "WAITING_POINT_RESERVED_OR_OCCUPIED";
 
@@ -106,7 +106,7 @@ public static class IdleReturnReasons
     /// <summary>
     /// 车此刻停的站与这个点吸附在路网的同一个节点上、代价为 0，却不是同一个站（#796 审查 M1）：保守排除，不承诺开往它。同节点只说明两个站
     /// 吸附到同一个端点（<c>RouteGraph.TraversalCostsFrom</c>），两站实际可能相隔一段；开过去之后 RIoT 报哪个站没有验证过。若仍报原来那个站，
-    /// 离点证据比的是站号，点会在下一轮被当成已离开放掉。别的车由「另一辆车站在上面」挡住——只在本车属于这一轮交来评估的车时成立。
+    /// 离点证据比的是站号，点会在下一轮被当成已离开放掉。别的车由「另一辆车站在上面」（<see cref="PointStoodOn"/>）挡住。
     /// </summary>
     public const string PointAtVehicleNode = "WAITING_POINT_AT_VEHICLE_NODE";
 
