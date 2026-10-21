@@ -1,0 +1,15 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index 0c8161af1..f1d55a968 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -182,7 +182,7 @@ public sealed class FleetStandingReader(
+             .FirstOrDefault(entry => string.Equals(entry.AgvId, vehicle.AgvId, StringComparison.Ordinal))?.RoundTimeoutMilliseconds ?? 0;
+         using CancellationTokenSource expiry = new(
+             TimeSpan.FromMilliseconds(milliseconds > 0 ? milliseconds : new FleetVehicleOptions().RoundTimeoutMilliseconds), timeProvider);
+-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);
++        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+         try
+         {
+             return await vehicleFacts.ReadVehicleAsync(vehicle.VehicleKey, linked.Token).ConfigureAwait(false);
+  Failed ControlServer.Tests.IdleReturnExecutionTests.AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict [1 m 4 s]
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 1 m 4 s - ControlServer.Tests.dll (net8.0)

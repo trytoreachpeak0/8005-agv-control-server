@@ -1,0 +1,18 @@
+diff --git a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+index 0c8161af1..278608c76 100644
+--- a/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
++++ b/src/ControlServer.Host/Runtime/IdleReturn/FleetStanding.cs
+@@ -158,7 +158,7 @@ public sealed class FleetStandingReader(
+ 
+         // On another Map it stands on none of this Map's points, whatever its station number says.
+         if (!string.IsNullOrEmpty(observed.CurrentMap) &&
+-            !string.Equals(observed.CurrentMap, _runtime.MapIdentity, StringComparison.Ordinal))
++            observed.CurrentMap.Length < 0)
+         {
+             return (true, null, null);
+         }
+  Failed ControlServer.Tests.IdleReturnCommitmentTests.AVehicleStandingOnNoPointOfThisMapKeepsNoOneOff(station: 214, map: "MAP-OTHER") [15 ms]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("IDLE_RETURN_COMMITTED", 214)
+Actual:   Tuple ("IDLE_RETURN_COMMITTED", 215)
+Failed!  - Failed:     1, Passed:     2, Skipped:     0, Total:     3, Duration: 2 s - ControlServer.Tests.dll (net8.0)

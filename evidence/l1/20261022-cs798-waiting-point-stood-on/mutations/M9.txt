@@ -1,0 +1,15 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+index e0d6be819..765f6b00e 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+@@ -294,7 +294,6 @@ public sealed class DispatchRoundRunner(
+         }
+ 
+         // Where each of them stands, for a waiting point selection that cannot read one of them later (control-server#798).
+-        idleReturn.RememberWhereVehiclesStand(participants.Select(p => p.Facts.Vehicle));
+ 
+         // 充电分配（批次9-06，control-server#404）：在任务循环之前——强制充电先于普通搬运（REQ-0290）。交过去的是这一轮的空闲车与它们
+         // 这一轮读定的事实（电量、策略版本同一份）；取得承诺的车此后这一轮不接搬运（判据 ChargingStandingCriterion），也不被空闲返回选中。
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AVehicleThatCannotBeReadCountsWhereItWasLastSeen [3 s]
+   Assert.Empty() Failure: Collection was not empty
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 3 s - ControlServer.Tests.dll (net8.0)
