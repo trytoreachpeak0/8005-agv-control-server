@@ -329,10 +329,18 @@ public sealed partial class JourneyRuntimeEngine
         // 与缺电那一支「不改判」同一个口径（独立审查 L3）。车本来就要走，装满是更早、更具体的那个理由。
         // 车上已有那张 VEHICLE_FULL，这一次没有要发的装货阶段快照（control-server#780）：判满的那一张可能在别的停靠、或按「还在路上」算的号，
         // 按当前停靠与当前基准重算出来的 id 在发件箱里没有那一行。离站那一轮由 ReconcileLoadingPhaseAsync 发 CLOSED / VEHICLE_FULL。
-        string? loadingPhaseMessageId = runtime.LoadingPhaseState != LoadingPhaseStates.VehicleFull
-            ? await StageLoadingPhaseClosedAsync(runtime, locked, session, holdingApplicable, closedReason, at, cancellationToken)
-                .ConfigureAwait(false)
-            : null;
+        // 不改关闭原因，旅程行上就没有「已受理出发」的痕迹，而判满每轮重判（control-server#800）：记在本停靠的 OperatorDepartedAt 上，判满那一处据此保持
+        // VEHICLE_FULL，不在离站核验发出之前被撤回（cs#780 独立审查 M1）。缺电那一支在 VEHICLE_FULL 时不进来（TryDepartLowBatteryStagingStopWithCargoAsync）。
+        string? loadingPhaseMessageId = null;
+        if (runtime.LoadingPhaseState != LoadingPhaseStates.VehicleFull)
+        {
+            loadingPhaseMessageId = await StageLoadingPhaseClosedAsync(
+                runtime, locked, session, holdingApplicable, closedReason, at, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            (await TrackedStopAsync(current.StopId, cancellationToken).ConfigureAwait(false)).OperatorDepartedAt = at;
+        }
 
         // 本站因此没有待做项了：空清单说出发或缺电（wire-notes 第 4 条）。本站本来就装完了（持货等单）时不再补一张：车上手里那张清单照旧，
         // 离站由业务状态快照与离站核验表达（CP-0012 第三节第 5 条由本票定，见 PR）。
