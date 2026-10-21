@@ -49,11 +49,10 @@ internal static class IdleReturnCodeDescriptions
                 + "30 秒内这辆车不再自动空闲返回，10 分钟内再失败或被取消一次就停止自动空闲返回",
             [VehicleFaultEvidence.DoorNotProvenLocked] =
                 "车在开往等待点的途中，车载端报门锁未锁闭或仓位状态读不到：服务端已按住这张单，证不出停稳即急停，"
-                + "并把车判为疑似故障：不派新单，用途与等待点预占保持。请到现场确认车已停、门已锁好；"
-                + "门锁锁好后急停会自动解除，但单仍停着，要由现场人员经故障处置入口「继续原单」车才会再走",
+                + "并把车判为疑似故障：不派新单，用途与等待点预占保持。"
+                + BlockedJourneysQueryEndpoint.DoorLatchNotReleasedByTheLock + BlockedJourneysQueryEndpoint.DoorLatchWayOut,
             [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =
-                "开往等待点的车因门锁被按住、急停，门锁锁好后急停已自动解除；这张单本应停着等人继续，RIoT 却报它在执行，"
-                + "而没有人按过继续。车若在动，服务端会再次急停。请到现场确认车的状态，并在 RIoT 上核实是谁让这张单继续的",
+                "开往等待点的车因门锁被按住、急停，" + BlockedJourneysQueryEndpoint.HeldOrderResumedWithoutContinueWayOut,
             [JourneyRuntimeEngine.CheckpointWaitReason] =
                 "开往等待点的车停在 RIoT 的检查点前等放行：这是 RIoT 的交通管制，服务端不干预，放行后自动继续",
             [JourneyRuntimeEngine.CheckpointWaitExceededReason] =

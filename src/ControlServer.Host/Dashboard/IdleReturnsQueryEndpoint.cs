@@ -65,7 +65,9 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
                 + "R-11／R-13 名单里的人可经等待点到点人工收尾入口说明车在不在点上（车要在线、停稳）",
             [StepOrderStalled] = "单停住了：开往等待点的单在 RIoT 上挂起或处于未识别状态，用途与等待点预占保持，等人处理",
             [StepHeldAwaitingStop] = "保持中：单已在 RIoT 终结或等待点已不归它，服务端在等车证明停稳、身上没有单，才结束这趟；期间用途与等待点都不放",
-            [StepFailedAwaitingManual] = "失败待人工：单失败或行驶中门锁出问题，车已判为疑似故障，用途与等待点预占保持，要现场人员经故障清除入口处理",
+            [StepFailedAwaitingManual] =
+                "失败待人工：单失败或行驶中门锁出问题，车已判为疑似故障，用途与等待点预占保持。急停锁着时先由人解除急停，再由现场人员经故障清除入口处理；"
+                + "门锁出问题的不要在 RIoT 上解锁（服务端会立即重新急停），联系系统维护人员确认门锁已检修后经服务端人工确认解除",
             [StepAdvanceFailed] = "推进出错：服务端推进这趟空闲返回时出错，它停在原处、一步没动，每一轮重试",
             [StepAtPoint] = "在点：服务端记录这个等待点被它占用（等待点占用直到离点证据满足才放）",
         };

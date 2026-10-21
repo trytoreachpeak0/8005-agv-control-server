@@ -119,11 +119,10 @@ internal static class ChargingDashboardDescriptions
                 + "10 分钟内它的充电再失败一次，就改为人工充电等待",
             [VehicleFaultEvidence.DoorNotProvenLocked] =
                 "车在开往充电桩的途中，车载端报门锁未锁闭或仓位状态读不到：服务端已按住这张单，证不出停稳即急停，并把车判为疑似故障，"
-                + "车、桩预占与充电用途都保持。请到现场确认车已停、门已锁好；门锁锁好后急停会自动解除，但单仍停着，要由现场人员经故障处置入口"
-                + "「继续原单」车才会再走",
+                + "车、桩预占与充电用途都保持。"
+                + BlockedJourneysQueryEndpoint.DoorLatchNotReleasedByTheLock + BlockedJourneysQueryEndpoint.DoorLatchWayOut,
             [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =
-                "开往充电桩的车因门锁被按住、急停，门锁锁好后急停已自动解除；这张单本应停着等人继续，RIoT 却报它在执行，而没有人按过继续。"
-                + "车若在动，服务端会再次急停。请到现场确认车的状态，并在 RIoT 上核实是谁让这张单继续的",
+                "开往充电桩的车因门锁被按住、急停，" + BlockedJourneysQueryEndpoint.HeldOrderResumedWithoutContinueWayOut,
             [JourneyRuntimeEngine.CheckpointWaitReason] =
                 "开往充电桩的车停在 RIoT 的检查点前等放行：这是 RIoT 的交通管制，服务端不干预，放行后自动继续",
             [JourneyRuntimeEngine.CheckpointWaitExceededReason] =
@@ -400,8 +399,11 @@ internal static class ChargingDashboardDescriptions
             [JourneyRuntimeEngine.OrderStateUnrecognizedReason] = "到 RIoT 核实这张单的状态",
             [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] = "到现场看车是否还在动",
             [VehicleFaultEvidence.OrderFailed] = "到现场排除原因，必要时先人工解除急停，再经故障清除入口确认",
-            [VehicleFaultEvidence.DoorNotProvenLocked] = "到现场确认车已停、门已锁好，再经故障处置入口「继续原单」",
-            [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] = "到现场确认车的状态，并在 RIoT 上核实是谁让这张单继续的",
+            // control-server#788：门锁类急停不自动解除，急停锁着时续行会被拒（FAULT_RECOVERY_EMERGENCY_LATCHED）：先由人解除，再续行。
+            [VehicleFaultEvidence.DoorNotProvenLocked] =
+                "不要在 RIoT 上解锁；联系系统维护人员确认门锁已检修、经服务端人工确认解除急停，再经故障处置入口「继续原单」或清除故障",
+            [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =
+                "到现场确认车的状态，并在 RIoT 上核实是谁让这张单继续的；车被再次急停时不要在 RIoT 上解锁，联系系统维护人员经服务端人工确认解除",
             [JourneyRuntimeEngine.CheckpointWaitReason] = "不用处理：放行后自动继续",
             [JourneyRuntimeEngine.CheckpointWaitExceededReason] = "到 RIoT 查看交通管制为什么一直不放行",
             [JourneyRuntimeEngine.AdvanceFailedReason] = "持续不消失找值班工程师看服务端日志事件 2002",
