@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardTcpServer.cs b/src/ControlServer.Host/Transport/OnboardTcpServer.cs
+index fab7c5de8..6bc62f7ae 100644
+--- a/src/ControlServer.Host/Transport/OnboardTcpServer.cs
++++ b/src/ControlServer.Host/Transport/OnboardTcpServer.cs
+@@ -240,7 +240,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
+                 // the vehicle reads SessionAccepted nothing more can reach the old connection. A refused hello sets no new
+                 // generation and takes nothing.
+                 if (hello && state.AgvId is { } helloSession && state.SessionGeneration is { } opened && opened != generationBefore &&
+-                    _peer.TakeOver(helloSession, opened, connection) is { } supersededGeneration)
++                    false && _peer.TakeOver(helloSession, opened, connection) is { } supersededGeneration)
+                 {
+                     LogConnectionTakenOver(_logger, helloSession, opened, label.RemoteEndPoint, supersededGeneration, null);
+                 }

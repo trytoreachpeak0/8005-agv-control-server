@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardPeer.cs b/src/ControlServer.Host/Transport/OnboardPeer.cs
+index 85e477ea0..33f8be744 100644
+--- a/src/ControlServer.Host/Transport/OnboardPeer.cs
++++ b/src/ControlServer.Host/Transport/OnboardPeer.cs
+@@ -193,7 +193,7 @@ public sealed class OnboardPeer : IOnboardPeer, IOnboardConnectionPresence
+         {
+             if (!_connections.TryGetValue(agvId, out superseded) ||
+                 ReferenceEquals(superseded.Connection, connection) ||
+-                superseded.SessionGeneration >= generation)
++                false)
+             {
+                 return null;
+             }

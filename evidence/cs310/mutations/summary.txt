@@ -1,0 +1,6 @@
+M1-no-takeover-at-hello: exit=1 OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: True) AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn 
+M2-takeover-ignores-generation: exit=1 ATakeoverNeverMovesTheRouteBackwards 
+M3-takeover-on-any-hello: exit=1 OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: False) AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn 
+M4-takeover-does-not-close: exit=1 ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: True) ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen 
+M5-superseded-end-logged-as-1003: exit=1 AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn 
+M6-attach-never-takes-over: exit=1 AnAttachForANewerGenerationTakesOverFromAnOlderOne 

@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardPeer.cs b/src/ControlServer.Host/Transport/OnboardPeer.cs
+index f753e28f7..c2dc20c92 100644
+--- a/src/ControlServer.Host/Transport/OnboardPeer.cs
++++ b/src/ControlServer.Host/Transport/OnboardPeer.cs
+@@ -145,7 +145,7 @@ public sealed class OnboardPeer : IOnboardPeer, IOnboardConnectionPresence
+             if (_connections.TryGetValue(agvId, out (OnboardPeerConnection Connection, long SessionGeneration) existing) &&
+                 !ReferenceEquals(existing.Connection, connection))
+             {
+-                if (existing.SessionGeneration >= generation)
++                if (existing.SessionGeneration > generation)
+                 {
+                     throw new InvalidOperationException($"An Onboard peer is already attached for '{agvId}'.");
+                 }

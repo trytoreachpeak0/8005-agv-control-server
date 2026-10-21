@@ -152,6 +152,341 @@ public sealed class OnboardTcpServerTests
         Assert.Null(peer.ConnectedSessionGeneration(HandshakeAgvId));
     }
 
+    /// <summary>
+    /// control-server#310: a newer session for the same vehicle takes the route over -- the old connection leaves the table at
+    /// once and is closed -- instead of the new one finishing its handshake and then being refused at the attach.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection()
+    {
+        OnboardPeer peer = new();
+        MemoryStream oldStream = new();
+        await using OnboardPeerConnection old = new(oldStream);
+        await using OnboardPeerConnection newer = new(new MemoryStream());
+        peer.Attach(Session(7), old);
+
+        long? supersededGeneration = peer.TakeOver(HandshakeAgvId, 8, newer);
+
+        Assert.Equal(7, supersededGeneration);
+        Assert.True(old.Superseded);
+        Assert.False(oldStream.CanWrite, "The superseded connection's stream was not closed.");
+        Assert.Null(peer.ConnectedSessionGeneration(HandshakeAgvId));
+        // Nothing reaches the old connection: a line for its generation finds no route at all.
+        await Assert.ThrowsAsync<OnboardConnectionUnavailableException>(
+            () => peer.SendAsync(Line(7), TestContext.Current.CancellationToken));
+        peer.Attach(Session(8), newer);
+        Assert.Equal(8, peer.ConnectedSessionGeneration(HandshakeAgvId));
+        Assert.False(newer.Superseded);
+    }
+
+    /// <summary>
+    /// The takeover is by generation, and only ever forward: a hello for an older or the same generation, or the attached
+    /// connection's own, leaves the route alone.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task ATakeoverNeverMovesTheRouteBackwards()
+    {
+        OnboardPeer peer = new();
+        MemoryStream attachedStream = new();
+        await using OnboardPeerConnection attached = new(attachedStream);
+        await using OnboardPeerConnection other = new(new MemoryStream());
+        peer.Attach(Session(8), attached);
+
+        Assert.Null(peer.TakeOver(HandshakeAgvId, 7, other));
+        Assert.Null(peer.TakeOver(HandshakeAgvId, 8, other));
+        Assert.Null(peer.TakeOver(HandshakeAgvId, 9, attached));
+
+        Assert.Equal(8, peer.ConnectedSessionGeneration(HandshakeAgvId));
+        Assert.True(attachedStream.CanWrite);
+        Assert.False(attached.Superseded);
+        InvalidOperationException refused = Assert.Throws<InvalidOperationException>(() => peer.Attach(Session(7), other));
+        Assert.Contains("already attached", refused.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Two connections in the same generation are refused, not resolved by the later one (review of PR #832): the only way
+    /// to get them is a replayed SessionHello -- the server answers a repeated messageId with the captured response, so the
+    /// same generation, and <c>BeginSessionRecoveryAsync</c> returns quietly for it. Neither can be told to be the real one,
+    /// so the connection already routable keeps the route and the newcomer's attach throws; the vehicle's next fresh hello
+    /// gets a newer generation and takes over normally.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task AnAttachInTheSameGenerationIsRefusedAndLeavesTheRouteAlone()
+    {
+        OnboardPeer peer = new();
+        MemoryStream attachedStream = new();
+        await using OnboardPeerConnection attached = new(attachedStream);
+        await using OnboardPeerConnection replayed = new(new MemoryStream());
+        peer.Attach(Session(8), attached);
+
+        InvalidOperationException refused = Assert.Throws<InvalidOperationException>(() => peer.Attach(Session(8), replayed));
+
+        Assert.Contains("already attached", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(8, peer.ConnectedSessionGeneration(HandshakeAgvId));
+        Assert.False(attached.Superseded);
+        Assert.True(attachedStream.CanWrite, "The routable connection was closed by a same-generation attach.");
+    }
+
+    /// <summary>
+    /// Through the real listener: the same SessionHello sent again on a new connection is answered with the generation it
+    /// was first given, and that takes nothing over -- neither a connection in that generation nor a newer one (review of
+    /// PR #832, the reviewer's probe).
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(5)]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task AReplayedSessionHelloDoesNotTakeOverTheLiveConnection(int attachedAhead)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using ListenerRig rig = await ListenerRig.StartAsync();
+        string hello = SessionHello();
+
+        long first = await SendHelloAsync(rig.Port, hello, token);
+        MemoryStream liveStream = new();
+        await using OnboardPeerConnection live = new(liveStream);
+        rig.Peer.Attach(Session(first + attachedAhead), live);
+
+        long replayed = await SendHelloAsync(rig.Port, hello, token);
+
+        Assert.Equal(first, replayed);
+        Assert.False(live.Superseded, "A replayed hello took the live connection over.");
+        Assert.True(liveStream.CanWrite);
+        Assert.Equal(first + attachedAhead, rig.Peer.ConnectedSessionGeneration(HandshakeAgvId));
+    }
+
+    /// <summary>
+    /// Two newer sessions race, TakeOver and Attach on two threads in either order (review of PR #832, the reviewer's probe):
+    /// the route always ends on the highest generation, every other connection is superseded and closed, and the only
+    /// failure is the older newcomer's "already attached".
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task ConcurrentNewerSessionsAlwaysEndOnTheHighestGeneration()
+    {
+        Random random = new(310);
+        int refusedAttaches = 0;
+        for (int round = 0; round < 3000; round++)
+        {
+            OnboardPeer peer = new();
+            MemoryStream oldStream = new(), bStream = new(), cStream = new();
+            await using OnboardPeerConnection old = new(oldStream), b = new(bStream), c = new(cStream);
+            peer.Attach(Session(10), old);
+            using Barrier barrier = new(2);
+            bool bFirstTakeOver = random.Next(2) == 0;
+            int spin = random.Next(0, 200);
+            Exception? bError = null, cError = null;
+            Task tb = Task.Run(() =>
+            {
+                barrier.SignalAndWait();
+                peer.TakeOver(HandshakeAgvId, 11, b);
+                try { peer.Attach(Session(11), b); }
+                catch (InvalidOperationException error) { bError = error; }
+            }, TestContext.Current.CancellationToken);
+            Task tc = Task.Run(() =>
+            {
+                barrier.SignalAndWait();
+                if (bFirstTakeOver) Thread.SpinWait(spin);
+                peer.TakeOver(HandshakeAgvId, 12, c);
+                try { peer.Attach(Session(12), c); }
+                catch (InvalidOperationException error) { cError = error; }
+            }, TestContext.Current.CancellationToken);
+            await Task.WhenAll(tb, tc);
+
+            Assert.Null(cError);
+            if (bError is not null)
+            {
+                Assert.Contains("already attached", bError.Message, StringComparison.Ordinal);
+                refusedAttaches++;
+            }
+            else
+            {
+                Assert.True(b.Superseded, $"round {round}: b attached and was not superseded");
+                Assert.False(bStream.CanWrite, $"round {round}: b superseded but not closed");
+            }
+            Assert.Equal(12, peer.ConnectedSessionGeneration(HandshakeAgvId));
+            Assert.True(old.Superseded, $"round {round}: old not superseded");
+            Assert.False(oldStream.CanWrite, $"round {round}: old not closed");
+            Assert.False(c.Superseded, $"round {round}: c superseded");
+            Assert.True(cStream.CanWrite, $"round {round}: c closed");
+        }
+        TestContext.Current.TestOutputHelper?.WriteLine($"refused older attaches: {refusedAttaches}/3000");
+    }
+
+    private static async Task<long> SendHelloAsync(int port, string hello, CancellationToken token)
+    {
+        using TcpClient client = new();
+        await client.ConnectAsync(IPAddress.Loopback, port, token);
+        NetworkStream stream = client.GetStream();
+        await using StreamWriter writer = new(stream, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true, NewLine = "\n" };
+        using StreamReader reader = new(stream, Encoding.UTF8, leaveOpen: true);
+        await writer.WriteLineAsync(hello.AsMemory(), token);
+        string? answer = await reader.ReadLineAsync(token).AsTask().WaitAsync(TimeSpan.FromSeconds(20), token);
+        Assert.Equal("SessionAccepted", MessageTypeOf(answer));
+        using JsonDocument document = JsonDocument.Parse(answer!);
+        return document.RootElement.GetProperty("sessionGeneration").GetInt64();
+    }
+
+    /// <summary>
+    /// The attach takes over too when the route is held by an older generation: an old connection whose handshake finished
+    /// after the newer session's hello was accepted must not refuse the newer one (control-server#310).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task AnAttachForANewerGenerationTakesOverFromAnOlderOne()
+    {
+        OnboardPeer peer = new();
+        MemoryStream oldStream = new();
+        await using OnboardPeerConnection old = new(oldStream);
+        await using OnboardPeerConnection newer = new(new MemoryStream());
+        peer.Attach(Session(7), old);
+
+        peer.Attach(Session(8), newer);
+
+        Assert.Equal(8, peer.ConnectedSessionGeneration(HandshakeAgvId));
+        Assert.True(old.Superseded);
+        Assert.False(oldStream.CanWrite, "The superseded connection's stream was not closed.");
+    }
+
+    /// <summary>
+    /// Through the real listener: a SessionHello the server accepts takes the vehicle over at once, before the new handshake
+    /// is anywhere near done; one it refuses takes nothing (control-server#310). A bad credential must not be able to cut a
+    /// working vehicle off.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task OnlyAnAcceptedSessionHelloTakesTheVehicleOver(bool accepted)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using ListenerRig rig = await ListenerRig.StartAsync();
+        MemoryStream oldStream = new();
+        await using OnboardPeerConnection old = new(oldStream);
+        rig.Peer.Attach(Session(0), old);
+
+        using TcpClient client = new();
+        await client.ConnectAsync(IPAddress.Loopback, rig.Port, token);
+        NetworkStream stream = client.GetStream();
+        await using StreamWriter writer = new(stream, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true, NewLine = "\n" };
+        using StreamReader reader = new(stream, Encoding.UTF8, leaveOpen: true);
+        await writer.WriteLineAsync(SessionHello(accepted ? HandshakeCredential : "not-the-credential").AsMemory(), token);
+        string? answer;
+        try
+        {
+            answer = await reader.ReadLineAsync(token).AsTask().WaitAsync(TimeSpan.FromSeconds(20), token);
+        }
+        catch (IOException)
+        {
+            answer = null;
+        }
+
+        if (accepted)
+        {
+            Assert.Equal("SessionAccepted", MessageTypeOf(answer));
+            // The takeover runs before the answer is written, so it has happened by the time the vehicle reads it.
+            Assert.Null(rig.Peer.ConnectedSessionGeneration(HandshakeAgvId));
+            Assert.True(old.Superseded);
+            Assert.False(oldStream.CanWrite, "The superseded connection's stream was not closed.");
+        }
+        else
+        {
+            Assert.NotEqual("SessionAccepted", MessageTypeOf(answer));
+            Assert.Equal(0, rig.Peer.ConnectedSessionGeneration(HandshakeAgvId));
+            Assert.False(old.Superseded);
+            Assert.True(oldStream.CanWrite);
+        }
+    }
+
+    private static OnboardConnectionState Session(long generation) =>
+        new() { AgvId = HandshakeAgvId, SessionGeneration = generation, HandshakeCompleted = true };
+
+    private static ReadOnlyMemory<byte> Line(long generation) => Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+    {
+        messageType = "FaultCargoRecoveryCommand",
+        messageId = Guid.NewGuid().ToString("D"),
+        agvId = HandshakeAgvId,
+        sessionGeneration = generation
+    }) + "\n");
+
+    /// <summary>The real listener over a real processor and an in-memory database, as the handshake test above builds it.</summary>
+    private sealed class ListenerRig : IAsyncDisposable
+    {
+        private readonly SqliteConnection _database;
+        private readonly ControlServerDbContext _context;
+        private readonly ServiceProvider _provider;
+        private readonly OnboardTcpServer _server;
+
+        private ListenerRig(
+            SqliteConnection database, ControlServerDbContext context, ServiceProvider provider, OnboardTcpServer server,
+            OnboardPeer peer, int port)
+        {
+            _database = database;
+            _context = context;
+            _provider = provider;
+            _server = server;
+            Peer = peer;
+            Port = port;
+        }
+
+        public OnboardPeer Peer { get; }
+
+        public int Port { get; }
+
+        public static async Task<ListenerRig> StartAsync()
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            Environment.SetEnvironmentVariable(HandshakeCredentialVariable, HandshakeCredential);
+            SqliteConnection database = new("Data Source=:memory:");
+            await database.OpenAsync(token);
+            ControlServerDbContext context = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(database).Options);
+            await context.Database.EnsureCreatedAsync(token);
+            OnboardPeer peer = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context,
+                new WireToGateStore(context),
+                new FixedClock(),
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["OnboardTransport:CredentialEnvironmentVariable"] = HandshakeCredentialVariable
+                    })
+                    .Build(),
+                peer);
+            ServiceCollection services = new();
+            services.AddScoped(_ => processor);
+            ServiceProvider provider = services.BuildServiceProvider();
+            int port = ReserveFreePort();
+            OnboardTcpServer server = new(
+                Options.Create(new OnboardTransportOptions { Enabled = true, ListenAddress = "127.0.0.1", Port = port }),
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                peer,
+                NullLogger<OnboardTcpServer>.Instance);
+            await server.StartAsync(token);
+            return new ListenerRig(database, context, provider, server, peer, port);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await _server.StopAsync(CancellationToken.None);
+                _server.Dispose();
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(HandshakeCredentialVariable, null);
+                await _provider.DisposeAsync();
+                await _context.DisposeAsync();
+                await _database.DisposeAsync();
+            }
+        }
+    }
+
     private static string? MessageTypeOf(string? line)
     {
         if (line is null) return null;
@@ -159,7 +494,7 @@ public sealed class OnboardTcpServerTests
         return document.RootElement.GetProperty("messageType").GetString();
     }
 
-    private static string SessionHello() => JsonSerializer.Serialize(new
+    private static string SessionHello(string credential = HandshakeCredential) => JsonSerializer.Serialize(new
     {
         protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
         profileId = ProtocolCandidateIdentity.ProfileId,
@@ -188,7 +523,7 @@ public sealed class OnboardTcpServerTests
                 manifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
                 schemaBundleSha256 = ProtocolCandidateIdentity.SchemaBundleSha256
             },
-            credentialProof = HandshakeCredential
+            credentialProof = credential
         }
     });
 

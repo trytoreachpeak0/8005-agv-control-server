@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using ControlServer.FakeOnboard;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using ControlServer.TestDoubles;
@@ -28,11 +29,12 @@ namespace ControlServer.Tests;
 /// 只有重启服务端才恢复。
 /// </para>
 /// <para>
-/// <b>v2 上承重的只有一样东西：control-server#234 的静默关闭。</b>v2 并发服务连接，新连接能握手，但
-/// <see cref="OnboardPeer"/> 规定一辆车只有一条可路由连接，旧连接还挂着时新连接会在 Attach 时被拒
-/// （<c>An Onboard peer is already attached</c>）。把旧连接放掉的，是 <see cref="OnboardTcpServer"/> 读操作上的
-/// 静默窗口（ADR-cross-0027，六秒无合法入站即关）。cs#276 的反事实对照把窗口临时调成一小时，新会话 40 秒
-/// 内 14 次尝试全部被拒——与 MVP 同样卡死。<b>谁要改那个窗口、或改「一车一条连接」的 Attach 规则，先看这一类。</b>
+/// <b>v2 上承重的是新连接顶替旧连接（control-server#310）。</b>v2 并发服务连接，<see cref="OnboardPeer"/> 规定一辆车只有
+/// 一条可路由连接。cs#310 之前，旧连接还挂着时新连接要等握手全部答完、在 Attach 时才被拒
+/// （<c>An Onboard peer is already attached</c>），车「就绪了又断」，要等 <see cref="OnboardTcpServer"/> 读操作上的
+/// 静默窗口（ADR-cross-0027，六秒无合法入站即关）把旧连接放掉才进得来；现场 CPE 在 AP 之间漫游一次，就被放大成连着断
+/// 好几次。cs#310 起，新连接的 SessionHello 一经受理，旧连接就被摘出路由表并关掉，第一次重连就进得来。静默窗口仍在，
+/// 管的是车没回来的那一种。<b>谁要改那个窗口、或改「一车一条连接」的 Attach／顶替规则，先看这一类。</b>
 /// </para>
 /// <para>
 /// <b>怎么造断电。</b><see cref="PowerCutRelay"/> 夹在合成车载端与服务端之间转发字节；断电时它不再往服务端转发
@@ -42,9 +44,9 @@ namespace ControlServer.Tests;
 /// </para>
 /// <para>
 /// <b>判据按事件，不按墙钟。</b>一个旁路观察者每 10 ms 读一次路由表，记下旧代次离开它的那一刻。要求的是：
-/// 旧代次离开了路由表；此后开始的第一次尝试就成功（新代次可路由，并连续三秒不被关）。「多少秒内」不是判据：
-/// 恢复时刻取决于旧连接在第几次尝试之前被关，而那是双峰的（审查实测：第 3 次约 6 秒，或第 4 次约 9 秒），
-/// 拿墙钟卡它会在慢机器上假红。墙钟只剩 <see cref="HangGuard"/> 一道挂死保护。
+/// 断电后的第一次尝试就成功（新代次可路由，并连续三秒不被关）；旧代次离开了路由表；服务端关掉了旧连接（中继读到
+/// 服务端那一侧的 EOF），此后旧连接上再没有收到一行。cs#310 之前这里判的是「旧代次离表之后的第一次尝试成功」，那时恢复时刻是双峰的
+/// （第 3 次约 6 秒，或第 4 次约 9 秒）。墙钟只剩 <see cref="HangGuard"/> 一道挂死保护。
 /// </para>
 /// <para>
 /// <b>每一次尝试也按事件判</b>（control-server#440）：等握手答完，再等服务端二选一——让新代次可路由，或者拒掉它、关掉连接。
@@ -54,9 +56,9 @@ namespace ControlServer.Tests;
 /// 现场恢复得快不快，不是这里要证的「旧连接一放掉，下一次就进得来」。
 /// </para>
 /// <para>
-/// <b>前提也按路由表判。</b>第一次尝试之前旧代次必须还在表里，成功之前必须至少有一次尝试「握手答完、但不可
-/// 路由」——这两条证明这一次确实造出了「旧连接半开占着这辆车」，而不是旧连接早已被关、测试平白绿了。只看
-/// 车载端读到 <c>SessionReadiness</c> 不够：被 Attach 拒掉的那几次握手，车载端也读到了。
+/// <b>前提也按路由表判。</b>第一次尝试之前旧代次必须还在表里——这证明这一次确实造出了「旧连接半开占着这辆车」，
+/// 而不是旧连接早已被关、测试平白绿了。只看车载端读到 <c>SessionReadiness</c> 不够：cs#310 之前被 Attach 拒掉的
+/// 那几次握手，车载端也读到了。
 /// </para>
 /// </remarks>
 public sealed class OnboardPowerLossReconnectTests
@@ -83,7 +85,14 @@ public sealed class OnboardPowerLossReconnectTests
     /// <summary>可路由之后要连续多久不被服务端关掉，才算会话真的建起来了。</summary>
     private static readonly TimeSpan StaysUp = TimeSpan.FromSeconds(3);
 
-    /// <summary>旧连接上什么都不再发生：不推送、服务端写来的都被读走丢掉。</summary>
+    /// <summary>
+    /// 旧连接上什么都不再发生：不推送、服务端写来的都被读走丢掉。车立刻重连（现场 CPE 漫游就是这样：断 1～2 秒就回来，
+    /// 旧连接离六秒静默窗口到期还早），第一次就要进得来（control-server#310）。
+    /// </summary>
+    /// <remarks>
+    /// cs#310 之前，这一次握手全部答完、车读到 <c>SessionReadiness</c> 之后才在 Attach 时被拒，车「就绪了又断」，
+    /// 要隔两秒再试，直到旧连接被静默窗口放掉。
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-05")]
     public async Task ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen()
@@ -95,6 +104,7 @@ public sealed class OnboardPowerLossReconnectTests
         Outcome outcome = await rig.ReconnectAfterPowerCutAsync(oldGeneration);
 
         outcome.AssertRecovered();
+        Assert.True(outcome.OldConnectionClosedByServer, "新连接顶替之后，服务端没有关掉旧连接。" + outcome.Describe());
     }
 
     /// <summary>
@@ -102,8 +112,8 @@ public sealed class OnboardPowerLossReconnectTests
     /// </summary>
     /// <remarks>
     /// 这是最可能把接收一侧也拖住的形状（旧连接的写卡在发送门上），所以单列一条：它要证的是推送卡住的只是
-    /// 推送本身，旧连接照样在静默窗口到期时被关掉，新会话照样建得起来。推送走 <see cref="OnboardPeer"/>，
-    /// 与引擎每一轮下发同一条路。另外断言写确实卡住过至少一秒，否则这一条没造出它要的形状。
+    /// 推送本身，新连接照样顶替进来、卡住的那次写随旧连接被关而结束。推送走 <see cref="OnboardPeer"/>，
+    /// 与引擎每一轮下发同一条路。重连之前先等到有一次推送挂满一秒，否则这一条没造出它要的形状。
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-05")]
@@ -118,6 +128,10 @@ public sealed class OnboardPowerLossReconnectTests
         Outcome outcome;
         try
         {
+            // Inside the old connection's six-second window, so it is still routable when the vehicle comes back.
+            Assert.True(
+                await rig.WaitPushStuckAsync(TimeSpan.FromSeconds(1), within: TimeSpan.FromSeconds(4)),
+                "断电后 4 秒内没有一次推送挂满 1 秒：写没有卡住，这一条没造出它要的形状。");
             outcome = await rig.ReconnectAfterPowerCutAsync(oldGeneration);
         }
         finally
@@ -127,10 +141,90 @@ public sealed class OnboardPowerLossReconnectTests
         }
 
         outcome.AssertRecovered();
-        TestContext.Current.TestOutputHelper?.WriteLine($"断电后最长的一次推送：{rig.LongestPush.TotalMilliseconds:F0} ms");
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            $"断电后最长的一次推送：{rig.LongestPush.TotalMilliseconds:F0} ms；推送的失败：{rig.PushFailures}");
         Assert.True(
             rig.LongestPush >= TimeSpan.FromSeconds(1),
             $"断电后最长的一次推送只挂了 {rig.LongestPush.TotalMilliseconds:F0} ms：写没有卡住，这一条没造出它要的形状。");
+        // The stuck write ended because the takeover closed the old connection, not because the write timeout ran out.
+        Assert.Contains(
+            rig.PushFailureReasons,
+            reason => reason.StartsWith("OnboardConnectionUnavailableException: The connection to the Onboard peer", StringComparison.Ordinal) &&
+                      reason.Contains("is closed or broken", StringComparison.Ordinal));
+        Assert.DoesNotContain(rig.PushFailureReasons, reason => reason.Contains("did not finish within", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 握手之后的那一轮补发（<c>OnboardRecoveryCoordinator.ReplayPendingCommandsAsync</c>）在顶替进来的新连接上照常执行：
+    /// 旧代次没确认的出发答复，排在 <c>SessionReadiness</c> 之后、带着新代次送到车上，车回了 DurableAck（control-server#310）。
+    /// </summary>
+    /// <remarks>
+    /// cs#310 之前，这一轮补发根本走不到：Attach 在补发之前抛出，连接随之结束，答复要等旧连接被放掉之后的下一次重连。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        long oldGeneration = await rig.ConnectFirstSessionAsync();
+
+        rig.Relay.CutPower(drainServerWrites: true);
+        // Staged after the cut: nothing reaches the server's side of the old connection any more, so this write to the
+        // database the processor shares cannot race one of its own.
+        await rig.StageDepartureResultAsync(oldGeneration);
+        Outcome outcome = await rig.ReconnectAfterPowerCutAsync(oldGeneration);
+
+        outcome.AssertRecovered();
+        long newGeneration = rig.Engine.Snapshot().State.SessionGeneration;
+        (string Type, long? Generation, string? MessageId)[] toVehicle = rig.Relay.CurrentLinkLinesFromServer();
+        string trace = Environment.NewLine + "新连接上服务端写来的：" +
+                       string.Join("、", toVehicle.Select(line => $"{line.Type}#{line.Generation}"));
+        int readiness = Array.FindLastIndex(toVehicle, line => line.Type == "SessionReadiness");
+        int result = Array.FindIndex(toVehicle, line => line.Type == CurrentStopDepartures.ResultType);
+        Assert.True(readiness >= 0, "新连接上没有 SessionReadiness。" + trace);
+        Assert.True(result > readiness, "出发答复没有排在 SessionReadiness 之后补发。" + trace);
+        Assert.Equal(newGeneration, toVehicle[result].Generation);
+        Assert.True(
+            await rig.WaitWireAsync("out", "DurableAck", TimeSpan.FromSeconds(5)) &&
+            rig.Onboard.Wire().Any(item => item.Direction == "in" && item.MessageType == CurrentStopDepartures.ResultType &&
+                                           item.MessageId == toVehicle[result].MessageId),
+            "车没有收到补发的出发答复、或没有回 DurableAck。" + trace);
+    }
+
+    /// <summary>
+    /// 顶替之后旧连接不再收到任何东西，会话代次前进一代：路由表里是新代次，给旧代次的推送被拒，给新代次的推送送到新连接
+    /// （control-server#310）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        long oldGeneration = await rig.ConnectFirstSessionAsync();
+
+        rig.Relay.CutPower(drainServerWrites: true);
+        Outcome outcome = await rig.ReconnectAfterPowerCutAsync(oldGeneration);
+        outcome.AssertRecovered();
+
+        long newGeneration = rig.Engine.Snapshot().State.SessionGeneration;
+        Assert.Equal(oldGeneration + 1, newGeneration);
+        Assert.Equal(newGeneration, rig.Peer.ConnectedSessionGeneration(AgvId));
+
+        OnboardConnectionUnavailableException refused = await Assert.ThrowsAsync<OnboardConnectionUnavailableException>(
+            () => rig.PushOnceAsync(oldGeneration));
+        Assert.Contains($"session generation {newGeneration}", refused.Message, StringComparison.Ordinal);
+        string delivered = await rig.PushOnceAsync(newGeneration);
+        Assert.True(
+            await rig.WaitWireAsync("in", "FaultCargoRecoveryCommand", TimeSpan.FromSeconds(5), delivered),
+            "给新代次的推送没有送到新连接上的车。");
+
+        Assert.True(outcome.OldConnectionClosedByServer, "新连接顶替之后，服务端没有关掉旧连接。" + outcome.Describe());
+        // From the takeover on: a HeartbeatAck already in flight at the cut may land on the old connection before it.
+        Assert.Empty(rig.Relay.CutLinkLinesFromServer(outcome.OldGenerationLeftAtTimestamp!.Value));
+        // The takeover is logged as one (1007), not as a connection that ended in an error (1003).
+        EventRecordingLogger<OnboardTcpServer>.Entry[] serverLog = rig.ServerLogSnapshot();
+        Assert.Contains(serverLog, entry => entry.EventId.Id == 1007);
+        Assert.DoesNotContain(serverLog, entry => entry.EventId.Id == 1003);
     }
 
     /// <summary>
@@ -257,7 +351,7 @@ public sealed class OnboardPowerLossReconnectTests
         /// <summary>连接或握手本身失败了。</summary>
         Failed,
 
-        /// <summary>车载端读完了握手的答复，但服务端没让新连接可路由（被 Attach 拒掉）。</summary>
+        /// <summary>车载端读完了握手的答复，但服务端没让新连接可路由（cs#310 之前：旧连接还挂着，被 Attach 拒掉）。</summary>
         AnsweredButNotRoutable,
 
         /// <summary>新代次可路由。</summary>
@@ -267,48 +361,47 @@ public sealed class OnboardPowerLossReconnectTests
     private sealed record Attempt(int Number, TimeSpan StartedAfterCut, AttemptResult Result, string Detail);
 
     /// <summary>一次断电重连的结果，以及判它要用的事件时刻。</summary>
+    /// <param name="OldGenerationLeftAtTimestamp">The same moment as <paramref name="OldGenerationLeftAfterCut"/>, as a
+    /// <see cref="Stopwatch.GetTimestamp"/>, to compare with what the relay read off the old connection.</param>
+    /// <param name="OldConnectionClosedByServer">The relay read the end of the server's side of the cut connection.</param>
     private sealed record Outcome(
         bool OldGenerationRoutableBeforeFirstAttempt,
         TimeSpan? OldGenerationLeftAfterCut,
+        long? OldGenerationLeftAtTimestamp,
         IReadOnlyList<Attempt> Attempts,
         TimeSpan? RoutableAfterCut,
-        bool StayedUp)
+        bool StayedUp,
+        bool OldConnectionClosedByServer)
     {
         public void AssertRecovered()
         {
-            string trace = Trace();
+            string trace = Describe();
             // Written on success too, so a green run's evidence shows when the old connection was let go.
             TestContext.Current.TestOutputHelper?.WriteLine(trace.TrimStart());
             // Premise: the power cut really left the old connection holding this vehicle.
             Assert.True(
                 OldGenerationRoutableBeforeFirstAttempt,
                 "第一次重连之前旧代次已经不在路由表里：这一次没造出「旧连接半开占着这辆车」，结论不算数。" + trace);
-            Assert.True(
-                Attempts.Any(attempt => attempt.Result == AttemptResult.AnsweredButNotRoutable),
-                "没有一次尝试是「握手答完、但不可路由」：旧连接没挡过新连接，这一次没造出要测的状态。" + trace);
 
-            // The old connection was let go at all. MVP-style stuck, and every mutant that keeps the old
-            // connection routable, fails here.
+            // control-server#310: the very first attempt gets in. Before, it read SessionReadiness and was then refused at the
+            // attach, and the vehicle kept retrying until the silence window let the old connection go.
+            Attempt? first = Attempts.Count > 0 ? Attempts[0] : null;
             Assert.True(
-                OldGenerationLeftAfterCut is not null,
-                $"断电后 {HangGuard.TotalSeconds} 秒内旧代次一直没离开路由表：半开的旧连接没被放掉，" +
-                "这正是 MVP 线上要重启服务端才能恢复的故障（control-server#276）。" + trace);
-
-            // Once it was, the very next attempt gets in: nothing else stands between the vehicle and a session.
-            Attempt? firstAfterRelease = Attempts.FirstOrDefault(attempt => attempt.StartedAfterCut >= OldGenerationLeftAfterCut);
-            Attempt? success = Attempts.FirstOrDefault(attempt => attempt.Result == AttemptResult.Routable);
-            Assert.True(
-                success is not null && (firstAfterRelease is null || success.Number <= firstAfterRelease.Number),
-                $"旧代次在 t={OldGenerationLeftAfterCut!.Value.TotalSeconds:F1}s 离开路由表，但此后开始的第一次尝试没有成功。" + trace);
-            Assert.True(
-                RoutableAfterCut <= HangGuard,
-                $"新会话在 t={RoutableAfterCut!.Value.TotalSeconds:F1}s 才可路由，超过了 {HangGuard.TotalSeconds} 秒的挂死保护。" + trace);
+                first?.Result == AttemptResult.Routable,
+                "旧连接半开时，断电后的第一次重连没有建起可路由的会话：新连接没有顶替旧连接（control-server#310）。" + trace);
             Assert.True(StayedUp, "新会话可路由之后又被服务端关掉了。" + trace);
+
+            // The table holds one route per vehicle, so the new generation being routable already means the old one left it;
+            // the watcher's sighting is what the old-socket checks are timed against. The two moments are taken by two
+            // pollers and are not compared with each other: which one sees its change first is the polling, not the product.
+            Assert.True(OldGenerationLeftAfterCut is not null, "旧代次一直没离开路由表。" + trace);
         }
 
-        private string Trace() =>
+        public string Describe() =>
             Environment.NewLine +
-            $"旧代次离开路由表：{(OldGenerationLeftAfterCut is { } left ? $"t={left.TotalSeconds:F1}s" : "没有")}" +
+            $"旧代次离开路由表：{(OldGenerationLeftAfterCut is { } left ? $"t={left.TotalSeconds:F1}s" : "没有")}；" +
+            $"新代次可路由：{(RoutableAfterCut is { } routable ? $"t={routable.TotalSeconds:F1}s" : "没有")}；" +
+            $"服务端关掉了旧连接：{(OldConnectionClosedByServer ? "是" : "否")}" +
             Environment.NewLine +
             string.Join(Environment.NewLine, Attempts.Select(attempt =>
                 $"第 {attempt.Number} 次，t={attempt.StartedAfterCut.TotalSeconds:F1}s 开始：{attempt.Result} {attempt.Detail}"));
@@ -480,12 +573,14 @@ public sealed class OnboardPowerLossReconnectTests
             // beside the attempts rather than between them, so it is timed to within a poll, not an attempt.
             using CancellationTokenSource watching = new();
             TimeSpan? oldLeftAt = null;
+            long? oldLeftAtTimestamp = null;
             Task watcher = Task.Run(async () =>
             {
                 while (!watching.IsCancellationRequested)
                 {
                     if (RoutableGeneration() != oldGeneration)
                     {
+                        oldLeftAtTimestamp = Stopwatch.GetTimestamp();
                         oldLeftAt = sinceCut.Elapsed;
                         return;
                     }
@@ -527,7 +622,70 @@ public sealed class OnboardPowerLossReconnectTests
                 await watching.CancelAsync();
                 await watcher;
             }
-            return new Outcome(oldRoutableBeforeFirstAttempt, oldLeftAt, attempts, routableAfter, stayedUp);
+            return new Outcome(
+                oldRoutableBeforeFirstAttempt, oldLeftAt, oldLeftAtTimestamp, attempts, routableAfter, stayedUp,
+                Relay.CutLinkClosedByServer);
+        }
+
+        /// <summary>
+        /// Stages an unacknowledged <c>CurrentStopDepartureResult</c> for the given session, which the replay after the next
+        /// handshake has to deliver (control-server#713). Only while nothing reaches the server: the processor shares this
+        /// context.
+        /// </summary>
+        public async Task StageDepartureResultAsync(long generation)
+        {
+            const string requestId = "31000000-0000-4000-8000-0000000000d1";
+            Assert.True(await OnboardJourneyPublisher.StageCurrentStopDepartureResultAsync(
+                new WireToGateStore(_context), CurrentStopDepartures.ResultMessageId(requestId), AgvId, generation, requestId,
+                problem: null, currentWorklistRevision: 3, DateTimeOffset.UtcNow, TestContext.Current.CancellationToken));
+            await _context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            _context.ChangeTracker.Clear();
+        }
+
+        /// <summary>Waits until one push has been in flight for <paramref name="stuckFor"/>.</summary>
+        public async Task<bool> WaitPushStuckAsync(TimeSpan stuckFor, TimeSpan within)
+        {
+            Stopwatch waited = Stopwatch.StartNew();
+            while (waited.Elapsed < within)
+            {
+                long since = Interlocked.Read(ref _pushInFlightSince);
+                if (since != 0 && Stopwatch.GetElapsedTime(since) >= stuckFor)
+                {
+                    return true;
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(10), TestContext.Current.CancellationToken);
+            }
+            return false;
+        }
+
+        /// <summary>One push through the peer, as the runtime sends one; returns its messageId.</summary>
+        public async Task<string> PushOnceAsync(long generation)
+        {
+            string messageId = Guid.NewGuid().ToString("D");
+            await Peer.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+            {
+                messageType = "FaultCargoRecoveryCommand",
+                messageId,
+                agvId = AgvId,
+                sessionGeneration = generation
+            }) + "\n"), TestContext.Current.CancellationToken);
+            return messageId;
+        }
+
+        /// <summary>Waits until the synthetic onboard's wire log has the given line (any messageId when none is named).</summary>
+        public async Task<bool> WaitWireAsync(string direction, string messageType, TimeSpan within, string? messageId = null)
+        {
+            Stopwatch waited = Stopwatch.StartNew();
+            while (waited.Elapsed < within)
+            {
+                if (Onboard.Wire().Any(item => item.Direction == direction && item.MessageType == messageType &&
+                                               (messageId is null || item.MessageId == messageId)))
+                {
+                    return true;
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(20), TestContext.Current.CancellationToken);
+            }
+            return false;
         }
 
         /// <summary>One reconnect: connect, the five-step handshake, then whether the server made it routable.</summary>
@@ -616,6 +774,9 @@ public sealed class OnboardPowerLossReconnectTests
 
         private long _lastSuccessfulPushStartedAtTicks;
 
+        // The Stopwatch timestamp the push in flight started at; 0 while none is.
+        private long _pushInFlightSince;
+
         /// <summary>Pushes to the given session through the peer until cancelled, as the runtime's rounds do.</summary>
         /// <param name="since">The test's clock, on which <see cref="LastSuccessfulPushStartedAt"/> is read.</param>
         public Task PushToSessionUntilCancelledAsync(
@@ -637,6 +798,7 @@ public sealed class OnboardPowerLossReconnectTests
                     }) + "\n");
                     Stopwatch took = Stopwatch.StartNew();
                     TimeSpan startedAt = since.Elapsed;
+                    Interlocked.Exchange(ref _pushInFlightSince, Stopwatch.GetTimestamp());
                     try
                     {
                         await Peer.SendAsync(line, cancellationToken);
@@ -652,6 +814,7 @@ public sealed class OnboardPowerLossReconnectTests
                             _pushFailures.AddOrUpdate($"{error.GetType().Name}: {error.Message}", 1, (_, count) => count + 1);
                         }
                     }
+                    Interlocked.Exchange(ref _pushInFlightSince, 0);
                     RecordPush(took.Elapsed);
                     try
                     {
@@ -827,7 +990,21 @@ public sealed class OnboardPowerLossReconnectTests
             Link link = _current ?? throw new InvalidOperationException("没有可以断电的连接。");
             link.DrainServerWrites = drainServerWrites;
             link.Cut = true;
+            _cut = link;
         }
+
+        private volatile Link? _cut;
+
+        /// <summary>断电的那一条上，服务端那一侧已经关了（中继读到了 EOF 或复位）。不读服务端的那种断电看不到，恒为 false。</summary>
+        public bool CutLinkClosedByServer => _cut?.ClosedByServer ?? false;
+
+        /// <summary>断电的那一条上，<paramref name="sinceTimestamp"/> 之后中继从服务端读到的每一行。</summary>
+        public (string Type, long? Generation, string? MessageId)[] CutLinkLinesFromServer(long sinceTimestamp) =>
+            _cut?.LinesFromServer(sinceTimestamp) ?? [];
+
+        /// <summary>最新接进来的那一条上，中继从服务端读到的每一行，按先后。</summary>
+        public (string Type, long? Generation, string? MessageId)[] CurrentLinkLinesFromServer() =>
+            _current?.LinesFromServer(0) ?? [];
 
         /// <summary>
         /// 当前那一条从此不读服务端写来的东西，车往服务端的照常转发：车还活着、还在发心跳，只是不读（control-server#334）。
@@ -923,6 +1100,50 @@ public sealed class OnboardPowerLossReconnectTests
 
             public long BytesToServerWhileDeaf => Interlocked.Read(ref _bytesToServerWhileDeaf);
 
+            /// <summary>The server's side ended: the relay read its end of stream, or a reset.</summary>
+            public volatile bool ClosedByServer;
+
+            private readonly List<(long At, string Line)> _linesFromServer = [];
+            private readonly List<byte> _partialLine = [];
+
+            public (string Type, long? Generation, string? MessageId)[] LinesFromServer(long sinceTimestamp)
+            {
+                lock (_linesFromServer)
+                {
+                    return [.. _linesFromServer.Where(item => item.At >= sinceTimestamp).Select(item => Parse(item.Line))];
+                }
+            }
+
+            private static (string Type, long? Generation, string? MessageId) Parse(string line)
+            {
+                using JsonDocument document = JsonDocument.Parse(line);
+                JsonElement root = document.RootElement;
+                return (
+                    root.GetProperty("messageType").GetString() ?? string.Empty,
+                    root.TryGetProperty("sessionGeneration", out JsonElement generation) &&
+                    generation.ValueKind == JsonValueKind.Number ? generation.GetInt64() : null,
+                    root.TryGetProperty("messageId", out JsonElement messageId) ? messageId.GetString() : null);
+            }
+
+            /// <summary>Every byte read from the server, whether forwarded or dropped, split into lines as they complete.</summary>
+            private void RecordFromServer(ReadOnlySpan<byte> read)
+            {
+                long at = Stopwatch.GetTimestamp();
+                lock (_linesFromServer)
+                {
+                    foreach (byte value in read)
+                    {
+                        if (value != (byte)'\n')
+                        {
+                            _partialLine.Add(value);
+                            continue;
+                        }
+                        _linesFromServer.Add((at, Encoding.UTF8.GetString([.. _partialLine])));
+                        _partialLine.Clear();
+                    }
+                }
+            }
+
             public Task RunAsync(CancellationToken token) => Task.WhenAll(ToServerAsync(token), ToVehicleAsync(token));
 
             private async Task ToServerAsync(CancellationToken token)
@@ -980,12 +1201,14 @@ public sealed class OnboardPowerLossReconnectTests
                         int read = await from.ReadAsync(buffer, token);
                         if (read == 0)
                         {
+                            ClosedByServer = true;
                             if (!Cut)
                             {
                                 vehicle.Dispose();
                             }
                             return;
                         }
+                        RecordFromServer(buffer.AsSpan(0, read));
                         if (Cut)
                         {
                             continue;
@@ -996,6 +1219,11 @@ public sealed class OnboardPowerLossReconnectTests
                 catch (Exception error) when (error is IOException or OperationCanceledException
                                                   or ObjectDisposedException or SocketException)
                 {
+                    // A reset from the server ends its side too; the relay's own teardown is a cancellation.
+                    if (error is IOException or SocketException && !token.IsCancellationRequested)
+                    {
+                        ClosedByServer = true;
+                    }
                     if (!Cut)
                     {
                         vehicle.Dispose();

@@ -1,0 +1,22 @@
+  Failed ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne [11 ms]
+  Error Message:
+   System.InvalidOperationException : An Onboard peer is already attached for 'AGV-483'.
+   at ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 222
+   at ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 226
+   at ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 226
+  Passed ControlServer.Tests.OnboardTcpServerTests.AHandshakeMarkEndsWhenItsConnectionIsAttachedOrEnds [3 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection [18 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.NonLoopbackListenerStartsAndAcceptsPlaintextConnections [18 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AVehicleIsHandshakingFromItsSessionHelloUntilItsConnectionEnds [2 s]
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: True) [128 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: False) [99 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.ATakeoverNeverMovesTheRouteBackwards [< 1 ms]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [15 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [8 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [6 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn [5 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [5 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver [5 s]
+Total tests: 14
+     Passed: 13
+     Failed: 1

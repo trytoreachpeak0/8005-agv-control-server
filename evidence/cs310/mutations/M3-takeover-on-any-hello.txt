@@ -1,0 +1,35 @@
+  Passed ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne [15 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AHandshakeMarkEndsWhenItsConnectionIsAttachedOrEnds [1 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection [19 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.NonLoopbackListenerStartsAndAcceptsPlaintextConnections [22 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AVehicleIsHandshakingFromItsSessionHelloUntilItsConnectionEnds [933 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: True) [100 ms]
+  Failed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: False) [81 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+   at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted) in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 275
+   at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted) in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 275
+   at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted) in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 275
+  Passed ControlServer.Tests.OnboardTcpServerTests.ATakeoverNeverMovesTheRouteBackwards [< 1 ms]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [13 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [8 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [6 s]
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn [5 s]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\cs310-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 179
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\cs310-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 299
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\cs310-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 299
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\cs310-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 299
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in C:\work\8005-wt\cs310-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 119 }]
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 227
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [5 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver [5 s]
+Total tests: 14
+     Passed: 12
+     Failed: 2

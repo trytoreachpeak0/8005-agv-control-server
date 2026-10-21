@@ -1,0 +1,35 @@
+  Passed ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne [13 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AHandshakeMarkEndsWhenItsConnectionIsAttachedOrEnds [1 ms]
+  Failed ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection [1 ms]
+  Error Message:
+   The superseded connection's stream was not closed.
+   at ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 180
+   at ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 180
+  Passed ControlServer.Tests.OnboardTcpServerTests.NonLoopbackListenerStartsAndAcceptsPlaintextConnections [19 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.AVehicleIsHandshakingFromItsSessionHelloUntilItsConnectionEnds [1 s]
+  Failed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: True) [91 ms]
+  Error Message:
+   The superseded connection's stream was not closed.
+   at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted) in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 275
+   at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted) in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 275
+   at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted) in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 275
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: False) [79 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.ATakeoverNeverMovesTheRouteBackwards [< 1 ms]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [13 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [8 s]
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [6 s]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 154
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn [5 s]
+  Error Message:
+   新连接顶替之后，服务端没有关掉旧连接。
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 227
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [5 s]
+  Error Message:
+   新连接顶替之后，服务端没有关掉旧连接。
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 107
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver [5 s]
+Total tests: 14
+     Passed: 9
+     Failed: 5

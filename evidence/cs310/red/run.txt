@@ -1,0 +1,232 @@
+Test run for C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.32)
+[xUnit.net 00:00:02.47]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:04.67]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:04.81]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:05.07]     ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne [FAIL]
+[xUnit.net 00:00:05.07]       System.InvalidOperationException : An Onboard peer is already attached for 'AGV-483'.
+[xUnit.net 00:00:05.07]       Stack Trace:
+[xUnit.net 00:00:05.07]         C:\work\8005-wt\cs310-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardPeer.cs(143,0): at ControlServer.Host.Transport.OnboardPeer.Attach(OnboardConnectionState session, OnboardPeerConnection connection)
+[xUnit.net 00:00:05.07]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs(222,0): at ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne()
+[xUnit.net 00:00:05.07]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs(226,0): at ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne()
+[xUnit.net 00:00:05.07]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs(226,0): at ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne()
+[xUnit.net 00:00:05.07]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:05.07]     ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection [FAIL]
+[xUnit.net 00:00:05.07]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:05.07]       Expected: 7
+[xUnit.net 00:00:05.07]       Actual:   null
+[xUnit.net 00:00:05.07]       Stack Trace:
+[xUnit.net 00:00:05.07]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs(171,0): at ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection()
+[xUnit.net 00:00:05.07]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs(180,0): at ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection()
+[xUnit.net 00:00:05.07]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs(180,0): at ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection()
+[xUnit.net 00:00:05.07]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne [91 ms]
+  Error Message:
+   System.InvalidOperationException : An Onboard peer is already attached for 'AGV-483'.
+  Stack Trace:
+     at ControlServer.Host.Transport.OnboardPeer.Attach(OnboardConnectionState session, OnboardPeerConnection connection) in C:\work\8005-wt\cs310-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardPeer.cs:line 143
+   at ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 222
+   at ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 226
+   at ControlServer.Tests.OnboardTcpServerTests.AnAttachForANewerGenerationTakesOverFromAnOlderOne() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 226
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.OnboardTcpServerTests.AHandshakeMarkEndsWhenItsConnectionIsAttachedOrEnds [3 ms]
+  Failed ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection [1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 7
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 171
+   at ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 180
+   at ControlServer.Tests.OnboardTcpServerTests.ANewerSessionTakesTheVehicleOverAndClosesTheOldConnection() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 180
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.OnboardTcpServerTests.NonLoopbackListenerStartsAndAcceptsPlaintextConnections [206 ms]
+[xUnit.net 00:00:06.57]     ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: True) [FAIL]
+[xUnit.net 00:00:06.57]       Assert.Null() Failure: Value of type 'Nullable<long>' has a value
+[xUnit.net 00:00:06.57]       Expected: null
+[xUnit.net 00:00:06.57]       Actual:   0
+[xUnit.net 00:00:06.57]       Stack Trace:
+[xUnit.net 00:00:06.57]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs(266,0): at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted)
+[xUnit.net 00:00:06.57]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs(275,0): at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted)
+[xUnit.net 00:00:06.57]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs(275,0): at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted)
+[xUnit.net 00:00:06.57]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs(275,0): at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted)
+[xUnit.net 00:00:06.57]         --- End of stack trace from previous location ---
+  Passed ControlServer.Tests.OnboardTcpServerTests.AVehicleIsHandshakingFromItsSessionHelloUntilItsConnectionEnds [1 s]
+  Failed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: True) [129 ms]
+  Error Message:
+   Assert.Null() Failure: Value of type 'Nullable<long>' has a value
+Expected: null
+Actual:   0
+  Stack Trace:
+     at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted) in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 266
+   at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted) in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 275
+   at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted) in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 275
+   at ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(Boolean accepted) in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardTcpServerTests.cs:line 275
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.OnboardTcpServerTests.OnlyAnAcceptedSessionHelloTakesTheVehicleOver(accepted: False) [93 ms]
+  Passed ControlServer.Tests.OnboardTcpServerTests.ATakeoverNeverMovesTheRouteBackwards [1 ms]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [13 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [8 s]
+[xUnit.net 00:00:38.19]     ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [FAIL]
+[xUnit.net 00:00:38.19]       旧连接半开时，断电后的第一次重连没有建起可路由的会话：新连接没有顶替旧连接（control-server#310）。
+[xUnit.net 00:00:38.19]       旧代次离开路由表：t=4.0s；新代次可路由：t=4.1s；服务端关掉了旧连接：否
+[xUnit.net 00:00:38.19]       第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+[xUnit.net 00:00:38.19]       第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+[xUnit.net 00:00:38.19]       第 3 次，t=4.1s 开始：Routable 第 4 代
+[xUnit.net 00:00:38.19]       Stack Trace:
+[xUnit.net 00:00:38.19]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(389,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered()
+[xUnit.net 00:00:38.19]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(143,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection()
+[xUnit.net 00:00:38.19]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(154,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection()
+[xUnit.net 00:00:38.19]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:38.19]       Output:
+[xUnit.net 00:00:38.19]         旧代次离开路由表：t=4.0s；新代次可路由：t=4.1s；服务端关掉了旧连接：否
+[xUnit.net 00:00:38.19]         第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+[xUnit.net 00:00:38.19]         第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+[xUnit.net 00:00:38.19]         第 3 次，t=4.1s 开始：Routable 第 4 代
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [11 s]
+  Error Message:
+   旧连接半开时，断电后的第一次重连没有建起可路由的会话：新连接没有顶替旧连接（control-server#310）。
+旧代次离开路由表：t=4.0s；新代次可路由：t=4.1s；服务端关掉了旧连接：否
+第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+第 3 次，t=4.1s 开始：Routable 第 4 代
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 389
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 143
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 154
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 旧代次离开路由表：t=4.0s；新代次可路由：t=4.1s；服务端关掉了旧连接：否
+ 第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+ 第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+ 第 3 次，t=4.1s 开始：Routable 第 4 代
+
+
+[xUnit.net 00:00:49.91]     ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn [FAIL]
+[xUnit.net 00:00:49.91]       旧连接半开时，断电后的第一次重连没有建起可路由的会话：新连接没有顶替旧连接（control-server#310）。
+[xUnit.net 00:00:49.91]       旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+[xUnit.net 00:00:49.91]       第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+[xUnit.net 00:00:49.91]       第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+[xUnit.net 00:00:49.91]       第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+[xUnit.net 00:00:49.91]       第 4 次，t=6.1s 开始：Routable 第 5 代
+[xUnit.net 00:00:49.91]       Stack Trace:
+[xUnit.net 00:00:49.91]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(389,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered()
+[xUnit.net 00:00:49.91]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(207,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn()
+[xUnit.net 00:00:49.91]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(227,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn()
+[xUnit.net 00:00:49.91]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:49.91]       Output:
+[xUnit.net 00:00:49.91]         旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+[xUnit.net 00:00:49.91]         第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+[xUnit.net 00:00:49.91]         第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+[xUnit.net 00:00:49.91]         第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+[xUnit.net 00:00:49.91]         第 4 次，t=6.1s 开始：Routable 第 5 代
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn [11 s]
+  Error Message:
+   旧连接半开时，断电后的第一次重连没有建起可路由的会话：新连接没有顶替旧连接（control-server#310）。
+旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+第 4 次，t=6.1s 开始：Routable 第 5 代
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 389
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 207
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AfterATakeoverTheOldSocketReceivesNothingAndTheGenerationMovesOn() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 227
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+ 第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+ 第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+ 第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+ 第 4 次，t=6.1s 开始：Routable 第 5 代
+
+
+[xUnit.net 00:01:01.63]     ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [FAIL]
+[xUnit.net 00:01:01.63]       旧连接半开时，断电后的第一次重连没有建起可路由的会话：新连接没有顶替旧连接（control-server#310）。
+[xUnit.net 00:01:01.63]       旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+[xUnit.net 00:01:01.63]       第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+[xUnit.net 00:01:01.63]       第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+[xUnit.net 00:01:01.63]       第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+[xUnit.net 00:01:01.63]       第 4 次，t=6.1s 开始：Routable 第 5 代
+[xUnit.net 00:01:01.63]       Stack Trace:
+[xUnit.net 00:01:01.63]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(389,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered()
+[xUnit.net 00:01:01.63]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(106,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen()
+[xUnit.net 00:01:01.63]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(107,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen()
+[xUnit.net 00:01:01.63]         --- End of stack trace from previous location ---
+[xUnit.net 00:01:01.63]       Output:
+[xUnit.net 00:01:01.63]         旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+[xUnit.net 00:01:01.63]         第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+[xUnit.net 00:01:01.63]         第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+[xUnit.net 00:01:01.63]         第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+[xUnit.net 00:01:01.63]         第 4 次，t=6.1s 开始：Routable 第 5 代
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [11 s]
+  Error Message:
+   旧连接半开时，断电后的第一次重连没有建起可路由的会话：新连接没有顶替旧连接（control-server#310）。
+旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+第 4 次，t=6.1s 开始：Routable 第 5 代
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 389
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 106
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 107
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+ 第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+ 第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代
+ 第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+ 第 4 次，t=6.1s 开始：Routable 第 5 代
+
+
+[xUnit.net 00:01:13.33]     ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver [FAIL]
+[xUnit.net 00:01:13.33]       旧连接半开时，断电后的第一次重连没有建起可路由的会话：新连接没有顶替旧连接（control-server#310）。
+[xUnit.net 00:01:13.33]       旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+[xUnit.net 00:01:13.33]       第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+[xUnit.net 00:01:13.33]       第 2 次，t=2.1s 开始：AnsweredButNotRoutable 第 3 代
+[xUnit.net 00:01:13.33]       第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+[xUnit.net 00:01:13.33]       第 4 次，t=6.1s 开始：Routable 第 5 代
+[xUnit.net 00:01:13.33]       Stack Trace:
+[xUnit.net 00:01:13.34]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(389,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered()
+[xUnit.net 00:01:13.34]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(175,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver()
+[xUnit.net 00:01:13.34]         C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(187,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver()
+[xUnit.net 00:01:13.34]         --- End of stack trace from previous location ---
+[xUnit.net 00:01:13.34]       Output:
+[xUnit.net 00:01:13.34]         旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+[xUnit.net 00:01:13.34]         第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+[xUnit.net 00:01:13.34]         第 2 次，t=2.1s 开始：AnsweredButNotRoutable 第 3 代
+[xUnit.net 00:01:13.34]         第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+[xUnit.net 00:01:13.34]         第 4 次，t=6.1s 开始：Routable 第 5 代
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver [11 s]
+  Error Message:
+   旧连接半开时，断电后的第一次重连没有建起可路由的会话：新连接没有顶替旧连接（control-server#310）。
+旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+第 2 次，t=2.1s 开始：AnsweredButNotRoutable 第 3 代
+第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+第 4 次，t=6.1s 开始：Routable 第 5 代
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 389
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 175
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.TheReplayAfterTheHandshakeRunsOnTheConnectionThatTookOver() in C:\work\8005-wt\cs310-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 187
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 旧代次离开路由表：t=5.5s；新代次可路由：t=6.1s；服务端关掉了旧连接：是
+ 第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+ 第 2 次，t=2.1s 开始：AnsweredButNotRoutable 第 3 代
+ 第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代
+ 第 4 次，t=6.1s 开始：Routable 第 5 代
+
+
+[xUnit.net 00:01:24.63]   Finished:    ControlServer.Tests (ID = 'db22c7a72712e4d9ac533be10a82e8418d7fa336a68ebe31823a66a89aacd7c4')
+
+Test Run Failed.
+Total tests: 14
+     Passed: 7
+     Failed: 7
+ Total time: 1.4241 Minutes
