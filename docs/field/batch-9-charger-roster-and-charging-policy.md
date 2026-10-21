@@ -96,11 +96,11 @@ ControlServer.FieldOps.exe import-charger-roster --database "<并行实例的库
 
 ## 四、充电策略版本：导入、批准、激活是三个留痕的动作
 
-`docs/field/charging-policy-map26.json` 是投运参数（批次 9 方案第七节第 6 条的推荐值，用户 2026-09-29 同意；强制充电线由用户 2026-10-18 从 30 改为 40，见 control-server#738）：
+`docs/field/charging-policy-map26.json` 是投运参数（批次 9 方案第七节第 6 条的推荐值，用户 2026-09-29 同意；强制充电线由用户 2026-10-18 从 30 改为 40，见 control-server#738；充满线由用户 2026-10-21 从 80 改为 95，见 control-server#829）：
 
 | 字段 | 值 |
 | --- | --- |
-| `chargingCompletionThresholdPercent`（充满线） | 80 |
+| `chargingCompletionThresholdPercent`（充满线） | 95 |
 | `mandatoryChargeEntryThresholdPercent`（强制充电线） | 40 |
 | `minimumPostTaskBatteryMarginPercent`（最低任务后电量余量） | 20 |
 | `estimatedTaskConsumptionPercent`（每趟任务耗电估计） | 10 |
@@ -109,7 +109,7 @@ ControlServer.FieldOps.exe import-charger-roster --database "<并行实例的库
 | `progressMinimumIncreasePercent`（最小增量） | 3 |
 | `vehicleScope` | 空，即全部投运车辆 |
 
-导入时校验三个阈值的硬关系：充满线 > 强制充电线 ≥ 余量（`REQ-0281`，这里是 80 > 40 ≥ 20）。字段一个都不能缺，没有缺省值。
+导入时校验三个阈值的硬关系：充满线 > 强制充电线 ≥ 余量（`REQ-0281`，这里是 95 > 40 ≥ 20）。字段一个都不能缺，没有缺省值。
 
 1. **导入**（只写版本，不批准、不激活）：
 
