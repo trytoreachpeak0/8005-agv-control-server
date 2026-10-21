@@ -1,10 +1,15 @@
 #Requires -Version 7
 
 <#
-装货时操作员把空仓门关上：车自己重开，期限前后一样，不判失败；放弃装货只有操作员按取消一个出口。
+装货时操作员把空仓门关上：车不自己重开，等操作员在屏上按「重新开门」才开，期限前后一样，不判失败；
+放弃装货只有操作员按取消一个出口。
 
-- 对应决策：ADR-cross-0058 决策 1 与决策 5 的 2026-09-18 改写（按 program#55 2026-09-13 的定论，program PR #110）：
-  扫码、开门之后关门默认是意外关上，**期限前后一样**，读到相反态就重开并提示，不设次数上限，也不以本站期限为上限；
+- 对应决策：ADR-cross-0058 决策 1 与决策 5 的 2026-09-18 改写（按 program#55 2026-09-13 的定论，program PR #110），
+  以及 CP-0019（需求基线 v1.18.0，用户 2026-10-21 批准，车载端 onboard-hmi#385）对决策 1 的改写：
+  扫码、开门之后关门默认是意外关上，**期限前后一样**，读到相反态就锁着门等操作员按「重新开门」（屏上 AutomationId
+  `ReopenOperation`，没有确认框，按一次开一次锁），不设次数上限，也不以本站期限为上限。CP-0019 之前车读到相反态
+  约 0.4 秒就自己重开，现场常常赶上人还扶着门，锁弹开又扣上，被判成反馈不可信、车停到人工恢复；所以本条每次空关
+  都先判「车没有自己重开」（`L2-DC-02`、`-04`、`-05` 的 HeldShut，CP-0019 之前的车载端在这一项上红），再按键、判重开。
   v2 车载端在装货侧不产出期限后的确定失败（`FAILED`／`OPERATOR_TIMEOUT`）；放弃这次装货只有持工号的操作员按取消，
   在途装货的取消入口与 `recoveryResumeEnabled` 解绑（onboard-hmi#78）。车载端闭环本身是 onboard-hmi#72。
   **本条不断言「空关判 `CANCELLED_BY_STATION_TIMEOUT`」**——那是 2026-09-12 回写的 MVP 行为，已作废；服务端对
@@ -15,7 +20,7 @@
 - 判据来源：服务端 SQLite（`ProtocolInbox` 里车载端发来的 `OperationProgress`／`OperationResult`／
   `LoadCancellationStartRequested`／`LoadCancellationResult`，`StationOperations`，`JourneyRuntimes`，`AcceptedDemands`，
   `VehiclePurposeClaimRecords`／`VehiclePurposeClaims`，`OrderIntents`，`RecoveryWorkflows`）与模拟器 `/snapshot` 的仓位物理状态。
-  车载端界面只用来驱动：录入子批号、按「取消装货」与它的确认框；另读一次倒计时控件的 UIA 状态
+  车载端界面只用来驱动：录入子批号、按「重新开门」、按「取消装货」与它的确认框；另读一次倒计时控件的 UIA 状态
   （AutomationId `StationDepartureCountdown` 的 `ItemStatus`，是档位枚举不是文案），作为「车载端自己也认定期限已过」
   的前提——期限后的提示与倒计时文案 onboard-hmi#78 改过，判据一个字都不比。
   取消清空只判结果（需求 `Cancelled`、`CANCELLED_BY_OPERATOR`、目标仓 `EMPTY` 且锁闭、车辆释放），不判开锁方式与
@@ -33,7 +38,8 @@
 
 模拟器没有开锁脉冲计数器，开锁输出是 500 ms 的脉冲、轮询数不准。它能如实说的是门：自动化接口只能关门不能开门，
 门只在开锁输出触发时弹开。所以「关上之后门又回到 OPEN」就是脉冲到了 IO，车载端发来的 `UNLOCKING` 条数说明
-脉冲是车发的（见 `L2RealStation.psm1` 的 `Invoke-L2CloseOverOppositeState`）。
+脉冲是车发的（见 `L2RealStation.psm1` 的 `Invoke-L2CloseOverOppositeState`）。「车没有自己重开」反过来读同两样：
+空关后 5 秒内每一轮询门都关着、锁扣上、开锁输出复位，`UNLOCKING` 条数不变。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -117,15 +123,16 @@ $assertions.Add(
     'L2-DC-01', "车载端说在等操作员时，$slotNo 号仓门确实开着、空着、开锁输出已复位",
     ($physical -eq 'OPEN/EMPTY/0/0'), 'OPEN/EMPTY/0/0', $physical)
 
-# --- 2. 期限之前：空关，车自己重开 -----------------------------------------------------------------
+# --- 2. 期限之前：空关，车不自己重开；按「重新开门」才开 ---------------------------------------------
 
 $first = Invoke-L2CloseOverOppositeState -Context $Context -AttemptId $attemptId -SlotNo $slotNo -Criterion 'reopen-before-deadline'
 $assertions.Add(
-    'L2-DC-02', '期限之前空关：车载端自己重新开锁（UNLOCKING +1）、门又弹开（模拟器 OPEN、开锁输出复位）、再次等操作员',
-    ($first.After.Unlocking -eq $first.Before.Unlocking + 1 -and $first.After.Waiting -gt $first.Before.Waiting -and
+    'L2-DC-02', '期限之前空关：车载端不自己重开（空关后 5 秒门关着、锁扣上、没有 UNLOCKING）；操作员按「重新开门」后车开锁一次（UNLOCKING +1）、门又弹开（模拟器 OPEN、开锁输出复位）、再次等操作员',
+    ($first.HeldShut -and $null -ne $first.PressedAt -and
+        $first.After.Unlocking -eq $first.Before.Unlocking + 1 -and $first.After.Waiting -gt $first.Before.Waiting -and
         $first.After.Physical -eq 'OPEN/EMPTY/0/0' -and $null -ne $first.ReopenedAt -and $first.ReopenedAt -lt $deadline),
-    "UNLOCKING $($first.Before.Unlocking)→$($first.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开早于期限",
-    "UNLOCKING $($first.Before.Unlocking)→$($first.After.Unlocking) / WAITING_OPERATOR $($first.Before.Waiting)→$($first.After.Waiting) / $($first.After.Physical) / 重开于期限前 $(if ($first.ReopenedAt) { [math]::Round(($deadline - $first.ReopenedAt).TotalSeconds, 1) }) s")
+    "空关后车没有自己重开 / 按了重新开门 / UNLOCKING $($first.Before.Unlocking)→$($first.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开早于期限",
+    "$(Format-L2HeldShut $first) / $(if ($first.PressedAt) { '按了重新开门' } else { '没按' }) / UNLOCKING $($first.Before.Unlocking)→$($first.After.Unlocking) / WAITING_OPERATOR $($first.Before.Waiting)→$($first.After.Waiting) / $($first.After.Physical) / 重开于期限前 $(if ($first.ReopenedAt) { [math]::Round(($deadline - $first.ReopenedAt).TotalSeconds, 1) }) s")
 
 # --- 3. 期限过去：服务端与车载端都认定了 -----------------------------------------------------------
 
@@ -139,17 +146,18 @@ $assertions.Add(
     'L2-DC-03', '期限已过：车载端倒计时控件（AutomationId StationDepartureCountdown）的状态是 Expired——车载端自己也认定过期了',
     ($countdown -eq 'Expired'), 'Expired', $countdown)
 
-# --- 4. 期限之后：再空关两次，每次仍然重开 ---------------------------------------------------------
+# --- 4. 期限之后：再空关两次，每次仍是等按键、按了就开 ----------------------------------------------
 
 for ($round = 1; $round -le $postDeadlineRounds; $round++) {
     $reopen = Invoke-L2CloseOverOppositeState -Context $Context -AttemptId $attemptId -SlotNo $slotNo -Criterion "reopen-after-deadline-$round"
     $assertions.Add(
         "L2-DC-$('{0:d2}' -f (3 + $round))",
-        "期限之后第 $round 次空关：车载端照样自己重开（UNLOCKING +1、门又弹开、再次等操作员），重开发生在期限之后",
-        ($reopen.After.Unlocking -eq $reopen.Before.Unlocking + 1 -and $reopen.After.Waiting -gt $reopen.Before.Waiting -and
+        "期限之后第 $round 次空关：车载端照样不自己重开；按「重新开门」后照样开锁一次（UNLOCKING +1、门又弹开、再次等操作员），重开发生在期限之后",
+        ($reopen.HeldShut -and $null -ne $reopen.PressedAt -and
+            $reopen.After.Unlocking -eq $reopen.Before.Unlocking + 1 -and $reopen.After.Waiting -gt $reopen.Before.Waiting -and
             $reopen.After.Physical -eq 'OPEN/EMPTY/0/0' -and $null -ne $reopen.ReopenedAt -and $reopen.ReopenedAt -ge $deadline),
-        "UNLOCKING $($reopen.Before.Unlocking)→$($reopen.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开晚于期限",
-        "UNLOCKING $($reopen.Before.Unlocking)→$($reopen.After.Unlocking) / WAITING_OPERATOR $($reopen.Before.Waiting)→$($reopen.After.Waiting) / $($reopen.After.Physical) / 重开于期限后 $(if ($reopen.ReopenedAt) { [math]::Round(($reopen.ReopenedAt - $deadline).TotalSeconds, 1) }) s")
+        "空关后车没有自己重开 / 按了重新开门 / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开晚于期限",
+        "$(Format-L2HeldShut $reopen) / $(if ($reopen.PressedAt) { '按了重新开门' } else { '没按' }) / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.After.Unlocking) / WAITING_OPERATOR $($reopen.Before.Waiting)→$($reopen.After.Waiting) / $($reopen.After.Physical) / 重开于期限后 $(if ($reopen.ReopenedAt) { [math]::Round(($reopen.ReopenedAt - $deadline).TotalSeconds, 1) }) s")
 }
 
 # 否定判据要有界：让运行时又转几轮，再说什么都没被结算。
@@ -169,7 +177,7 @@ $assertions.Add(
 # --- 5. 操作员按取消 -------------------------------------------------------------------------------
 
 # 门此刻开着（最后一次重开之后），操作员决定不装了。取消执行器接手开着的门、不再打脉冲（onboard-hmi#78），
-# 所以先按取消、等服务端授权，再把空门带上；反过来先关门，车会把它当成又一次空关重开。
+# 所以先按取消、等服务端授权，再把空门带上；反过来先关门，车会把它当成又一次空关、锁着门等「重新开门」。
 $offered = Wait-L2Condition -Description "the onboard offers $cancelButton with the factory recovery switch off" `
     -Journal $journal -Criterion 'onboard-cancel-offered' -TimeoutSeconds 60 `
     -Probe { [bool]$onboard.ButtonAvailable($cancelButton) } -Until { param($v) $v }

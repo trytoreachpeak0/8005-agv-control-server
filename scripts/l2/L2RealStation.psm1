@@ -242,57 +242,190 @@ function Wait-L2WaitingOperator {
 }
 
 <#
-The operator shuts the door over the wrong occupancy -- an empty slot on a load, a full one on an unload --
-and the vehicle reopens it on its own (ADR-cross-0058 decision 1).
+Whether the onboard screen offers 「重新开门」 now (onboard-hmi#385). The button binds IsEnabled and Visibility to
+the same flag, so absent and disabled read alike, as for 「申请恢复」. Addressed by AutomationId: that is what the
+onboard's screen-state map names it by (HmiScreenBindings, ReopenOperation).
+#>
+function Test-L2ReopenOffered {
+    param([Parameter(Mandatory)][object]$Onboard)
+    $button = $Onboard.Element('AutomationId', 'ReopenOperation')
+    if (-not $button) { return $false }
+    return [bool]$button.Current.IsEnabled
+}
 
-Returns once the onboard is waiting for the operator again, which is the moment the next close counts: it
-sends that WAITING_OPERATOR only after the new unlock is stable and its output reset. Closing again on the
-door being open instead is how 20260909-real-onboard-load-door-closed-empty-001 went red on MVP: 40 ms
-after the pop, with the unlock output still 1.
+<#
+Presses 「重新开门」. On v2 it has no confirmation (onboard-hmi#385): one press is one more unlock pulse. A press the
+onboard does not take -- nothing waits for it any more -- answers with a modal 「无法重新开门」, which the caller
+looks for when that is the case it expects.
+#>
+function Invoke-L2ReopenButton {
+    param([Parameter(Mandatory)][object]$Onboard)
+    $button = $Onboard.Element('AutomationId', 'ReopenOperation')
+    if (-not $button) { throw "No element with AutomationId 'ReopenOperation'." }
+    $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+}
+
+<#
+Watches one slot for Seconds after its door was shut, on every poll rather than once at the end (README item 14):
+a door the vehicle reopened by itself could be shut again before a single read at the end, but its UNLOCKING could
+not be taken back, so that count is watched on every poll too.
+
+Returns HeldShut -- the lock read latched at least once, every reading from the first latched one on was
+CLOSED/*/1/0 (door shut, lock latched, unlock output reset), and the attempt's UNLOCKING count never rose above
+Unlocking -- with the evidence: the readings in the order they changed, each with its offset from the start, and
+the highest UNLOCKING count seen.
+#>
+function Watch-L2SlotHeldShut {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][object]$Simulator,
+        [Parameter(Mandatory)][string]$AttemptId,
+        [Parameter(Mandatory)][int]$SlotNo,
+        [Parameter(Mandatory)][int]$Unlocking,
+        [Parameter(Mandatory)][int]$Seconds
+    )
+    $started = [DateTimeOffset]::UtcNow
+    $end = $started.AddSeconds($Seconds)
+    $readings = [System.Collections.Generic.List[string]]::new()
+    $last = $null
+    $latched = $false
+    $broken = $false
+    $maxUnlocking = $Unlocking
+    $polls = 0
+    do {
+        $now = [DateTimeOffset]::UtcNow
+        $physical = Get-L2SlotPhysical -Simulator $Simulator -SlotNo $SlotNo
+        $count = Get-L2PhaseCount -Connection $Connection -AttemptId $AttemptId -Phase 'UNLOCKING'
+        $polls++
+        if ($count -gt $maxUnlocking) { $maxUnlocking = $count }
+        if ($physical -ne $last) {
+            $readings.Add("+$([math]::Round(($now - $started).TotalSeconds, 1))s $physical")
+            $last = $physical
+        }
+        if ($physical -like 'CLOSED/*/1/0') { $latched = $true }
+        elseif ($latched) { $broken = $true }
+        Start-Sleep -Milliseconds 200
+    } while ([DateTimeOffset]::UtcNow -lt $end)
+    return [pscustomobject]@{
+        HeldShut       = ($latched -and -not $broken -and $maxUnlocking -eq $Unlocking)
+        Readings       = ($readings -join ' -> ')
+        UnlockingAfter = $maxUnlocking
+        Polls          = $polls
+    }
+}
+
+<#
+The operator shuts the door over the wrong occupancy -- an empty slot on a load, a full one on an unload -- and
+then presses 「重新开门」 on the onboard screen to have it opened again: ADR-cross-0058 decision 1 as CP-0019
+rewrote it (requirements baseline v1.18.0, onboard-hmi#385).
+
+Until onboard-hmi#385 the vehicle reopened such a door by itself, about 0.4 s after it read shut (within about 3 s
+of the close on this rig: README item 11, CI run 38107859209). It no longer does: the slot stays shut and locked,
+nothing is pulsed, and the screen offers 「重新开门」 (AutomationId ReopenOperation, no confirmation) until someone
+presses it. So this does three things and returns the evidence of each:
+
+1. Shuts the door and watches it for HoldSeconds (Watch-L2SlotHeldShut): door shut, lock latched, unlock output
+   reset, and no UNLOCKING from the vehicle. HeldShut is the verdict and Held the evidence; the scenario asserts
+   HeldShut, which is what tells this onboard from one that still reopens by itself.
+2. If the slot was held, waits for the screen to offer 「重新开门」 and presses it (PressedAt).
+3. Waits for the slot to reopen and for the onboard to wait for the operator again -- the moment the next close
+   counts: it sends that WAITING_OPERATOR only after the new unlock is stable and its output reset. Closing again
+   on the door being open instead is how 20260909-real-onboard-load-door-closed-empty-001 went red on MVP: 40 ms
+   after the pop, with the unlock output still 1.
+
+An onboard that still reopens by itself is not pressed for: step 3 then waits for its own reopen, against the
+baseline taken before the close, so the scenario goes on to its later criteria and the red stays on HeldShut.
+Step 3 accepting a reopen of the vehicle's own is only safe because step 1 is asserted; dropping that assertion
+is the change that would let the old onboard pass.
 
 The simulator snapshot has no pulse counter and its unlock output is a 500 ms pulse, too short to count by
-polling. What it does show is the door: its automation API cannot open a door (only close-door exists), and
-the slot pops open only when the unlock output fires. So a door back at OPEN after a close is the pulse having
-reached the IO, and the onboard's UNLOCKING count says it was the vehicle that sent it. Both are returned;
-the scenario asserts them.
+polling. What it does show is the door: its automation API cannot open a door (only close-door exists), and the
+slot pops open only when the unlock output fires. So a door back at OPEN after a close is the pulse having
+reached the IO, and the onboard's UNLOCKING count says it was the vehicle that sent it. Before and After count
+from before the close, as they always have, so one press is After.Unlocking = Before.Unlocking + 1.
 #>
 function Invoke-L2CloseOverOppositeState {
     param(
         [Parameter(Mandatory)][object]$Context,
         [Parameter(Mandatory)][string]$AttemptId,
         [Parameter(Mandatory)][int]$SlotNo,
-        [Parameter(Mandatory)][string]$Criterion
+        [Parameter(Mandatory)][string]$Criterion,
+        [int]$HoldSeconds = 5,
+        [int]$OfferTimeoutSeconds = 30
     )
     $connection = $Context.Connection
     $simulator = $Context.Simulator
-    $Context.Journal.Note("${Criterion}: closing slot $SlotNo over the opposite occupancy.")
-    $change = Wait-L2Change -Description "the onboard reopened slot $SlotNo and waits for the operator again ($Criterion)" `
-        -Journal $Context.Journal -Criterion $Criterion -TimeoutSeconds 90 `
-        -Baseline {
-            [pscustomobject]@{
-                Unlocking = Get-L2PhaseCount -Connection $connection -AttemptId $AttemptId -Phase 'UNLOCKING'
-                Waiting   = Get-L2PhaseCount -Connection $connection -AttemptId $AttemptId -Phase 'WAITING_OPERATOR'
-                Physical  = Get-L2SlotPhysical -Simulator $simulator -SlotNo $SlotNo
-            }
-        } `
-        -Action { $simulator.Command('Post', "slots/$SlotNo/close-door", @{}) } `
-        -Probe {
-            $progress = Get-L2OperationProgress -Connection $connection -AttemptId $AttemptId
-            [pscustomobject]@{
-                Unlocking   = @($progress | Where-Object { $_.Phase -eq 'UNLOCKING' }).Count
-                Waiting     = @($progress | Where-Object { $_.Phase -eq 'WAITING_OPERATOR' }).Count
-                LastUnlock  = @($progress | Where-Object { $_.Phase -eq 'UNLOCKING' } | Select-Object -Last 1)[0]
-                Physical    = Get-L2SlotPhysical -Simulator $simulator -SlotNo $SlotNo
-            }
-        } `
-        -Until { param($before, $now) $now.Unlocking -gt $before.Unlocking -and $now.Waiting -gt $before.Waiting -and $now.Physical -like 'OPEN/*/0/0' }
-    return [pscustomobject]@{
-        Before       = $change.Baseline
-        After        = $change.Value
-        ReopenedAt   = $change.Value.LastUnlock.At
+    $onboard = $Context.Onboard
+    $journal = $Context.Journal
+
+    $before = [pscustomobject]@{
+        Unlocking = Get-L2PhaseCount -Connection $connection -AttemptId $AttemptId -Phase 'UNLOCKING'
+        Waiting   = Get-L2PhaseCount -Connection $connection -AttemptId $AttemptId -Phase 'WAITING_OPERATOR'
+        Physical  = Get-L2SlotPhysical -Simulator $simulator -SlotNo $SlotNo
     }
+    $journal.Observe("$Criterion-baseline", $before, $null)
+    $journal.Note("${Criterion}: closing slot $SlotNo over the opposite occupancy.")
+    $null = $simulator.Command('Post', "slots/$SlotNo/close-door", @{})
+
+    $held = Watch-L2SlotHeldShut -Connection $connection -Simulator $simulator -AttemptId $AttemptId -SlotNo $SlotNo `
+        -Unlocking $before.Unlocking -Seconds $HoldSeconds
+    $journal.Observe("$Criterion-held-shut", $held, $null)
+
+    $probe = {
+        $progress = Get-L2OperationProgress -Connection $connection -AttemptId $AttemptId
+        [pscustomobject]@{
+            Unlocking  = @($progress | Where-Object { $_.Phase -eq 'UNLOCKING' }).Count
+            Waiting    = @($progress | Where-Object { $_.Phase -eq 'WAITING_OPERATOR' }).Count
+            LastUnlock = @($progress | Where-Object { $_.Phase -eq 'UNLOCKING' } | Select-Object -Last 1)[0]
+            Physical   = Get-L2SlotPhysical -Simulator $simulator -SlotNo $SlotNo
+        }
+    }
+    $press = @{ At = $null }
+    if ($held.HeldShut) {
+        $null = Wait-L2Condition -Description "the onboard offers 重新开门 for slot $SlotNo ($Criterion)" `
+            -Journal $journal -Criterion "$Criterion-reopen-offered" -TimeoutSeconds $OfferTimeoutSeconds `
+            -Probe { Test-L2ReopenOffered -Onboard $onboard } -Until { param($v) $v }
+        # The baseline is read right before the press, so the UNLOCKING waited for is the press's own.
+        $change = Wait-L2Change -Description "slot $SlotNo reopened on the press and the onboard waits for the operator again ($Criterion)" `
+            -Journal $journal -Criterion $Criterion -TimeoutSeconds 60 `
+            -Baseline { & $probe } `
+            -Action {
+                $press.At = [DateTimeOffset]::UtcNow
+                Invoke-L2ReopenButton -Onboard $onboard
+                $journal.Note("${Criterion}: pressed 重新开门 on slot $SlotNo.")
+            } `
+            -Probe $probe `
+            -Until { param($b, $now) $now.Unlocking -gt $b.Unlocking -and $now.Waiting -gt $b.Waiting -and $now.Physical -like 'OPEN/*/0/0' }
+        $after = $change.Value
+    } else {
+        $journal.Note("${Criterion}: slot $SlotNo was not held shut ($($held.Readings); UNLOCKING $($before.Unlocking) -> $($held.UnlockingAfter)); not pressing.")
+        $after = Wait-L2Condition -Description "slot $SlotNo reopened without a press and the onboard waits for the operator again ($Criterion)" `
+            -Journal $journal -Criterion $Criterion -TimeoutSeconds 90 `
+            -Probe $probe `
+            -Until { param($now) $now.Unlocking -gt $before.Unlocking -and $now.Waiting -gt $before.Waiting -and $now.Physical -like 'OPEN/*/0/0' }
+    }
+    return [pscustomobject]@{
+        Before     = $before
+        After      = $after
+        HeldShut   = $held.HeldShut
+        Held       = $held
+        PressedAt  = $press.At
+        ReopenedAt = if ($null -ne $after.LastUnlock) { $after.LastUnlock.At } else { $null }
+    }
+}
+
+<#
+The hold of Invoke-L2CloseOverOppositeState as the actual column of a criterion, so a red says whether the vehicle
+sent an UNLOCKING by itself, the door came back open, or the lock never latched.
+#>
+function Format-L2HeldShut {
+    param([Parameter(Mandatory)][object]$Reopen)
+    $held = $Reopen.Held
+    $verdict = if ($Reopen.HeldShut) { '空关后车没有自己重开' } else { '空关后车自己重开了或门没锁住' }
+    return "$verdict（UNLOCKING $($Reopen.Before.Unlocking)→$($held.UnlockingAfter)；$($held.Readings)）"
 }
 
 Export-ModuleMember -Function Get-L2SlotPhysical, Get-L2Inbound, Get-L2OperationProgress, Get-L2PhaseCount,
     Get-L2OperationResults, Get-L2Runtime, Get-L2StationOperation, ConvertTo-L2Instant, Invoke-L2DriveTo,
-    Wait-L2ConfirmedIntent, Invoke-L2PickupAndScan, Wait-L2WaitingOperator, Invoke-L2CloseOverOppositeState
+    Wait-L2ConfirmedIntent, Invoke-L2PickupAndScan, Wait-L2WaitingOperator, Invoke-L2CloseOverOppositeState,
+    Test-L2ReopenOffered, Invoke-L2ReopenButton, Watch-L2SlotHeldShut, Format-L2HeldShut

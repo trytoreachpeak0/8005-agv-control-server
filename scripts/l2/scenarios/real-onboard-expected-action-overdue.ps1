@@ -12,9 +12,13 @@
 - 门槛：setup 的 `ExpectedActionOverdueThreshold` = 20 秒，编排器同时写进车载端 stage 副本（`workflow.expectedActionOverdueMs`）
   与服务端环境（`ExpectedActionOverdue__threshold`）。它是投运标定的现场参数（REQ-0358 说明 2、3），只决定何时上报、
   不改任何执行器时序，所以不是 README 第 11 条禁止的那种调短；`operationTimeoutMs` 不动。
-- 站点期限 60 秒，从到站起算。时间线（以第一次开锁为 0）：约 8 秒空关、车自己重开；门槛前读一次；20 秒越过门槛；
-  随后读告警、线上请求、中途快照、端点、看板页、HMI；门槛后再空关、重开，看端点仍一行、raisedAt 不变；约 54 秒期限过去，看合成一行；
-  放货关门闭环，看撤下。全程约 70 秒，在 120 秒的 `operationTimeoutMs` 之内。
+- 站点期限 60 秒，从到站起算。时间线（以第一次开锁为 0）：约 8 秒空关，车锁着门不自己重开，约 13 秒操作员按「重新开门」、
+  车重开（CP-0019，车载端 onboard-hmi#385）；门槛前读一次；20 秒越过门槛；
+  随后读告警、线上请求、中途快照、端点、看板页、HMI；门槛后再空关、按「重新开门」、重开，看端点仍一行、raisedAt 不变；
+  约 54 秒期限过去，看合成一行；放货关门闭环，看撤下。全程约 75 秒，在 120 秒的 `operationTimeoutMs` 之内。
+- CP-0019 修订后的 `REQ-0358`：超时自这一仓第一次开锁起累计，按「重新开门」不清零，等按键的那段时间照常累计。
+  `L2-EAO-03` 判 raisedAt ≈ 第一次开锁 + 门槛（±2 秒）、不 ≈ 按键重开 + 门槛，两头都覆盖：按键清零会晚约 13 秒，
+  等按键的约 5 秒不计会晚约 5 秒，都在容差外。两次空关都先判车没有自己重开（`L2-EAO-01`、`-13` 的 HeldShut）。
 - 判据来源：服务端 SQLite（`ProtocolInbox` 里车载端发来的 `OnboardAlarmSnapshot`／`SafetyStateSnapshot`／`OperationProgress`／
   `OperationResult`，`SessionRecoveries`，`JourneyRuntimes`，`StationOperations`，三张恢复表）；协议故障代理的流量日志
   （`SafetyStateSnapshotRequested` 只在线上）；看板只读端点 `GET /api/dashboard/expected-action-overdue` 与看板进程渲染的页面；
@@ -190,20 +194,26 @@ $handshakeVersion = (@((Get-L2RealInbound $connection 'SafetyStateSnapshot') | W
         ForEach-Object { [long]$_.Payload.safetyStateVersion }) | Measure-Object -Maximum).Maximum
 $journal.Note("Session generation $generation0; its handshake SafetyStateSnapshot is version $handshakeVersion.")
 
-# --- 2. 门槛之前空关一次：车自己重开 -----------------------------------------------------------------------------
+# --- 2. 门槛之前空关一次：车不自己重开，按「重新开门」才开 ----------------------------------------------------------
 
 $null = Wait-L2Condition -Description "$firstCloseAfter after the first unlock" -Journal $journal -Criterion 'first-close-due' `
     -TimeoutSeconds 30 -Probe { [DateTimeOffset]::UtcNow } -Until { param($v) $v -ge $firstUnlock.Add($firstCloseAfter) }
 $reopen = Invoke-L2CloseOverOppositeState -Context $Context -AttemptId $attemptId -SlotNo $slotNo -Criterion 'reopen-before-threshold'
 $unlockings = Get-L2PhaseCount -Connection $connection -AttemptId $attemptId -Phase 'UNLOCKING'
 $assertions.Add(
-    'L2-EAO-01', "空关后车自己重开：这次装货的 UNLOCKING 进度 ≥ 2 条，$slotNo 号仓门又弹开、空着、开锁输出复位，重开早于门槛",
-    ($unlockings -ge 2 -and $reopen.After.Physical -eq 'OPEN/EMPTY/0/0' -and $null -ne $reopen.ReopenedAt -and $reopen.ReopenedAt -lt $crossing),
-    'UNLOCKING ≥ 2 / OPEN/EMPTY/0/0 / 重开早于门槛',
-    "UNLOCKING $unlockings / $($reopen.After.Physical) / 重开于第一次开锁后 $(if ($reopen.ReopenedAt) { [math]::Round(($reopen.ReopenedAt - $firstUnlock).TotalSeconds, 1) }) s")
+    'L2-EAO-01', "空关后车不自己重开（5 秒门关着、锁扣上、没有 UNLOCKING）；按「重新开门」后重开：这次装货的 UNLOCKING 进度 ≥ 2 条，$slotNo 号仓门又弹开、空着、开锁输出复位，重开早于门槛",
+    ($reopen.HeldShut -and $null -ne $reopen.PressedAt -and
+        $unlockings -ge 2 -and $reopen.After.Physical -eq 'OPEN/EMPTY/0/0' -and $null -ne $reopen.ReopenedAt -and $reopen.ReopenedAt -lt $crossing),
+    '空关后车没有自己重开 / 按了重新开门 / UNLOCKING ≥ 2 / OPEN/EMPTY/0/0 / 重开早于门槛',
+    "$(Format-L2HeldShut $reopen) / $(if ($reopen.PressedAt) { '按了重新开门' } else { '没按' }) / UNLOCKING $unlockings / $($reopen.After.Physical) / 重开于第一次开锁后 $(if ($reopen.ReopenedAt) { [math]::Round(($reopen.ReopenedAt - $firstUnlock).TotalSeconds, 1) }) s")
 $reopenGap = if ($reopen.ReopenedAt) { $reopen.ReopenedAt - $firstUnlock } else { [TimeSpan]::Zero }
 if ($reopenGap -lt $tolerance + $tolerance + $tolerance) {
     throw "The reopen came $($reopenGap.TotalSeconds) s after the first unlock; that is too close to tell 'counted from the first unlock' from 'counted from the reopen' within $tolerance."
+}
+# 等按键的那段（空关到按下）要明显长于容差，L2-EAO-03 才分得出「等按键照常累计」与「等按键不计」（CP-0019 修订后的 REQ-0358）。
+$pressWait = if ($reopen.PressedAt) { $reopen.PressedAt - $firstUnlock.Add($firstCloseAfter) } else { $null }
+if ($null -ne $pressWait -and $pressWait -le $tolerance + $tolerance) {
+    throw "The press came $($pressWait.TotalSeconds) s after the close; that is too close to tell 'the wait for the press counts' from 'it does not' within $tolerance."
 }
 
 # --- 3. 门槛之前读一次：什么都还没有 -------------------------------------------------------------------------------
@@ -240,7 +250,7 @@ $fromFirst = $raisedAt - $crossing
 $fromReopen = $raisedAt - $reopen.ReopenedAt.Add($threshold)
 $expectedActions = @("关好${slotNo}号仓门", "放入货物并关好${slotNo}号仓门", "取出货物并关好${slotNo}号仓门")
 $assertions.Add(
-    'L2-EAO-03', "越过门槛后告警出现且字段正确：code、subjectType=SLOT、subjectId=$slotNo、displayMessage 是三种期待动作之一；raisedAt ≈ 第一次开锁 + 门槛（±$($tolerance.TotalSeconds) s），不 ≈ 重开 + 门槛",
+    'L2-EAO-03', "越过门槛后告警出现且字段正确：code、subjectType=SLOT、subjectId=$slotNo、displayMessage 是三种期待动作之一；raisedAt ≈ 第一次开锁 + 门槛（±$($tolerance.TotalSeconds) s，等按键的那段照常累计），不 ≈ 按键重开 + 门槛（按键不清零）",
     ([string]$alarm.subjectType -eq 'SLOT' -and [string]$alarm.subjectId -eq [string]$slotNo -and
         [string]$alarm.displayMessage -in $expectedActions -and
         [math]::Abs($fromFirst.TotalSeconds) -le $tolerance.TotalSeconds -and [math]::Abs($fromReopen.TotalSeconds) -gt $tolerance.TotalSeconds),
@@ -357,7 +367,7 @@ $assertions.Add(
 
 # --- 7. 同一超时再报一次：不出第二行，不覆盖第一行 ----------------------------------------------------------------
 
-# 门槛后再空关一次、车重开：这一仓的状态变化让车载端再发告警快照。判的是端点仍恰好一行、raisedAt 不变，
+# 门槛后再空关一次、按「重新开门」、车重开：这一仓的状态变化让车载端再发告警快照。判的是端点仍恰好一行、raisedAt 不变，
 # 以及各份快照里这一仓的超时始终是同一个 alarmId 与 raisedAt（`L2-EAO-13`），加上服务端为这次变化又要了一次
 # 快照（`L2-EAO-14`）。两条分开：前者是不变性（不出第二行、不覆盖），后者是活性（服务端确实重新看了一眼），
 # 混成一条会让 FAIL 指不到是哪一端出了事。
@@ -417,11 +427,12 @@ $raisedAts = @($reports | ForEach-Object { (ConvertTo-L2RealInstant $_.Alarm.rai
 $afterAgainSlots = Get-Slots (Get-Endpoint)
 $againRow = if ($afterAgainSlots.Count -gt 0) { $afterAgainSlots[0] } else { $null }
 $assertions.Add(
-    'L2-EAO-13', '门槛后再空关、重开，端点仍恰好一行、raisedAt 不变；各份告警快照里这一仓的超时都是同一个 alarmId、同一个 raisedAt',
-    ($again.After.Physical -eq 'OPEN/EMPTY/0/0' -and $reports.Count -ge 1 -and $alarmIds.Count -eq 1 -and $raisedAts.Count -eq 1 -and
+    'L2-EAO-13', '门槛后再空关：车不自己重开，按「重新开门」后重开；端点仍恰好一行、raisedAt 不变（按键不清零）；各份告警快照里这一仓的超时都是同一个 alarmId、同一个 raisedAt',
+    ($again.HeldShut -and $null -ne $again.PressedAt -and
+        $again.After.Physical -eq 'OPEN/EMPTY/0/0' -and $reports.Count -ge 1 -and $alarmIds.Count -eq 1 -and $raisedAts.Count -eq 1 -and
         $afterAgainSlots.Count -eq 1 -and (ConvertTo-L2RealInstant $againRow.raisedAt) -eq $raisedAt),
-    "重开 OPEN/EMPTY/0/0 / 1 个 alarmId / 1 个 raisedAt / 端点 1 行 raisedAt $($alarm.raisedAt)",
-    "重开 $($again.After.Physical) / $($reports.Count) 份快照带它，$($alarmIds.Count) 个 alarmId、$($raisedAts.Count) 个 raisedAt / 端点 $($afterAgainSlots.Count) 行 $(Format-EndpointRow $againRow)")
+    "空关后车没有自己重开 / 按了重新开门 / 重开 OPEN/EMPTY/0/0 / 1 个 alarmId / 1 个 raisedAt / 端点 1 行 raisedAt $($alarm.raisedAt)",
+    "$(Format-L2HeldShut $again) / $(if ($again.PressedAt) { '按了重新开门' } else { '没按' }) / 重开 $($again.After.Physical) / $($reports.Count) 份快照带它，$($alarmIds.Count) 个 alarmId、$($raisedAts.Count) 个 raisedAt / 端点 $($afterAgainSlots.Count) 行 $(Format-EndpointRow $againRow)")
 
 # --- 8. 站点期限过去、门仍开着：同一行合成 ------------------------------------------------------------------------
 
