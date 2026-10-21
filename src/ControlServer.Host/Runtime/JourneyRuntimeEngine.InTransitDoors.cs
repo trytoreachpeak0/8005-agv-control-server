@@ -64,8 +64,8 @@ public sealed partial class JourneyRuntimeEngine
         LoggerMessage.Define<string, string>(
             LogLevel.Critical,
             new EventId(2195, nameof(LogHeldOrderResumedWithoutContinue)),
-            "Order {UpperId} on {AgvId} was held for its doors and its latch released automatically; RIoT now reports it " +
-            "executing although nobody continued it.");
+            "Order {UpperId} on {AgvId} was held for its doors and its latch was released on a person's confirmation; RIoT " +
+            "now reports it executing although nobody continued it.");
 
     private static readonly Action<ILogger, string, string, string, long?, long?, Exception?> LogDoorsNotProvenLocked =
         LoggerMessage.Define<string, string, string, long?, long?>(
