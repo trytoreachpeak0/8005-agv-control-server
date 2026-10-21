@@ -363,7 +363,7 @@ public static class ChargingStationEndpoints
         TimeProvider timeProvider,
         ILogger<VehicleChargingEligibilityRecoveryHttpRequest> logger,
         CancellationToken cancellationToken,
-        Recovery.RecoveryGrantGate? grants = null)
+        [Microsoft.AspNetCore.Mvc.FromServices] Recovery.RecoveryGrantGate? grants = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(holds);
@@ -464,7 +464,7 @@ public static class ChargingStationEndpoints
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
         TimeProvider timeProvider,
         CancellationToken cancellationToken,
-        Recovery.RecoveryGrantGate? grants = null)
+        [Microsoft.AspNetCore.Mvc.FromServices] Recovery.RecoveryGrantGate? grants = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(clearance);

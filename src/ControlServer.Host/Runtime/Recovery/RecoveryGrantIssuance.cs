@@ -118,19 +118,191 @@ public sealed class RecoveryGrantIssuance(
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
     };
 
-    /// <summary>control-server#797 stub: grants nothing yet.</summary>
-    public Task<RecoveryGrantResult> GrantAsync(RecoveryGrantRequest request, CancellationToken cancellationToken)
+    /// <summary>Rehearses, or -- with the rehearsal's code -- grants.</summary>
+    public async Task<RecoveryGrantResult> GrantAsync(RecoveryGrantRequest request, CancellationToken cancellationToken)
     {
-        _ = request; _ = cancellationToken; _ = dbContext; _ = roster; _ = registry; _ = audit; _ = options; _ = timeProvider;
-        return Task.FromResult(new RecoveryGrantResult(Rejected, [], null, null, null, null));
+        ArgumentNullException.ThrowIfNull(request);
+        RecoveryGrantOptions settings = options.Value;
+        string? vehicleKey = Trimmed(request.VehicleKey);
+        string? journeyId = Trimmed(request.JourneyId);
+        string? operatorId = Trimmed(request.OperatorId);
+        string? reason = Trimmed(request.Reason);
+        string? siteVerification = Trimmed(request.SiteVerification);
+        string? claimedRole = Trimmed(request.ClaimedRole);
+        string? confirmation = Trimmed(request.ConfirmationCode);
+        string[] named = [.. (request.Actions ?? []).Select(Trimmed).OfType<string>().Distinct(StringComparer.Ordinal)];
+        ImmutableSortedSet<string> actions = named.Length == 0
+            ? RecoveryGrantActions.Default
+            : ImmutableSortedSet.Create(StringComparer.Ordinal, named);
+        int minutes = request.Minutes ?? settings.DefaultMinutes;
+
+        List<string> codes = [];
+        if (operatorId is null) codes.Add(OperatorRequired);
+        if (reason is null) codes.Add(ReasonRequired);
+        if (siteVerification is null) codes.Add(SiteVerificationRequired);
+        bool fits = Length(reason) <= MaxTextLength && Length(siteVerification) <= MaxTextLength &&
+                    Length(operatorId) <= MaxIdentifierLength && Length(claimedRole) <= MaxIdentifierLength &&
+                    Length(vehicleKey) <= MaxIdentifierLength && Length(journeyId) <= MaxIdentifierLength &&
+                    Length(confirmation) <= MaxIdentifierLength && named.All(action => action.Length <= MaxIdentifierLength);
+        if (!fits) codes.Add(FieldTooLong);
+        if (actions.Any(action => !RecoveryGrantActions.All.Contains(action))) codes.Add(ActionUnknown);
+        if (minutes < 1 || minutes > settings.MaximumMinutes) codes.Add(DurationOutOfRange);
+
+        FleetVehicle? vehicle = null;
+        if (vehicleKey is null) codes.Add(VehicleRequired);
+        else if ((vehicle = roster.ByVehicleKey(vehicleKey)) is null) codes.Add(VehicleUnknown);
+
+        RecoveryGrantJourney? namedJourney = null;
+        RecoveryGrantJourney? vehicleJourney = null;
+        if (vehicle is not null)
+        {
+            vehicleJourney = await UnfinishedJourneyAsync(vehicle.AgvId, cancellationToken).ConfigureAwait(false);
+            if (journeyId is not null && fits)
+            {
+                JourneyRuntimeRow? row = await dbContext.JourneyRuntimes.AsNoTracking()
+                    .SingleOrDefaultAsync(item => item.JourneyId == journeyId && item.AgvId == vehicle.AgvId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (row is null) codes.Add(JourneyNotFound);
+                else
+                {
+                    namedJourney = new RecoveryGrantJourney(row.JourneyId, row.Stage.ToString(), row.BlockReasonCode);
+                    if (row.Stage == JourneyRuntimeStage.Completed) codes.Add(JourneyCompleted);
+                }
+            }
+        }
+        RecoveryGrant? current = vehicle is null ? null : registry.Current(vehicle.AgvId);
+        RecoveryGrantPlan plan = new(
+            vehicle?.AgvId,
+            fits ? vehicleKey : null,
+            fits ? journeyId : null,
+            namedJourney,
+            vehicleJourney,
+            fits ? [.. actions] : [],
+            minutes,
+            fits ? operatorId : null,
+            fits ? reason : null,
+            fits ? siteVerification : null,
+            current is null ? null : new RecoveryGrantReplaced(current.GrantId, current.JourneyId, [.. current.Actions], current.ExpiresAt));
+        string code = CodeOf(plan);
+        DateTimeOffset now = timeProvider.GetUtcNow();
+
+        if (codes.Count > 0)
+        {
+            if (confirmation is null)
+            {
+                return new RecoveryGrantResult(Rejected, codes, plan, null, null, null);
+            }
+            string refused = await WriteAuditAsync(
+                GrantAuditAction, vehicleKey, fits, GovernanceActionOutcome.Failed, claimedRole, now,
+                new { said = Said(), plan, codes, result = Rejected }, cancellationToken).ConfigureAwait(false);
+            return new RecoveryGrantResult(Rejected, codes, plan, null, null, refused);
+        }
+        if (confirmation is null)
+        {
+            return new RecoveryGrantResult(Planned, [], plan, code, null, null);
+        }
+        if (!string.Equals(confirmation, code, StringComparison.Ordinal))
+        {
+            string stale = await WriteAuditAsync(
+                GrantAuditAction, vehicleKey, fits, GovernanceActionOutcome.Failed, claimedRole, now,
+                new { said = Said(), plan, codes = new[] { ConfirmationStale }, result = Rejected }, cancellationToken)
+                .ConfigureAwait(false);
+            return new RecoveryGrantResult(Rejected, [ConfirmationStale], plan, code, null, stale);
+        }
+
+        string grantId = Guid.NewGuid().ToString("D");
+        DateTimeOffset expiresAt = now.AddMinutes(minutes);
+        // The audit first: a grant that could not be recorded is not given.
+        string auditRecordId = await WriteAuditAsync(
+            GrantAuditAction, vehicleKey, fits, GovernanceActionOutcome.Succeeded, claimedRole, now,
+            new { said = Said(), plan, grantId, expiresAt, result = Granted }, cancellationToken).ConfigureAwait(false);
+        RecoveryGrant grant = new(
+            grantId, vehicle!.AgvId, vehicle.VehicleKey, journeyId, actions, operatorId!, now, expiresAt, auditRecordId);
+        registry.Grant(grant);
+        return new RecoveryGrantResult(Granted, [], plan, code, grant, auditRecordId);
+
+        object Said() => fits
+            ? new { vehicleKey, journeyId, actions = named, minutes = request.Minutes, operatorId, reason, siteVerification, claimedRole, confirmationCode = confirmation }
+            : new
+            {
+                vehicleKeyLength = vehicleKey?.Length,
+                journeyIdLength = journeyId?.Length,
+                operatorIdLength = operatorId?.Length,
+                reasonLength = reason?.Length,
+                siteVerificationLength = siteVerification?.Length
+            };
     }
 
-    /// <summary>control-server#797 stub: revokes nothing yet.</summary>
-    public Task<RecoveryGrantResult> RevokeAsync(RecoveryGrantRevocationRequest request, CancellationToken cancellationToken)
+    /// <summary>Ends a vehicle's grant now.</summary>
+    public async Task<RecoveryGrantResult> RevokeAsync(RecoveryGrantRevocationRequest request, CancellationToken cancellationToken)
     {
-        _ = request; _ = cancellationToken;
-        return Task.FromResult(new RecoveryGrantResult(Rejected, [], null, null, null, null));
+        ArgumentNullException.ThrowIfNull(request);
+        string? vehicleKey = Trimmed(request.VehicleKey);
+        string? operatorId = Trimmed(request.OperatorId);
+        string? reason = Trimmed(request.Reason);
+        string? claimedRole = Trimmed(request.ClaimedRole);
+        List<string> codes = [];
+        if (operatorId is null) codes.Add(OperatorRequired);
+        if (reason is null) codes.Add(ReasonRequired);
+        bool fits = Length(reason) <= MaxTextLength && Length(operatorId) <= MaxIdentifierLength &&
+                    Length(claimedRole) <= MaxIdentifierLength && Length(vehicleKey) <= MaxIdentifierLength;
+        if (!fits) codes.Add(FieldTooLong);
+        FleetVehicle? vehicle = null;
+        if (vehicleKey is null) codes.Add(VehicleRequired);
+        else if ((vehicle = roster.ByVehicleKey(vehicleKey)) is null) codes.Add(VehicleUnknown);
+        RecoveryGrant? current = vehicle is null ? null : registry.Current(vehicle.AgvId);
+        if (vehicle is not null && current is null) codes.Add(NotInEffect);
+
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        object said = fits
+            ? new { vehicleKey, operatorId, reason, claimedRole }
+            : new { vehicleKeyLength = vehicleKey?.Length, operatorIdLength = operatorId?.Length, reasonLength = reason?.Length };
+        if (codes.Count > 0)
+        {
+            string refused = await WriteAuditAsync(
+                RevokeAuditAction, vehicleKey, fits, GovernanceActionOutcome.Failed, claimedRole, now,
+                new { said, codes, result = Rejected }, cancellationToken).ConfigureAwait(false);
+            return new RecoveryGrantResult(Rejected, codes, null, null, null, refused);
+        }
+        string auditRecordId = await WriteAuditAsync(
+            RevokeAuditAction, vehicleKey, fits, GovernanceActionOutcome.Succeeded, claimedRole, now,
+            new { said, revoked = current, result = Revoked }, cancellationToken).ConfigureAwait(false);
+        registry.Revoke(vehicle!.AgvId);
+        return new RecoveryGrantResult(Revoked, [], null, null, current, auditRecordId);
     }
+
+    private async Task<RecoveryGrantJourney?> UnfinishedJourneyAsync(string agvId, CancellationToken cancellationToken)
+    {
+        JourneyRuntimeRow[] rows = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.AgvId == agvId && row.Stage != JourneyRuntimeStage.Completed)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return rows.Length == 1 ? new RecoveryGrantJourney(rows[0].JourneyId, rows[0].Stage.ToString(), rows[0].BlockReasonCode) : null;
+    }
+
+    private static string CodeOf(RecoveryGrantPlan plan) =>
+        Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(plan, DetailOptions)))[..12];
+
+    private Task<string> WriteAuditAsync(
+        string action,
+        string? vehicleKey,
+        bool fits,
+        GovernanceActionOutcome outcome,
+        string? claimedRole,
+        DateTimeOffset now,
+        object detail,
+        CancellationToken cancellationToken) =>
+        audit.WriteAdministratorAsync(
+            new GovernanceAuditEntry(
+                action,
+                GovernedObjectKind.RecoveryGrant,
+                fits && vehicleKey is not null ? "vehicle:" + vehicleKey : "(none)",
+                null,
+                outcome,
+                JsonSerializer.Serialize(detail, DetailOptions),
+                ClaimedAdministratorRole: fits ? claimedRole : null),
+            now,
+            cancellationToken);
+
     private static int Length(string? text) => text?.Length ?? 0;
 
     private static string? Trimmed(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();

@@ -1,0 +1,21 @@
+# scripts/parallel/Test-ParallelInstance.ps1
+Recovery grant and per-vehicle recovery proofs (control-server#797)
+  PASS  recovery grant: left out with the entries off: off, and the overlay writes exactly that
+  PASS  recovery grant: left out with the entries on: on, so turning the entries on cannot leave grants off, and the overlay writes exactly that
+  PASS  recovery grant: stated false with the entries on: off (a rig's choice), and the overlay writes exactly that
+  PASS  recovery grant: stated true with the entries on: on, and the overlay writes exactly that
+  PASS  recovery grant: true with the entries off is refused: no session could ever open
+  PASS  recovery grant: a string "true" is refused, not bound as on behind the check
+  PASS  recovery grant: a section without required is refused
+  PASS  recovery grant: an unknown sub-key is refused
+  PASS  recovery grant: a bare true instead of an object is refused
+  PASS  recovery grant: an earlier install's required=false does not survive a reinstall of a definition that turns the entries on
+  PASS  recovery grant: every shipped definition passes the grant check (none states true with the entries off)
+  PASS  recovery grant environment override: RecoveryGrant and Recovery:VehicleProofs keys are refused, the shared proof name is not
+  PASS  recovery proofs overlay: one variable per roster row, named by its RIoT id; a single car writes an empty list
+  PASS  recovery proofs: supplied for both cars, each lands under its own variable
+  PASS  recovery proofs: none supplied, the service's own carried over; a car with neither is reported, not refused
+  PASS  recovery proofs: two cars with one value are refused, naming the cars and never the value
+  PASS  recovery proofs: the configuration step writes each car's proof and drops one for a car the roster no longer names
+  PASS  recovery proofs: the installer resolves them and passes them to every configuration step
+1340 passed, 0 failed

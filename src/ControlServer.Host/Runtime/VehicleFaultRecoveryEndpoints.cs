@@ -114,7 +114,7 @@ public static class VehicleFaultRecoveryEndpoints
         VehicleRoster roster,
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
         CancellationToken cancellationToken,
-        RecoveryGrantGate? grants = null)
+        [Microsoft.AspNetCore.Mvc.FromServices] RecoveryGrantGate? grants = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(recovery);

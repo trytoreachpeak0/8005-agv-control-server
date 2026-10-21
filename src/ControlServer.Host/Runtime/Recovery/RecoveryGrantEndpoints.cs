@@ -94,7 +94,7 @@ public static class RecoveryGrantEndpoints
     public static async Task<Results<Ok<RecoveryGrantResponse>, UnauthorizedHttpResult, ProblemHttpResult>> GrantAsync(
         HttpContext context,
         RecoveryGrantHttpRequest request,
-        RecoveryGrantIssuance issuance,
+        [Microsoft.AspNetCore.Mvc.FromServices] RecoveryGrantIssuance issuance,
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
         CancellationToken cancellationToken)
     {
@@ -123,7 +123,7 @@ public static class RecoveryGrantEndpoints
     public static async Task<Results<Ok<RecoveryGrantResponse>, UnauthorizedHttpResult, ProblemHttpResult>> RevokeAsync(
         HttpContext context,
         RecoveryGrantRevocationHttpRequest request,
-        RecoveryGrantIssuance issuance,
+        [Microsoft.AspNetCore.Mvc.FromServices] RecoveryGrantIssuance issuance,
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
         CancellationToken cancellationToken)
     {
@@ -142,7 +142,7 @@ public static class RecoveryGrantEndpoints
 
     public static Results<Ok<IReadOnlyList<RecoveryGrantView>>, UnauthorizedHttpResult, ProblemHttpResult> ListAsync(
         HttpContext context,
-        RecoveryGrantRegistry registry,
+        [Microsoft.AspNetCore.Mvc.FromServices] RecoveryGrantRegistry registry,
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions)
     {
         ArgumentNullException.ThrowIfNull(context);
