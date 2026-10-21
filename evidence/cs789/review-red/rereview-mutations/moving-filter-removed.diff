@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs b/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
+index de5fd8d91..4b4f6e676 100644
+--- a/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
++++ b/src/ControlServer.Host/Runtime/Faults/InTransitDoorReadings.cs
+@@ -376,7 +376,7 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
+     }
+ 
+     private static bool ReadNotLockedWhileMovingBetween(InTransitDoorVerdict doors) =>
+-        doors.Between?.Any(sample => sample.State == InTransitDoorState.NotLocked && sample.Moving) == true;
++        doors.Between?.Any(sample => sample.State == InTransitDoorState.NotLocked) == true;
+ 
+     private static DateTimeOffset? Latest(DateTimeOffset? readUpTo, InTransitDoorVerdict doors)
+     {

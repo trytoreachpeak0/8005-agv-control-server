@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "scenario": "in-transit-door-unknown-graced",
+  "runId": "20261021T092534426Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "3e5f0b32218e41fcad831d05ffedaa59b05814ef",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261021T092534426Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "L2-DG-01",
+      "description": "车在正常行驶、门锁着时，不发 Hold、不发急停、没有故障",
+      "outcome": "PASS",
+      "expected": "hold 0/0 trigger 0/0 fault 0 cancel 0",
+      "actual": "hold 0/0 trigger 0/0 fault 0 cancel 0"
+    },
+    {
+      "id": "L2-DG-02",
+      "description": "读不到的那 1 秒多里（宽限 3 秒之内）：不发 Hold、不发急停、没有故障",
+      "outcome": "PASS",
+      "expected": "gap < 2.5 s / hold 0/0 trigger 0/0 fault 0",
+      "actual": "gap 1.3 s / hold 0/0 trigger 0/0 fault 0 cancel 0"
+    },
+    {
+      "id": "L2-DG-03",
+      "description": "读回锁闭之后再转 6 轮：审计表与 RIoT 两侧都没有 Hold、急停、Cancel，也没有故障事实",
+      "outcome": "PASS",
+      "expected": "hold 0/0 trigger 0/0 fault 0 cancel 0",
+      "actual": "hold 0/0 trigger 0/0 fault 0 cancel 0"
+    },
+    {
+      "id": "L2-DG-04",
+      "description": "旅程码不是门锁症状（车照常在路上）",
+      "outcome": "PASS",
+      "expected": "not VEHICLE_DOOR_NOT_PROVEN_LOCKED",
+      "actual": "ONBOARD_SESSION_NOT_READY"
+    }
+  ]
+}
