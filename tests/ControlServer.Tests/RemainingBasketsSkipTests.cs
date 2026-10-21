@@ -205,7 +205,7 @@ public sealed class RemainingBasketsSkipTests
                 requested = [1, 2, 3];
                 break;
             case "old-attempt":
-                attemptId = "83000000-0000-4000-8000-0000000000aa";
+                attemptId = await rig.AddEarlierLoadAttemptAsync();
                 break;
             case "other-demand":
                 demandId = "83000000-0000-4000-8000-0000000000bb";
@@ -330,6 +330,8 @@ public sealed class RemainingBasketsSkipTests
     [InlineData("only-rejected")]
     [InlineData("other-slots")]
     [InlineData("remaining-slot-not-empty")]
+    [InlineData("remaining-slot-unlocked")]
+    [InlineData("remaining-slot-output-active")]
     public async Task ASkippedResultWithoutAMatchingAuthorizationIsNeverSettledAsComplete(string shape)
     {
         await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
@@ -349,17 +351,26 @@ public sealed class RemainingBasketsSkipTests
                 remaining = [2, 3];
                 break;
             case "remaining-slot-not-empty":
+            case "remaining-slot-unlocked":
+            case "remaining-slot-output-active":
                 await rig.SendSnapshotAsync(Occupied(1, 2));
                 await rig.SendSkipRequestAsync(SkipRequestId, [1, 2]);
                 break;
         }
 
-        string answer = shape == "remaining-slot-not-empty"
+        object? remainingSlot = shape switch
+        {
+            "remaining-slot-not-empty" => SkipRig.SlotResult(3, "NOT_STARTED", "OCCUPIED", ["REMAINING_BASKETS_SKIPPED"]),
+            "remaining-slot-unlocked" => SkipRig.SlotResult(3, "NOT_STARTED", "EMPTY", ["REMAINING_BASKETS_SKIPPED"], lockState: "UNLOCKED"),
+            "remaining-slot-output-active" => SkipRig.SlotResult(3, "NOT_STARTED", "EMPTY", ["REMAINING_BASKETS_SKIPPED"], output: "ACTIVE"),
+            _ => null
+        };
+        string answer = remainingSlot is not null
             ? await rig.SendAsync(rig.OperationResult(RemainingBasketsSkipRecords.SkippedOutcome,
             [
                 SkipRig.SlotResult(1, "COMPLETED", "OCCUPIED", []),
                 SkipRig.SlotResult(2, "COMPLETED", "OCCUPIED", []),
-                SkipRig.SlotResult(3, "NOT_STARTED", "OCCUPIED", ["REMAINING_BASKETS_SKIPPED"])
+                remainingSlot
             ]))
             : await rig.SendSkippedResultAsync(loaded, remaining);
 
@@ -588,6 +599,144 @@ public sealed class RemainingBasketsSkipTests
         Assert.Contains(OperatorId, html, StringComparison.Ordinal);
         Assert.Contains("LOCK_NOT_CLOSED", html, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// 授权作废之后又来一条复工替换结果（审查 U1）：第一条结果以 <c>UNKNOWN</c> 结束、转人工恢复，管理员授权复工，车复工后报
+    /// <c>COMPLETED_REMAINING_SKIPPED</c>。授权在第一条结果结算时就作废了，替换结果不按它结算：仓位不释放、操作仍要人工恢复。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-REMAINING-BASKETS-SKIP-UNAUTHORIZED-RESULT")]
+    public async Task AResumedReplacementResultNeverUsesAnAuthorizationTheFirstResultSpent()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied(1, 2));
+        await rig.SendSkipRequestAsync(SkipRequestId, [1, 2]);
+        await rig.SendAsync(rig.OperationResult("UNKNOWN",
+        [
+            SkipRig.SlotResult(1, "COMPLETED", "OCCUPIED", []),
+            SkipRig.SlotResult(2, "COMPLETED", "OCCUPIED", []),
+            SkipRig.SlotResult(3, "UNKNOWN", "UNKNOWN", ["SLOT_STATE_UNKNOWN"], lockState: "UNKNOWN", output: "UNKNOWN")
+        ]));
+        Assert.Equal(StationOperationStatus.RecoveryRequired, (await rig.Fixture.OperationAsync(SlotOperationType.Load)).Status);
+        await rig.AuthorizeResumeAsync();
+
+        await rig.SendSkippedResultAsync(loaded: [1, 2], remaining: [3]);
+
+        StationOperationRow load = await rig.Fixture.OperationAsync(SlotOperationType.Load);
+        Assert.Equal(StationOperationStatus.RecoveryRequired, load.Status);
+        Assert.Equal(OneTwoThree, Slots(load.TargetSlotsJson));
+        Assert.Equal(OneTwoThree, Slots((await rig.MembershipAsync()).TargetSlotsJson));
+    }
+
+    /// <summary>
+    /// 读数只认当前会话（审查 U3）：上一代会话里有一份「仓 1、2 有货」的快照，版本号还比新会话的基线高；车重连之后申请减篮，服务端按新会话的读数
+    /// （全空）判，答 <c>REMAINING_BASKETS_SKIP_NOTHING_LOADED</c>，不拿旧会话的读数授权。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("ProtocolVector", "CV-REMAINING-BASKETS-SKIP-NOTHING-LOADED")]
+    public async Task ReadingsOfAnEarlierSessionNeverDecideASkip()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied(1, 2));
+        await rig.MoveToGenerationAsync(2);
+
+        await rig.SendSkipRequestAsync(SkipRequestId, [1, 2]);
+
+        AssertRejected(rig.SingleSkipResult(), "REMAINING_BASKETS_SKIP_NOTHING_LOADED");
+    }
+
+    /// <summary>
+    /// 要的快照没来（审查 M2）：真车载端在有未确认的 <c>SafetyStateChanged</c> 时不回快照请求，而它每条变化的 <c>affectedSlots</c> 都是 1..8。
+    /// 服务端对待判的减篮请求按 cs#478 的间隔（<see cref="OnboardMessageProcessor.SafetySnapshotReaskInterval"/>）再要：间隔内不重复要，过了间隔
+    /// 车再来一条报文就再要一次；快照到了就判出来。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-REMAINING-BASKETS-SKIP-AUTHORIZED")]
+    public async Task AnUnansweredSnapshotRequestIsAskedAgainAfterTheReaskInterval()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied(1));
+        await rig.SendSafetyChangedAsync(2);
+        string line = rig.SkipRequest(SkipRequestId, [1, 2], messageId: "83000000-0000-4000-8000-0000000000b1");
+        Assert.Equal(1, SnapshotRequests(await rig.SendAsync(line)));
+
+        string withinInterval = await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);
+        string retransmitWithin = await rig.SendAsync(line);
+        Assert.Equal(0, SnapshotRequests(withinInterval) + SnapshotRequests(retransmitWithin));
+
+        rig.Fixture.Clock.Advance(OnboardMessageProcessor.SafetySnapshotReaskInterval + TimeSpan.FromSeconds(1));
+        string retransmitAfter = await rig.SendAsync(line);
+        Assert.Equal(1, SnapshotRequests(retransmitAfter));
+        Assert.Empty(rig.SkipResults());
+
+        await rig.SendSnapshotAsync(Occupied(1, 2));
+        Assert.Equal("AUTHORIZED", rig.SingleSkipResult().GetProperty("outcome").GetString());
+        rig.Fixture.Clock.Advance(OnboardMessageProcessor.SafetySnapshotReaskInterval + TimeSpan.FromSeconds(1));
+        Assert.Equal(0, SnapshotRequests(await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8)));
+    }
+
+    /// <summary>
+    /// 装货中取消、授权范围为空（6.0.0）之后，车报 <c>ALL_EMPTY</c>（审查 M1）：v6 车载端没有开门做 IO，<c>slotResults</c> 报空（向量的
+    /// <c>REPORT_ALL_EMPTY_WITHOUT_SLOT_IO</c>）；逐仓报全部目标仓的旧形也照旧收。两种都对账成功——空报的那种由服务端自己的当前读数核全部目标仓。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADuringLoadCancellationReportedAllEmptyReconcilesWithOrWithoutSlotResults(bool perSlot)
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied());
+
+        RecoveryWorkflowState state = await rig.CancelAndReportAllEmptyAsync(perSlot);
+
+        Assert.Equal(RecoveryWorkflowState.Reconciled, state);
+    }
+
+    /// <summary>
+    /// 空报的 <c>ALL_EMPTY</c> 只在服务端读数证明全部目标仓空、锁闭、复位而且读数新鲜时才算对上：读数过期、有仓有货、有门未锁闭，都转人工恢复。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    [InlineData("stale")]
+    [InlineData("occupied")]
+    [InlineData("door-unlocked")]
+    [InlineData("output-active")]
+    public async Task AnAllEmptyWithoutSlotResultsOverReadingsThatDoNotProveItGoesToRecovery(string shape)
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        SlotReading[] readings = Occupied();
+        switch (shape)
+        {
+            case "occupied":
+                readings = Occupied(2);
+                break;
+            case "door-unlocked":
+                readings[1] = readings[1] with { Lock = "UNLOCKED" };
+                break;
+            case "output-active":
+                readings[2] = readings[2] with { Output = "ACTIVE" };
+                break;
+        }
+        await rig.SendSnapshotAsync(readings);
+        if (shape == "stale")
+        {
+            await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);
+        }
+
+        RecoveryWorkflowState state = await rig.CancelAndReportAllEmptyAsync(perSlot: false);
+
+        Assert.Equal(RecoveryWorkflowState.RecoveryRequired, state);
+    }
+
+    private static int SnapshotRequests(string answer) =>
+        answer.Split('\n').Count(line => line.Length > 0 && MessageType(line) == "SafetyStateSnapshotRequested");
 
     private static void AssertRejected(JsonElement result, string reasonCode)
     {
@@ -945,11 +1094,98 @@ public sealed class RemainingBasketsSkipTests
             Fixture.Context.ChangeTracker.Clear();
         }
 
+        /// <summary>
+        /// 同一条需求先前的一次装货：一笔已取消的装货操作，别的 attempt。返回那个 attempt。
+        /// </summary>
+        public async Task<string> AddEarlierLoadAttemptAsync()
+        {
+            const string earlier = "83000000-0000-4000-8000-0000000000aa";
+            Fixture.Context.StationOperations.Add(new StationOperationRow
+            {
+                SlotOperationAttemptId = earlier,
+                DemandId = DemandId,
+                SublotId = Sublot,
+                TargetSlotsJson = "[1,2,3]",
+                OperationType = SlotOperationType.Load,
+                ForcedRecoveryGeneration = 0,
+                ContentHash = new string('7', 64),
+                Status = StationOperationStatus.Cancelled,
+                CreatedAt = Fixture.Clock.GetUtcNow().AddMinutes(-5)
+            });
+            await Fixture.Context.SaveChangesAsync(Token);
+            Fixture.Context.ChangeTracker.Clear();
+            return earlier;
+        }
+
+        /// <summary>管理员对这次装货授权了复工（RESUME_AFTER_REPAIR，命令已发、等结果），范围是全部目标仓。</summary>
+        public async Task AuthorizeResumeAsync()
+        {
+            StationOperationRow load = await Fixture.OperationAsync(SlotOperationType.Load);
+            Fixture.Context.RecoveryWorkflows.Add(new RecoveryWorkflowRow
+            {
+                WorkflowId = "83000000-0000-4000-8000-0000000000d1",
+                WorkflowType = "RESUME_AFTER_REPAIR",
+                AgvId = Fixture.Options.AgvId,
+                DemandId = DemandId,
+                SlotOperationAttemptId = AttemptId,
+                SlotsJson = JsonSerializer.Serialize(TargetSlots),
+                ForcedRecoveryGeneration = 0,
+                State = RecoveryWorkflowState.AwaitingResult,
+                RequestMessageId = "83000000-0000-4000-8000-0000000000d2",
+                RequestContentHash = new string('d', 64),
+                CommandMessageId = "83000000-0000-4000-8000-0000000000d3",
+                CommandMessageType = "SlotOperationResumeCommand",
+                CommandContentHash = load.ContentHash,
+                CreatedAt = Fixture.Clock.GetUtcNow(),
+                UpdatedAt = Fixture.Clock.GetUtcNow()
+            });
+            await Fixture.Context.SaveChangesAsync(Token);
+            Fixture.Context.ChangeTracker.Clear();
+        }
+
+        /// <summary>
+        /// 装货途中按取消：服务端授权（范围为空），车报 <c>ALL_EMPTY</c>——<paramref name="perSlot"/> 时逐仓报全部目标仓，否则 <c>slotResults</c> 为空。
+        /// 返回取消工作流对账后的状态。
+        /// </summary>
+        public async Task<RecoveryWorkflowState> CancelAndReportAllEmptyAsync(bool perSlot)
+        {
+            const string cancellationId = "83000000-0000-4000-8000-0000000000c9";
+            string answer = await SendAsync(Envelope(Guid.NewGuid().ToString("D"), "LoadCancellationStartRequested", new
+            {
+                cancellationId,
+                demandId = DemandId,
+                slotOperationAttemptId = AttemptId,
+                @operator = new { operatorId = OperatorId, verificationMethod = "BADGE", verifiedAt = Now },
+                reason = "Operator pressed cancel with nothing loaded."
+            }));
+            using (JsonDocument authorization = JsonDocument.Parse(answer.Split('\n')[0]))
+            {
+                JsonElement payload = authorization.RootElement.GetProperty("payload");
+                Assert.Equal("AUTHORIZED", payload.GetProperty("decision").GetString());
+                Assert.Empty(payload.GetProperty("slots").EnumerateArray());
+            }
+            object[] slotResults = perSlot
+                ? [.. TargetSlots.Order().Select(slot => SlotResult(slot, "COMPLETED", "EMPTY", []))]
+                : [];
+            await SendAsync(Envelope(Guid.NewGuid().ToString("D"), "LoadCancellationResult", new
+            {
+                cancellationId,
+                demandId = DemandId,
+                slotOperationAttemptId = AttemptId,
+                overallOutcome = "ALL_EMPTY",
+                slotResults,
+                observedAt = Now
+            }));
+            return (await Fixture.Context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == cancellationId, Token)).State;
+        }
+
         /// <summary>这次装货照旧在进行：操作没结算、仓位没改、需求没动、旅程还在等装货结果。</summary>
         public async Task AssertLoadUntouchedAsync()
         {
             Fixture.Context.ChangeTracker.Clear();
-            StationOperationRow load = await Fixture.OperationAsync(SlotOperationType.Load);
+            StationOperationRow load = await Fixture.Context.StationOperations.AsNoTracking()
+                .SingleAsync(row => row.SlotOperationAttemptId == AttemptId, Token);
             Assert.Equal(StationOperationStatus.Prepared, load.Status);
             Assert.Equal(TargetSlots, Slots(load.TargetSlotsJson));
             JourneyDemandRow membership = await MembershipAsync();
