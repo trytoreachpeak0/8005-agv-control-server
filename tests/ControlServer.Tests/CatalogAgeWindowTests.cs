@@ -410,6 +410,54 @@ public sealed class CatalogAgeWindowTests
         Assert.Equal(DispatchReasonCodes.DemandOlderThanCatalogWindow, (await fixture.BacklogAsync(Demand)).ReasonCode);
     }
 
+    // ---- AREA-EQP 唯一性（审查 M2，调度定） ---------------------------------------------------------------------
+
+    /// <summary>
+    /// 未受理且超窗的旧行不参加 AREA→EQP 唯一性判断：40 分钟前读到的旧需求与 1 分钟前的新需求同 AREA、不同 EQP，新需求照常派车，
+    /// 不被 <c>AREA_EQP_NOT_UNIQUE</c> 挡到 MES 关掉旧需求为止（审查 M2，Coordinator13 定：REQ-0187 要的是设备主数据监视器，
+    /// 这道判据拿目录观测行顶替它，REQ-0366 不要求超窗的行继续参加别的准入判断）。
+    /// </summary>
+    [Fact]
+    public async Task AStaleRowDoesNotMakeAFreshDemandsAreaAmbiguous()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        const string stale = "10000000-0000-4000-8000-000000000830";
+        fixture.Catalog.Set(
+            fixture.Demand(stale, "SUBLOT-STALE", Now.AddMinutes(-40), "N1-1", "EQP-OLD"),
+            fixture.Demand(Demand, Sublot, Now.AddMinutes(-1), "N1-1", "EQP-NEW"));
+        fixture.BoxCounts.Set("SUBLOT-STALE", 4);
+        fixture.BoxCounts.Set(Sublot, 4);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal([Demand], await AcceptedAsync(fixture));
+        Assert.Equal(DispatchReasonCodes.DemandOlderThanCatalogWindow, (await fixture.BacklogAsync(stale)).ReasonCode);
+    }
+
+    /// <summary>
+    /// 已受理的旧行照样参加：它不受时间窗约束，它的 EQP 仍是有效观测。窗内受理的 A（EQP-01）此后超窗、仍在目录里；
+    /// 同 AREA、不同 EQP 的新需求 B 照旧报 <c>AREA_EQP_NOT_UNIQUE</c>。
+    /// </summary>
+    [Fact]
+    public async Task AnAcceptedRowPastTheWindowStillTakesPartInTheAreaCheck()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        const string fresh = "10000000-0000-4000-8000-000000000831";
+        AcceptedDemandSnapshot accepted = fixture.Demand(Demand, Sublot, Now.AddMinutes(-29), "N1-1", "EQP-01");
+        fixture.Catalog.Set(accepted);
+        fixture.BoxCounts.Set(Sublot, 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal([Demand], await AcceptedAsync(fixture));
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(2));
+        fixture.Catalog.Set(accepted, fixture.Demand(fresh, "SUBLOT-FRESH", fixture.Clock.GetUtcNow().AddMinutes(-1), "N1-1", "EQP-02"));
+        fixture.BoxCounts.Set("SUBLOT-FRESH", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.True(fixture.Clock.GetUtcNow() - accepted.CreatedAt > TimeSpan.FromMinutes(30));
+        Assert.Equal("AREA_EQP_NOT_UNIQUE", (await fixture.BacklogAsync(fresh)).ReasonCode);
+    }
+
     // ---- 看板与分类 ------------------------------------------------------------------------------------------
 
     /// <summary>
