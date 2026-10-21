@@ -48,7 +48,7 @@ internal static class IdleReturnCodeDescriptions
                 + "故障清除后这趟空闲返回按已确认失败结束、不重建，下一次空闲返回不再选这个等待点；"
                 + "30 秒内这辆车不再自动空闲返回，10 分钟内再失败或被取消一次就停止自动空闲返回",
             [VehicleFaultEvidence.DoorNotProvenLocked] =
-                "车在开往等待点的途中，车载端报门锁未锁闭或仓位状态读不到：服务端已按住这张单，证不出停稳即急停，"
+                "车在开往等待点的途中，车载端报门锁未锁闭，或仓位状态读不到超过 3 秒：服务端已按住这张单，证不出停稳即急停，"
                 + "并把车判为疑似故障：不派新单，用途与等待点预占保持。"
                 + BlockedJourneysQueryEndpoint.DoorLatchNotReleasedByTheLock + BlockedJourneysQueryEndpoint.DoorLatchWayOut,
             [JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason] =

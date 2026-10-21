@@ -44,8 +44,12 @@ public sealed class RiotCallAllowlistArchitectureTests
 {
     /// <summary>
     /// SHA-256 of the approved allowlist document, over the file's bytes. Taken with <c>git show</c> from
-    /// <c>8005-agv-program</c> commit <c>b62f431e88fa8ca881296be71d92f7f3343af6be</c> (program#180) on 2026-10-13: section
-    /// 1.5 follows requirements baseline v1.10.0 (CP-0011, control-server#539) -- emergency stops in three classes, this
+    /// <c>8005-agv-program</c> commit <c>c70672c2fed8f022543f1752480156657b55014b</c> (program PR #208, CP-0017) on
+    /// 2026-10-21: section 1.5 follows requirements baseline v1.16.0 (control-server#789) -- a driving vehicle's slot that
+    /// cannot be read is graced for 3 s before it triggers, and the door-cause exception to the automatic release narrows to
+    /// a door read not locked, a stop only for doors that could not be read being released once they read locked for 10 s
+    /// with the held order still HELD. The approved-call rows are unchanged. Before it,
+    /// <c>b62f431e88fa8ca881296be71d92f7f3343af6be</c> (program#180) on 2026-10-13: section 1.5 follows requirements baseline v1.10.0 (CP-0011, control-server#539) -- emergency stops in three classes, this
     /// server's class recorded without a call on a vehicle already latched, re-trigger when another entry clears it, the
     /// automatic release with its door-cause exception, the governed release of a loaded vehicle, and no escalation for an
     /// order FAILED. Before it, <c>e87615200e76f685604f6cb02e00b88523dc9534</c> (program#175, 2026-10-12): section
@@ -57,7 +61,7 @@ public sealed class RiotCallAllowlistArchitectureTests
     /// 2026-09-08 document (<c>3bc055c4</c>).
     /// </summary>
     private const string ApprovedAllowlistSha256 =
-        "2795c98ebdc30c36391db2187822dbd47296a07e7f4ee02428297cc754ccd707";
+        "b20e0f527e7e342f2b0519295c627f22c1803a91269bb042e9c7fb55691e82a0";
 
     private const string FacadeAssembly = "RIoT.Sdk.Facade";
     private const string GeneratedAssembly = "RIoT.Sdk.Generated";
