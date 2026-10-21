@@ -32,8 +32,10 @@ public sealed class JourneyRuntimeOptions
     /// <remarks>
     /// The vehicle PC's clock drifts about 0.12 s a day between syncs; at zero tolerance an answer judged on receipt was
     /// "in the future" and the vehicle stood at the stop. 500 ms matches the onboard side's own sub-second judgment
-    /// (<c>vehicleSafety.clockSkewToleranceMs</c>). It is bounded at 2 s: a clock further off than that is a time-sync
-    /// fault to fix on the vehicle PC (workspace#55), not drift to absorb here.
+    /// (<c>vehicleSafety.clockSkewToleranceMs</c>), and the bound is the onboard side's too: at most 1 s. A clock further
+    /// off than that is a time-sync fault to fix on the vehicle PC (workspace#55), not drift to absorb here. The bound is
+    /// soft at its edge: an answer just beyond it is refused now and may pass a poll later, while its own
+    /// <c>validUntil</c> lasts; <c>validUntil</c> is the hard limit.
     /// </remarks>
     public TimeSpan PeerClockSkewTolerance { get; set; } = TimeSpan.FromMilliseconds(500);
 
@@ -421,9 +423,9 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             failures.Add("DepartureSafetyResultWait must be positive and at most 10 s.");
         }
         if (options.PeerClockSkewTolerance < TimeSpan.Zero ||
-            options.PeerClockSkewTolerance > TimeSpan.FromSeconds(2))
+            options.PeerClockSkewTolerance > TimeSpan.FromSeconds(1))
         {
-            failures.Add("PeerClockSkewTolerance must be between 0 and 2 s.");
+            failures.Add("PeerClockSkewTolerance must be between 0 and 1 s.");
         }
         if (options.StationDepartureWaitTimeout != TimeSpan.Zero &&
             options.StationDepartureWaitTimeout < TimeSpan.FromSeconds(5))

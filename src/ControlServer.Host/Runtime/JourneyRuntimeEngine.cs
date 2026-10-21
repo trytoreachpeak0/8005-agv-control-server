@@ -4631,18 +4631,20 @@ public sealed partial class JourneyRuntimeEngine(
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Outdated answers are passed over, not judged.</b> An answer from another session generation, about another
-    /// safety state version, past its own <c>validUntil</c>, older than the evidence age, or stamped further ahead of
-    /// this server's clock than <see cref="JourneyRuntimeOptions.PeerClockSkewTolerance"/> says nothing about the
-    /// vehicle now. This read used to let the oldest answer under the check id decide, which was harmless while the
-    /// peer answered a check once; once it answers a re-asked check again (onboard-hmi#386), a first outdated answer
-    /// kept every later valid one from being read and the vehicle stood at the stop (agv02, 2026-10-21, 22 minutes).
-    /// Nothing in the history of the oldest-first order says it guarded anything else.
+    /// <b>Outdated answers cannot depart the vehicle and are passed over.</b> An answer from another session generation,
+    /// about another safety state version, past its own <c>validUntil</c>, older than the evidence age, or stamped further
+    /// ahead of this server's clock than <see cref="JourneyRuntimeOptions.PeerClockSkewTolerance"/> is no permit now.
+    /// This read used to let the oldest answer under the check id decide, which was harmless while the peer answered a
+    /// check once; once it answers a re-asked check again (onboard-hmi#386), a first outdated answer kept every later
+    /// valid one from being read and the vehicle stood at the stop (agv02, 2026-10-21, 22 minutes). Nothing in the
+    /// history of the oldest-first order says it guarded anything else.
     /// </para>
     /// <para>
-    /// <b>Of the rest, the newest decides, in both directions.</b> "The first valid one" would let an older SAFE
-    /// depart a vehicle whose newer answer to the same check says a door came open. Newest is by the server's own
-    /// receive time, then by the peer's <c>observedAt</c>.
+    /// <b>Of the current answers the newest decides</b> (by the server's own receive time, then by the peer's
+    /// <c>observedAt</c>); "the first valid one" would let an older SAFE depart a vehicle whose newer answer to the same
+    /// check says a door came open. <b>And a SAFE answer departs nothing while any answer newer than it, by either clock,
+    /// says the vehicle is not safe -- outdated or not</b> (#853 review M1, L1). Being outdated only takes away an answer's
+    /// power to depart the vehicle, never its power to hold it.
     /// </para>
     /// <para>
     /// <b>The tolerance is for the peer's clock, and only for <c>observedAt</c>.</b> The vehicle's clock drifts about
@@ -4670,6 +4672,7 @@ public sealed partial class JourneyRuntimeEngine(
         rows = rows.OrderBy(row => row.ReceivedAt).ToArray();
         string checkId = DepartureCheckId(stops.Current);
         List<string> judged = [];
+        List<DepartureAnswer> unsafeAnswers = [];
         DepartureAnswer? newest = null;
         foreach (ProtocolInboxRow row in rows)
         {
@@ -4680,6 +4683,14 @@ public sealed partial class JourneyRuntimeEngine(
                 continue;
             DateTimeOffset observedAt = payload.GetProperty("observedAt").GetDateTimeOffset();
             DateTimeOffset validUntil = payload.GetProperty("validUntil").GetDateTimeOffset();
+            DepartureAnswer answer = new(
+                row.MessageId, row.ReceivedAt, observedAt, validUntil, DepartureAnswerFaults(runtime, stops, root, payload));
+            // Every answer that says the vehicle is not safe is kept, outdated or not (#853 review M1): only an answer that
+            // would depart the vehicle may be passed over for being outdated.
+            if (answer.SaysNotSafe)
+            {
+                unsafeAnswers.Add(answer);
+            }
             string? outdatedBy =
                 root.GetProperty("sessionGeneration").GetInt64() != session.SessionGeneration ? "session-generation"
                 : payload.GetProperty("safetyStateVersion").GetInt64() != session.SafetyRevision ? "safety-state-version"
@@ -4696,8 +4707,7 @@ public sealed partial class JourneyRuntimeEngine(
             // observation does.
             if (newest is null || row.ReceivedAt > newest.ReceivedAt || observedAt >= newest.ObservedAt)
             {
-                newest = new DepartureAnswer(
-                    row.MessageId, row.ReceivedAt, observedAt, validUntil, DepartureAnswerFaults(runtime, stops, root, payload));
+                newest = answer;
             }
         }
 
@@ -4713,6 +4723,20 @@ public sealed partial class JourneyRuntimeEngine(
         if (newest.Faults.Length > 0)
         {
             judged.Add($"{newest.MessageId} {string.Join(",", newest.Faults)} (observedAt {newest.ObservedAt:O})");
+            LogDepartureAnswerNotValid(logger, checkId, runtime.AgvId, string.Join("; ", judged), null);
+            return (null, true, null);
+        }
+        // A SAFE answer departs the vehicle only if no answer newer than it, by either clock, says the vehicle is not safe
+        // (#853 review M1 and L1). Receive order alone is not enough: a replay after a reconnect can deliver an UNSAFE observed
+        // later before a SAFE observed earlier.
+        DepartureAnswer[] newerUnsafe =
+        [
+            .. unsafeAnswers.Where(answer => answer.ReceivedAt > newest.ReceivedAt || answer.ObservedAt > newest.ObservedAt)
+        ];
+        if (newerUnsafe.Length > 0)
+        {
+            judged.AddRange(newerUnsafe.Select(answer =>
+                $"{answer.MessageId} newer-than-the-safe-answer {string.Join(",", answer.Faults)} (observedAt {answer.ObservedAt:O})"));
             LogDepartureAnswerNotValid(logger, checkId, runtime.AgvId, string.Join("; ", judged), null);
             return (null, true, null);
         }
@@ -4782,7 +4806,10 @@ public sealed partial class JourneyRuntimeEngine(
         DateTimeOffset ReceivedAt,
         DateTimeOffset ObservedAt,
         DateTimeOffset ValidUntil,
-        string[] Faults);
+        string[] Faults)
+    {
+        public bool SaysNotSafe => Faults.Any(fault => fault.StartsWith("not-safe", StringComparison.Ordinal));
+    }
 
     /// <summary>One vehicle's Onboard-side facts; see <see cref="OnboardDispatchFactsReader.ReadOnboardFactsAsync"/>.</summary>
     private Task<OnboardDispatchFacts?> ReadOnboardFactsAsync(string agvId, CancellationToken cancellationToken) =>

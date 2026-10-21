@@ -206,6 +206,7 @@ public sealed class PreDepartureAnswerClockSkewTests
     /// 1000 ms); a value outside 0..1 s refuses to start, and is not clamped.
     /// </summary>
     [Theory]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     [InlineData(0, true)]
     [InlineData(500, true)]
     [InlineData(1000, true)]
