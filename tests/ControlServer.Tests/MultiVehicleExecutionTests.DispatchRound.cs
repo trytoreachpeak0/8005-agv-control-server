@@ -516,6 +516,58 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 派车轮读到车在途、判完追加之后，追加之前旅程结束了（10-19 agv02：操作员在这一刻取消了旅程）：这一轮不问它追加，
+    /// 不抛异常、不记 2123，这条需求轮末不算接走（control-server#791 顺手做的那一条）。
+    /// </summary>
+    /// <remarks>
+    /// 结束的时刻造在追加前最后一次读车：<c>FinalDynamicFactsReadyAsync</c> 里那一次，是这一轮对这辆车的第二次读
+    /// （第一次在入轮时，读计划之前）。修前 <c>AppendToJourneyAsync</c> 的 <c>First()</c> 在这里抛「Sequence contains no elements」，
+    /// 被每车隔离记成 2123。
+    /// </remarks>
+    [Fact]
+    public async Task AJourneyThatEndsBetweenTheAppendDecisionAndTheAppendIsSkippedForTheRound()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow first = Assert.Single(
+            await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        fixture.Context.ChangeTracker.Clear();
+        fixture.EngineLog.Entries.Clear();
+        fixture.RoundOutcomes.Outcomes.Clear();
+
+        int reads = 0;
+        bool ended = false;
+        fixture.Riot.OnVehicleRead = vehicleKey =>
+        {
+            if (vehicleKey == FleetFixture.VehicleKeys[0] && ++reads == 2)
+            {
+                fixture.Context.JourneyRuntimes
+                    .Where(row => row.JourneyId == first.JourneyId)
+                    .ExecuteUpdate(set => set.SetProperty(row => row.Stage, JourneyRuntimeStage.Completed));
+                ended = true;
+            }
+        };
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(ended, "the round never reached the final read before the append");
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id is 2123 or 2124);
+        Assert.Equal(
+            [FleetFixture.AgvIds[0]],
+            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles.Select(vehicle => vehicle.AgvId).ToArray());
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Single(await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        JourneyBacklogRow second = await fixture.Context.JourneyBacklog.AsNoTracking()
+            .SingleAsync(row => row.DemandId == FleetFixture.Demand(1, "N1-2", 1).DemandId, TestContext.Current.CancellationToken);
+        Assert.Null(second.AcceptedAt);
+        Assert.Equal("FINAL_DYNAMIC_FACTS_NOT_READY", second.ReasonCode);
+    }
+
+    /// <summary>
     /// 从一趟旅程释放出去的需求，不会被追加回同一趟旅程（批次7-10，control-server#215，审查 M5）。
     /// </summary>
     /// <remarks>

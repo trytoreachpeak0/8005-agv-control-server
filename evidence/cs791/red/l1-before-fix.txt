@@ -1,0 +1,137 @@
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AskingAgainWhileTheOrderIsStillHeldContinuesItAgain [30 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+                           ↓ (pos 16)
+Expected: "RESUME_CONTINUE_AWAITING_CONFIRMATION"
+Actual:   "RESUME_CONTINUE_NOT_CONFIRMED"
+                           ↑ (pos 16)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AskingAgainWhileTheOrderIsStillHeldContinuesItAgain() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1419
+--
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AContinueStillHeldWhenTheBudgetRunsOutIsAwaitedAndClearsNothing [9 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+                           ↓ (pos 16)
+Expected: "RESUME_CONTINUE_AWAITING_CONFIRMATION"
+Actual:   "RESUME_CONTINUE_NOT_CONFIRMED"
+                           ↑ (pos 16)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AContinueStillHeldWhenTheBudgetRunsOutIsAwaitedAndClearsNothing() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1335
+--
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AnOrderThatEndsOtherwiseAfterTheContinueIsAFailedContinue(endedAs: 4) [8 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (False, Failed)
+Actual:   Tuple (False, Pending)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AnOrderThatEndsOtherwiseAfterTheContinueIsAFailedContinue(Int32 endedAs) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1377
+   at ControlServer.Tests.VehicleFaultIsolationTests.AnOrderThatEndsOtherwiseAfterTheContinueIsAFailedContinue(Int32 endedAs) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1382
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AnOrderThatEndsOtherwiseAfterTheContinueIsAFailedContinue(endedAs: 2) [10 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (False, Failed)
+Actual:   Tuple (False, Pending)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AnOrderThatEndsOtherwiseAfterTheContinueIsAFailedContinue(Int32 endedAs) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1377
+   at ControlServer.Tests.VehicleFaultIsolationTests.AnOrderThatEndsOtherwiseAfterTheContinueIsAFailedContinue(Int32 endedAs) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1382
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AContinueStillReadAsHeldStraightAfterTheCallIsReadAgainAndConfirmed(stateAfterContinue: 3) [7 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AContinueStillReadAsHeldStraightAfterTheCallIsReadAgainAndConfirmed(Int32 stateAfterContinue) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1306
+   at ControlServer.Tests.VehicleFaultIsolationTests.AContinueStillReadAsHeldStraightAfterTheCallIsReadAgainAndConfirmed(Int32 stateAfterContinue) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1316
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AContinueStillReadAsHeldStraightAfterTheCallIsReadAgainAndConfirmed(stateAfterContinue: 5) [6 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AContinueStillReadAsHeldStraightAfterTheCallIsReadAgainAndConfirmed(Int32 stateAfterContinue) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1306
+   at ControlServer.Tests.VehicleFaultIsolationTests.AContinueStillReadAsHeldStraightAfterTheCallIsReadAgainAndConfirmed(Int32 stateAfterContinue) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1316
+--- End of stack trace from previous location ---
+--
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.SettlingAnEarlierContinueIsRefusedUnderALatchLikeAnyResumption [10 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+                  ↓ (pos 7)
+Expected: "RESUME_EMERGENCY_LATCHED"
+Actual:   "RESUME_ORDER_NOT_HELD"
+                  ↑ (pos 7)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.SettlingAnEarlierContinueIsRefusedUnderALatchLikeAnyResumption() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1492
+--
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AskingAgainAfterTheAwaitedContinueTookEffectSettlesItWithoutASecondContinue [7 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+                           ↓ (pos 16)
+Expected: "RESUME_CONTINUE_AWAITING_CONFIRMATION"
+Actual:   "RESUME_CONTINUE_NOT_CONFIRMED"
+                           ↑ (pos 16)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AskingAgainAfterTheAwaitedContinueTookEffectSettlesItWithoutASecondContinue() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1396
+--
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AContinueThatWasNotConfirmedClearsNothing [7 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+                           ↓ (pos 16)
+Expected: "RESUME_CONTINUE_AWAITING_CONFIRMATION"
+Actual:   "RESUME_CONTINUE_NOT_CONFIRMED"
+                           ↑ (pos 16)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AContinueThatWasNotConfirmedClearsNothing() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1273
+--
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AnOrderThatCannotBeReadAfterTheContinueClearsNothing [7 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+                           ↓ (pos 16)
+Expected: "RESUME_CONTINUE_AWAITING_CONFIRMATION"
+Actual:   "RESUME_CONTINUE_NOT_CONFIRMED"
+                           ↑ (pos 16)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AnOrderThatCannotBeReadAfterTheContinueClearsNothing() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1354
+--
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AResumptionCutShortAfterTheContinueIsFinishedWhenAskedAgain(written: Confirmed) [8 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AResumptionCutShortAfterTheContinueIsFinishedWhenAskedAgain(RiotOrderCommandOutcome written) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1447
+   at ControlServer.Tests.VehicleFaultIsolationTests.AResumptionCutShortAfterTheContinueIsFinishedWhenAskedAgain(RiotOrderCommandOutcome written) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1450
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AResumptionCutShortAfterTheContinueIsFinishedWhenAskedAgain(written: Pending) [9 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AResumptionCutShortAfterTheContinueIsFinishedWhenAskedAgain(RiotOrderCommandOutcome written) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1447
+   at ControlServer.Tests.VehicleFaultIsolationTests.AResumptionCutShortAfterTheContinueIsFinishedWhenAskedAgain(RiotOrderCommandOutcome written) in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1450
+--- End of stack trace from previous location ---
+--
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AContinueThatFinishesTheOrderAMomentAfterTheReadIsConfirmedAndTheJourneyGoesOn [85 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Resumed, 0)
+Actual:   Tuple (Refused, 1)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AContinueThatFinishesTheOrderAMomentAfterTheReadIsConfirmedAndTheJourneyGoesOn() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1559
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AContinueThatFinishesTheOrderAMomentAfterTheReadIsConfirmedAndTheJourneyGoesOn() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1574
+--- End of stack trace from previous location ---
+--
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AContinueAwaitedOnTheFirstRequestIsSettledByTheNextWithoutASecondContinue [57 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+                           ↓ (pos 16)
+Expected: "RESUME_CONTINUE_AWAITING_CONFIRMATION"
+Actual:   "RESUME_CONTINUE_NOT_CONFIRMED"
+                           ↑ (pos 16)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AContinueAwaitedOnTheFirstRequestIsSettledByTheNextWithoutASecondContinue() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1592
+--
+Failed!  - Failed:    14, Passed:   166, Skipped:     0, Total:   180, Duration: 42 s - ControlServer.Tests.dll (net8.0)

@@ -51,6 +51,25 @@ public sealed class VehicleFaultOptions
 
     /// <summary>How old the newest sample may be and still be called fresh.</summary>
     public TimeSpan MaximumEvidenceAge { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// How long a repair resumption keeps reading the order back after RIoT accepted the continue, before it answers that
+    /// the continue is still awaiting confirmation (control-server#791).
+    /// </summary>
+    /// <remarks>
+    /// RIoT accepts CONTINUE_FROM_HELD before it moves the order: on agv01 on 2026-10-19 the read 50 ms after the call
+    /// still said HELD (7), and the order read SUCCESS (5) from 16:38:24 on. Zero reads once, as before this ticket.
+    /// It is spent as a count, <see cref="ResumeConfirmationRereads"/> reads one interval apart, not as a deadline: each read
+    /// can itself take up to the RIoT client's timeout, so with RIoT not answering the entry answers minutes later.
+    /// </remarks>
+    public TimeSpan ResumeConfirmationBudget { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>The gap between two of those reads.</summary>
+    public TimeSpan ResumeConfirmationInterval { get; set; } = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>How many reads after the first the budget allows.</summary>
+    internal int ResumeConfirmationRereads =>
+        (int)Math.Ceiling(ResumeConfirmationBudget / ResumeConfirmationInterval);
 }
 
 /// <summary>
@@ -91,6 +110,18 @@ public sealed class VehicleFaultOptionsValidator : IValidateOptions<VehicleFault
             failures.Add(
                 $"{VehicleFaultOptions.SectionName}:MaximumEvidenceAge must be positive; " +
                 "REQ-0247 requires the facts to be fresh, and any non-positive age is unsatisfiable.");
+        }
+
+        if (options.ResumeConfirmationInterval <= TimeSpan.Zero)
+        {
+            failures.Add(
+                $"{VehicleFaultOptions.SectionName}:ResumeConfirmationInterval must be positive; " +
+                "reads with no gap between them are one read.");
+        }
+
+        if (options.ResumeConfirmationBudget < TimeSpan.Zero)
+        {
+            failures.Add($"{VehicleFaultOptions.SectionName}:ResumeConfirmationBudget must not be negative.");
         }
 
         return failures.Count == 0

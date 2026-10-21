@@ -1268,10 +1268,252 @@ public sealed class VehicleFaultIsolationTests
         VehicleFaultFact fact = await fixture.ReadFaultAsync();
 
         Assert.False(decision.Resumed);
-        Assert.Contains("RESUME_CONTINUE_NOT_CONFIRMED", decision.Refusals);
+        // An order still HELD after every read is a continue RIoT accepted and has not acted on yet: awaiting, not refused
+        // (control-server#791). Until then this asserted RESUME_CONTINUE_NOT_CONFIRMED.
+        Assert.Equal([ContinueAwaiting], decision.Refusals);
+        Assert.Equal(RiotOrderCommandOutcome.Pending, decision.Outcome);
         Assert.Equal(VehicleFaultLevel.SuspectedBlocked, fact.Level);
         Assert.NotNull(await fixture.Faults.ReadLiveCargoAsync(
             Subject.AgvId, TestContext.Current.CancellationToken));
+    }
+
+    // ---- control-server#791: the continue is read back until RIoT has acted on it -------------------
+
+    private const string ContinueAwaiting = "RESUME_CONTINUE_AWAITING_CONFIRMATION";
+
+    /// <summary>
+    /// RIoT accepts the continue before it moves the order, so the read straight after the call can still say HELD. Read
+    /// again, the order runs, and the resumption is the confirmed one it is: cargo released, fault cleared.
+    /// </summary>
+    /// <remarks>
+    /// 7 -> 3 is the ordinary continue; 7 -> 5 is agv01 on 2026-10-19, an order whose start and end were the same station
+    /// and which finished the moment it resumed. Before control-server#791 both returned RESUME_CONTINUE_NOT_CONFIRMED and
+    /// left the fault for a person to clear.
+    /// </remarks>
+    [Theory]
+    [InlineData(RiotOrderState.Executing)]
+    [InlineData(RiotOrderState.Success)]
+    public async Task AContinueStillReadAsHeldStraightAfterTheCallIsReadAgainAndConfirmed(int stateAfterContinue)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        fixture.Riot.ReadsBeforeContinueTakesEffect = 1;
+        fixture.Riot.StateAfterContinue = stateAfterContinue;
+
+        VehicleFaultResumeDecision decision = await fixture.ResumeAsync();
+
+        Assert.True(decision.Resumed);
+        Assert.Empty(decision.Refusals);
+        Assert.Equal(RiotOrderCommandOutcome.Confirmed, decision.Outcome);
+        Assert.Single(fixture.Riot.OrderCalls, call => call.CommandType == RiotCommandTypeNames.OrderContinue);
+        Assert.Equal(VehicleFaultLevel.None, (await fixture.ReadFaultAsync()).Level);
+        Assert.Null(await fixture.Faults.ReadLiveCargoAsync(Subject.AgvId, TestContext.Current.CancellationToken));
+        RiotOrderCommandAttempt attempt = Assert.Single(await fixture.Audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.OrderContinue, Order.UpperId, TestContext.Current.CancellationToken));
+        Assert.Equal(RiotOrderCommandOutcome.Confirmed, attempt.Outcome);
+        // The reread settles the row without losing what the call itself answered.
+        Assert.Contains("SdkAccepted", attempt.ReceiptJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An order still HELD once the budget is spent: nothing cleared, nothing released, and the answer says the continue
+    /// went out and is awaited -- not that the order is unprotected. The budget is spent on reads, not abandoned after one.
+    /// </summary>
+    [Fact]
+    public async Task AContinueStillHeldWhenTheBudgetRunsOutIsAwaitedAndClearsNothing()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        fixture.Riot.ContinueWorks = false;
+        int readsBefore = fixture.Riot.OrderReads;
+
+        VehicleFaultResumeDecision decision = await fixture.ResumeAsync();
+
+        Assert.Equal((false, RiotOrderCommandOutcome.Pending), (decision.Resumed, decision.Outcome));
+        Assert.Equal([ContinueAwaiting], decision.Refusals);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await fixture.ReadFaultAsync()).Level);
+        Assert.NotNull(await fixture.Faults.ReadLiveCargoAsync(Subject.AgvId, TestContext.Current.CancellationToken));
+        // The read before the continue, the one inside IssueAsync, and five more (50 ms / 10 ms).
+        Assert.Equal(7, fixture.Riot.OrderReads - readsBefore);
+    }
+
+    /// <summary>An order that cannot be read after the continue is not a continue that worked.</summary>
+    [Fact]
+    public async Task AnOrderThatCannotBeReadAfterTheContinueClearsNothing()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        fixture.Riot.UnreadableAfterContinue = true;
+
+        VehicleFaultResumeDecision decision = await fixture.ResumeAsync();
+
+        Assert.Equal((false, RiotOrderCommandOutcome.Unknown), (decision.Resumed, decision.Outcome));
+        Assert.Equal([ContinueAwaiting], decision.Refusals);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await fixture.ReadFaultAsync()).Level);
+        Assert.NotNull(await fixture.Faults.ReadLiveCargoAsync(Subject.AgvId, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// An order that ends some other way after the continue -- cancelled or failed -- did not resume and no longer can: a
+    /// failure, said as one, and no more reads are spent on it.
+    /// </summary>
+    [Theory]
+    [InlineData(RiotOrderState.Cancelled)]
+    [InlineData(RiotOrderState.Failed)]
+    public async Task AnOrderThatEndsOtherwiseAfterTheContinueIsAFailedContinue(int endedAs)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        fixture.Riot.ReadsBeforeContinueTakesEffect = 1;
+        fixture.Riot.StateAfterContinue = endedAs;
+        int readsBefore = fixture.Riot.OrderReads;
+
+        VehicleFaultResumeDecision decision = await fixture.ResumeAsync();
+
+        Assert.Equal((false, RiotOrderCommandOutcome.Failed), (decision.Resumed, decision.Outcome));
+        Assert.Equal(["RESUME_CONTINUE_NOT_CONFIRMED"], decision.Refusals);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await fixture.ReadFaultAsync()).Level);
+        Assert.NotNull(await fixture.Faults.ReadLiveCargoAsync(Subject.AgvId, TestContext.Current.CancellationToken));
+        // Before the continue, inside IssueAsync (still HELD), and the one reread that found it ended.
+        Assert.Equal(3, fixture.Riot.OrderReads - readsBefore);
+    }
+
+    /// <summary>
+    /// The same resumption asked for again after an awaited continue has since taken effect: the order is no longer HELD,
+    /// and it is the earlier continue, settled now, that resumes it -- no second continue, no clearance left to a person.
+    /// </summary>
+    [Fact]
+    public async Task AskingAgainAfterTheAwaitedContinueTookEffectSettlesItWithoutASecondContinue()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        fixture.Riot.ReadsBeforeContinueTakesEffect = 100;
+        Assert.Equal([ContinueAwaiting], (await fixture.ResumeAsync()).Refusals);
+        fixture.Riot.OrderState = RiotOrderState.Executing;
+
+        VehicleFaultResumeDecision again = await fixture.ResumeAsync();
+
+        Assert.True(again.Resumed);
+        Assert.Equal(RiotOrderCommandOutcome.Confirmed, again.Outcome);
+        Assert.Single(fixture.Riot.OrderCalls, call => call.CommandType == RiotCommandTypeNames.OrderContinue);
+        Assert.Equal(VehicleFaultLevel.None, (await fixture.ReadFaultAsync()).Level);
+        Assert.Null(await fixture.Faults.ReadLiveCargoAsync(Subject.AgvId, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// Asked again while the order still reads HELD: the earlier continue settled nothing, so this is an ordinary
+    /// resumption and sends its own continue -- the order is still exactly what a continue is for.
+    /// </summary>
+    [Fact]
+    public async Task AskingAgainWhileTheOrderIsStillHeldContinuesItAgain()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        fixture.Riot.ContinueWorks = false;
+        Assert.Equal([ContinueAwaiting], (await fixture.ResumeAsync()).Refusals);
+        fixture.Riot.ContinueWorks = true;
+
+        VehicleFaultResumeDecision again = await fixture.ResumeAsync();
+
+        Assert.True(again.Resumed);
+        Assert.Equal(2, fixture.Riot.OrderCalls.Count(call => call.CommandType == RiotCommandTypeNames.OrderContinue));
+        Assert.Equal(VehicleFaultLevel.None, (await fixture.ReadFaultAsync()).Level);
+    }
+
+    /// <summary>
+    /// The process stopped after the continue went out: either before its outcome was written (the row is still the
+    /// Pending it was armed as) or after the confirmation was written and before the fault was cleared. The order runs;
+    /// asking again finishes the resumption from the audit row rather than refusing an order that is no longer HELD.
+    /// </summary>
+    [Theory]
+    [InlineData(RiotOrderCommandOutcome.Pending)]
+    [InlineData(RiotOrderCommandOutcome.Confirmed)]
+    public async Task AResumptionCutShortAfterTheContinueIsFinishedWhenAskedAgain(RiotOrderCommandOutcome written)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        await fixture.ContinueLeftBehindAsync((await fixture.ReadFaultAsync()).FaultGeneration, written);
+        fixture.Riot.OrderState = RiotOrderState.Executing;
+
+        VehicleFaultResumeDecision decision = await fixture.ResumeAsync();
+
+        Assert.True(decision.Resumed);
+        Assert.DoesNotContain(fixture.Riot.OrderCalls, call => call.CommandType == RiotCommandTypeNames.OrderContinue);
+        Assert.Equal(VehicleFaultLevel.None, (await fixture.ReadFaultAsync()).Level);
+        Assert.Null(await fixture.Faults.ReadLiveCargoAsync(Subject.AgvId, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// A continue confirmed earlier in this fault, and the order reads HELD again -- someone paused it in RIoT since. The
+    /// earlier confirmation resumed nothing that is still running, so this resumption sends its own continue
+    /// (control-server#791 independent review H2: it used to clear the fault with no continue and leave the order at 7).
+    /// </summary>
+    [Fact]
+    public async Task AnOrderHeldAgainAfterAConfirmedContinueIsContinuedAgain()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        await fixture.ContinueLeftBehindAsync((await fixture.ReadFaultAsync()).FaultGeneration, RiotOrderCommandOutcome.Confirmed);
+        fixture.Riot.OrderState = RiotOrderState.Paused;
+
+        VehicleFaultResumeDecision decision = await fixture.ResumeAsync();
+
+        Assert.True(decision.Resumed);
+        Assert.Single(fixture.Riot.OrderCalls, call => call.CommandType == RiotCommandTypeNames.OrderContinue);
+        Assert.Equal(RiotOrderState.Executing, fixture.Riot.OrderState);
+        Assert.Equal(VehicleFaultLevel.None, (await fixture.ReadFaultAsync()).Level);
+    }
+
+    /// <summary>
+    /// A continue confirmed under an earlier fault says nothing about this one: the order running now is not this fault's
+    /// resumption, and it refuses as an order that is not HELD.
+    /// </summary>
+    [Fact]
+    public async Task AContinueConfirmedUnderAnEarlierFaultDoesNotResumeThisOne()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        long generation = (await fixture.ReadFaultAsync()).FaultGeneration;
+        await fixture.ContinueLeftBehindAsync(generation - 1, RiotOrderCommandOutcome.Confirmed);
+        fixture.Riot.OrderState = RiotOrderState.Executing;
+
+        VehicleFaultResumeDecision decision = await fixture.ResumeAsync();
+
+        Assert.False(decision.Resumed);
+        Assert.Contains("RESUME_ORDER_NOT_HELD", decision.Refusals);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await fixture.ReadFaultAsync()).Level);
+        Assert.NotNull(await fixture.Faults.ReadLiveCargoAsync(Subject.AgvId, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// Settling an earlier continue is still a resumption, and every other check of one applies: under a latch it is
+    /// refused, and the fault and the cargo stay.
+    /// </summary>
+    [Fact]
+    public async Task SettlingAnEarlierContinueIsRefusedUnderALatchLikeAnyResumption()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        await fixture.ContinueLeftBehindAsync((await fixture.ReadFaultAsync()).FaultGeneration, RiotOrderCommandOutcome.Pending);
+        fixture.Riot.OrderState = RiotOrderState.Executing;
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+
+        VehicleFaultResumeDecision decision = await fixture.ResumeAsync();
+
+        Assert.False(decision.Resumed);
+        Assert.Equal(["RESUME_EMERGENCY_LATCHED"], decision.Refusals);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await fixture.ReadFaultAsync()).Level);
+        Assert.NotNull(await fixture.Faults.ReadLiveCargoAsync(Subject.AgvId, TestContext.Current.CancellationToken));
     }
 
     // ---- REQ-0167: the cleared fault is what lets the latch come off --------------------
@@ -1423,6 +1665,27 @@ public sealed class VehicleFaultIsolationTests
         /// <summary>Whether an OrderContinue actually moves the order back to EXECUTING.</summary>
         public bool ContinueWorks { get; set; } = true;
 
+        /// <summary>
+        /// How many order reads after a working continue still see the order as it was (control-server#791): RIoT accepts
+        /// the call before it moves the order. Zero moves it at once.
+        /// </summary>
+        public int ReadsBeforeContinueTakesEffect { get; set; }
+
+        /// <summary>What a working continue moves the order to: EXECUTING, or SUCCESS for an order already at its end.</summary>
+        public int StateAfterContinue { get; set; } = RiotOrderState.Executing;
+
+        /// <summary>Set by a continue: from then on the order cannot be read at all.</summary>
+        public bool UnreadableAfterContinue { get; set; }
+
+        private bool unreadable;
+
+        private int? pendingState;
+
+        private int readsUntilPendingState;
+
+        /// <summary>Every order read through this double.</summary>
+        public int OrderReads { get; private set; }
+
         public List<(string CommandType, string Target)> OrderCalls { get; } = [];
 
         public List<(string CommandType, string DeviceKey)> EmergencyCalls { get; } = [];
@@ -1440,11 +1703,20 @@ public sealed class VehicleFaultIsolationTests
                 case RiotOrderCommandKind.Hold when HoldWorks:
                     OrderState = RiotOrderState.Paused;
                     break;
+                case RiotOrderCommandKind.ContinueFromHeld when ContinueWorks && ReadsBeforeContinueTakesEffect > 0:
+                    pendingState = StateAfterContinue;
+                    readsUntilPendingState = ReadsBeforeContinueTakesEffect;
+                    break;
                 case RiotOrderCommandKind.ContinueFromHeld when ContinueWorks:
-                    OrderState = RiotOrderState.Executing;
+                    OrderState = StateAfterContinue;
                     break;
                 default:
                     break;
+            }
+
+            if (kind == RiotOrderCommandKind.ContinueFromHeld && UnreadableAfterContinue)
+            {
+                unreadable = true;
             }
 
             return Task.FromResult(new RiotCommandCallResult(
@@ -1472,12 +1744,23 @@ public sealed class VehicleFaultIsolationTests
 
         public Task<RiotOrderObservation> ReconcileByUpperIdAsync(
             string upperId,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(new RiotOrderObservation(
-                upperId,
-                RiotOrderObservationKind.Active,
-                Order.OrderId,
-                OrderState));
+            CancellationToken cancellationToken)
+        {
+            OrderReads++;
+            if (unreadable)
+            {
+                return Task.FromResult(new RiotOrderObservation(upperId, RiotOrderObservationKind.Unknown, null, null));
+            }
+
+            RiotOrderObservation observation = new(upperId, RiotOrderObservationKind.Active, Order.OrderId, OrderState);
+            if (pendingState is int next && --readsUntilPendingState <= 0)
+            {
+                OrderState = next;
+                pendingState = null;
+            }
+
+            return Task.FromResult(observation);
+        }
 
         public Task<RiotOrderObservation> CreateAsync(
             OrderIntent intent,
@@ -1538,7 +1821,13 @@ public sealed class VehicleFaultIsolationTests
             Supervisor = new EmergencyStopSupervisor(
                 Riot, Riot, Riot, audit, Faults, Options.Create(new RiotCommandOptions()), Clock,
                 NullLogger<EmergencyStopSupervisor>.Instance);
-            IOptions<VehicleFaultOptions> faultOptions = Options.Create(new VehicleFaultOptions());
+            // Five reads 10 ms apart after the continue (control-server#791): enough to tell "read again" from "read once"
+            // without a test waiting out the production five seconds.
+            IOptions<VehicleFaultOptions> faultOptions = Options.Create(new VehicleFaultOptions
+            {
+                ResumeConfirmationBudget = TimeSpan.FromMilliseconds(50),
+                ResumeConfirmationInterval = TimeSpan.FromMilliseconds(10),
+            });
             Coordinator = new VehicleFaultCoordinator(
                 Faults, Riot, Motion, Riot, audit, commands, Supervisor,
                 new VehicleMotionLedger(faultOptions), faultOptions, Clock,
@@ -1647,6 +1936,22 @@ public sealed class VehicleFaultIsolationTests
                 ReleasedAt = released ? Now.AddMinutes(-1) : null
             });
             await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// The audit row a continue leaves when the process stops after it went out: armed, and settled as
+        /// <paramref name="outcome"/> or not at all.
+        /// </summary>
+        public async Task ContinueLeftBehindAsync(long faultGeneration, RiotOrderCommandOutcome outcome)
+        {
+            RiotOrderCommandAttempt attempt = await Audit.ArmAttemptAsync(
+                RiotCommandTypeNames.OrderContinue, Order.AgvId, Order.UpperId, Order.OrderId, "sha-791", faultGeneration,
+                Clock.GetUtcNow(), TestContext.Current.CancellationToken);
+            if (outcome != RiotOrderCommandOutcome.Pending)
+            {
+                await Audit.RecordOutcomeAsync(
+                    attempt.CommandAuditId, outcome, null, Clock.GetUtcNow(), TestContext.Current.CancellationToken);
+            }
         }
 
         public async Task<VehicleFaultFact> ReadFaultAsync() =>

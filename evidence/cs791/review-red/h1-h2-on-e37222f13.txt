@@ -1,0 +1,23 @@
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:07.08]     ControlServer.Tests.VehicleFaultIsolationTests.AnOrderHeldAgainAfterAConfirmedContinueIsContinuedAgain [FAIL]
+  Failed ControlServer.Tests.VehicleFaultIsolationTests.AnOrderHeldAgainAfterAConfirmedContinueIsContinuedAgain [3 s]
+  Error Message:
+   Assert.Single() Failure: The collection did not contain any matching items
+Expected:   (predicate expression)
+Collection: [Tuple ("OrderHold", "order-9901")]
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultIsolationTests.AnOrderHeldAgainAfterAConfirmedContinueIsContinuedAgain() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1470
+   at ControlServer.Tests.VehicleFaultIsolationTests.AnOrderHeldAgainAfterAConfirmedContinueIsContinuedAgain() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultIsolationTests.cs:line 1472
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:09.82]     ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AStopTheEngineReissuesWhileTheContinueIsReadBackKeepsTheFaultAndLeavesAWayOut [FAIL]
+  Failed ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AStopTheEngineReissuesWhileTheContinueIsReadBackKeepsTheFaultAndLeavesAWayOut [6 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Refused
+Actual:   Resumed
+  Stack Trace:
+     at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AStopTheEngineReissuesWhileTheContinueIsReadBackKeepsTheFaultAndLeavesAWayOut() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 909
+   at ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AStopTheEngineReissuesWhileTheContinueIsReadBackKeepsTheFaultAndLeavesAWayOut() in C:\work\8005-wt\cs791-8005-agv-control-server\tests\ControlServer.Tests\InTransitDoorEmergencyReleaseTests.cs:line 953
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:     0, Skipped:     0, Total:     2, Duration: 6 s - ControlServer.Tests.dll (net8.0)

@@ -1526,6 +1526,81 @@ public sealed class VehicleFaultRecoveryTests
         await AssertUntouchedAsync(fixture);
     }
 
+    // ---- control-server#791：续行发出后读得太早 ----------------------------------------------------------------
+
+    /// <summary>
+    /// 10-19 agv01 那一次：RIoT 接下续行、约 50 毫秒后读回仍是 HELD，片刻后单直接 SUCCESS（起点终点同站）。现在续行后在预算内重读，
+    /// 读到 SUCCESS 就是续行成功：清故障，入口答 Resumed，不再留给人去 CLEAR_FAULT。之后引擎照常往下走：不重建、不记新故障。
+    /// </summary>
+    [Fact]
+    public async Task AContinueThatFinishesTheOrderAMomentAfterTheReadIsConfirmedAndTheJourneyGoesOn()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+        fixture.Riot.SetOrderState(faulted.PickupUpperId, RiotOrderState.Paused, terminal: false);
+        bool continued = false;
+        SiteRiot site = new(fixture)
+        {
+            OnOrderCommand = (kind, _) => continued |= kind == RiotOrderCommandKind.ContinueFromHeld,
+            // 续行之后的第一次读（命令服务自己那一次）仍是 HELD，读完 RIoT 才把单做完。
+            AfterOrderReadAsync = _ =>
+            {
+                if (continued)
+                {
+                    fixture.Riot.SetOrderState(faulted.PickupUpperId, RiotOrderState.Success, terminal: true);
+                }
+
+                return Task.CompletedTask;
+            },
+        };
+
+        VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(Resume(fixture), Token);
+
+        Assert.Equal((VehicleFaultRecoveryOutcome.Resumed, 0), (decision.Outcome, decision.Reasons.Count));
+        Assert.Equal([RiotOrderCommandKind.ContinueFromHeld], site.OrderCommands);
+        VehicleFaultStateRow fault = await FaultAsync(fixture);
+        Assert.Equal(VehicleFaultLevel.None, fault.Level);
+
+        // 10-19 那张单起点终点同站，车本来就在那一站：引擎下一轮读到单 SUCCESS、车在站，照常到站进「等录入」。
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow journey = await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_PICKUP");
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        VehicleFaultStateRow after = await FaultAsync(fixture);
+        Assert.Equal((VehicleFaultLevel.None, fault.FaultGeneration), (after.Level, after.FaultGeneration));
+        journey = await fixture.RuntimeAsync();
+        Assert.Equal(
+            (faulted.JourneyId, JourneyRuntimeStage.AwaitingSublot, (string?)null),
+            (journey.JourneyId, journey.Stage, journey.BlockReasonCode));
+    }
+
+    /// <summary>
+    /// 预算用完单仍是 HELD：入口答「续行已发出、等待确认」，故障与货物绑定都不动。RIoT 随后执行了，人再按一次续行：核的是上一次续行，
+    /// 确认了就清故障——不要求单仍是 HELD，也不发第二次续行。
+    /// </summary>
+    [Fact]
+    public async Task AContinueAwaitedOnTheFirstRequestIsSettledByTheNextWithoutASecondContinue()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+        fixture.Riot.SetOrderState(faulted.PickupUpperId, RiotOrderState.Paused, terminal: false);
+        SiteRiot site = new(fixture);
+
+        VehicleFaultRecoveryDecision first = await Service(fixture, site).RecoverAsync(Resume(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, first.Outcome);
+        Assert.Equal(["RESUME_CONTINUE_AWAITING_CONFIRMATION"], first.Reasons);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await FaultAsync(fixture)).Level);
+
+        fixture.Riot.SetOrderState(faulted.PickupUpperId, RiotOrderState.Executing, terminal: false);
+        VehicleFaultRecoveryDecision again = await Service(fixture, site).RecoverAsync(Resume(fixture), Token);
+
+        Assert.Equal((VehicleFaultRecoveryOutcome.Resumed, 0), (again.Outcome, again.Reasons.Count));
+        Assert.Equal([RiotOrderCommandKind.ContinueFromHeld], site.OrderCommands);
+        Assert.Equal(VehicleFaultLevel.None, (await FaultAsync(fixture)).Level);
+    }
+
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
     /// <summary>假 RIoT 收到 <c>CONTINUE_FROM_HELD</c> 时把那张单置回执行中，像真 RIoT 继续了它一样。</summary>
@@ -1666,7 +1741,12 @@ public sealed class VehicleFaultRecoveryTests
         EmergencyStopSupervisor supervisor = new(
             site, site, site, audit, faults, Options.Create(new RiotCommandOptions()), fixture.Clock,
             NullLogger<EmergencyStopSupervisor>.Instance);
-        IOptions<VehicleFaultOptions> faultOptions = Options.Create(new VehicleFaultOptions());
+        // 续行后的重读（control-server#791）在这里只给 50 毫秒：一条等不到确认的用例不必等满生产的 5 秒。
+        IOptions<VehicleFaultOptions> faultOptions = Options.Create(new VehicleFaultOptions
+        {
+            ResumeConfirmationBudget = TimeSpan.FromMilliseconds(50),
+            ResumeConfirmationInterval = TimeSpan.FromMilliseconds(10),
+        });
         VehicleMotionLedger ledger = new(faultOptions);
         VehicleFaultCoordinator coordinator = new(
             faults, site, site, site, audit, new RiotOrderCommandService(site, audit, site, fixture.Clock), supervisor,
