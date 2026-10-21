@@ -1449,6 +1449,8 @@ try {
         EmergencyReleaseCredential = if ($emergencyStopRelease) { $emergencyReleaseCredential } else { $null }
         EmergencyLoadedReleaseCredential = if ($emergencyStopRelease) { $emergencyLoadedReleaseCredential } else { $null }
         FaultRecoveryCredential = if ($vehicleFaultRecovery) { $faultRecoveryCredential } else { $null }
+        # control-server#797: whether the server asks for a recovery grant (setup RecoveryGrantRequired); Grant-L2Recovery reads it.
+        RecoveryGrantRequired = $recoveryGrantRequired
         SlotFaultDeclarationCredential = if ($slotFaultDeclaration) { $slotFaultDeclarationCredential } else { $null }
         # Null unless the setup file asked for the dashboard.
         DashboardUrl        = $dashboardUrl
