@@ -33,7 +33,8 @@ namespace ControlServer.Host.Runtime.Dispatch;
 public static class StarvationExclusions
 {
     /// <summary>
-    /// 本轮目录里不进超时层的需求 id：下面那一份，加上目录时间窗挡下的（REQ-0366，control-server#827）。
+    /// 本轮目录里不进超时层的需求 id：下面那一份，加上目录时间窗挡下的（REQ-0366，control-server#827）与试验机批号挡下的
+    /// （REQ-0368，control-server#828，条文同样写明不升级防饥饿）。
     /// </summary>
     /// <remarks>
     /// 时间窗挡下的是用户定的有意不派：条文写明不升级防饥饿告警。按 <paramref name="round"/> 的时刻与时间窗判，与开轮时的判据同一个答案；
@@ -48,7 +49,7 @@ public static class StarvationExclusions
         HashSet<string> excluded = await ReadAsync(dbContext, round.Catalog.Items, cancellationToken).ConfigureAwait(false);
         foreach (AcceptedDemandSnapshot demand in round.Catalog.Items)
         {
-            if (CatalogAgeWindow.Refusal(round, demand, round.Now) is not null)
+            if (CatalogAgeWindow.Refusal(round, demand, round.Now) is not null || TrialSublot.Refusal(round, demand) is not null)
             {
                 excluded.Add(demand.DemandId);
             }

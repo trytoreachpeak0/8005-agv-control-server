@@ -79,6 +79,9 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "MES 接入首次读到这条需求已超过目录时间窗（默认 30 分钟），不再派车；需求仍在目录里，MES 字段更新也不会放回",
             [DispatchReasonCodes.DemandCatalogCreatedAtMissing] =
                 "MES 接入没有给出首次读到这条需求的时刻，无法判断是否在目录时间窗内，不派车",
+            // 试验机批号（REQ-0368，control-server#828）：用户定的有意不派，不是故障；需求仍在目录里，交现场按既有方式处理。
+            [DispatchReasonCodes.DemandTrialSublot] =
+                "子批次号表明这是试验机上生产的批次，按规定不派车；需求仍在目录里，由现场按既有方式处理",
             // 批次8-18（control-server#389）：空闲返回的承诺不被搬运抢，正常调度结论，不是故障。
             [DispatchReasonCodes.VehicleCommittedToIdleReturn] =
                 "这辆车已承诺返回等待点，返回不被搬运取消或抢走；由别的车接，或等它到点后下一轮再派",

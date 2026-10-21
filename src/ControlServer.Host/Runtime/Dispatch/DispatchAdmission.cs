@@ -82,6 +82,13 @@ public sealed record DispatchRoundFacts(
     /// </remarks>
     public TimeSpan CatalogAgeWindow { get; init; } = JourneyRuntimeOptions.DefaultCatalogAgeWindow;
 
+    /// <summary>
+    /// 试验机批号规则（REQ-0368，control-server#828），派车轮按 <see cref="JourneyRuntimeOptions.TrialSublotCharacterPosition"/> 与
+    /// <see cref="JourneyRuntimeOptions.TrialSublotCharacters"/> 填；一轮读一次，判据、AREA→EQP 观测、防饥饿排除与日志都按它判。
+    /// 缺省是关，与出厂配置相同。
+    /// </summary>
+    public TrialSublotRule TrialSublotRule { get; init; } = TrialSublotRule.Off;
+
     /// <summary>这条需求这一次受理派生身份所用的键，见 <see cref="JourneyIdentity.DerivationKey"/>。</summary>
     public string DerivationKeyOf(string demandId) =>
         JourneyIdentity.DerivationKey(

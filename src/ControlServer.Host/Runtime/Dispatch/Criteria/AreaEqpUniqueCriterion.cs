@@ -25,6 +25,12 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// catalog's rows, and only that stand-in is narrowed. The cost: an old row's EQP may be the real evidence that one AREA
 /// serves two machines, and it is no longer seen here. Accepted demands are not subject to the window, so their rows stay in.
 /// </para>
+/// <para>
+/// <b>And the rows the trial sublot rule refuses</b> (REQ-0368, control-server#828, the user's decision on 2026-10-21 in CP-0023
+/// section 5): a trial lot runs on a trial machine, and on the floor at N8-4 the trial machine 2ZPB28 sat under the same AREA as
+/// the production machine 3QHS3016; counting it would hold the production demand under <c>AREA_EQP_NOT_UNIQUE</c> for as long
+/// as the trial lot is open. Accepted trial lots are not subject to the rule, so their rows stay in, as above.
+/// </para>
 /// </remarks>
 public sealed class AreaEqpUniqueCriterion : IDispatchAdmissionCriterion
 {
@@ -43,7 +49,8 @@ public sealed class AreaEqpUniqueCriterion : IDispatchAdmissionCriterion
             .Where(item =>
                 string.Equals(item.LiveMesFields?.Area, area, StringComparison.Ordinal) &&
                 !string.IsNullOrWhiteSpace(item.LiveMesFields?.Eqp) &&
-                (round.AcceptedDemandIds.Contains(item.DemandId) || CatalogAgeWindow.Refusal(round, item, round.Now) is null))
+                (round.AcceptedDemandIds.Contains(item.DemandId) ||
+                 (CatalogAgeWindow.Refusal(round, item, round.Now) is null && TrialSublot.Refusal(round, item) is null)))
             .Select(item => item.LiveMesFields!.Eqp!)
             .Distinct(StringComparer.Ordinal)
             .ToArray();

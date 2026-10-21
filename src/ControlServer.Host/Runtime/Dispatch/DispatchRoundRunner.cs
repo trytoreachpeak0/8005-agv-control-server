@@ -55,6 +55,7 @@ public sealed class DispatchRoundRunner(
     IdleReturnEvaluator idleReturn,
     IChargingPolicyResolver chargingPolicy,
     ChargingAllocator chargingAllocation,
+    TrialSublotFilterLog trialSublotLog,
     MandatoryChargeBoard? mandatoryCharge = null)
 {
     // The backlog's decision fingerprint is a hash over this serialisation, so it is the engine's setting exactly: a
@@ -76,6 +77,11 @@ public sealed class DispatchRoundRunner(
             new EventId(2123, nameof(LogVehicleRoundFailed)),
             "Vehicle {AgvId} could not be served this round: {ExceptionType}. The round moved on to the " +
             "remaining vehicles.");
+    private static readonly Action<ILogger, int, string, Exception?> LogTrialSublotsFiltered =
+        LoggerMessage.Define<int, string>(
+            LogLevel.Information,
+            new EventId(2130, nameof(LogTrialSublotsFiltered)),
+            "Trial sublot rule filtered {Count} unaccepted demand(s) this round, not dispatched; their sublots: {Sublots}.");
     private static readonly Action<ILogger, string, string, Exception?> LogVehicleRoundFaulted =
         LoggerMessage.Define<string, string>(
             LogLevel.Error,
@@ -249,7 +255,19 @@ public sealed class DispatchRoundRunner(
             RedispatchGenerations = redispatchGenerations,
             // REQ-0366（control-server#827）：判据、受理前重判与轮末两个汇总都按这一个值判。
             CatalogAgeWindow = runtimeOptions.CatalogAgeWindow,
+            // REQ-0368（control-server#828）：判据、AREA→EQP 观测、防饥饿排除与下面的日志都按这一条规则判。
+            TrialSublotRule = TrialSublotRule.From(runtimeOptions),
         };
+        // 每轮滤掉几条、哪几个批号，只在变化时记（票面第 5 条）。按目录里全部未受理的判，不管它在链上先被哪一道挡住。
+        string[] trialSublots = [.. round.Catalog.Items
+            .Where(item => !acceptedDemandIds.Contains(item.DemandId) && TrialSublot.Refusal(round, item) is not null)
+            .Select(item => item.Sublot)
+            .Order(StringComparer.Ordinal)];
+        if (trialSublotLog.Record(trialSublots))
+        {
+            LogTrialSublotsFiltered(
+                logger, trialSublots.Length, trialSublots.Length == 0 ? "(none)" : string.Join(", ", trialSublots), null);
+        }
 
         // 「上次成功接单」从既有旅程记录推出（票面第 6 条带内层），一轮查一次。
         // An idle return (control-server#390) is not work taken on: a vehicle that just went back to a waiting point has not

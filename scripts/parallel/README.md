@@ -81,6 +81,13 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 生产段定义 `cutover-production-s3.runtime-on` 显式写 `"enabled": false`：用户 2026-10-19 看过独立审查后定「这次先不开」，其余定义不写。
 打开空闲返回、开闸都是会让车动的事，要用户逐次授权。
 
+### 试验机批号（control-server#828）
+
+`journeyRuntime.trialSublotCharacterPosition`（整数，从 1 计，开头的 `Q` 算第 1 个）与 `journeyRuntime.trialSublotCharacters`
+（字符串，每个字符是一个取值）：未受理需求的 SUBLOT 在该位上是其中某个字符的，v2 不派车，留在积压里报 `DEMAND_TRIAL_SUBLOT`（REQ-0368，CP-0023）。
+按目录原样逐字符比，不去空白、不转半角。两项要么都写、要么都不写；不写时覆盖层写 `0` 与 `""`，即关，旧安装留下的值不会残留。
+四份生产段定义（`cutover-production-*`）写第 6 个字符、`9`，用户 2026-10-21 确认（例 `Q26109123-1`）；其余定义不写。改成别的值要用户批准。
+
 **车停在已登记的等待点上、库里却没有占用行时**（人手开过去、换库之后），control-server#793（PR #796）之前评估器会承诺开往车当前所在的站，
 还会把别的车派到这个点。#796 之后：
 

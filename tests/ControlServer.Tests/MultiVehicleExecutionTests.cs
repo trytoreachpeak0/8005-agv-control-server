@@ -1490,7 +1490,8 @@ public sealed partial class MultiVehicleExecutionTests
                 ChargingPolicy,
                 ChargingTestKit.Create(
                     Context, Options, Clock, Riot, Peer, Riot, Riot, RouteGraph(), ChargingBoard, ChargingLog,
-                    clearanceExit: clearanceExit));
+                    clearanceExit: clearanceExit),
+                TrialSublotLog);
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,
@@ -1614,6 +1615,9 @@ public sealed partial class MultiVehicleExecutionTests
 
         /// <summary>派车轮写、推进段读的那块板（批次7-07）：宿主里是单例，这里一个夹具一块，跨轮次保留。</summary>
         public SlotGroupFullnessBoard SlotGroupFullness { get; } = new();
+
+        /// <summary>试验机批号滤除日志的跨轮状态（control-server#828），宿主里是单例。</summary>
+        public TrialSublotFilterLog TrialSublotLog { get; } = new();
 
         /// <summary>
         /// 人工清除故障的入口（空闲返回的 FAILED 单由人清除后收尾，control-server#390），按宿主的组装、用夹具的 RIoT 与车载端。

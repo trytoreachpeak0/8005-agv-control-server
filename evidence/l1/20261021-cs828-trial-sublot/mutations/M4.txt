@@ -1,0 +1,47 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/StructuralDispatchBlockSink.cs b/src/ControlServer.Host/Runtime/Dispatch/StructuralDispatchBlockSink.cs
+index 3e784d2f8..1503bc492 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/StructuralDispatchBlockSink.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/StructuralDispatchBlockSink.cs
+@@ -206,8 +206,7 @@ public sealed class StructuralDispatchBlockSink(
+         // tells the floor to carry the demand by hand, and REQ-0366 hangs no manual-carry alarm on these. Unlike a silent code the
+         // demand stays on the backlog card; only the alarm side is the same.
+         // REQ-0368 (control-server#828): a trial sublot is the same -- not dispatched by the user's decision, no manual-carry alarm.
+-        if (verdicts.Any(verdict => DispatchReasonCodes.IsCatalogAgeWindowRefusal(verdict.ReasonCode) ||
+-                                    verdict.ReasonCode == DispatchReasonCodes.DemandTrialSublot))
++        if (verdicts.Any(verdict => DispatchReasonCodes.IsCatalogAgeWindowRefusal(verdict.ReasonCode)))
+         {
+             return DemandJudgement.Silent;
+         }
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:06.72]     ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs [121 ms]
+  Error Message:
+   Assert.All() Failure: 1 out of 1 items in the collection did not pass.
+[0]: Item:  StructuralDispatchBlockRow { ClearedAt = null, DemandId = "10000000-0000-4000-8000-000000000928", DetailJson = "{\"agvIds\":[\"\\u8001\\u5382\\u524D\\u7EBF\\u65B0"···, FirstRaisedAt = 2026-08-26T01:00:00.0000000+00:00, LastSeenAt = 2026-08-26T01:00:00.0000000+00:00, ··· }
+     Error: Assert.NotNull() Failure: Value of type 'Nullable<DateTimeOffset>' does not have a value
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 372
+   at ControlServer.Tests.TrialSublotAdmissionTests.ABlockRaisedBeforeTheRuleWasOnIsClearedOnceItIs() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 375
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:    35, Skipped:     0, Total:    36, Duration: 4 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,46 @@
+diff --git a/scripts/parallel/ParallelInstance.psm1 b/scripts/parallel/ParallelInstance.psm1
+index 69107f72e..9241b2705 100644
+--- a/scripts/parallel/ParallelInstance.psm1
++++ b/scripts/parallel/ParallelInstance.psm1
+@@ -2917,7 +2917,7 @@ $script:JourneyBindingFields = @(
+     # not. Printed without a space: hh:mm:ss, a number, and characters the definition check and the Host refuse white space in
+     # (review L4); off prints as 'trialSublotCharacters='.
+     [pscustomobject]@{ Name = 'catalogAgeWindow'; Logged = 'CatalogAgeWindow'; Compare = 'Duration'; Source = 'overlay.catalogAgeWindow'; AbsentMeans = '00:30:00' }
+-    [pscustomobject]@{ Name = 'trialSublotCharacterPosition'; Logged = 'TrialSublotCharacterPosition'; Compare = 'Integer'; Source = 'overlay.trialSublotCharacterPosition'; AbsentMeans = 0 }
++    [pscustomobject]@{ Name = 'trialSublotCharacterPosition'; Logged = 'TrialSublotCharacterPosition'; Compare = 'Integer'; Source = 'journeyRuntime.trialSublotCharacterPosition'; AbsentMeans = 0 }
+     [pscustomobject]@{ Name = 'trialSublotCharacters'; Logged = 'TrialSublotCharacters'; Compare = 'Ordinal'; Source = 'overlay.trialSublotCharacters'; AbsentMeans = '' }
+ )
+ 
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:28.57]     ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(definitionFile: "instance-factory01-v2.json", host: "rule-on", expectedPosition: 0, expectedCharacters: "", expectedAction: "StopServiceAndRefuse", says: "trialSublotCharacterPosition bound '6', the defini"···) [FAIL]
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(definitionFile: "instance-factory01-v2.json", host: "rule-on", expectedPosition: 0, expectedCharacters: "", expectedAction: "StopServiceAndRefuse", says: "trialSublotCharacterPosition bound '6', the defini"···) [1 s]
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "StopServiceAndRefuse|EFFECTIVE_CONFIGURATION_MISMA"···
+Not found: "trialSublotCharacterPosition bound '6', the defini"···
+  Stack Trace:
+     at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(String definitionFile, String host, Int32 expectedPosition, String expectedCharacters, String expectedAction, String says) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 888
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithManyArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+
+Failed!  - Failed:     1, Passed:    75, Skipped:     0, Total:    76, Duration: 54 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,46 @@
+diff --git a/src/ControlServer.Host/Dashboard/DispatchBacklogQueryEndpoint.cs b/src/ControlServer.Host/Dashboard/DispatchBacklogQueryEndpoint.cs
+index 46451292e..ad34f7244 100644
+--- a/src/ControlServer.Host/Dashboard/DispatchBacklogQueryEndpoint.cs
++++ b/src/ControlServer.Host/Dashboard/DispatchBacklogQueryEndpoint.cs
+@@ -80,7 +80,7 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
+             [DispatchReasonCodes.DemandCatalogCreatedAtMissing] =
+                 "MES 接入没有给出首次读到这条需求的时刻，无法判断是否在目录时间窗内，不派车",
+             // 试验机批号（REQ-0368，control-server#828）：用户定的有意不派，不是故障；需求仍在目录里，交现场按既有方式处理。
+-            [DispatchReasonCodes.DemandTrialSublot] =
++            ["X_" + DispatchReasonCodes.DemandTrialSublot] =
+                 "子批次号表明这是试验机上生产的批次，按规定不派车；需求仍在目录里，由现场按既有方式处理",
+             // 批次8-18（control-server#389）：空闲返回的承诺不被搬运抢，正常调度结论，不是故障。
+             [DispatchReasonCodes.VehicleCommittedToIdleReturn] =
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Domain -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:06.09]     ControlServer.Tests.TrialSublotAdmissionTests.TheDashboardListsTheRefusalWithAChineseDescription [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.TheDashboardListsTheRefusalWithAChineseDescription [96 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.TheDashboardListsTheRefusalWithAChineseDescription() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 484
+   at ControlServer.Tests.TrialSublotAdmissionTests.TheDashboardListsTheRefusalWithAChineseDescription() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 492
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:    35, Skipped:     0, Total:    36, Duration: 4 s - ControlServer.Tests.dll (net8.0)

@@ -70,6 +70,15 @@ namespace ControlServer.Host.Runtime;
 /// bound -- off is guaranteed by the overlay writing the key, not by this event.
 /// </para>
 /// <para>
+/// <b>The catalog age window and the trial sublot rule</b> (REQ-0366 and REQ-0368, control-server#828 review M1) are appended
+/// last: <see cref="JourneyRuntimeOptions.CatalogAgeWindow"/> as <c>hh:mm:ss</c>, <see cref="JourneyRuntimeOptions.TrialSublotCharacterPosition"/>
+/// as a number and <see cref="JourneyRuntimeOptions.TrialSublotCharacters"/> as the string bound (empty when the rule is off; never
+/// a space, which the validator refuses). The installer compares all three with what its overlay writes -- the definition's value,
+/// or 00:30:00, 0 and "" when it leaves them out -- so a rule that did not take stops the install. An event without the two rule
+/// fields is from a package older than #828, read as the rule off; one without the window is from a package older than #827,
+/// read as the default thirty minutes so a rollback stays possible -- which proves nothing about that package, which has no window.
+/// </para>
+/// <para>
 /// More placeholders than the six <c>LoggerMessage.Define</c> takes, so the event hands the logger its state the way
 /// <c>Define</c> does -- the template under <c>{OriginalFormat}</c> and each value as it is. Not the logging source generator: its
 /// state formats a collection into a string, and the installer reads the roster and the catalog back as JSON structure.
@@ -78,7 +87,7 @@ namespace ControlServer.Host.Runtime;
 public static class EffectiveConfigurationEvent
 {
     public const string Template =
-        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled}";
+        "EFFECTIVE_CONFIGURATION allowedWorkTypes={AllowedWorkTypes} allowedDispatchZones={AllowedDispatchZones} mesIngestBaseUrl={MesIngestBaseUrl} fleet={Fleet} clearanceToWaitingPointEnabled={ClearanceToWaitingPointEnabled} mapStationCatalog={MapStationCatalog} foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled} catalogAgeWindow={CatalogAgeWindow} trialSublotCharacterPosition={TrialSublotCharacterPosition} trialSublotCharacters={TrialSublotCharacters}";
 
     public static readonly EventId Id = new(5350, "EffectiveConfiguration");
 
@@ -116,6 +125,9 @@ public static class EffectiveConfigurationEvent
             new("StagingLoadNotSettledAlarmAfter",
                 effective.StagingDepartureRules.LoadNotSettledAlarmAfter.ToString("c", CultureInfo.InvariantCulture)),
             new("IdleReturnEnabled", (idleReturn ?? new IdleReturn.IdleReturnOptions()).Enabled),
+            new("CatalogAgeWindow", effective.CatalogAgeWindow.ToString("c", CultureInfo.InvariantCulture)),
+            new("TrialSublotCharacterPosition", effective.TrialSublotCharacterPosition),
+            new("TrialSublotCharacters", effective.TrialSublotCharacters),
             new("{OriginalFormat}", Template),
         ];
         logger.Log(LogLevel.Information, Id, state, null, static (values, _) => Render(values));

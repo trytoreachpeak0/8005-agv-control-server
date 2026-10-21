@@ -83,6 +83,8 @@ public static class DispatchAdmissionCriteria
             new SublotTaskTypeConflictCriterion(),
             new AreaAssignmentLookupCriterion(),
             new AreaScopeCriterion(),
+            // REQ-0368（CP-0023，control-server#828）：试验机批号，序号 42，先于目录时间窗。必填，理由同时间窗；配置为空时它什么都不挡。
+            new TrialSublotCriterion(),
             // REQ-0366（CP-0020，control-server#827）：目录时间窗，序号 45。必填：它是用户定的派车范围，一个可以漏传的调用方就会把
             // 超窗的需求派出去。排在范围类判据（任务类型 20、AREA 40）之后、站点解析（60）之前，理由见判据本身。
             new CatalogAgeWindowCriterion(),
@@ -163,6 +165,7 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, AlreadyAcceptedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeySuppressedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeyAlreadyAcceptedCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, TrialSublotCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, CatalogAgeWindowCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, IdleReturnCommitmentCriterion>();
@@ -221,6 +224,9 @@ public static class DispatchAdmissionCriteria
         // A required constructor argument, so a host that forgets this line fails to build the chain instead of logging every round.
         services.AddSingleton<ChargingPolicyCommissioningLog>();
         services.AddSingleton<SlotConfigurationReadinessLog>();
+        // control-server#828: which trial sublots the last round filtered outlives the per-round runner, so the log line fires on
+        // change. Required by the runner's constructor for the same reason as the line above.
+        services.AddSingleton<TrialSublotFilterLog>();
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like
         // the engine: both must be handed the engine's own DbContext -- see DispatchRoundRunner.
         services.AddScoped<OnboardDispatchFactsReader>();
