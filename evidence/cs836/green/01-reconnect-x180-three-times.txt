@@ -1,0 +1,23 @@
+# Fix applied (each connection resolves its own processor and DbContext), same harness, same load.
+
+## batch green-1
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 18 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 15 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 15 s - ControlServer.Tests.dll (net8.0)
+-- server log lines carrying an exception:
+
+## batch green-2
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 9 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 14 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 14 s - ControlServer.Tests.dll (net8.0)
+-- server log lines carrying an exception:
+      1 1008 Onboard connection for AGV-GATE-01 (generation 1), remote , ended after a newer session took it over (control-server#310). :: System.ObjectDisposedException: Cannot access a disposed object.
+      1 name: 'System.Net.Sockets.NetworkStream'.
+
+## batch green-3
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 9 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60, Duration: 9 s - ControlServer.Tests.dll (net8.0)
+-- server log lines carrying an exception:
+
+The single 1008 line is the old connection being taken over by the newer session (control-server#310); red-2 has the same line. Not a failure.

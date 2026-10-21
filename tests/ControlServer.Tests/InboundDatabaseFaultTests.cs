@@ -200,16 +200,18 @@ public sealed class InboundDatabaseFaultTests
         try
         {
             CancellationToken token = TestContext.Current.CancellationToken;
-            await using SqliteConnection connection = new("Data Source=:memory:");
+            // Named and shared-cache so that each server connection reaches it on a connection of its own; this one keeps it alive.
+            await using SqliteConnection connection = new($"Data Source=db-fault-tcp-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
             await connection.OpenAsync(token);
-            await using ControlServerDbContext context = new(
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
-            await context.Database.EnsureCreatedAsync(token);
+            await using (ControlServerDbContext schema = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options))
+            {
+                await schema.Database.EnsureCreatedAsync(token);
+            }
             OnboardPeer peer = new();
-            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
-                context, new WireToGateStore(context), TimeProvider.System, Configuration(variable), peer);
             ServiceCollection services = new();
-            services.AddScoped(_ => processor);
+            // A processor and a context per connection, as in the host (control-server#836).
+            services.AddScopedProcessor(connection.ConnectionString, TimeProvider.System, Configuration(variable), peer);
             await using ServiceProvider provider = services.BuildServiceProvider();
             int port = ReserveFreePort();
             EventRecordingLogger<OnboardTcpServer> log = new();

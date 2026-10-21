@@ -213,6 +213,8 @@ public sealed class InboundContentConflictTests
     public async Task TheTestReadsThroughAContextAndConnectionOfItsOwn()
     {
         await using Rig rig = await Rig.StartAsync();
+        await rig.ConnectAsync();
+        await rig.Served.WaitForAsync(1, TimeSpan.FromSeconds(20));
         await using ControlServerDbContext read = await rig.OpenReadContextAsync();
 
         Assert.False(rig.SharesStateWith(read), "测试拿到的读库上下文与服务端处理器共用了上下文或连接。");
@@ -261,18 +263,11 @@ public sealed class InboundContentConflictTests
     private sealed class Rig : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
-
-        /// <summary>
-        /// The context the server's processor uses. Never read through it from the test thread; see
-        /// <see cref="OpenReadContextAsync"/>.
-        /// </summary>
-        private readonly ControlServerDbContext _context;
         private readonly ServiceProvider _provider;
         private readonly OnboardTcpServer _server;
 
         private Rig(
             SqliteConnection connection,
-            ControlServerDbContext context,
             ServiceProvider provider,
             OnboardTcpServer server,
             ConflictRelay relay,
@@ -280,7 +275,6 @@ public sealed class InboundContentConflictTests
             OnboardPeerSession onboard)
         {
             _connection = connection;
-            _context = context;
             _provider = provider;
             _server = server;
             Relay = relay;
@@ -299,14 +293,16 @@ public sealed class InboundContentConflictTests
         public static async Task<Rig> StartAsync()
         {
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
-            // Named and shared-cache so that OpenReadContextAsync can reach it on a second connection; this one stays
-            // open for the rig's lifetime, which is what keeps an in-memory database alive.
+            // Named and shared-cache so that each server connection and OpenReadContextAsync reach it on a connection of
+            // their own; this one stays open for the rig's lifetime, which is what keeps an in-memory database alive.
             SqliteConnection connection = new(
                 $"Data Source=content-conflict-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
-            ControlServerDbContext context = new(
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
-            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            await using (ControlServerDbContext schema = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options))
+            {
+                await schema.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            }
 
             IConfiguration configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
@@ -315,10 +311,9 @@ public sealed class InboundContentConflictTests
                 })
                 .Build();
             OnboardPeer peer = new();
-            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
-                context, new WireToGateStore(context), TimeProvider.System, configuration, peer);
             ServiceCollection services = new();
-            services.AddScoped(_ => processor);
+            // A processor and a context per connection, as in the host (control-server#836).
+            ServedContexts served = services.AddScopedProcessor(connection.ConnectionString, TimeProvider.System, configuration, peer);
             ServiceProvider provider = services.BuildServiceProvider();
 
             int serverPort = ReserveFreePort();
@@ -351,7 +346,7 @@ public sealed class InboundContentConflictTests
                     CredentialEnvironmentVariable = CredentialVariable
                 },
                 SlotStateSeed.Read(new ConfigurationBuilder().Build()));
-            return new Rig(connection, context, provider, server, relay, engine, onboard);
+            return new Rig(connection, provider, server, relay, engine, onboard) { Served = served };
         }
 
         /// <summary>A fresh connection and the full handshake, through the relay.</summary>
@@ -387,20 +382,23 @@ public sealed class InboundContentConflictTests
             Assert.Equal(closedBefore, Relay.ServerClosedConnections);
         }
 
-        /// <summary>Whether <paramref name="read"/> is, or shares a connection with, the server's own context.</summary>
-        public bool SharesStateWith(ControlServerDbContext read) =>
-            ReferenceEquals(read, _context) ||
-            ReferenceEquals(read.Database.GetDbConnection(), _context.Database.GetDbConnection());
+        /// <summary>The contexts the server's processors were built over, one per connection served (control-server#836).</summary>
+        public ServedContexts Served { get; private init; } = new();
+
+        /// <summary>
+        /// Whether <paramref name="read"/> is, or shares a connection with, a context the server's processors were built over.
+        /// </summary>
+        public bool SharesStateWith(ControlServerDbContext read) => Served.SharesStateWith(read);
 
         /// <summary>
         /// A context of the test's own, on a connection of its own, to the same database the server writes
         /// (control-server#813). The caller disposes it, and with it its connection.
         /// </summary>
         /// <remarks>
-        /// Neither <see cref="DbContext"/> nor <see cref="SqliteConnection"/> is thread-safe, and the server's processor
-        /// uses <see cref="_context"/> on the listener's threads, for every heartbeat as well. The database is a named
-        /// shared-cache in-memory one, kept alive by the server's connection, so a second connection sees the same rows;
-        /// SQLite serialises the two connections itself. The same shape as OnboardSilentLivenessLossTests (#256).
+        /// Neither <see cref="DbContext"/> nor <see cref="SqliteConnection"/> is thread-safe, and each server connection's
+        /// processor uses its own on the listener's threads, for every heartbeat as well. The database is a named
+        /// shared-cache in-memory one, kept alive by the rig's connection, so every connection sees the same rows;
+        /// SQLite serialises the connections itself. The same shape as OnboardSilentLivenessLossTests (#256).
         /// </remarks>
         public async Task<ControlServerDbContext> OpenReadContextAsync()
         {
@@ -442,7 +440,6 @@ public sealed class InboundContentConflictTests
                     await _server.StopAsync(CancellationToken.None);
                     _server.Dispose();
                     await _provider.DisposeAsync();
-                    await _context.DisposeAsync();
                     await _connection.DisposeAsync();
                     Environment.SetEnvironmentVariable(CredentialVariable, null);
                 }
