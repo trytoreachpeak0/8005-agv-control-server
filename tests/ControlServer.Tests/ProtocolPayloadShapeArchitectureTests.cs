@@ -62,13 +62,13 @@ public sealed class ProtocolPayloadShapeArchitectureTests
     /// newline, the file's own SHA-256 in lower hex, and a newline.
     /// </summary>
     private const string ApprovedSchemaTreeSha256 =
-        "36a3bcf691402241e54c011aba1cc9e37e4cbab5b3ac4b77494515e133ad1a14";
+        "d02df8fb5bfde01cf9ae8ec2387ce57b36197733a4dbcf4937d0702e4b060fac";
 
     [Fact]
     public void TheVendoredSchemaTreeIsTheProtocolSchemaTreeFileForFile()
     {
         Assert.Equal(ApprovedSchemaTreeSha256, SchemaTreeDigest());
-        Assert.Equal(73, SchemaFiles().Length);
+        Assert.Equal(75, SchemaFiles().Length);
     }
 
     /// <summary>

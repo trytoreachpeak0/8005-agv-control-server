@@ -14,11 +14,11 @@ namespace ControlServer.Domain;
 /// rather than each message against its schema.
 /// </para>
 /// <para>
-/// **This list and the identity beside it name the same candidate.** The 62 values below are
+/// **This list and the identity beside it name the same candidate.** The 65 values below are
 /// <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate manifest
-/// <c>dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa</c>
-/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, release <c>5.0.0</c>,
-/// <c>protocolVersion: 6</c>), and <see cref="ProtocolCandidateIdentity"/>
+/// <c>a52876be2ddcc9b8cdd1f1e3b7b7ddbe70d31a307f1d3f017d7a1eb95ffd77b1</c>
+/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, release <c>6.0.0</c>,
+/// <c>protocolVersion: 7</c>), and <see cref="ProtocolCandidateIdentity"/>
 /// names that same commit. The <c>2.0.0</c> candidate appended four:
 /// <c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c>, <c>SUBLOT_BOX_COUNT_UNAVAILABLE</c> and
 /// <c>PACKAGE_CAPACITY_UNRESOLVED</c> (<c>8005-agv-program#93</c>), and <c>OPERATOR_TIMEOUT</c>
@@ -29,7 +29,10 @@ namespace ControlServer.Domain;
 /// the code; none of the four is emitted yet, and <c>ONBOARD_FATAL_FAULT_LATCHED</c> in particular
 /// is one the vehicle reports and the server must never forgive as a departure-safety reason.
 /// The <c>4.0.0</c> candidate (<c>8005-agv-control-server#713</c>) appended none, and neither did the
-/// <c>5.0.0</c> candidate (<c>8005-agv-control-server#737</c>).
+/// <c>5.0.0</c> candidate (<c>8005-agv-control-server#737</c>). The <c>6.0.0</c> candidate
+/// (<c>8005-agv-control-server#830</c>, CP-0021) appended three: <c>REMAINING_BASKETS_SKIPPED</c> (a slot result
+/// reason the vehicle sends), <c>REMAINING_BASKETS_SKIP_NOTHING_LOADED</c> and <c>LOAD_CANCELLATION_BASKET_LOADED</c>
+/// (refusals the server sends).
 /// </para>
 /// <para>
 /// **Re-sync this list whenever the protocol's error surface moves**, which from here means either a
@@ -107,7 +110,10 @@ public static class ProtocolErrorCodes
         "SLOT_FAULT_DECLARED",
         "RECOVERY_ACTION_RESULT_NOT_RECONCILED",
         "ONBOARD_FATAL_FAULT_LATCHED",
-        "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY"
+        "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY",
+        "REMAINING_BASKETS_SKIPPED",
+        "REMAINING_BASKETS_SKIP_NOTHING_LOADED",
+        "LOAD_CANCELLATION_BASKET_LOADED"
     };
 
     public static bool Contains(string code) => Codes.Contains(code);

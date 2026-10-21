@@ -92,11 +92,11 @@ public sealed class ProtocolIdentityArchitectureTests
     }
 
     /// <summary>
-    /// The identity names the approved release, so a release candidate can be packaged over it.
+    /// The identity names an unreleased candidate, so no release candidate can be packaged over it.
     /// </summary>
     /// <remarks>
     /// <c>scripts/New-WireToGateReleaseCandidate.ps1</c> gates on <c>APPROVED_RELEASE</c> and this
-    /// is the other half of that gate. This test has now flipped nine times on purpose. It asserted
+    /// is the other half of that gate. This test has now flipped ten times on purpose. It asserted
     /// a candidate while the first v2 candidate was unreleased, asserted <c>APPROVED_RELEASE</c>
     /// from 2026-09-12 when <c>protocol-v1.0.0</c> was tagged and approved, asserted a candidate
     /// again from 2026-09-16 when the server moved to the unreleased <c>2.0.0</c> candidate
@@ -112,15 +112,16 @@ public sealed class ProtocolIdentityArchitectureTests
     /// on 2026-10-16 (<c>8005-agv-program#184</c>) and this identity was rebound to it, and asserts a candidate
     /// again since <c>8005-agv-control-server#737</c> moved to the unreleased <c>5.0.0</c> candidate, and asserts
     /// <c>APPROVED_RELEASE</c> again since <see cref="ProtocolCandidateIdentity.Tag"/> was released on 2026-10-18
-    /// (<c>8005-agv-control-server#767</c>) and this identity was flipped to it. Each flip is made deliberately because
+    /// (<c>8005-agv-control-server#767</c>) and this identity was flipped to it, and asserts a candidate again since
+    /// <c>8005-agv-control-server#830</c> moved to the unreleased <c>6.0.0</c> candidate. Each flip is made deliberately because
     /// no other test says what the status is: <c>TheShippedSettingsMirrorTheIdentityConstants</c>
     /// below compares the two copies to each other, so a stale value kept in both would ship
     /// silently.
     /// </remarks>
     [Fact]
-    public void ThisIdentityIsTheApprovedReleaseItNames()
+    public void ThisIdentityIsAnUnreleasedCandidate()
     {
-        Assert.Equal("APPROVED_RELEASE", ProtocolCandidateIdentity.ApprovalStatus);
+        Assert.Equal("SUPERSEDING_CANDIDATE", ProtocolCandidateIdentity.ApprovalStatus);
     }
 
     /// <summary>
