@@ -67,12 +67,26 @@ public sealed partial class JourneyRuntimeEngine
             "Order {UpperId} on {AgvId} was held for its doors and its latch was released on a person's confirmation; RIoT " +
             "now reports it executing although nobody continued it.");
 
-    private static readonly Action<ILogger, string, string, string, long?, long?, Exception?> LogDoorsNotProvenLocked =
-        LoggerMessage.Define<string, string, string, long?, long?>(
+    private static readonly Action<ILogger, string, string, string, long?, long?, string, Exception?> LogDoorsNotProvenLocked =
+        LoggerMessage.Define<string, string, string, long?, long?, string>(
             LogLevel.Warning,
             new EventId(2194, nameof(LogDoorsNotProvenLocked)),
             "Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety " +
-            "version {SafetyStateVersion}); handed to the fault model.");
+            "version {SafetyStateVersion}); handed to the fault model ({HandedBecause}).");
+
+    private static readonly Action<ILogger, string, string, double, long?, long?, Exception?> LogDoorUnknownGraceStarted =
+        LoggerMessage.Define<string, string, double, long?, long?>(
+            LogLevel.Warning,
+            new EventId(2321, nameof(LogDoorUnknownGraceStarted)),
+            "Vehicle {AgvId} is driving on order {UpperId} with a slot it cannot read (SLOT_STATE_UNKNOWN, generation " +
+            "{Generation}, safety version {SafetyStateVersion}); graced for {GraceSeconds} s before its doors count as not " +
+            "proven locked (CP-0017). Nothing is commanded.");
+
+    private static readonly Action<ILogger, string, double, Exception?> LogDoorUnknownGraceEnded =
+        LoggerMessage.Define<string, double>(
+            LogLevel.Warning,
+            new EventId(2322, nameof(LogDoorUnknownGraceEnded)),
+            "Vehicle {AgvId}: the door reading came back locked after {UnreadSeconds} s unread; the grace ended without a fault.");
 
     private async Task<bool> ObserveDoorsInTransitAsync(
         JourneyRuntimeRow runtime,
@@ -98,23 +112,38 @@ public sealed partial class JourneyRuntimeEngine
                 cancellationToken)
             .ConfigureAwait(false);
         // Only what a live onboard reports raises the symptom; a vehicle not heard from stays with control-server#234's code
-        // (see InTransitDoorVerdict.ReportedNotLocked). A fault already raised is still driven every round, silent or not.
-        if (!doors.ReportedNotLocked && !doorFaultInEffect)
+        // (see InTransitDoorVerdict.ReadUnknown). A slot that cannot be read is graced first (CP-0017): no fault, no command,
+        // an alarm. A fault already raised is still driven every round, silent or not.
+        InTransitDoorReading reading = _doorReadings.Observe(runtime.AgvId, doors, doorFaultInEffect, now);
+        if (reading.GraceEndedAfter is TimeSpan unread)
+        {
+            LogDoorUnknownGraceEnded(logger, runtime.AgvId, unread.TotalSeconds, null);
+        }
+
+        if (reading.GraceStarted)
+        {
+            LogDoorUnknownGraceStarted(
+                logger, runtime.AgvId, intent.UpperId, _doorReadings.Grace.TotalSeconds, doors.Generation,
+                doors.SafetyStateVersion, null);
+        }
+
+        if (reading.Action != InTransitDoorAction.HandToFault)
         {
             return false;
         }
 
-        if (doors.ReportedNotLocked)
+        if (reading.HandedBecause is string handedBecause)
         {
             LogDoorsNotProvenLocked(
-                logger, runtime.AgvId, intent.UpperId, doors.State.ToString(), doors.Generation, doors.SafetyStateVersion, null);
+                logger, runtime.AgvId, intent.UpperId, doors.State.ToString(), doors.Generation, doors.SafetyStateVersion,
+                handedBecause, null);
         }
 
         // Doors not proven locked again take away the exemption a person's release gave (REQ-0246; see
         // FaultedVehicleContext.DoorsNotProvenLocked). Reading locked again releases nothing (CP-0011).
         FaultedVehicleContext inFlight = await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken)
             .ConfigureAwait(false);
-        FaultedVehicleContext context = inFlight with { DoorsNotProvenLocked = doors.State != InTransitDoorState.ProvenLocked };
+        FaultedVehicleContext context = inFlight with { DoorsNotProvenLocked = reading.DoorsNotProvenLocked };
         VehicleFaultDecision decision = await faults.ObserveAsync(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
             VehicleFaultEvidence.DoorNotProvenLocked,

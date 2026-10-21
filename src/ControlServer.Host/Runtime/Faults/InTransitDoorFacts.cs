@@ -26,28 +26,43 @@ public enum InTransitDoorState
 }
 
 /// <summary>The verdict, and which message it rests on, for the log.</summary>
+/// <param name="ReceivedAt">
+/// When this server received the summary the verdict rests on; null when there is none. CP-0017 counts a slot's grace from
+/// the moment this server received the unknown, not from the vehicle's own clock (control-server#789).
+/// </param>
 public sealed record InTransitDoorVerdict(
     InTransitDoorState State,
     long? Generation,
-    long? SafetyStateVersion)
+    long? SafetyStateVersion,
+    DateTimeOffset? ReceivedAt = null)
 {
     /// <summary>REQ-0246's "仓门未能证明安全锁闭": every state but a fresh, known, locked one (issue 70, answer 2).</summary>
     public bool NotProvenLocked => State != InTransitDoorState.ProvenLocked;
 
     /// <summary>
-    /// The part of <see cref="NotProvenLocked"/> this server acts on today: what a live onboard itself reports -- a door not
-    /// locked, or a slot it cannot read.
+    /// A live onboard read a door not locked: the one reading CP-0017 never graces and that keeps a door-cause stop with a
+    /// person (control-server#789).
     /// </summary>
+    public bool ReadNotLocked => State == InTransitDoorState.NotLocked;
+
+    /// <summary>A live onboard reports a slot it cannot read (<c>SLOT_STATE_UNKNOWN</c>): graced for a while (CP-0017).</summary>
     /// <remarks>
-    /// <see cref="InTransitDoorState.Stale"/> and <see cref="InTransitDoorState.Unobserved"/> are left out on purpose. Both mean
-    /// the vehicle has not been heard from, and what the server does about a vehicle it cannot hear while it drives is the
-    /// conflict between REQ-0287 (a lost session only blocks new work and alarms) and ADR-cross-0026 (hold the order) that the
-    /// user put off to batch 9 on 2026-09-20; until then a silent session is named <c>ONBOARD_SESSION_LOST</c> and nothing is
-    /// commanded (control-server#234, <c>OnboardSessionLostBlockTests</c>). REQ-0246's source decision counts "unknown" as not
-    /// proven locked too, so this is a gap in REQ-0246 held open by that decision, not a reading of it (control-server#335,
-    /// option X as proposed to the coordinator; the PR records whether it was confirmed). Batch 9 decides the three together.
+    /// <para>
+    /// These two are what this server acts on of <see cref="NotProvenLocked"/>, and until control-server#789 they were one
+    /// property. <see cref="InTransitDoorState.Stale"/> and <see cref="InTransitDoorState.Unobserved"/> are left out of both
+    /// on purpose. Both mean the vehicle has not been heard from, and what the server does about a vehicle it cannot hear
+    /// while it drives is the conflict between REQ-0287 (a lost session only blocks new work and alarms) and ADR-cross-0026
+    /// (hold the order) that the user put off to batch 9 on 2026-09-20; until then a silent session is named
+    /// <c>ONBOARD_SESSION_LOST</c> and nothing is commanded (control-server#234, <c>OnboardSessionLostBlockTests</c>).
+    /// </para>
+    /// <para>
+    /// A summary that names an unknown slot is read as unknown whatever else it says: the summary carries one
+    /// <c>allTargetSlotsLocked</c> for all eight doors, and a real onboard sets it false together with
+    /// <c>LOCK_NOT_CLOSED</c> whenever a slot cannot be read (measured, control-server#335). Another door open at the same
+    /// moment cannot be told apart; CP-0017 section 3.4 accepts that as the protocol's boundary.
+    /// </para>
     /// </remarks>
-    public bool ReportedNotLocked => State is InTransitDoorState.NotLocked or InTransitDoorState.SlotStateUnknown;
+    public bool ReadUnknown => State == InTransitDoorState.SlotStateUnknown;
 }
 
 /// <summary>
@@ -157,13 +172,13 @@ public static class InTransitDoorFacts
 
         if (!await SessionLiveness.HeardFromAsync(dbContext, agvId, fact.Generation, now, cancellationToken).ConfigureAwait(false))
         {
-            return new InTransitDoorVerdict(InTransitDoorState.Stale, fact.Generation, fact.Version);
+            return new InTransitDoorVerdict(InTransitDoorState.Stale, fact.Generation, fact.Version, fact.ReceivedAt);
         }
 
         InTransitDoorState state = fact.SlotStateUnknown
             ? InTransitDoorState.SlotStateUnknown
             : fact.AllTargetSlotsLocked ? InTransitDoorState.ProvenLocked : InTransitDoorState.NotLocked;
-        return new InTransitDoorVerdict(state, fact.Generation, fact.Version);
+        return new InTransitDoorVerdict(state, fact.Generation, fact.Version, fact.ReceivedAt);
     }
 
     /// <summary>Ordered by generation, then by the vehicle's own version; never by receive time.</summary>
@@ -192,8 +207,10 @@ public static class InTransitDoorFacts
             generation.GetInt64(),
             payload.GetProperty("safetyStateVersion").GetInt64(),
             safety.GetProperty("allTargetSlotsLocked").GetBoolean(),
-            slotStateUnknown);
+            slotStateUnknown,
+            row.ReceivedAt);
     }
 
-    private sealed record Summary(long Generation, long Version, bool AllTargetSlotsLocked, bool SlotStateUnknown);
+    private sealed record Summary(
+        long Generation, long Version, bool AllTargetSlotsLocked, bool SlotStateUnknown, DateTimeOffset ReceivedAt);
 }

@@ -48,7 +48,7 @@ public sealed class InTransitDoorLockFaultTests
 
     /// <summary>
     /// 行驶中车载端报门没锁（<c>LOCK_NOT_CLOSED</c>），或报仓位状态未知（<c>SLOT_STATE_UNKNOWN</c>，IO 失联时的样子，真装置实测
-    /// 同时带 <c>allTargetSlotsLocked=false</c>）。会话在闸门两侧各跑一遍：真车载端在途时未就绪（闸门后），合成车载端就绪（闸门前）。
+    /// 同时带 <c>allTargetSlotsLocked=false</c>；CP-0017 起先宽限 3 秒，见 <see cref="InTransitDoorUnknownGraceTests"/>）。会话在闸门两侧各跑一遍：真车载端在途时未就绪（闸门后），合成车载端就绪（闸门前）。
     /// 取货段空车、关卡段有货各一遍；有货时货要与需求绑住（REQ-0238）。
     /// </summary>
     [Theory]
@@ -85,6 +85,10 @@ public sealed class InTransitDoorLockFaultTests
                 unknownPresent: true,
                 ["SLOT_STATE_UNKNOWN", "LOCK_NOT_CLOSED", "UNLOCK_OUTPUT_NOT_RESET", "ACTION_NOT_ALLOWED_IN_STATE"],
                 allUnlockOutputsReset: false);
+            // CP-0017 (control-server#789): a slot that cannot be read is graced for 3 s from its receipt first.
+            await DriveOneRoundAsync(fixture);
+            await DriveOneRoundAsync(fixture);
+            await AssertNothingRaisedAsync(fixture);
         }
         await DriveOneRoundAsync(fixture);
 

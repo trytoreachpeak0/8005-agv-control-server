@@ -57,8 +57,14 @@ public sealed partial class JourneyRuntimeEngine(
     RiotOrderCommandService? orderCommands = null,
     IdleReturn.IdleReturnMaterializationFailures? idleReturnMaterializationFailures = null,
     Charging.StationClearanceExit? clearanceExit = null,
-    StagingDepartureWarnings? stagingDepartureWarnings = null)
+    StagingDepartureWarnings? stagingDepartureWarnings = null,
+    InTransitDoorReadings? doorReadings = null)
 {
+    // control-server#789: the door grace and the door fault's sub-cause outlive the per-round engine (a singleton in the host,
+    // which the worker also reads to wake when a grace runs out); an engine built without it keeps its own.
+    private readonly InTransitDoorReadings _doorReadings = doorReadings ??
+        new InTransitDoorReadings(Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
+
     // control-server#713 review L2: which journeys have already been warned about, outliving the per-round engine (a singleton
     // in the host); an engine built without it keeps its own.
     private readonly StagingDepartureWarnings _stagingDepartureWarnings = stagingDepartureWarnings ?? new StagingDepartureWarnings();
