@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
+index b909c8958..0d4562ab9 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
+@@ -100,7 +100,7 @@ public sealed partial class JourneyRuntimeEngine
+     {
+         DateTimeOffset start = faultEnteredAt is DateTimeOffset entered && orderCreatedAt > entered
+             ? entered - InTransitDoorFacts.UnknownRunLookBack
+-            : orderCreatedAt;
++            : faultEnteredAt ?? orderCreatedAt;
+         foreach (DateTimeOffset bound in new[] { faultEnteredAt, episodeStartedAt }.OfType<DateTimeOffset>())
+         {
+             if (bound < start)

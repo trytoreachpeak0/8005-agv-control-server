@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs b/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
+index 330720d18..4fcc2a8b1 100644
+--- a/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
++++ b/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
+@@ -380,7 +380,7 @@ public static class InTransitDoorFacts
+             }
+         }
+ 
+-        return false;
++        return true;
+     }
+ 
+     private static InTransitDoorState StateOf(Summary summary) =>

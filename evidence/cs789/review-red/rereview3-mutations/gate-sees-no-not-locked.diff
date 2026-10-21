@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs b/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
+index 330720d18..f944dd4d2 100644
+--- a/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
++++ b/src/ControlServer.Host/Runtime/Faults/InTransitDoorFacts.cs
+@@ -369,7 +369,7 @@ public static class InTransitDoorFacts
+                 continue;
+             }
+ 
+-            if (StateOf(summary) == InTransitDoorState.NotLocked)
++            if (StateOf(summary) == InTransitDoorState.Stale)
+             {
+                 return false;
+             }
