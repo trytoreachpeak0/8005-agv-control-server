@@ -7,6 +7,7 @@ using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
@@ -191,6 +192,59 @@ public sealed class CatalogAgeWindowTests
         await fixture.Engine.ExecuteOnceAsync(Token);
 
         Assert.Equal([Reissued], await AcceptedAsync(fixture));
+    }
+
+    /// <summary>
+    /// 宿主经依赖注入装链，不经 <see cref="DispatchAdmissionCriteria.Default"/>：整轮夹具用的是后者，漏注册时它们照样绿（审查 M1）。
+    /// 漏注册的宿主开轮不挡，超窗的需求会走到站点解析（60）及以后，可能立结构性阻断、挂人工搬运，违反条文。
+    /// </summary>
+    [Fact]
+    public void TheHostRegistersTheCriterion()
+    {
+        ServiceCollection services = new();
+        services.AddDispatchAdmission();
+
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IDispatchAdmissionCriterion)
+            && descriptor.ImplementationType == typeof(CatalogAgeWindowCriterion));
+    }
+
+    /// <summary>
+    /// 在途追加这条路也在受理前重读目录之后再判（审查 L1）：开轮时 9 分钟、判据放行、车决定追加；受理前重读那一刻钟走到 34 分钟，
+    /// 放弃这次追加——旅程仍只挂第一条需求，积压行写时间窗的码。先断言重读那一刻确实到过。
+    /// </summary>
+    /// <remarks>
+    /// 车队裁成一辆、本区允许途中追加，照 <c>AnInTransitVehicleTakesAnAppendedDemandIntoItsExistingJourney</c>：不拨钟时这条需求会被追加进去。
+    /// <c>OnReread</c> 按目录的总读次数触发，第二轮开轮那一读也算「重读」，所以第一次触发时再挂一次，落在第二轮受理前那一读上。
+    /// </remarks>
+    [Fact]
+    public async Task AnEnRouteAppendIsJudgedAgainWhenIntakeRereadsTheCatalog()
+    {
+        await using MultiVehicleExecutionTests.FleetFixture fleet = await MultiVehicleExecutionTests.FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fleet.AllowEnRouteAppendAsync(1_000_000);
+        AcceptedDemandSnapshot first = MultiVehicleExecutionTests.FleetFixture.Demand(0, "N1-1", 0);
+        fleet.Catalog.Set([first]);
+        await fleet.RunRoundAsync();
+        JourneyRuntimeRow journey = Assert.Single(await fleet.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token));
+
+        AcceptedDemandSnapshot appended = MultiVehicleExecutionTests.FleetFixture.Demand(1, "N1-2", 1);
+        fleet.Catalog.Set([first, appended]);
+        bool intakeReread = false;
+        fleet.Catalog.OnReread = () => fleet.Catalog.OnReread = () =>
+        {
+            intakeReread = true;
+            fleet.Clock.Advance(TimeSpan.FromMinutes(25));
+        };
+        await fleet.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(intakeReread, "the round never reached intake's re-read of the catalog");
+        Assert.Equal(journey.JourneyId, Assert.Single(await fleet.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token)).JourneyId);
+        Assert.Equal(
+            [first.DemandId],
+            await fleet.Context.Set<JourneyDemandRow>().AsNoTracking().Select(row => row.DemandId).ToArrayAsync(Token));
+        Assert.Equal(
+            DispatchReasonCodes.DemandOlderThanCatalogWindow,
+            (await fleet.Context.JourneyBacklog.AsNoTracking().SingleAsync(row => row.DemandId == appended.DemandId, Token)).ReasonCode);
     }
 
     /// <summary>
@@ -393,11 +447,14 @@ public sealed class CatalogAgeWindowTests
 
     // ---- 配置 ------------------------------------------------------------------------------------------------
 
-    /// <summary>默认 30 分钟、必须为正（0 与负数拒绝），出厂配置写明这一项。</summary>
+    /// <summary>
+    /// 默认 30 分钟、必须为正（0 与负数拒绝）、至多 24 小时，出厂配置写明这一项。上限挡的是 <c>"30"</c> 这种写法：
+    /// .NET 把它绑定成 30 天，时间窗等于没有（审查 L4）。
+    /// </summary>
     [Fact]
-    public void TheWindowDefaultsToThirtyMinutesMustBePositiveAndIsShippedInAppSettings()
+    public void TheWindowDefaultsToThirtyMinutesMustBePositiveAtMostADayAndIsShippedInAppSettings()
     {
-        const string failure = "CatalogAgeWindow must be positive.";
+        const string failure = "CatalogAgeWindow must be positive and at most 24 hours.";
         Assert.Equal(TimeSpan.FromMinutes(30), new JourneyRuntimeOptions().CatalogAgeWindow);
         JourneyRuntimeOptionsValidator validator = new(new ConfigurationBuilder().Build());
         JourneyRuntimeOptions options = JourneyRuntimeOptionsTests.ValidEnabledOptions();
@@ -406,7 +463,12 @@ public sealed class CatalogAgeWindowTests
             options.CatalogAgeWindow = accepted;
             Assert.DoesNotContain(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
         }
-        foreach (TimeSpan refused in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(-1) })
+        TimeSpan thirtyAsWritten = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["JourneyRuntime:catalogAgeWindow"] = "30" })
+            .Build()
+            .GetSection("JourneyRuntime").Get<JourneyRuntimeOptions>()!.CatalogAgeWindow;
+        Assert.Equal(TimeSpan.FromDays(30), thirtyAsWritten);
+        foreach (TimeSpan refused in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(-1), TimeSpan.FromHours(24) + TimeSpan.FromSeconds(1), thirtyAsWritten })
         {
             options.CatalogAgeWindow = refused;
             Assert.Contains(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);

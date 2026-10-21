@@ -71,7 +71,7 @@ public sealed class JourneyRuntimeOptions
 
     /// <summary>
     /// The catalog age window (REQ-0366, CP-0020, control-server#827): an unaccepted demand is dispatched only while MesIngest
-    /// first read it no longer ago than this. One value for every task type; always positive.
+    /// first read it no longer ago than this. One value for every task type; positive and at most 24 hours.
     /// </summary>
     /// <remarks>
     /// A commissioning value: thirty minutes by default, any other value only once the user approves it. Measured from the
@@ -418,7 +418,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             failures.Add("SameStationAppendCorrectionGrace must not be negative.");
         }
         if (options.CargoHoldingTimeout <= TimeSpan.Zero) failures.Add("CargoHoldingTimeout must be positive.");
-        if (options.CatalogAgeWindow <= TimeSpan.Zero) failures.Add("CatalogAgeWindow must be positive.");
+        // control-server#827 review L4: the ceiling catches "30" in appsettings, which binds as thirty days.
+        if (options.CatalogAgeWindow <= TimeSpan.Zero || options.CatalogAgeWindow > TimeSpan.FromHours(24))
+        {
+            failures.Add("CatalogAgeWindow must be positive and at most 24 hours.");
+        }
         if (options.StationTimeoutRedispatchLimit < 0) failures.Add("StationTimeoutRedispatchLimit must not be negative.");
         if (options.MaximumJourneyStops < Dispatch.EnRouteAppendPlanner.MaximumLegs)
         {
