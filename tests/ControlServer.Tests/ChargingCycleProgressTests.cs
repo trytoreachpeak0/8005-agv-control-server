@@ -597,7 +597,10 @@ public sealed class ChargingCycleProgressTests
 
         fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
         {
-            CurrentStationId = ChargerOccupancyReader.NoStation, BatteryState = NotCharging, Speed = 300, ProcState = "RUNNING",
+            CurrentStationId = ChargerOccupancyReader.NoStation,
+            BatteryState = NotCharging,
+            Speed = 300,
+            ProcState = "RUNNING",
         };
         for (int round = 0; round < 4; round++)
         {
@@ -634,7 +637,10 @@ public sealed class ChargingCycleProgressTests
 
         fleet.Riot.VehicleOverrides[KeyB] = seen => seen with
         {
-            CurrentStationId = ChargerOccupancyReader.NoStation, BatteryState = NotCharging, Speed = 300, ProcState = "RUNNING",
+            CurrentStationId = ChargerOccupancyReader.NoStation,
+            BatteryState = NotCharging,
+            Speed = 300,
+            ProcState = "RUNNING",
         };
         fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12, BatteryState = NotCharging };
         await RoundAsync(fleet);
