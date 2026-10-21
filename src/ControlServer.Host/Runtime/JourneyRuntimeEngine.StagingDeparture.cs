@@ -109,6 +109,7 @@ public sealed partial class JourneyRuntimeEngine
     {
         string resultId = CurrentStopDepartures.ResultMessageId(request.DepartureRequestId);
         StagingDepartureEffect? effect = null;
+        string? loadingPhaseMessageId = null;
         WireProblem? problem;
         int loadedBaskets;
         int released = 0;
@@ -145,7 +146,7 @@ public sealed partial class JourneyRuntimeEngine
                 cancellationToken).ConfigureAwait(false);
             if (problem is null)
             {
-                (effect, released) = IsStagingPickup(locked.Current)
+                (effect, released, loadingPhaseMessageId) = IsStagingPickup(locked.Current)
                     ? await StageStagingDepartureAsync(
                         runtime,
                         locked,
@@ -166,7 +167,7 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         await SendStoredAsync(resultId, cancellationToken).ConfigureAwait(false);
-        await SendStagingDepartureAsync(runtime, effect, cancellationToken).ConfigureAwait(false);
+        await SendStagingDepartureAsync(runtime, effect, loadingPhaseMessageId, cancellationToken).ConfigureAwait(false);
         LogDepartureAnswered(
             logger, request.DepartureRequestId, request.OperatorId, runtime.AgvId,
             problem is null ? "ACCEPTED" : $"REJECTED ({problem.ReasonCode})", loadedBaskets, released, null);
@@ -213,6 +214,7 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         StagingDepartureEffect effect;
+        string? loadingPhaseMessageId;
         await using (IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
                          ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
                          : null)
@@ -240,7 +242,7 @@ public sealed partial class JourneyRuntimeEngine
                 }
                 return false;
             }
-            (effect, _) = await StageStagingDepartureAsync(
+            (effect, _, loadingPhaseMessageId) = await StageStagingDepartureAsync(
                 runtime,
                 locked,
                 session,
@@ -257,15 +259,16 @@ public sealed partial class JourneyRuntimeEngine
             LogStagingLowBatteryDepartsWithCargo(
                 logger, runtime.AgvId, LoadedBaskets(locked), battery.Percent, battery.EntryThreshold, null);
         }
-        await SendStagingDepartureAsync(runtime, effect, cancellationToken).ConfigureAwait(false);
+        await SendStagingDepartureAsync(runtime, effect, loadingPhaseMessageId, cancellationToken).ConfigureAwait(false);
         return true;
     }
 
     /// <summary>
     /// 出发与缺电共用的那一次改动（只暂存，调用方保存）：一篮没装就全部放回、旅程原地收尾；否则放回待送点上没开始装的、关闭装货阶段、
-    /// 暂存那张业务状态快照与（本站因此空了时）那张空清单。返回落下的是哪一种，和放回了几条。
+    /// 暂存那张业务状态快照与（本站因此空了时）那张空清单。返回落下的是哪一种、放回了几条，和这一次暂存的装货阶段快照的 messageId
+    /// （没有暂存为空，见下面 <c>VEHICLE_FULL</c> 那一支）。
     /// </summary>
-    private async Task<(StagingDepartureEffect Effect, int Released)> StageStagingDepartureAsync(
+    private async Task<(StagingDepartureEffect Effect, int Released, string? LoadingPhaseMessageId)> StageStagingDepartureAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor locked,
         SessionRecoveryRow session,
@@ -312,7 +315,7 @@ public sealed partial class JourneyRuntimeEngine
             // 车停在这一站、不修订计划，三套占用一起放；车上收尾快照的 stopEndedReason 是 OPERATOR_DEPARTED / CHARGING_REQUIRED，loadingPhase 为空。
             await new PickupStopTermination(dbContext).StageJourneyClosureAsync(
                 runtime, sublotRequestMessageId, stopReason, at, cancellationToken).ConfigureAwait(false);
-            return (StagingDepartureEffect.JourneyClosed, leavingIds.Length);
+            return (StagingDepartureEffect.JourneyClosed, leavingIds.Length, null);
         }
 
         if (leavingIds.Length > 0)
@@ -324,25 +327,27 @@ public sealed partial class JourneyRuntimeEngine
 
         // 已经判为装满该走（VEHICLE_FULL，比如被门禁扣在离站等待里）：照样接受、照样放回没开始装的，但不改判关闭原因、不重发业务快照——
         // 与缺电那一支「不改判」同一个口径（独立审查 L3）。车本来就要走，装满是更早、更具体的那个理由。
-        if (runtime.LoadingPhaseState != LoadingPhaseStates.VehicleFull)
-        {
-            await StageLoadingPhaseClosedAsync(runtime, locked, session, holdingApplicable, closedReason, at, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        // 车上已有那张 VEHICLE_FULL，这一次没有要发的装货阶段快照（control-server#780）：判满的那一张可能在别的停靠、或按「还在路上」算的号，
+        // 按当前停靠与当前基准重算出来的 id 在发件箱里没有那一行。离站那一轮由 ReconcileLoadingPhaseAsync 发 CLOSED / VEHICLE_FULL。
+        string? loadingPhaseMessageId = runtime.LoadingPhaseState != LoadingPhaseStates.VehicleFull
+            ? await StageLoadingPhaseClosedAsync(runtime, locked, session, holdingApplicable, closedReason, at, cancellationToken)
+                .ConfigureAwait(false)
+            : null;
 
         // 本站因此没有待做项了：空清单说出发或缺电（wire-notes 第 4 条）。本站本来就装完了（持货等单）时不再补一张：车上手里那张清单照旧，
         // 离站由业务状态快照与离站核验表达（CP-0012 第三节第 5 条由本票定，见 PR）。
         await StopEndWorklist.StageAfterReleaseAsync(
             dbContext, runtime, releasedFromCurrentStop > 0, sublotRequestMessageId, stopReason, at.AddMilliseconds(1),
             cancellationToken).ConfigureAwait(false);
-        return (StagingDepartureEffect.Departing, leavingIds.Length);
+        return (StagingDepartureEffect.Departing, leavingIds.Length, loadingPhaseMessageId);
     }
 
     /// <summary>
     /// 装货阶段以 <paramref name="closedReason"/> 关闭，业务状态快照与它同一次改动（<c>PublishLoadingPhaseAsync</c> 的号与退役，只是暂存而不发）。
     /// 车停在这个停靠上，按「已到站」算号。待送点的出发与缺电、机台取货装货阶段还开着时的出发（control-server#725）共用。
+    /// 返回暂存的那一行的 messageId：保存之后发的就是它，不再按停靠与基准重算（control-server#780）。
     /// </summary>
-    private async Task StageLoadingPhaseClosedAsync(
+    private async Task<string> StageLoadingPhaseClosedAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor locked,
         SessionRecoveryRow session,
@@ -359,14 +364,16 @@ public sealed partial class JourneyRuntimeEngine
         long revision = StopRevision(runtime.VehicleBusinessRevision, current);
         await FenceSupersededSnapshotAsync(current.VehicleBusinessMessageId, cancellationToken).ConfigureAwait(false);
         await FenceSupersededSnapshotAsync(LoadingPhaseMessageId(current, revision - 1), cancellationToken).ConfigureAwait(false);
+        string messageId = LoadingPhaseMessageId(current, revision);
         await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
             new WireToGateStore(dbContext),
-            LoadingPhaseMessageId(current, revision),
+            messageId,
             runtime.AgvId,
             session.SessionGeneration,
             TransportBusinessState(revision, CurrentLoadingPhase(runtime, holdingApplicable, locked), PublishedBatteryState(runtime)),
             at,
             cancellationToken).ConfigureAwait(false);
+        return messageId;
     }
 
     /// <summary>
@@ -387,7 +394,7 @@ public sealed partial class JourneyRuntimeEngine
     /// <c>PLANNED_LOADING_COMPLETE</c>，车上看到的还是最后那张 <c>LOADING</c>（wire-notes 出发一节第 1 条），同样不碰。
     /// </para>
     /// </remarks>
-    private async Task<(StagingDepartureEffect Effect, int Released)> StageMachineDepartureAsync(
+    private async Task<(StagingDepartureEffect Effect, int Released, string? LoadingPhaseMessageId)> StageMachineDepartureAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor locked,
         SessionRecoveryRow session,
@@ -399,10 +406,10 @@ public sealed partial class JourneyRuntimeEngine
         if (!holdingApplicable ||
             runtime.LoadingPhaseState is not (null or LoadingPhaseStates.Loading or LoadingPhaseStates.CargoHoldingWait))
         {
-            return (StagingDepartureEffect.StationWaitEnded, 0);
+            return (StagingDepartureEffect.StationWaitEnded, 0, null);
         }
 
-        await StageLoadingPhaseClosedAsync(
+        string loadingPhaseMessageId = await StageLoadingPhaseClosedAsync(
             runtime, locked, session, holdingApplicable, LoadingClosedReasons.OperatorDeparted, at, cancellationToken).ConfigureAwait(false);
         string[] released = await StageCargoHoldingTruncationAsync(
             runtime, CurrentStopDepartures.OperatorDepartedReason, at, cancellationToken).ConfigureAwait(false) ?? [];
@@ -411,7 +418,7 @@ public sealed partial class JourneyRuntimeEngine
             LogDepartureReleasedDemand(logger, demandId, runtime.AgvId, CurrentStopDepartures.OperatorDepartedReason, null);
         }
         return (runtime.Stage == JourneyRuntimeStage.Completed ? StagingDepartureEffect.JourneyClosed : StagingDepartureEffect.Departing,
-            released.Length);
+            released.Length, loadingPhaseMessageId);
     }
 
     /// <summary>
@@ -653,10 +660,14 @@ public sealed partial class JourneyRuntimeEngine
             .Where(item => item.Membership.Status is JourneyDemandStatuses.Loaded or JourneyDemandStatuses.Loading)
             .Sum(item => item.Membership.ExpectedBasketCount);
 
-    /// <summary>保存之后发：出发的空清单与业务状态快照，或收尾的三张快照。送不到时留在发件箱，由补发送出。</summary>
+    /// <summary>
+    /// 保存之后发：出发的空清单与业务状态快照，或收尾的三张快照。送不到时留在发件箱，由补发送出。业务状态快照只发
+    /// <paramref name="loadingPhaseMessageId"/> 那一行——暂存那一步交出来的 id，没有暂存就不发（control-server#780）。
+    /// </summary>
     private async Task SendStagingDepartureAsync(
         JourneyRuntimeRow runtime,
         StagingDepartureEffect? effect,
+        string? loadingPhaseMessageId,
         CancellationToken cancellationToken)
     {
         switch (effect)
@@ -669,11 +680,10 @@ public sealed partial class JourneyRuntimeEngine
                 // 只结束站点离站等待：没有暂存的快照，离站核验由本轮下面的离站等待那一支发。
                 break;
             case StagingDepartureEffect.Departing:
-                JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
-                JourneyStopRow current = stops.Current;
-                await SendStoredAsync(
-                        LoadingPhaseMessageId(current, StopRevision(runtime.VehicleBusinessRevision, current)), cancellationToken)
-                    .ConfigureAwait(false);
+                if (loadingPhaseMessageId is not null)
+                {
+                    await SendStoredAsync(loadingPhaseMessageId, cancellationToken).ConfigureAwait(false);
+                }
                 await StopEndWorklist.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
                 break;
         }
