@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-slot-fault-declaration",
+  "runId": "20261021T124955643Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "expectedActionOverdueThreshold": "00:00:20",
+    "onboardHmiCommit": "968d213707786dea63ccbdf12421aad42e9857e4",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "72180e86c0d7eeadd7256d04af935d3141e80296",
+    "batchId": "unspecified",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "rig": "RealOnboard",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\actions-runner\\vmwin01-control-server-desktop\\_work\\_temp\\real-rig-39601806455-1\\_stage\\l2-20261021T124955643Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-RSFD-01",
+      "description": "判定被受理并已下发到车：202、PENDING、sentToVehicle，demandId 与尝试是这次装货的",
+      "outcome": "PASS",
+      "expected": "202 / PENDING / True / dbe85764-f258-4c4a-84e1-5b81bb82010b / df12b7c3-f3c1-5d53-bb55-676c835e446d",
+      "actual": "202 / PENDING / True / dbe85764-f258-4c4a-84e1-5b81bb82010b / df12b7c3-f3c1-5d53-bb55-676c835e446d"
+    },
+    {
+      "id": "L2-RSFD-02",
+      "description": "线上 SlotFaultDeclarationResult：APPLIED、同一个尝试、problem 为空，服务端 DurableAck",
+      "outcome": "PASS",
+      "expected": "APPLIED / df12b7c3-f3c1-5d53-bb55-676c835e446d / problem null / DurableAck",
+      "actual": "APPLIED / df12b7c3-f3c1-5d53-bb55-676c835e446d / problem null / DurableAck"
+    },
+    {
+      "id": "L2-RSFD-03",
+      "description": "OperationResult：overallOutcome UNKNOWN；1 号仓 UNKNOWN 且 reasonCodes 含 SLOT_FAULT_DECLARED；其余目标仓 NOT_STARTED",
+      "outcome": "PASS",
+      "expected": "UNKNOWN / slot 1 UNKNOWN [SLOT_FAULT_DECLARED] / 其余 NOT_STARTED",
+      "actual": "UNKNOWN / {\"demandId\":\"dbe85764-f258-4c4a-84e1-5b81bb82010b\",\"slotOperationAttemptId\":\"df12b7c3-f3c1-5d53-bb55-676c835e446d\",\"operationType\":\"LOAD\",\"overallOutcome\":\"UNKNOWN\",\"slotResults\":[{\"slotNo\":1,\"outcome\":\"UNKNOWN\",\"finalPhysicalState\":\"EMPTY\",\"lockState\":\"UNLOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[\"SLOT_FAULT_DECLARED\"]}],\"observedAt\":\"2026-10-21T20:50:27.9103534+08:00\",\"journalCheckpoint\":\"ACTIVE_UNLOCK_SET\",\"resultContentSha256\":\"aa661329271caa2b3ef07e9ca375b9f451278f07226df5c53193036e6d97b1f9\"}"
+    },
+    {
+      "id": "L2-RSFD-04",
+      "description": "旅程转 Blocked，原因 LOAD_RESULT_REQUIRES_RECOVERY",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-RSFD-05",
+      "description": "装货仓位操作 RecoveryRequired（既有 UNKNOWN 结算）",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired",
+      "actual": "RecoveryRequired"
+    },
+    {
+      "id": "L2-RSFD-06",
+      "description": "判定记录 APPLIED，审计带判定时车载端最近上报的读数与观测时刻",
+      "outcome": "PASS",
+      "expected": "APPLIED / slot 1 / df12b7c3-f3c1-5d53-bb55-676c835e446d / readings with observedAt",
+      "actual": "APPLIED / slot 1 / df12b7c3-f3c1-5d53-bb55-676c835e446d / {\"observedAt\":\"2026-10-21T12:50:27.6822436+00:00\",\"safetyStateVersion\":6,\"lockState\":\"UNLOCKED\",\"physicalState\":\"EMPTY\",\"unlockOutputState\":\"RESET\",\"changedSinceObserved\":false}"
+    },
+    {
+      "id": "L2-RSFD-07",
+      "description": "判定之后零开锁：空关后屏上不给「重新开门」，或给了、按下被拒或这一仓不开锁；门一直关着、锁扣上，这次装货的 UNLOCKING 进度条数与判定前相同",
+      "outcome": "PASS",
+      "expected": "不给重新开门，或按下不开 / 门一直 CLOSED/*/1/0 / UNLOCKING 1",
+      "actual": "空关后 10 秒屏上没有「重新开门」 / 空关后 +0s CLOSED/EMPTY/1/0 / CLOSED/EMPTY/1/0 / UNLOCKING 1（窗口内最多 1）"
+    }
+  ]
+}

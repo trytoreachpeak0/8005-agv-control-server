@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-load-door-closed-empty-reopens",
+  "runId": "20261021T060638472Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "RealOnboard",
+    "controlServerCommit": "24e7f55dd26c916b882de5250a731c5cf21c544e",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\actions-runner\\vmwin01-control-server-desktop\\_work\\_temp\\real-rig-39552278803-1\\_stage\\l2-20261021T060638472Z",
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "2f2ef458a47b369466c1879dd74bcc2ec9b818b1",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "L2-DC-01",
+      "description": "车载端说在等操作员时，1 号仓门确实开着、空着、开锁输出已复位",
+      "outcome": "PASS",
+      "expected": "OPEN/EMPTY/0/0",
+      "actual": "OPEN/EMPTY/0/0"
+    },
+    {
+      "id": "L2-DC-02",
+      "description": "期限之前空关：车载端不自己重开（空关后 5 秒门关着、锁扣上、没有 UNLOCKING）；操作员按「重新开门」后车开锁一次（UNLOCKING +1）、门又弹开（模拟器 OPEN、开锁输出复位）、再次等操作员",
+      "outcome": "FAIL",
+      "expected": "空关后车没有自己重开 / 按了重新开门 / UNLOCKING 1→2 / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开早于期限",
+      "actual": "空关后车自己重开了或门没锁住（UNLOCKING 1→2；+0s CLOSED/EMPTY/0/0 -> +0.2s CLOSED/EMPTY/1/0 -> +0.6s OPEN/EMPTY/1/1 -> +0.9s OPEN/EMPTY/0/1 -> +1.3s OPEN/EMPTY/0/0） / 没按 / UNLOCKING 1→2 / WAITING_OPERATOR 1→2 / OPEN/EMPTY/0/0 / 重开于期限前 37 s"
+    },
+    {
+      "id": "L2-DC-03",
+      "description": "期限已过：车载端倒计时控件（AutomationId StationDepartureCountdown）的状态是 Expired——车载端自己也认定过期了",
+      "outcome": "PASS",
+      "expected": "Expired",
+      "actual": "Expired"
+    },
+    {
+      "id": "L2-DC-04",
+      "description": "期限之后第 1 次空关：车载端照样不自己重开；按「重新开门」后照样开锁一次（UNLOCKING +1、门又弹开、再次等操作员），重开发生在期限之后",
+      "outcome": "FAIL",
+      "expected": "空关后车没有自己重开 / 按了重新开门 / UNLOCKING 2→3 / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开晚于期限",
+      "actual": "空关后车自己重开了或门没锁住（UNLOCKING 2→3；+0s CLOSED/EMPTY/0/0 -> +0.2s CLOSED/EMPTY/1/0 -> +0.6s OPEN/EMPTY/1/1 -> +0.8s OPEN/EMPTY/0/1 -> +1s OPEN/EMPTY/0/0） / 没按 / UNLOCKING 2→3 / WAITING_OPERATOR 2→3 / OPEN/EMPTY/0/0 / 重开于期限后 1.6 s"
+    },
+    {
+      "id": "L2-DC-05",
+      "description": "期限之后第 2 次空关：车载端照样不自己重开；按「重新开门」后照样开锁一次（UNLOCKING +1、门又弹开、再次等操作员），重开发生在期限之后",
+      "outcome": "FAIL",
+      "expected": "空关后车没有自己重开 / 按了重新开门 / UNLOCKING 3→4 / WAITING_OPERATOR 增加 / OPEN/EMPTY/0/0 / 重开晚于期限",
+      "actual": "空关后车自己重开了或门没锁住（UNLOCKING 3→4；+0s CLOSED/EMPTY/0/0 -> +0.2s CLOSED/EMPTY/1/0 -> +0.6s OPEN/EMPTY/0/1 -> +1.1s OPEN/EMPTY/0/0） / 没按 / UNLOCKING 3→4 / WAITING_OPERATOR 3→4 / OPEN/EMPTY/0/0 / 重开于期限后 6.8 s"
+    },
+    {
+      "id": "L2-DC-06",
+      "description": "期限后空关两次之后：需求未被取消（Accepted），旅程仍 AwaitingLoadResult，装货仍在途（Prepared），车载端一份结果都没报，没有任何 FAILED／OPERATOR_TIMEOUT",
+      "outcome": "PASS",
+      "expected": "Accepted / AwaitingLoadResult / Prepared / 0 result / FAILED 结果 0 / OPERATOR_TIMEOUT 0 / Failed 或 RecoveryRequired 操作 0",
+      "actual": "Accepted / AwaitingLoadResult / Prepared / 0 result / FAILED 结果 0 / OPERATOR_TIMEOUT 0 / Failed 或 RecoveryRequired 操作 0"
+    },
+    {
+      "id": "L2-DC-07",
+      "description": "出厂配置下按取消：车载端发出针对这笔装货的取消请求，服务端授权（AUTHORIZED），范围就是这个仓",
+      "outcome": "PASS",
+      "expected": "7cc13c25-cfa7-2253-8d4b-00273a9a736e / LoadCancellationAuthorization AUTHORIZED [1]",
+      "actual": "7cc13c25-cfa7-2253-8d4b-00273a9a736e / LoadCancellationAuthorization AUTHORIZED [1]"
+    },
+    {
+      "id": "L2-DC-08",
+      "description": "取消收敛：需求 Cancelled，旅程以 CANCELLED_BY_OPERATOR 结束",
+      "outcome": "PASS",
+      "expected": "Cancelled / Completed / CANCELLED_BY_OPERATOR",
+      "actual": "Cancelled / Completed / CANCELLED_BY_OPERATOR"
+    },
+    {
+      "id": "L2-DC-09",
+      "description": "目标仓 1 空着、门关、锁上、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-DC-10",
+      "description": "车辆释放：用途占有记录有释放时刻、占有行已不在，没有去关卡的单",
+      "outcome": "PASS",
+      "expected": "占有记录已释放 / 占有行 0 / TO_GATE 0",
+      "actual": "ReleasedAt='2026-10-21 06:07:50.0284323+00:00' / 占有行 0 / TO_GATE 0"
+    },
+    {
+      "id": "L2-DC-11",
+      "description": "全程没有 FAILED：装货没有被结算成 Failed 或 RecoveryRequired，车载端没报过 FAILED／OPERATOR_TIMEOUT，需求没有完成记录",
+      "outcome": "PASS",
+      "expected": "FAILED 结果 0 / OPERATOR_TIMEOUT 0 / Failed 或 RecoveryRequired 操作 0 / 装货非 Failed、RecoveryRequired、Committed / 完成记录 0",
+      "actual": "FAILED 结果 0 / OPERATOR_TIMEOUT 0 / Failed 或 RecoveryRequired 操作 0 / 装货 Cancelled / 完成记录 0"
+    },
+    {
+      "id": "L2-DC-12",
+      "description": "取消收尾之后，同一台车在 60 秒内接了下一单，并且那一单真的建出了 RIoT 单、没有被占车冲突挡住（车辆真的被释放了）",
+      "outcome": "PASS",
+      "expected": "用途占有记录已释放 / 下一单 AwaitingPickupArrival on AGV-L2-001，TO_PICKUP 意图 CONFIRMED，没有停摆原因码",
+      "actual": "ClaimRecord.ReleasedAt='2026-10-21 06:07:50.0284323+00:00' / 下一单 AwaitingPickupArrival/ TO_PICKUP=CONFIRMED on AGV-L2-001"
+    }
+  ]
+}

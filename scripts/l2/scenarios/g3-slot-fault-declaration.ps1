@@ -10,7 +10,8 @@ G3 `FP-IS-07`：人工判故障（REQ-0359，control-server#383 服务端、onbo
    这样造 NOT_APPLICABLE 不靠赛跑：命令丢失是代理按计划做的，结算顺序由场景一步步推，每次跑都是同一个先后。
 2. 卸货站，`CV-SLOT-FAULT-DECLARATION-APPLIED`：越过门槛后判定，车载端回 `APPLIED`，停止本次操作的一切开锁，另报
    `OperationResult`（被判仓 UNKNOWN 带 `SLOT_FAULT_DECLARED`，其余 NOT_STARTED）；服务端仓位操作 RecoveryRequired、旅程
-   Blocked、需求不结算、会话 RECOVERY_REQUIRED。之后空关一次门，车不再重开。
+   Blocked、需求不结算、会话 RECOVERY_REQUIRED。之后带货关一次门，屏上不给「重新开门」，给了按下去车也不开锁
+   （`G3-07-70`，写法与 `real-onboard-slot-fault-declaration` 的 `L2-RSFD-07` 共用，理由与它依赖的车载端顺序见那里）。
 
 向量内容按 `protocol-v3.0.0` 候选（`8005-agv-protocol` `3f091cb2`）`vectors/CV-SLOT-FAULT-DECLARATION-*/expected.json` 对照。
 线上顺序读协议故障代理的流量日志；服务端库读 `SlotFaultDeclarations`、`StationOperations`、`JourneyRuntimes`、`AcceptedDemands`、
@@ -321,16 +322,12 @@ $assertions.Add(
         $null -ne $readings -and $null -ne $readings.observedAt -and (Test-L2RealPresent $row.ResultReceivedAt)),
     'all present', $(if ($row) { $row | ConvertTo-Json -Compress -Depth 4 } else { '(no row)' }))
 
-$journal.Note("The operator shuts slot $unloadSlot's door; a vehicle still executing the unload would reopen it.")
-$null = $simulator.Command('Post', "slots/$unloadSlot/close-door", @{})
-$shutAt = [DateTimeOffset]::UtcNow
-$null = Wait-L2Condition -Description "$reopenWindow after the door was shut" -Journal $journal -Criterion 'reopen-window' `
-    -TimeoutSeconds ([int]$reopenWindow.TotalSeconds + 10) -Probe { [DateTimeOffset]::UtcNow } -Until { param($v) $v -ge $shutAt.Add($reopenWindow) }
-$physical = Get-L2SlotPhysical -Simulator $simulator -SlotNo $unloadSlot
-$unlockingsAfter = Get-L2PhaseCount -Connection $connection -AttemptId $unloadAttempt -Phase 'UNLOCKING'
+# 与 real-onboard-slot-fault-declaration 的 L2-RSFD-07 同一份写法（L2RealStation.psm1 的 Test-L2NoUnlockAfterDeclaration，
+# PR #838 审查 M2）：CP-0019 之后没人按键门本来就不开，只判「门仍关着」不管判定有没有中止执行器都绿。
+$noUnlock = Test-L2NoUnlockAfterDeclaration -Context $Context -AttemptId $unloadAttempt -SlotNo $unloadSlot `
+    -UnlockingBefore $unlockingsBefore -Criterion 'G3-07-70' -WindowSeconds ([int]$reopenWindow.TotalSeconds)
 $assertions.Add(
-    'G3-07-70', "判定生效后零开锁（NEVER_UNLOCK_AFTER_DECLARATION_APPLIED）：空关后 $([int]$reopenWindow.TotalSeconds) 秒门仍关着，卸货的 UNLOCKING 进度条数不变",
-    ($physical -like 'CLOSED/*' -and $unlockingsAfter -eq $unlockingsBefore),
-    "CLOSED/* / UNLOCKING $unlockingsBefore", "$physical / UNLOCKING $unlockingsAfter")
+    'G3-07-70', "判定生效后零开锁（NEVER_UNLOCK_AFTER_DECLARATION_APPLIED）：带货关门后屏上不给「重新开门」，或给了、按下被拒或这一仓不开锁；门一直关着、锁扣上，卸货的 UNLOCKING 进度条数不变",
+    $noUnlock.Passed, "不给重新开门，或按下不开 / 门一直 CLOSED/*/1/0 / UNLOCKING $unlockingsBefore", $noUnlock.Actual)
 
 $journal.Note('Scenario finished at Blocked; the recovery exit is the existing exception recovery session.')

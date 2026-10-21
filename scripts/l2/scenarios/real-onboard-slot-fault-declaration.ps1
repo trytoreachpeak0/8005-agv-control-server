@@ -3,7 +3,8 @@
 <#
 人工判故障（REQ-0359）在真装置上走完整条链：装货开锁后没人放货 → 车载端报期待动作超时 → 管理员经服务端接口判定 →
 车载端回 SlotFaultDeclarationResult(APPLIED)、停止本次操作的一切开锁、报 OperationResult（被判仓 UNKNOWN 带
-SLOT_FAULT_DECLARED）→ 服务端仓位操作 RecoveryRequired、旅程 Blocked；判定之后再空关一次门，车不再重开。
+SLOT_FAULT_DECLARED）→ 服务端仓位操作 RecoveryRequired、旅程 Blocked；判定之后再空关一次门，屏上不给「重新开门」，
+给了按下去车也不开锁。
 
 - 来源：control-server#383（服务端）、onboard-hmi#215（车载端，它的「资源」一节列了本场景要断言的车载端行为）；需求基线
   v1.6.0 `REQ-0359`；program 仓 `requirements/change-proposals/CP-0005.md` 第 4.3 节。
@@ -13,11 +14,22 @@ SLOT_FAULT_DECLARED）→ 服务端仓位操作 RecoveryRequired、旅程 Blocke
 - 判据来源：服务端 SQLite（`ProtocolInbox` 里车载端发来的 `OnboardAlarmSnapshot`／`SlotFaultDeclarationResult`／
   `OperationResult`／`OperationProgress`，`SlotFaultDeclarations`，`StationOperations`，`JourneyRuntimes`）与模拟器 `/snapshot`。
 - **「判定之后零开锁」怎么看**：模拟器的开锁输出是 500 ms 脉冲、没有计数器（`Invoke-L2CloseOverOppositeState` 的注释），
-  它能看见的是门——自动化接口只能关门不能开门，门只有开锁输出触发时才会弹开。所以判定之后空关一次：车若还在执行这次装货，
-  会像门槛前那样重开（ADR-cross-0058 决策 1）；中止了就不会。再加车载端这次尝试的 UNLOCKING 进度条数不增加。
+  它能看见的是门——自动化接口只能关门不能开门，门只有开锁输出触发时才会弹开。CP-0019（onboard-hmi#385）之前，车若还在
+  执行这次装货，空关之后会自己重开，所以「空关后门仍关着」就够了。CP-0019 之后车读到空关只锁着门等操作员按「重新开门」，
+  没人按本来就不开，那样判不管判定有没有中止执行器都绿（PR onboard-hmi#390 审查 M2）。所以 `L2-RSFD-07` 判定后空关一次，
+  再看屏上：执行器已中止就不给「重新开门」（AutomationId `ReopenOperation` 不在或不可按），这是一种过法；屏上若给了，
+  就照操作员那样按下去，过法是按了被拒（弹「无法重新开门」）或这一仓不开锁。两种过法都要门仍关着、这次尝试的
+  UNLOCKING 进度条数与判定前相同，走的是哪一种写进日志与「实际」栏。
+  **本条依赖车载端「先发 UNLOCKING 进度、后过判定闸门」的顺序**（`WireToGateSlotOperationExecutor` 里 `SendProgressAsync`
+  在 `_declarationGate` 下的 `ThrowIfDeclared` 之前）：判定没有中止执行器的车载端，按下后门照样关着（脉冲被闸门拒了），
+  只多一条 UNLOCKING，本条靠这一条变红（CI run 39553412432）。车载端哪天改成先查闸门再发进度，按键在这里只留下
+  「无法重新开门」框或什么都不留，本条就要另找证人。写法在 `L2RealStation.psm1` 的 `Test-L2NoUnlockAfterDeclaration`，
+  与 `g3-slot-fault-declaration` 的 `G3-07-70` 共用。
 - 读取纪律（`scripts/l2/README.md` 第 14 条）：旅程 Blocked 是引擎的一轮，判定记录的 APPLIED 是处理器收下判定结果那一次，
   两者不在同一次写入里，所以 Blocked 之后判定记录用 `Wait-L2ConditionOrLast` 另等。
 - 红证据由 onboard-hmi#215 取（车载端缺陷版本：收到判定只回 APPLIED、不中止不出结果，L2-RSFD-03 变红）。
+  `L2-RSFD-07` 的新判据另由 control-server#834 取红：onboard-hmi#385 的车载端去掉判定时的中止（`DeclareSlotFaultAsync`
+  里的 `active.Abort.CancelAsync()`），屏上给出「重新开门」、按下去多一条 UNLOCKING，本条红。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -51,7 +63,8 @@ if ($null -eq $threshold) {
 }
 $code = 'SLOT_EXPECTED_ACTION_OVERDUE'
 $declarationUri = "http://127.0.0.1:$($Context.HealthPort)/api/safety/v1/slot-fault-declarations"
-# 空关之后等多久再看门。门槛前那次空关，车几秒内就重开（real-onboard-expected-action-overdue 的 L2-EAO-01）；这里给到 10 秒。
+# 空关之后看屏多久、按下「重新开门」之后又等多久再看门。CP-0019 之前车几秒内就自己重开（real-onboard-expected-action-overdue
+# 的 L2-EAO-01）；执行器还在跑的车载端，空关后的「重新开门」与按下后的 UNLOCKING 也是同一量级。这里各给 10 秒。
 $reopenWindow = [TimeSpan]::FromSeconds(10)
 
 $demandGuid = [guid]::NewGuid()
@@ -185,18 +198,13 @@ $assertions.Add(
     "APPLIED / slot $slotNo / $attemptId / readings with observedAt",
     $(if ($row) { "$($row.State) / slot $($row.SlotNo) / $($row.SlotOperationAttemptId) / $($row.ReadingsJson)" } else { '(no row)' }))
 
-# --- 5. 判定之后零开锁：空关一次，车不再重开 --------------------------------------------------------------------------
+# --- 5. 判定之后零开锁：空关一次，屏上不给「重新开门」；给了就按，按了也不开 ----------------------------------------
 
-$journal.Note("The operator shuts slot $slotNo's door over nothing; before the declaration this made the vehicle reopen it.")
-$null = $simulator.Command('Post', "slots/$slotNo/close-door", @{})
-$shutAt = [DateTimeOffset]::UtcNow
-$null = Wait-L2Condition -Description "$reopenWindow after the door was shut" -Journal $journal -Criterion 'reopen-window' `
-    -TimeoutSeconds ([int]$reopenWindow.TotalSeconds + 10) -Probe { [DateTimeOffset]::UtcNow } -Until { param($v) $v -ge $shutAt.Add($reopenWindow) }
-$physical = Get-L2SlotPhysical -Simulator $simulator -SlotNo $slotNo
-$unlockingsAfter = Get-L2PhaseCount -Connection $connection -AttemptId $attemptId -Phase 'UNLOCKING'
+# 写法在 L2RealStation.psm1 的 Test-L2NoUnlockAfterDeclaration，与 g3-slot-fault-declaration 的 G3-07-70 共用一份。
+$noUnlock = Test-L2NoUnlockAfterDeclaration -Context $Context -AttemptId $attemptId -SlotNo $slotNo `
+    -UnlockingBefore $unlockingsBefore -Criterion 'L2-RSFD-07' -WindowSeconds ([int]$reopenWindow.TotalSeconds)
 $assertions.Add(
-    'L2-RSFD-07', "判定之后零开锁：空关后 $([int]$reopenWindow.TotalSeconds) 秒门仍关着，这次装货的 UNLOCKING 进度条数与判定前相同",
-    ($physical -like 'CLOSED/*' -and $unlockingsAfter -eq $unlockingsBefore),
-    "CLOSED/* / UNLOCKING $unlockingsBefore", "$physical / UNLOCKING $unlockingsAfter")
+    'L2-RSFD-07', "判定之后零开锁：空关后屏上不给「重新开门」，或给了、按下被拒或这一仓不开锁；门一直关着、锁扣上，这次装货的 UNLOCKING 进度条数与判定前相同",
+    $noUnlock.Passed, "不给重新开门，或按下不开 / 门一直 CLOSED/*/1/0 / UNLOCKING $unlockingsBefore", $noUnlock.Actual)
 
 $journal.Note('Scenario finished at Blocked; the recovery exit is the existing exception recovery session.')

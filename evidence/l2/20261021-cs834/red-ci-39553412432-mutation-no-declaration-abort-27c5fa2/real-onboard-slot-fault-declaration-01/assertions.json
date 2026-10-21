@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-slot-fault-declaration",
+  "runId": "20261021T061442195Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "expectedActionOverdueThreshold": "00:00:20",
+    "stageRoot": "C:\\actions-runner\\vmwin01-control-server-desktop\\_work\\_temp\\real-rig-39553412432-1\\_stage\\l2-20261021T061442195Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "24e7f55dd26c916b882de5250a731c5cf21c544e",
+    "batchId": "unspecified",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "rig": "RealOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "27c5fa2f2075983f4d9577036d411bdd8b35fc89"
+  },
+  "assertions": [
+    {
+      "id": "L2-RSFD-01",
+      "description": "判定被受理并已下发到车：202、PENDING、sentToVehicle，demandId 与尝试是这次装货的",
+      "outcome": "PASS",
+      "expected": "202 / PENDING / True / 45b30ea7-b26a-425f-b256-bcc5099a72ac / d76c1f8e-3f08-de53-a805-bc814e49352b",
+      "actual": "202 / PENDING / True / 45b30ea7-b26a-425f-b256-bcc5099a72ac / d76c1f8e-3f08-de53-a805-bc814e49352b"
+    },
+    {
+      "id": "L2-RSFD-02",
+      "description": "线上 SlotFaultDeclarationResult：APPLIED、同一个尝试、problem 为空，服务端 DurableAck",
+      "outcome": "PASS",
+      "expected": "APPLIED / d76c1f8e-3f08-de53-a805-bc814e49352b / problem null / DurableAck",
+      "actual": "APPLIED / d76c1f8e-3f08-de53-a805-bc814e49352b / problem null / DurableAck"
+    },
+    {
+      "id": "L2-RSFD-03",
+      "description": "OperationResult：overallOutcome UNKNOWN；1 号仓 UNKNOWN 且 reasonCodes 含 SLOT_FAULT_DECLARED；其余目标仓 NOT_STARTED",
+      "outcome": "FAIL",
+      "expected": "UNKNOWN / slot 1 UNKNOWN [SLOT_FAULT_DECLARED] / 其余 NOT_STARTED",
+      "actual": "(no OperationResult)"
+    },
+    {
+      "id": "L2-RSFD-04",
+      "description": "旅程转 Blocked，原因 LOAD_RESULT_REQUIRES_RECOVERY",
+      "outcome": "FAIL",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "AwaitingLoadResult / "
+    },
+    {
+      "id": "L2-RSFD-05",
+      "description": "装货仓位操作 RecoveryRequired（既有 UNKNOWN 结算）",
+      "outcome": "FAIL",
+      "expected": "RecoveryRequired",
+      "actual": "Prepared"
+    },
+    {
+      "id": "L2-RSFD-06",
+      "description": "判定记录 APPLIED，审计带判定时车载端最近上报的读数与观测时刻",
+      "outcome": "PASS",
+      "expected": "APPLIED / slot 1 / d76c1f8e-3f08-de53-a805-bc814e49352b / readings with observedAt",
+      "actual": "APPLIED / slot 1 / d76c1f8e-3f08-de53-a805-bc814e49352b / {\"observedAt\":\"2026-10-21T06:15:21.8655514+00:00\",\"safetyStateVersion\":1,\"lockState\":\"LOCKED\",\"physicalState\":\"EMPTY\",\"unlockOutputState\":\"RESET\",\"changedSinceObserved\":true}"
+    },
+    {
+      "id": "L2-RSFD-07",
+      "description": "判定之后零开锁：空关后屏上不给「重新开门」，或给了、按下被拒或这一仓不开锁；门一直关着、锁扣上，这次装货的 UNLOCKING 进度条数与判定前相同",
+      "outcome": "FAIL",
+      "expected": "不给重新开门，或按下不开 / 门一直 CLOSED/*/1/0 / UNLOCKING 1",
+      "actual": "空关后 1 秒屏上给了「重新开门」，按下：没有弹出「无法重新开门」 / 空关后 +0s CLOSED/EMPTY/1/0；按键后 +0s CLOSED/EMPTY/1/0 / CLOSED/EMPTY/1/0 / UNLOCKING 2（窗口内最多 2）"
+    }
+  ]
+}

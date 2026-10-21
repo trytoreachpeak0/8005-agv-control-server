@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-expected-action-overdue",
+  "runId": "20261021T070023926Z",
+  "outcome": "FAIL",
+  "failureReason": "The reopen came 0 s after the first unlock; that is too close to tell 'counted from the first unlock' from 'counted from the reopen' within 00:00:02.",
+  "identity": {
+    "rig": "RealOnboard",
+    "protocolFaultProxy": true,
+    "expectedActionOverdueThreshold": "00:00:20",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "a30ddd724e958ac7bd1ee90830812d48d3aac798",
+    "batchId": "unspecified",
+    "stageRoot": "C:\\actions-runner\\vmwin01-control-server-desktop\\_work\\_temp\\real-rig-39558343471-1\\_stage\\l2-20261021T070023926Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "5.0.0",
+      "tag": "protocol-v5.0.0",
+      "commit": "18d4fb3495033624cab412a7ee784f675dfe4cc2",
+      "protocolVersion": 6,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa",
+      "schemaBundleSha256": "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933",
+      "vectorsSha256": "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "onboardHmiCommit": "968d213707786dea63ccbdf12421aad42e9857e4",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-EAO-01",
+      "description": "空关后车不自己重开（5 秒门关着、锁扣上、没有 UNLOCKING）；按「重新开门」后重开：这次装货的 UNLOCKING 进度 ≥ 2 条，1 号仓门又弹开、空着、开锁输出复位，重开早于门槛",
+      "outcome": "FAIL",
+      "expected": "空关后车没有自己重开 / 按了重新开门、重开 / UNLOCKING ≥ 2 / OPEN/EMPTY/0/0 / 重开早于门槛",
+      "actual": "空关后车没有自己重开（UNLOCKING 1→1；+0s CLOSED/EMPTY/0/0 -> +0.2s CLOSED/EMPTY/1/0） / 第 1 次按键 30 秒没有重开：屏上 absent，UNLOCKING 1→1，OPEN/EMPTY/0/0 / UNLOCKING 1 / OPEN/EMPTY/0/0 / 重开于第一次开锁后 0 s"
+    }
+  ]
+}

@@ -1200,7 +1200,9 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
     等这一步的判据要给到 240 秒。**不要为了跑得快去 stage 副本里调短那个超时**：它是安全相关的
     时序，调短之后场景证的就是一份没人真的在跑的配置。
     **这个手法自 onboard-hmi#72（2026-09-16）起不再成立**：车载端读到空关的相反态就自己重开门、继续等操作员，
-    不再等满超时报 `UNKNOWN`（CI run `38107859209`，control-server#250）。今天要让真车载端报一份不完美的装载结果，
+    不再等满超时报 `UNKNOWN`（CI run `38107859209`，control-server#250）。CP-0019（onboard-hmi#385，2026-10-21）起
+    车载端不再自己重开，改为锁着门等操作员在屏上按「重新开门」（`ReopenOperation`），等按键期间同样不报 `UNKNOWN`；
+    真装置场景经 `L2RealStation.psm1` 的 `Invoke-L2CloseOverOppositeState` 按这个键（control-server#834）。今天要让真车载端报一份不完美的装载结果，
     用 `G3RecoveryCommon.ps1` 的 `Invoke-G3UnknownLoad`（装货中重启车载端）。
     setup 键 `ExpectedActionOverdueThreshold`（control-server#167）调短的是另一个值，不违反这一条：`operationTimeoutMs`
     它不动；期待动作超时门槛按 `REQ-0358` 说明 2、3 是投运时按现场实测标定的参数，只决定车载端何时上报、服务端看板

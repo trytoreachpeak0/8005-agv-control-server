@@ -1,21 +1,25 @@
 #Requires -Version 7
 
 <#
-关卡卸货时操作员把门带上了，货没取走：车每轮自己重开，直到取空；取空后提交，需求完成。
+关卡卸货时操作员把门带上了，货没取走：车每轮都锁着门等操作员在屏上按「重新开门」，按了才开，直到取空；
+取空后提交，需求完成。
 
-- 对应决策：ADR-cross-0058 决策 1 的卸货侧（目标态闭环，读到相反态就重开，不设次数上限），车载端实现
-  onboard-hmi#72。加上 ADR-cross-0015 的不对称：卸货是 UnloadCompletionRequired，没有取消分支，决策 5（及其
+- 对应决策：ADR-cross-0058 决策 1 的卸货侧（目标态闭环，读到相反态不判失败，不设次数上限），车载端实现
+  onboard-hmi#72；CP-0019（需求基线 v1.18.0，车载端 onboard-hmi#385）把「读到相反态就自己重开」改成「锁着门等按
+  『重新开门』」，所以每轮先判车没有自己重开（`L2-UE-03`、`-04` 的 HeldShut，CP-0019 之前的车载端在这一项上红），
+  再按键、判重开。加上 ADR-cross-0015 的不对称：卸货是 UnloadCompletionRequired，没有取消分支，决策 5（及其
   2026-09-18 改写）明写「卸货不适用本条」——所以本条在两轮重开之后断言的是「什么都没有被结算」，唯一的终结是货真的被取走。
   program#55 只改了装货侧的期限行为，卸货侧不受影响。
 - 期限值：站点期限 `StationDepartureWaitTimeout` = 30 秒（setup.psd1，与装置默认相同），只作用于取货站；关卡卸货
   没有期限。车载端 `workflow.operationTimeoutMs` 不改（出厂 120 秒，README 第 11 条），本条每一轮都在它之内走完。
 - 判据来源：服务端 SQLite（`ProtocolInbox` 里车载端发来的 `OperationProgress`／`OperationResult`，`StationOperations`，
   `JourneyRuntimes`，`AcceptedDemands`，`SessionRecoveries`，`ExceptionRecoverySessions`，`RecoveryWorkflows`）与
-  模拟器 `/snapshot` 的仓位物理状态。车载端界面只用来录入子批号，不读任何文字。
+  模拟器 `/snapshot` 的仓位物理状态。车载端界面只用来录入子批号、按「重新开门」，不读任何文字。
   MVP 线参照 `origin/ControlServer_MVP:scripts/l2/scenarios/real-onboard-unload-not-emptied.ps1`。
 
 重开的证据是「门关上后又回到 OPEN」加车载端的 `UNLOCKING` 条数，理由见 `L2RealStation.psm1` 的
-`Invoke-L2CloseOverOppositeState`：模拟器没有开锁脉冲计数器，而它的门只能被开锁输出弹开。
+`Invoke-L2CloseOverOppositeState`：模拟器没有开锁脉冲计数器，而它的门只能被开锁输出弹开。「车没有自己重开」
+反过来读同两样：关门后 5 秒内每一轮询门都关着、锁扣上、开锁输出复位，`UNLOCKING` 条数不变。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -94,17 +98,18 @@ $assertions.Add(
     ($slotNo -eq $load.SlotNo -and $physical -eq 'OPEN/OCCUPIED/0/0'),
     "slot $($load.SlotNo) / OPEN/OCCUPIED/0/0", "slot $slotNo / $physical")
 
-# --- 3. 带货关门两轮：每轮车自己重开 ---------------------------------------------------------------
+# --- 3. 带货关门两轮：每轮车不自己重开，按「重新开门」才开 -------------------------------------------
 
 for ($round = 1; $round -le $reopenRounds; $round++) {
     $reopen = Invoke-L2CloseOverOppositeState -Context $Context -AttemptId $attemptId -SlotNo $slotNo -Criterion "unload-reopen-$round"
     $assertions.Add(
         "L2-UE-$('{0:d2}' -f (2 + $round))",
-        "第 $round 轮带货关门：车载端自己重新开锁（UNLOCKING +1）、门又弹开（模拟器 OPEN、货还在、开锁输出复位）、再次等操作员",
-        ($reopen.After.Unlocking -eq $reopen.Before.Unlocking + 1 -and $reopen.After.Waiting -gt $reopen.Before.Waiting -and
+        "第 $round 轮带货关门：车载端不自己重开（关门后 5 秒门关着、锁扣上、没有 UNLOCKING）；按「重新开门」后开锁一次（UNLOCKING +1）、门又弹开（模拟器 OPEN、货还在、开锁输出复位）、再次等操作员",
+        ($reopen.HeldShut -and $reopen.Reopened -and
+            $reopen.After.Unlocking -eq $reopen.Before.Unlocking + 1 -and $reopen.After.Waiting -gt $reopen.Before.Waiting -and
             $reopen.After.Physical -eq 'OPEN/OCCUPIED/0/0'),
-        "UNLOCKING $($reopen.Before.Unlocking)→$($reopen.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/OCCUPIED/0/0",
-        "UNLOCKING $($reopen.Before.Unlocking)→$($reopen.After.Unlocking) / WAITING_OPERATOR $($reopen.Before.Waiting)→$($reopen.After.Waiting) / $($reopen.After.Physical)")
+        "关门后车没有自己重开 / 按了重新开门、重开 / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.Before.Unlocking + 1) / WAITING_OPERATOR 增加 / OPEN/OCCUPIED/0/0",
+        "$(Format-L2HeldShut $reopen) / $(Format-L2Press $reopen) / UNLOCKING $($reopen.Before.Unlocking)→$($reopen.After.Unlocking) / WAITING_OPERATOR $($reopen.Before.Waiting)→$($reopen.After.Waiting) / $($reopen.After.Physical)")
 }
 
 # 卸货没有取消分支，也没有确定失败：两轮之后不许出现任何一种结算。否定判据先让运行时再转几轮。
