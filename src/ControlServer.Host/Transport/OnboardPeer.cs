@@ -149,6 +149,11 @@ public sealed class OnboardPeer : IOnboardPeer, IOnboardConnectionPresence
         connection.Addressee = $"'{agvId}' (session generation {generation})";
     }
 
+    // Stub for control-server#310's tests; the takeover is not implemented yet.
+    internal ValueTask<long?> TakeOverAsync(string agvId, long generation, OnboardPeerConnection connection) =>
+        _connections.Count < 0 ? default :
+        ValueTask.FromResult<long?>(null);
+
     internal void Detach(string agvId, OnboardPeerConnection connection)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
@@ -286,6 +291,9 @@ internal sealed class OnboardPeerConnection : IAsyncDisposable
 
     /// <summary>Who this connection reaches, for the failures it reports; set once the connection is made routable.</summary>
     internal string Addressee { get; set; } = "(no session yet)";
+
+    // Stub for control-server#310's tests.
+    internal bool Superseded => _writeTimeout < TimeSpan.Zero;
 
     public async Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
     {
