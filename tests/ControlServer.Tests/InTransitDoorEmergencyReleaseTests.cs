@@ -864,4 +864,92 @@ public sealed class InTransitDoorEmergencyReleaseTests
         fixture.Context.ChangeTracker.Clear();
         return fixture;
     }
+
+    /// <summary>
+    /// 续行发出后的重读窗口里引擎又急停了这辆车（control-server#791 独立审查 H1）：续行读回在执行，故障也<b>不</b>清，
+    /// 答 <c>RESUME_EMERGENCY_STOP_OPEN</c>。之后照原路出得去：RIoT 上暂停那张单、有货解除、再续行，单回到执行。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 窗口期间运行锁已经放开，门锁故障在效时引擎每轮都把车交给故障协调器；人解除急停之后，这一代故障里车一动就升级急停。
+    /// 续行让车动了，下一轮引擎就重新急停。修前重读读到 3 就清了故障：故障 None、本服务端急停仍开着，之后有货解除答
+    /// <c>EMERGENCY_HELD_ORDER_NOT_PAUSED</c>、续行与清除都答已清，RIoT 上暂停后续行也是已清、0 次续行，单停在 7——卡死。
+    /// </para>
+    /// <para>
+    /// 根因是引擎把本服务端自己的续行让车动也当成车在动去急停，那一条不在本票（调度另行分票）；本票守的是「急停开着不清故障」。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AStopTheEngineReissuesWhileTheContinueIsReadBackKeepsTheFaultAndLeavesAWayOut()
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        bool continued = false;
+        bool roundDriven = false;
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture) { HasUnfinishedOrder = true };
+        site.OnOrderCommand = (kind, _) => continued |= kind == RiotOrderCommandKind.ContinueFromHeld;
+        site.AfterOrderReadAsync = async _ =>
+        {
+            // 续行之后第一次读（命令服务里那一次）仍是 HELD。随后 RIoT 执行：单 3、车动；下一次重读之前引擎跑一轮，闩锁随之锁上。
+            if (continued && !roundDriven)
+            {
+                roundDriven = true;
+                fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Executing, terminal: false);
+                fixture.Riot.MovementState = "MT_RUNNING";
+                await DriveOneRoundAsync(fixture);
+                fixture.EmergencyLatched = true;
+            }
+        };
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site)
+            .RecoverAsync(ResumeRequest(fixture), Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.True(roundDriven, "no engine round ran inside the read-back window");
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["RESUME_EMERGENCY_STOP_OPEN"], decision.Reasons);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            VehicleFaultStateRow fault = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((VehicleFaultLevel.SuspectedBlocked, (DateTimeOffset?)null), (fault.Level, fault.ClearedAt));
+        }
+
+        // 出路：值班工程师在 RIoT 上暂停那张单，人做有货解除，闩锁放开，再续行。
+        fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Paused, terminal: false);
+        fixture.Riot.MovementState = "MT_PAUSED";
+        await using (ControlServerDbContext context = new(fixture.DbOptionsForTests))
+        {
+            HashSet<string> own = (await context.OrderIntents.AsNoTracking()
+                    .Where(row => row.OrderId != null).Select(row => row.OrderId!).ToListAsync(Token))
+                .ToHashSet(StringComparer.Ordinal);
+            await fixture.CreateEmergencyStopSupervisor(context).ReleaseLoadedOnGovernedConfirmationAsync(
+                new LoadedEmergencyStopReleaseConfirmation(
+                    new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey),
+                    "L1-ADMIN", "cs791 H1", CauseCleared: true, AllDoorsClosed: true, DoorLockRepaired: true),
+                doorCause: true, own, Token);
+        }
+
+        fixture.Context.ChangeTracker.Clear();
+        fixture.EmergencyLatched = false;
+        await DriveOneRoundAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        VehicleFaultRecoveryTests.SiteRiot again = new(fixture)
+        {
+            HasUnfinishedOrder = true,
+            OnOrderCommand = (kind, _) =>
+            {
+                if (kind == RiotOrderCommandKind.ContinueFromHeld)
+                {
+                    fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Executing, terminal: false);
+                }
+            },
+        };
+
+        VehicleFaultRecoveryDecision resumed = await VehicleFaultRecoveryTests.Service(fixture, again)
+            .RecoverAsync(ResumeRequest(fixture), Token);
+
+        Assert.Equal((VehicleFaultRecoveryOutcome.Resumed, 0), (resumed.Outcome, resumed.Reasons.Count));
+        Assert.Equal([RiotOrderCommandKind.ContinueFromHeld], again.OrderCommands);
+        Assert.Equal(RiotOrderState.Executing, fixture.Riot.OrderStateOf(latched.UpperId));
+    }
 }

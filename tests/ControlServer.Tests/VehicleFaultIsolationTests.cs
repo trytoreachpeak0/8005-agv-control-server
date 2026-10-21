@@ -1451,6 +1451,28 @@ public sealed class VehicleFaultIsolationTests
     }
 
     /// <summary>
+    /// A continue confirmed earlier in this fault, and the order reads HELD again -- someone paused it in RIoT since. The
+    /// earlier confirmation resumed nothing that is still running, so this resumption sends its own continue
+    /// (control-server#791 independent review H2: it used to clear the fault with no continue and leave the order at 7).
+    /// </summary>
+    [Fact]
+    public async Task AnOrderHeldAgainAfterAConfirmedContinueIsContinuedAgain()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.HoldWorks = true;
+        await fixture.ObserveAsync(VehicleFaultEvidence.NavigationFailed, WithOrderAndCargo());
+        await fixture.ContinueLeftBehindAsync((await fixture.ReadFaultAsync()).FaultGeneration, RiotOrderCommandOutcome.Confirmed);
+        fixture.Riot.OrderState = RiotOrderState.Paused;
+
+        VehicleFaultResumeDecision decision = await fixture.ResumeAsync();
+
+        Assert.True(decision.Resumed);
+        Assert.Single(fixture.Riot.OrderCalls, call => call.CommandType == RiotCommandTypeNames.OrderContinue);
+        Assert.Equal(RiotOrderState.Executing, fixture.Riot.OrderState);
+        Assert.Equal(VehicleFaultLevel.None, (await fixture.ReadFaultAsync()).Level);
+    }
+
+    /// <summary>
     /// A continue confirmed under an earlier fault says nothing about this one: the order running now is not this fault's
     /// resumption, and it refuses as an order that is not HELD.
     /// </summary>
