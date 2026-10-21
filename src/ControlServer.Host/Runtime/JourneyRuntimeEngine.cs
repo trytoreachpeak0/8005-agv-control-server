@@ -97,6 +97,11 @@ public sealed partial class JourneyRuntimeEngine(
         LogLevel.Warning,
         new EventId(2102, nameof(LogBoxCountFailed)),
         "SUBLOT_BOX_COUNT failed closed for demand {DemandId}.");
+    private static readonly Action<ILogger, string, string, string, Exception?> LogDepartureAnswerNotValid =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(2337, nameof(LogDepartureAnswerNotValid)),
+            "Pre-departure safety check {CheckId} of {AgvId} has no answer that permits departing: {Answers}.");
     private static readonly Action<ILogger, string, string, Exception?> LogSublotRejected =
         LoggerMessage.Define<string, string>(
             LogLevel.Information,
@@ -1900,7 +1905,7 @@ public sealed partial class JourneyRuntimeEngine(
                 {
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 }
-                SafetyCheckObservation? safety = await AwaitSafeDepartureResultAsync(
+                (SafetyCheckObservation? safety, string? safetyResultMessageId) = await AwaitSafeDepartureResultAsync(
                     runtime, stops, session, cancellationToken).ConfigureAwait(false);
                 now = timeProvider.GetUtcNow();
                 if (safety is null)
@@ -1951,7 +1956,7 @@ public sealed partial class JourneyRuntimeEngine(
                     .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
                 OrderIntent gateIntent = JourneyPlanBuilder.LegIntent(runtime, nextStop, legIntentCreatedAt ?? now);
                 await new WireToGateStore(dbContext).AuthorizeMovementAsync(
-                    gateIntent, safety, now, cancellationToken).ConfigureAwait(false);
+                    gateIntent, safety, now, cancellationToken, runtimeOptions.PeerClockSkewTolerance).ConfigureAwait(false);
                 // 暂存的一切在守护下落库。守护不在这里撤（增量复核必修 M1）：这之后建单之前还有一次按单号的 RIoT GET 与对账审计的保存，
                 // 那几次保存不碰旅程行、令牌核不到，入站在那段窗口里写的 Blocked 只有守护挡得住。撤守护的地方是派车服务：对账审计之后、
                 // 用掉「最多建一次」的计数之前（IMovementIntentStore.ReleaseJourneyGuardBeforeExternalEffect）。之后记录建单的保存不再因守护丢掉；
@@ -1960,8 +1965,8 @@ public sealed partial class JourneyRuntimeEngine(
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
                     nextStop.UpperId, cancellationToken).ConfigureAwait(false);
-                runtime.ConsumedSafetyResultMessageId = await FindSafetyResultMessageIdAsync(
-                    DepartureCheckId(departedFrom), cancellationToken).ConfigureAwait(false);
+                // The answer that departed the vehicle, not the first one under the check id (control-server#826).
+                runtime.ConsumedSafetyResultMessageId = safetyResultMessageId;
                 await store.SettleAnsweredCommandAsync(
                     DepartureCheckMessageId(departedFrom), now, cancellationToken).ConfigureAwait(false);
                 // 车开走了，这个停靠就完成了：当前停靠指针从此是落库的状态（批次7-06），下一轮加载游标读到的是下一个。
@@ -4592,7 +4597,7 @@ public sealed partial class JourneyRuntimeEngine(
     /// staler. An answer that is present but not safe stops the wait immediately -- this shortens
     /// the gap between asking and judging, and relaxes nothing.
     /// </remarks>
-    private async Task<SafetyCheckObservation?> AwaitSafeDepartureResultAsync(
+    private async Task<(SafetyCheckObservation? Safety, string? ResultMessageId)> AwaitSafeDepartureResultAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,
         SessionRecoveryRow session,
@@ -4605,7 +4610,7 @@ public sealed partial class JourneyRuntimeEngine(
         for (int attempt = 0; ; attempt++)
         {
             DateTimeOffset now = timeProvider.GetUtcNow();
-            (SafetyCheckObservation? safety, bool invalid) = await FindSafeDepartureResultAsync(
+            (SafetyCheckObservation? safety, bool invalid, string? resultMessageId) = await FindSafeDepartureResultAsync(
                 runtime,
                 stops, session, now, cancellationToken).ConfigureAwait(false);
             if (safety is not null || invalid || attempt >= attempts)
@@ -4614,13 +4619,45 @@ public sealed partial class JourneyRuntimeEngine(
                 // back, as this did before control-server#80, would restart BlockReasonSince on every
                 // poll of a journey that stays PRE_DEPARTURE_SAFETY_NOT_VALID.
                 runtime.SetBlockReason(invalid ? PreDepartureSafetyNotValidReason : null, now);
-                return safety;
+                return (safety, resultMessageId);
             }
             await Task.Delay(step, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private async Task<(SafetyCheckObservation? Safety, bool Invalid)> FindSafeDepartureResultAsync(
+    /// <summary>
+    /// Judges the peer's answers to the current stop's departure check: the newest answer that still describes the
+    /// vehicle decides (control-server#826).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Outdated answers are passed over, not judged.</b> An answer from another session generation, about another
+    /// safety state version, past its own <c>validUntil</c>, older than the evidence age, or stamped further ahead of
+    /// this server's clock than <see cref="JourneyRuntimeOptions.PeerClockSkewTolerance"/> says nothing about the
+    /// vehicle now. This read used to let the oldest answer under the check id decide, which was harmless while the
+    /// peer answered a check once; once it answers a re-asked check again (onboard-hmi#386), a first outdated answer
+    /// kept every later valid one from being read and the vehicle stood at the stop (agv02, 2026-10-21, 22 minutes).
+    /// Nothing in the history of the oldest-first order says it guarded anything else.
+    /// </para>
+    /// <para>
+    /// <b>Of the rest, the newest decides, in both directions.</b> "The first valid one" would let an older SAFE
+    /// depart a vehicle whose newer answer to the same check says a door came open. Newest is by the server's own
+    /// receive time, then by the peer's <c>observedAt</c>.
+    /// </para>
+    /// <para>
+    /// <b>The tolerance is for the peer's clock, and only for <c>observedAt</c>.</b> The vehicle's clock drifts about
+    /// 0.12 s a day between syncs; at zero tolerance an answer judged on receipt was "in the future" and invalid.
+    /// <c>ReceivedAt</c> is this server's own clock and keeps its zero tolerance (control-server#254): the two are
+    /// different clocks, not two settings of one rule. <c>now - observedAt</c> is negative inside the tolerance and so
+    /// passes the evidence age, as it should: the answer is as fresh as it gets.
+    /// </para>
+    /// <para>
+    /// With no answer that still describes the vehicle but some that do not, the result is still "invalid", as it was,
+    /// so the journey keeps PRE_DEPARTURE_SAFETY_NOT_VALID until the check is asked again. Every invalid judgment is
+    /// logged with what each answer failed on.
+    /// </para>
+    /// </remarks>
+    private async Task<(SafetyCheckObservation? Safety, bool Invalid, string? ResultMessageId)> FindSafeDepartureResultAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,
         SessionRecoveryRow session,
@@ -4631,61 +4668,121 @@ public sealed partial class JourneyRuntimeEngine(
             .Where(row => row.MessageType == "PreDepartureSafetyCheckResult")
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         rows = rows.OrderBy(row => row.ReceivedAt).ToArray();
+        string checkId = DepartureCheckId(stops.Current);
+        List<string> judged = [];
+        DepartureAnswer? newest = null;
         foreach (ProtocolInboxRow row in rows)
         {
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
             JsonElement payload = root.GetProperty("payload");
-            if (RequiredString(payload, "preDepartureSafetyCheckId") != DepartureCheckId(stops.Current))
+            if (RequiredString(payload, "preDepartureSafetyCheckId") != checkId)
                 continue;
-            JsonElement safety = payload.GetProperty("safety");
             DateTimeOffset observedAt = payload.GetProperty("observedAt").GetDateTimeOffset();
             DateTimeOffset validUntil = payload.GetProperty("validUntil").GetDateTimeOffset();
-            // The protocol requires a correlationId here but never says what it correlates to, and
-            // its own valid example points it at neither the request's messageId nor the check id.
-            // The peer correlates by the check id; we demanded the request's messageId, so a
-            // perfectly good SAFE answer was refused and no departure could ever be authorized.
-            // Both readings are accepted. This loses no identity: the check id already had to match
-            // above, and it is unique to this journey's leg, so the correlationId was only ever a
-            // second name for a fact already proven.
-            string correlationId = RequiredString(root, "correlationId");
-            // v3 (control-server#382, review S1): only an answer to a departure check is a departure permit. A SAFE answer
-            // under this check id that says it answered a HOLD_RELEASE or NON_BUSINESS_MOVE check answered another question.
-            bool answersADepartureCheck =
-                payload.TryGetProperty("checkPurpose", out JsonElement checkPurpose) &&
-                checkPurpose.ValueKind == JsonValueKind.String &&
-                checkPurpose.GetString() == PreDepartureCheckPurposes.Departure;
-            bool valid = answersADepartureCheck &&
-                         (correlationId == DepartureCheckMessageId(stops.Current) ||
-                          correlationId == DepartureCheckId(stops.Current)) &&
-                         RequiredString(root, "agvId") == runtime.AgvId &&
-                         root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
-                         RequiredString(payload, "outcome") == "SAFE" &&
-                         payload.GetProperty("safetyStateVersion").GetInt64() == session.SafetyRevision &&
-                         safety.GetProperty("departureSafe").GetBoolean() &&
-                         safety.GetProperty("vehicleStopped").GetBoolean() &&
-                         safety.GetProperty("allTargetSlotsLocked").GetBoolean() &&
-                         safety.GetProperty("allUnlockOutputsReset").GetBoolean() &&
-                         !safety.GetProperty("unknownPresent").GetBoolean() &&
-                         observedAt <= now && validUntil >= now &&
-                         now - observedAt <= runtimeOptions.MaximumEvidenceAge;
-            if (!valid)
+            string? outdatedBy =
+                root.GetProperty("sessionGeneration").GetInt64() != session.SessionGeneration ? "session-generation"
+                : payload.GetProperty("safetyStateVersion").GetInt64() != session.SafetyRevision ? "safety-state-version"
+                : observedAt > now + runtimeOptions.PeerClockSkewTolerance ? "observedAt-ahead"
+                : validUntil < now ? "validUntil-passed"
+                : now - observedAt > runtimeOptions.MaximumEvidenceAge ? "older-than-evidence-age"
+                : null;
+            if (outdatedBy is not null)
             {
-                return (null, true);
+                judged.Add($"{row.MessageId} {outdatedBy} (observedAt {observedAt:O}, validUntil {validUntil:O})");
+                continue;
             }
-            if (session.SafetyRevision is not long safetyRevision)
+            // Rows are in receive order, so a later row replaces the one before; on the same receive time, the later
+            // observation does.
+            if (newest is null || row.ReceivedAt > newest.ReceivedAt || observedAt >= newest.ObservedAt)
             {
-                return (null, false);
+                newest = new DepartureAnswer(
+                    row.MessageId, row.ReceivedAt, observedAt, validUntil, DepartureAnswerFaults(runtime, stops, root, payload));
             }
-            return (new SafetyCheckObservation(
-                DepartureCheckId(stops.Current),
-                safetyRevision,
-                true,
-                observedAt,
-                validUntil), false);
         }
-        return (null, false);
+
+        if (newest is null)
+        {
+            if (judged.Count == 0)
+            {
+                return (null, false, null);
+            }
+            LogDepartureAnswerNotValid(logger, checkId, runtime.AgvId, string.Join("; ", judged), null);
+            return (null, true, null);
+        }
+        if (newest.Faults.Length > 0)
+        {
+            judged.Add($"{newest.MessageId} {string.Join(",", newest.Faults)} (observedAt {newest.ObservedAt:O})");
+            LogDepartureAnswerNotValid(logger, checkId, runtime.AgvId, string.Join("; ", judged), null);
+            return (null, true, null);
+        }
+        if (session.SafetyRevision is not long safetyRevision)
+        {
+            return (null, false, null);
+        }
+        return (new SafetyCheckObservation(
+            checkId,
+            safetyRevision,
+            true,
+            newest.ObservedAt,
+            newest.ValidUntil), false, newest.MessageId);
     }
+
+    /// <summary>What a current answer to the departure check says against departing; empty when it permits it.</summary>
+    private static string[] DepartureAnswerFaults(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        JsonElement root,
+        JsonElement payload)
+    {
+        List<string> faults = [];
+        // v3 (control-server#382, review S1): only an answer to a departure check is a departure permit. A SAFE answer
+        // under this check id that says it answered a HOLD_RELEASE or NON_BUSINESS_MOVE check answered another question.
+        if (!(payload.TryGetProperty("checkPurpose", out JsonElement checkPurpose) &&
+              checkPurpose.ValueKind == JsonValueKind.String &&
+              checkPurpose.GetString() == PreDepartureCheckPurposes.Departure))
+        {
+            faults.Add("not-a-departure-check");
+        }
+        // The protocol requires a correlationId here but never says what it correlates to, and
+        // its own valid example points it at neither the request's messageId nor the check id.
+        // The peer correlates by the check id; we demanded the request's messageId, so a
+        // perfectly good SAFE answer was refused and no departure could ever be authorized.
+        // Both readings are accepted. This loses no identity: the check id already had to match
+        // above, and it is unique to this journey's leg, so the correlationId was only ever a
+        // second name for a fact already proven.
+        string correlationId = RequiredString(root, "correlationId");
+        if (correlationId != DepartureCheckMessageId(stops.Current) && correlationId != DepartureCheckId(stops.Current))
+        {
+            faults.Add("correlation-id");
+        }
+        if (RequiredString(root, "agvId") != runtime.AgvId)
+        {
+            faults.Add("agv-id");
+        }
+        JsonElement safety = payload.GetProperty("safety");
+        string[] notSafe =
+        [
+            .. RequiredString(payload, "outcome") == "SAFE" ? Array.Empty<string>() : ["outcome"],
+            .. safety.GetProperty("departureSafe").GetBoolean() ? Array.Empty<string>() : ["departureSafe"],
+            .. safety.GetProperty("vehicleStopped").GetBoolean() ? Array.Empty<string>() : ["vehicleStopped"],
+            .. safety.GetProperty("allTargetSlotsLocked").GetBoolean() ? Array.Empty<string>() : ["allTargetSlotsLocked"],
+            .. safety.GetProperty("allUnlockOutputsReset").GetBoolean() ? Array.Empty<string>() : ["allUnlockOutputsReset"],
+            .. safety.GetProperty("unknownPresent").GetBoolean() ? ["unknownPresent"] : Array.Empty<string>(),
+        ];
+        if (notSafe.Length > 0)
+        {
+            faults.Add($"not-safe[{string.Join(",", notSafe)}]");
+        }
+        return [.. faults];
+    }
+
+    private sealed record DepartureAnswer(
+        string MessageId,
+        DateTimeOffset ReceivedAt,
+        DateTimeOffset ObservedAt,
+        DateTimeOffset ValidUntil,
+        string[] Faults);
 
     /// <summary>One vehicle's Onboard-side facts; see <see cref="OnboardDispatchFactsReader.ReadOnboardFactsAsync"/>.</summary>
     private Task<OnboardDispatchFacts?> ReadOnboardFactsAsync(string agvId, CancellationToken cancellationToken) =>
@@ -6441,19 +6538,6 @@ public sealed partial class JourneyRuntimeEngine(
             .AnyAsync(row => row.SlotOperationAttemptId == next.Membership.UnloadSlotOperationAttemptId, cancellationToken)
             .ConfigureAwait(false);
 
-    private async Task<string?> FindSafetyResultMessageIdAsync(
-        string checkId,
-        CancellationToken cancellationToken)
-    {
-        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "PreDepartureSafetyCheckResult")
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        return rows.FirstOrDefault(row =>
-        {
-            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
-            return RequiredString(document.RootElement.GetProperty("payload"), "preDepartureSafetyCheckId") == checkId;
-        })?.MessageId;
-    }
 
     /// <summary>
     /// 这趟旅程开的、关于还在车上的需求的纠错（见 <see cref="StationDepartureWaitIsOverAsync"/> 的注释：本车开的、不早于需求加入本旅程）。

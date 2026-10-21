@@ -2248,11 +2248,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// <inheritdoc />
     public void ReleaseJourneyGuardBeforeExternalEffect() => dbContext.GuardedJourneyId = null;
 
+    /// <param name="peerClockSkewTolerance">
+    /// How far ahead of <paramref name="now"/> the vehicle's clock may have stamped <see cref="SafetyCheckObservation.ObservedAt"/>
+    /// (control-server#826). The journey engine passes the same tolerance it judged the answer with: at zero, an answer it had
+    /// accepted from a vehicle 0.12 s ahead was refused here and the round threw.
+    /// </param>
     public async Task AuthorizeMovementAsync(
         OrderIntent intent, SafetyCheckObservation safety, DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, TimeSpan peerClockSkewTolerance = default)
     {
-        bool valid = safety.DepartureSafe && safety.ObservedAt <= now && safety.ValidUntil >= now;
+        bool valid = safety.DepartureSafe && safety.ObservedAt <= now + peerClockSkewTolerance && safety.ValidUntil >= now;
         if (!valid)
         {
             throw new UnsafeMovementAuthorizationException("Movement requires a current SAFE pre-departure observation.");

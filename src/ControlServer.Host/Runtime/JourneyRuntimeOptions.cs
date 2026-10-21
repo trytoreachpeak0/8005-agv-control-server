@@ -29,6 +29,12 @@ public sealed class JourneyRuntimeOptions
     /// How far ahead of this server's clock the vehicle may stamp the <c>observedAt</c> of its pre-departure safety
     /// answer (control-server#826).
     /// </summary>
+    /// <remarks>
+    /// The vehicle PC's clock drifts about 0.12 s a day between syncs; at zero tolerance an answer judged on receipt was
+    /// "in the future" and the vehicle stood at the stop. 500 ms matches the onboard side's own sub-second judgment
+    /// (<c>vehicleSafety.clockSkewToleranceMs</c>). It is bounded at 2 s: a clock further off than that is a time-sync
+    /// fault to fix on the vehicle PC (workspace#55), not drift to absorb here.
+    /// </remarks>
     public TimeSpan PeerClockSkewTolerance { get; set; } = TimeSpan.FromMilliseconds(500);
 
     /// <summary>
@@ -413,6 +419,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.DepartureSafetyResultWait > TimeSpan.FromSeconds(10))
         {
             failures.Add("DepartureSafetyResultWait must be positive and at most 10 s.");
+        }
+        if (options.PeerClockSkewTolerance < TimeSpan.Zero ||
+            options.PeerClockSkewTolerance > TimeSpan.FromSeconds(2))
+        {
+            failures.Add("PeerClockSkewTolerance must be between 0 and 2 s.");
         }
         if (options.StationDepartureWaitTimeout != TimeSpan.Zero &&
             options.StationDepartureWaitTimeout < TimeSpan.FromSeconds(5))

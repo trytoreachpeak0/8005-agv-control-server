@@ -187,6 +187,7 @@ public sealed class PreDepartureAnswerClockSkewTests
 
         runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", runtime.BlockReasonCode);
         Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
 
         await fixture.RestoreSessionReadyAsync();
