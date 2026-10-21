@@ -1,0 +1,35 @@
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnAnswerStampedAFewTenthsOfASecondAheadOfTheServerDepartsTheVehicle [290 ms]
+  Error Message:
+Expected: AwaitingGateArrival
+Actual:   AwaitingDepartureSafety
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnOutdatedFirstAnswerDoesNotHideALaterValidOne(outdatedBy: "older-than-evidence-age") [2 s]
+  Error Message:
+Expected: AwaitingGateArrival
+Actual:   AwaitingDepartureSafety
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnOutdatedFirstAnswerDoesNotHideALaterValidOne(outdatedBy: "session-generation") [2 s]
+  Error Message:
+Expected: AwaitingGateArrival
+Actual:   AwaitingDepartureSafety
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnOutdatedFirstAnswerDoesNotHideALaterValidOne(outdatedBy: "safety-state-version") [3 s]
+  Error Message:
+Expected: AwaitingGateArrival
+Actual:   AwaitingDepartureSafety
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnOutdatedFirstAnswerDoesNotHideALaterValidOne(outdatedBy: "observedAt-ahead") [1 s]
+  Error Message:
+Expected: AwaitingGateArrival
+Actual:   AwaitingDepartureSafety
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnOutdatedFirstAnswerDoesNotHideALaterValidOne(outdatedBy: "validUntil-passed") [1 s]
+  Error Message:
+Expected: AwaitingGateArrival
+Actual:   AwaitingDepartureSafety
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.ALaterUnsafeAnswerOutranksAnEarlierSafeOne [1 s]
+  Error Message:
+Expected: AwaitingDepartureSafety
+Actual:   AwaitingGateArrival
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.WhileTheSessionIsNotReadyOnTheOwnOrderASkewedSafeAnswerDoesNotDepart [1 s]
+  Error Message:
+Expected: "1c621012-8b16-4a72-832f-921e022bdeff"
+Actual:   "985866df-b347-4a9a-898c-67e678cf9208"
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnAnswerStampedBeyondTheToleranceIsNotValidAndTheLogSaysWhy [92 ms]
+  Error Message:
+Failed!  - Failed:     9, Passed:     2, Skipped:     0, Total:    11, Duration: 19 s - ControlServer.Tests.dll (net8.0)

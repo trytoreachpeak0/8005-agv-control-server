@@ -1,0 +1,20 @@
+== M1-no-tolerance
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnAnswerStampedAFewTenthsOfASecondAheadOfTheServerDepartsTheVehicle [345 ms]
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.WhileTheSessionIsNotReadyOnTheOwnOrderASkewedSafeAnswerDoesNotDepart [2 s]
+Failed!  - Failed:     2, Passed:     9, Skipped:     0, Total:    11, Duration: 17 s - ControlServer.Tests.dll (net8.0)
+== M2-first-outdated-decides
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnOutdatedFirstAnswerDoesNotHideALaterValidOne(outdatedBy: "older-than-evidence-age") [2 s]
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnOutdatedFirstAnswerDoesNotHideALaterValidOne(outdatedBy: "session-generation") [2 s]
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnOutdatedFirstAnswerDoesNotHideALaterValidOne(outdatedBy: "safety-state-version") [3 s]
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnOutdatedFirstAnswerDoesNotHideALaterValidOne(outdatedBy: "observedAt-ahead") [1 s]
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnOutdatedFirstAnswerDoesNotHideALaterValidOne(outdatedBy: "validUntil-passed") [1 s]
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnAnswerStampedBeyondTheToleranceIsNotValidAndTheLogSaysWhy [73 ms]
+Failed!  - Failed:     6, Passed:     5, Skipped:     0, Total:    11, Duration: 19 s - ControlServer.Tests.dll (net8.0)
+== M3-oldest-current-decides
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.ALaterUnsafeAnswerOutranksAnEarlierSafeOne [1 s]
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.WhileTheSessionIsNotReadyOnTheOwnOrderASkewedSafeAnswerDoesNotDepart [1 s]
+Failed!  - Failed:     2, Passed:     9, Skipped:     0, Total:    11, Duration: 17 s - ControlServer.Tests.dll (net8.0)
+== M4-store-zero-tolerance
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.AnAnswerStampedAFewTenthsOfASecondAheadOfTheServerDepartsTheVehicle [275 ms]
+  Failed ControlServer.Tests.PreDepartureAnswerClockSkewTests.WhileTheSessionIsNotReadyOnTheOwnOrderASkewedSafeAnswerDoesNotDepart [1 s]
+Failed!  - Failed:     2, Passed:     9, Skipped:     0, Total:    11, Duration: 17 s - ControlServer.Tests.dll (net8.0)
