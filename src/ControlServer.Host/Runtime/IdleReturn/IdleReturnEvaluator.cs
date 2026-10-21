@@ -71,6 +71,7 @@ public sealed class IdleReturnEvaluator(
     IOptions<IdleReturnOptions> idleReturnOptions,
     IOptions<JourneyRuntimeOptions> runtimeOptions,
     IdleReturnVerdictBoard verdictBoard,
+    FleetStandingReader fleetStanding,
     TimeProvider timeProvider,
     ILogger<IdleReturnEvaluator> logger)
 {
@@ -161,18 +162,12 @@ public sealed class IdleReturnEvaluator(
             return disabled;
         }
 
-        // 这一轮交来的每辆车此刻停在哪（control-server#793）：停着车的等待点不论有没有独占行都不派别的车去。合格与否都算——
-        // 一辆因电量不合格而没被认领的车，照样站在那个点上。
-        Standing[] standing =
-        [
-            .. candidates
-                .Where(candidate => candidate.Facts.Vehicle.CurrentStationId is not null)
-                .Select(candidate => new Standing(candidate.Vehicle.VehicleKey, candidate.Facts.Vehicle.CurrentStationId!.Value)),
-        ];
-
         // 读在每辆车的 try 里（审查 S5）：它抛了只是这一辆这一轮不评估，不让空闲返回的故障跳过轮次结局的记录。
         HashSet<string>? heldByForeignOrder = null;
         RoundReads? reads = null;
+        // 全车队此刻停在哪（control-server#793、#798）：停着车的等待点不论有没有独占行都不派别的车去。这一轮交来的车合格与否都算——
+        // 一辆因电量不合格而没被认领的车，照样站在那个点上；没交来的车（外来订单占着的、有旅程的）也算，它们由读取器另读。
+        FleetStanding? standing = null;
         List<IdleReturnVerdict> verdicts = [];
         foreach (IdleReturnCandidate candidate in candidates)
         {
@@ -190,6 +185,8 @@ public sealed class IdleReturnEvaluator(
                 // 登记、固定站与路网一次评估读一次：一轮之内它们对每辆车是同一份。站点独占不在这里读，每辆车现读——前一辆刚预占的点
                 // 后一辆要看得见。
                 reads ??= await ReadRoundAsync(cancellationToken).ConfigureAwait(false);
+                standing ??= await fleetStanding
+                    .ReadAsync([.. candidates.Select(item => item.Facts.Vehicle)], cancellationToken).ConfigureAwait(false);
                 verdicts.Add(await SelectAndCommitAsync(candidate, currentMap, reads, standing, cancellationToken).ConfigureAwait(false));
             }
             catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -377,7 +374,7 @@ public sealed class IdleReturnEvaluator(
         IdleReturnCandidate candidate,
         RiotMapStationCatalogSnapshot currentMap,
         RoundReads reads,
-        IReadOnlyList<Standing> standing,
+        FleetStanding standing,
         CancellationToken cancellationToken)
     {
         FleetVehicle vehicle = candidate.Vehicle;
@@ -522,18 +519,18 @@ public sealed class IdleReturnEvaluator(
         return new IdleReturnVerdict(vehicle.AgvId, vehicle.VehicleKey, IdleReturnReasons.AdoptedInPlace, origin, version, journeyId);
     }
 
-    /// <summary>
-    /// 停在 <paramref name="from"/> 的车是不是就站在 <paramref name="stationId"/> 上：同一个站，或路网上同一个节点、代价为 0
-    /// （<see cref="Domain.RouteGraph.TraversalCostsFrom"/>：两个站吸附到同一个端点）。
-    /// </summary>
     private static bool StandsOn(Domain.RouteGraph graph, int from, int stationId) =>
-        from == stationId || graph.Traverse(from, stationId) is { Reachable: true, TraversalCostMm: 0 };
+        FleetStanding.StandsOn(graph, from, stationId);
 
     /// <summary>这一轮交来的另一辆车此刻就站在这个站上（control-server#793）。</summary>
     private static bool StoodOnByAnother(
-        Domain.RouteGraph graph, IReadOnlyList<Standing> standing, string vehicleKey, int stationId) =>
-        standing.Any(other => !string.Equals(other.VehicleKey, vehicleKey, StringComparison.Ordinal) &&
-                              StandsOn(graph, other.StationId, stationId));
+        Domain.RouteGraph graph, FleetStanding standing, string vehicleKey, int stationId) =>
+        standing.StoodOnByAnother(graph, vehicleKey, stationId) is not null;
+
+    /// <summary>选点用的全车队位置，给清桩开往等待点共用（control-server#798）。</summary>
+    internal Task<FleetStanding> ReadFleetStandingAsync(
+        IReadOnlyCollection<RiotVehicleObservation> readThisRound, CancellationToken cancellationToken) =>
+        fleetStanding.ReadAsync(readThisRound, cancellationToken);
 
     /// <summary>
     /// 只做 <c>STAGING_TO_WIRE</c> 的车开回待送固定起点（control-server#752）：用途占有与那个公共站的预占同一次保存，按 <c>REQ-0204</c> 以
@@ -573,7 +570,7 @@ public sealed class IdleReturnEvaluator(
         int origin,
         RiotMapStationCatalogSnapshot currentMap,
         RoundReads reads,
-        IReadOnlyList<Standing> standing,
+        FleetStanding standing,
         CancellationToken cancellationToken)
     {
         int stationId = stagingOrigin.StationRiotId;
@@ -610,7 +607,7 @@ public sealed class IdleReturnEvaluator(
         int origin,
         RiotMapStationCatalogSnapshot currentMap,
         RoundReads reads,
-        IReadOnlyList<Standing> standing,
+        FleetStanding standing,
         CancellationToken cancellationToken) =>
         point.StationId != origin && StandsOn(reads.Graph.Graph!, origin, point.StationId)
             ? IdleReturnReasons.PointAtVehicleNode
@@ -798,9 +795,6 @@ public sealed class IdleReturnEvaluator(
         }
         return new IdleReturnVerdict(vehicle.AgvId, vehicle.VehicleKey, reason);
     }
-
-    /// <summary>这一轮交来的一辆车此刻停在哪个站。</summary>
-    private sealed record Standing(string VehicleKey, int StationId);
 
     private sealed record RoundReads(
         WaitingPointRegistrationVersion? Registration,

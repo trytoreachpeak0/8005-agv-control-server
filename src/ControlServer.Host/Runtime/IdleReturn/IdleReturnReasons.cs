@@ -94,6 +94,12 @@ public static class IdleReturnReasons
     /// </summary>
     public const string PointTaken = "WAITING_POINT_RESERVED_OR_OCCUPIED";
 
+    /// <summary>
+    /// 这个等待点没有独占行，但车队里另一辆车此刻就停在点上（或与点同一个路网节点、代价为 0 的站上；control-server#798）。
+    /// 全车队都算：外来订单占着的车、有旅程的车、这一轮不评估的车；这一轮读不到位置的车按它上一次读到的站算。
+    /// </summary>
+    public const string PointStoodOn = "WAITING_POINT_STOOD_ON";
+
     /// <summary>路网上从车的位置到不了这个等待点，或它不在路网上。</summary>
     public const string PointUnreachable = "WAITING_POINT_UNREACHABLE";
 

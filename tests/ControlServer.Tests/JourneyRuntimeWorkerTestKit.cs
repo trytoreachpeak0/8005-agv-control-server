@@ -1207,7 +1207,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 options,
                 Clock,
                 EngineLog,
-                IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy),
+                IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy, vehicleFacts: Riot),
                 ChargingPolicy,
                 ChargingTestKit.Create(Context, Options, Clock, Riot, Peer, Riot),
                 TrialSublotLog);

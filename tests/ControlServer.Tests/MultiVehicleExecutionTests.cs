@@ -1198,6 +1198,9 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>打开空闲返回之后每辆车最近一次的结论，跨轮次保留，像宿主里的单例。</summary>
         public ControlServer.Host.Runtime.IdleReturn.IdleReturnVerdictBoard IdleReturnBoard { get; } = new();
 
+        /// <summary>选等待点时每辆车上一次读到的站（control-server#798），跨轮次保留，像宿主里的单例。</summary>
+        public ControlServer.Host.Runtime.IdleReturn.FleetStandingMemory StandingMemory { get; } = new();
+
         /// <summary>
         /// 打开空闲返回（control-server#389）：登记这些等待点、让实时目录列出它们，派车轮末尾按生产的样子评估。要装了路网的夹具。
         /// </summary>
@@ -1213,7 +1216,8 @@ public sealed partial class MultiVehicleExecutionTests
             Riot.ExtraStations.AddRange(points.Select(point => new RiotMapStation(point.StationId, point.StationName)));
             _idleReturn = fixture => IdleReturnTestKit.Create(
                 fixture.Context, fixture.Options, fixture.Clock, fixture.RouteGraph()!, enabled: true, board: fixture.IdleReturnBoard,
-                logger: fixture.IdleReturnLog, chargingPolicy: fixture.ChargingPolicy);
+                logger: fixture.IdleReturnLog, chargingPolicy: fixture.ChargingPolicy, vehicleFacts: fixture.Riot,
+                standingMemory: fixture.StandingMemory);
             await RecreateEngineAsync();
         }
 
@@ -1486,7 +1490,9 @@ public sealed partial class MultiVehicleExecutionTests
                 options,
                 Clock,
                 EngineLog,
-                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock, board: IdleReturnBoard, chargingPolicy: ChargingPolicy),
+                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(
+                    Context, Options, Clock, board: IdleReturnBoard, chargingPolicy: ChargingPolicy, vehicleFacts: Riot,
+                    standingMemory: StandingMemory),
                 ChargingPolicy,
                 ChargingTestKit.Create(
                     Context, Options, Clock, Riot, Peer, Riot, Riot, RouteGraph(), ChargingBoard, ChargingLog,
