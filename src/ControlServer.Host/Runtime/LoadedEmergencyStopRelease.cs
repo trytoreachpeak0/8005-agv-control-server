@@ -244,8 +244,12 @@ public static class EmergencyStopDoorCause
         ArgumentNullException.ThrowIfNull(subject);
         // CP-0017 section 6, item 3: a stop raised only for doors that could not be read, whose doors read locked again, asks
         // for no repaired lock -- the lock did not break, and the person confirms the cause removed, which for it is the reading
-        // back. Known only to the process that saw the whole fault (InTransitDoorReadings); anything else asks as before.
-        if (doorReadings?.OnlyUnreadAndLockedSince(subject.AgvId) == true)
+        // back. Known only to the process that saw the whole fault (InTransitDoorReadings), and only when the whole inbox since
+        // the leg began read no door not locked either (cs#839 third re-review, the same last check as the automatic release);
+        // anything else asks as before.
+        if (doorReadings?.OnlyUnreadAndLockedSince(subject.AgvId) == true &&
+            await NoDoorReadNotLockedInTransitAsync(dbContext, faults, subject, doorReadings, cancellationToken)
+                .ConfigureAwait(false))
         {
             return false;
         }
@@ -269,6 +273,34 @@ public static class EmergencyStopDoorCause
                 row => row.AgvId == agvId &&
                        (row.BlockReasonCode == VehicleFaultEvidence.DoorNotProvenLocked ||
                         row.BlockReasonCode == JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<bool> NoDoorReadNotLockedInTransitAsync(
+        ControlServerDbContext dbContext,
+        IVehicleFaultStore faults,
+        EmergencyStopSubject subject,
+        InTransitDoorReadings doorReadings,
+        CancellationToken cancellationToken)
+    {
+        VehicleFaultFact? fault = await faults.ReadAsync(subject.AgvId, cancellationToken).ConfigureAwait(false);
+        // The vehicle's latest order. Compared in memory: SQLite does not order DateTimeOffset.
+        DateTimeOffset? orderCreatedAt = (await dbContext.OrderIntents.AsNoTracking()
+                .Where(row => row.VehicleKey == subject.DeviceKey)
+                .Select(row => row.CreatedAt)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .Select(created => (DateTimeOffset?)created)
+            .Max();
+        if (fault?.EnteredAt is not DateTimeOffset entered || orderCreatedAt is not DateTimeOffset created)
+        {
+            return false;
+        }
+
+        return await InTransitDoorFacts.NoDoorReadNotLockedSinceAsync(
+                dbContext,
+                subject.AgvId,
+                JourneyRuntimeEngine.InTransitDoorWindowStart(created, entered, doorReadings.EpisodeStartedAt(subject.AgvId)),
                 cancellationToken)
             .ConfigureAwait(false);
     }

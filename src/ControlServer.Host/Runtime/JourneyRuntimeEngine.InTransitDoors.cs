@@ -88,6 +88,30 @@ public sealed partial class JourneyRuntimeEngine
             new EventId(2322, nameof(LogDoorUnknownGraceEnded)),
             "Vehicle {AgvId}: the door reading came back locked after {UnreadSeconds} s unread; the grace ended without a fault.");
 
+    /// <summary>
+    /// Where the release's last check reads from (cs#839 third re-review): when this leg's order was created -- it is created
+    /// on a departure the doors were proven locked for -- or, for an order created after the fault (one rebuilt), the run
+    /// look-back before the fault; and never later than the fault or the episode that led to it.
+    /// </summary>
+    internal static DateTimeOffset InTransitDoorWindowStart(
+        DateTimeOffset orderCreatedAt,
+        DateTimeOffset? faultEnteredAt,
+        DateTimeOffset? episodeStartedAt)
+    {
+        DateTimeOffset start = faultEnteredAt is DateTimeOffset entered && orderCreatedAt > entered
+            ? entered - InTransitDoorFacts.UnknownRunLookBack
+            : orderCreatedAt;
+        foreach (DateTimeOffset bound in new[] { faultEnteredAt, episodeStartedAt }.OfType<DateTimeOffset>())
+        {
+            if (bound < start)
+            {
+                start = bound;
+            }
+        }
+
+        return start;
+    }
+
     private async Task<bool> ObserveDoorsInTransitAsync(
         JourneyRuntimeRow runtime,
         OrderIntentRow intent,
@@ -104,11 +128,9 @@ public sealed partial class JourneyRuntimeEngine
         DateTimeOffset now = timeProvider.GetUtcNow();
         // Every summary received since the vehicle's last round as well as the one in force (cs#839 review H1), but not further
         // back than the run look-back: a vehicle back on the road after an hour at a station has nothing older to tell.
-        // What the cut leaves unread is unknown, and a door fault standing across it is taken to have read a door not locked
-        // (cs#839 second re-review, M).
+        // What the cut leaves unread is the release's last check's to find (FaultedVehicleContext.NoDoorReadNotLockedInTransit).
         DateTimeOffset? since = _doorReadings.SinceFor(runtime.AgvId);
-        bool earlierReadingsUnread = since < now - InTransitDoorFacts.UnknownRunLookBack;
-        if (earlierReadingsUnread)
+        if (since < now - InTransitDoorFacts.UnknownRunLookBack)
         {
             since = now - InTransitDoorFacts.UnknownRunLookBack;
         }
@@ -136,8 +158,7 @@ public sealed partial class JourneyRuntimeEngine
         // Only what a live onboard reports raises the symptom; a vehicle not heard from stays with control-server#234's code
         // (see InTransitDoorVerdict.ReadUnknown). A slot that cannot be read is graced first (CP-0017): no fault, no command,
         // an alarm. A fault already raised is still driven every round, silent or not.
-        InTransitDoorReading reading = _doorReadings.Observe(
-            runtime.AgvId, doors, doorFaultInEffect, now, earlierReadingsUnread);
+        InTransitDoorReading reading = _doorReadings.Observe(runtime.AgvId, doors, doorFaultInEffect, now);
         if (reading.GraceEndedAfter is TimeSpan unread)
         {
             LogDoorUnknownGraceEnded(logger, runtime.AgvId, unread.TotalSeconds, null);
@@ -169,10 +190,17 @@ public sealed partial class JourneyRuntimeEngine
         // The doors reading locked again release nothing on a fault that read a door not locked (CP-0011). On one raised only
         // for doors that could not be read, ten unbroken seconds of them are REQ-0167's "原原因消除" (CP-0017): the coordinator
         // releases on it past this server's own confirmed hold, and the order stays held for a person's continue.
+        // The rounds' reading is only the early answer; the last word before the release is the whole inbox since the leg began
+        // (cs#839 third re-review, the user's ruling of 2026-10-21).
+        DateTimeOffset? episodeStartedAt = _doorReadings.EpisodeStartedAt(runtime.AgvId);
         FaultedVehicleContext context = inFlight with
         {
             DoorsNotProvenLocked = reading.DoorsNotProvenLocked,
             DoorReadingRestored = reading.ReadingRestored,
+            NoDoorReadNotLockedInTransit = reading.ReadingRestored
+                ? (faultEnteredAt, token) => InTransitDoorFacts.NoDoorReadNotLockedSinceAsync(
+                    dbContext, runtime.AgvId, InTransitDoorWindowStart(intent.CreatedAt, faultEnteredAt, episodeStartedAt), token)
+                : null,
         };
         VehicleFaultDecision decision = await faults.ObserveAsync(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),

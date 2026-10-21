@@ -341,6 +341,48 @@ public static class InTransitDoorFacts
         return starts;
     }
 
+    /// <summary>
+    /// Whether no summary of the vehicle received from <paramref name="from"/> on read a door not locked, and the inbox reaches
+    /// back to <paramref name="from"/> -- the last check before a door fault's automatic release (cs#839 third re-review, the
+    /// user's ruling of 2026-10-21).
+    /// </summary>
+    /// <remarks>
+    /// Read whole and afresh, nothing from the rounds' incremental reading: every generation, standing still or moving. A summary
+    /// received at or before <paramref name="from"/> is what proves the window complete; without one the doors at its start are
+    /// not known, and the answer is no.
+    /// </remarks>
+    public static async Task<bool> NoDoorReadNotLockedSinceAsync(
+        ControlServerDbContext dbContext,
+        string agvId,
+        DateTimeOffset from,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+
+        await foreach (ProtocolInboxRow row in SafetyMessagesNewestFirst.Read(dbContext)
+                           .WithCancellation(cancellationToken)
+                           .ConfigureAwait(false))
+        {
+            if (Parse(row, agvId) is not { } summary)
+            {
+                continue;
+            }
+
+            if (StateOf(summary) == InTransitDoorState.NotLocked)
+            {
+                return false;
+            }
+
+            if (summary.ReceivedAt <= from)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static InTransitDoorState StateOf(Summary summary) =>
         summary.SlotStateUnknown
             ? InTransitDoorState.SlotStateUnknown

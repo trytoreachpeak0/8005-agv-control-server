@@ -539,7 +539,7 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
             ProtocolInboxRow[] before = [.. (await db.ProtocolInbox
                     .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
                     .ToArrayAsync(Token))
-                .Where(row => row.ReceivedAt < legStart)];
+                .Where(row => row.ReceivedAt <= legStart)];
             Assert.NotEmpty(before);
             db.ProtocolInbox.RemoveRange(before);
             await db.SaveChangesAsync(Token);
@@ -767,12 +767,16 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
     [InlineData("unread-and-locked", false)]
     [InlineData("unread-still-unknown", true)]
     [InlineData("read-not-locked", true)]
+    [InlineData("stopped-not-locked-in-grace", true)]
     [Trait("Requirement", "REQ-0356")]
     public async Task TheClassThreeEntryAsksForARepairedLockOnlyWhenADoorReadNotLocked(string history, bool repairRequired)
     {
-        await using RuntimeFixture fixture = history == "read-not-locked"
-            ? await InTransitDoorEmergencyReleaseTests.LatchedForTheDoorsAsync()
-            : await LatchedForUnreadDoorsAsync();
+        await using RuntimeFixture fixture = history switch
+        {
+            "read-not-locked" => await InTransitDoorEmergencyReleaseTests.LatchedForTheDoorsAsync(),
+            "stopped-not-locked-in-grace" => await LatchedAfterAStoppedNotLockedInAGraceAsync(),
+            _ => await LatchedForUnreadDoorsAsync(),
+        };
         if (history != "unread-still-unknown")
         {
             await ReportLockedAsync(fixture);
@@ -801,6 +805,24 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
     private static async Task<RuntimeFixture> LatchedForUnreadDoorsAsync(bool behindTheReadinessGate = false)
     {
         RuntimeFixture fixture = await DrivingBetweenStationsAsync(behindTheReadinessGate);
+        await ReportUnknownAsync(fixture);
+        await DriveRoundsAsync(fixture, 3);
+        await LatchAsync(fixture);
+        return fixture;
+    }
+
+    /// <summary>
+    /// 同上，但宽限中两轮之间夹着一条车停着时的「没锁」：增量那一路判它不算（宽限照给），解除前的全量复查算（第三次复审，用户 10-21 定）。
+    /// </summary>
+    private static async Task<RuntimeFixture> LatchedAfterAStoppedNotLockedInAGraceAsync()
+    {
+        RuntimeFixture fixture = await DrivingBetweenStationsAsync(behindTheReadinessGate: false);
+        await ReportUnknownAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED"], vehicleStopped: true);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
         await ReportUnknownAsync(fixture);
         await DriveRoundsAsync(fixture, 3);
         await LatchAsync(fixture);

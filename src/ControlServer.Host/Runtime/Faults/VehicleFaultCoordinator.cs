@@ -100,6 +100,12 @@ public static class VehicleFaultEvidence
 /// revised by CP-0017 counts that as the cause removed; see <see cref="VehicleFaultCoordinator.DoorReadingRelease"/>. False
 /// unless the caller says otherwise.
 /// </param>
+/// <param name="NoDoorReadNotLockedInTransit">
+/// The release's last check, given the fault's entry time: reads the whole inbox of the vehicle since its leg began and says
+/// whether no summary read a door not locked, standing still or moving (cs#839 third re-review, the user's ruling of
+/// 2026-10-21). <see cref="DoorReadingRestored"/> is the rounds' early answer; this one is final. Null means it cannot be
+/// asked, and then nothing is released.
+/// </param>
 /// <remarks>
 /// Until CP-0011 it carried the opposite fact, whether the doors read locked again, which released a door-cause stop on its
 /// own (control-server#335). The user ruled on 2026-10-13 that a lock feedback that came back proves nothing about the lock,
@@ -110,7 +116,8 @@ public sealed record FaultedVehicleContext(
     RiotOrderCommandTarget? CurrentOrder,
     FaultedVehicleCargoFacts? Cargo,
     bool DoorsNotProvenLocked = false,
-    bool DoorReadingRestored = false);
+    bool DoorReadingRestored = false,
+    Func<DateTimeOffset?, CancellationToken, Task<bool>>? NoDoorReadNotLockedInTransit = null);
 
 /// <summary>The cargo facts REQ-0238 decides the two paths from.</summary>
 /// <param name="LoadingWitnessed">Whether loading was actually observed.</param>
@@ -894,7 +901,19 @@ public sealed class VehicleFaultCoordinator(
             : await commands.ReconcileAsync(hold, cancellationToken).ConfigureAwait(false);
         RiotOrderObservation order = await movement
             .ReconcileByUpperIdAsync(target.UpperId, cancellationToken).ConfigureAwait(false);
-        return DoorReadingRelease(fault, context, holdOutcome, order, releasedBefore);
+        DoorReadingReleaseAllowance? allowance = DoorReadingRelease(fault, context, holdOutcome, order, releasedBefore);
+
+        // The last check, and the one that decides (cs#839 third re-review): the whole inbox since the leg began, read afresh,
+        // after every other premise has held. Three reviews in a row found a way the rounds' incremental reading missed a door
+        // read not locked; this read does not depend on it.
+        if (allowance is null ||
+            context.NoDoorReadNotLockedInTransit is not { } noDoorReadNotLocked ||
+            !await noDoorReadNotLocked(fault.EnteredAt, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return allowance;
     }
 
     /// <summary>
