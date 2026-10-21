@@ -2,6 +2,7 @@ using System.Text.Json;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
@@ -139,6 +140,89 @@ public sealed class PreDepartureAnswerClockSkewTests
         Assert.Contains(
             fixture.EngineLog.Entries,
             entry => entry.Level == LogLevel.Warning && entry.Message.Contains("not-safe", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// #853 review M1 (probe P1): only an answer that would depart the vehicle is passed over for being outdated. A newer
+    /// UNSAFE answer holds the vehicle even when it is itself outdated -- here stamped 0.6 s ahead, beyond the tolerance --
+    /// and the older SAFE answer, still current, does not depart it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
+    public async Task ANewerUnsafeAnswerHoldsTheVehicleEvenWhenItIsItselfOutdated()
+    {
+        await using RuntimeFixture fixture = await DemandAsync();
+        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        string checkId = runtime.PreDepartureSafetyCheckId!;
+        DateTimeOffset now = fixture.Clock.GetUtcNow();
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
+            Answer(checkId, 7, now.AddMilliseconds(-500)), checkId, receivedAt: now.AddMilliseconds(-500));
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
+            Answer(checkId, 7, now.AddMilliseconds(600), allTargetSlotsLocked: false), checkId, receivedAt: now);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
+        Assert.Equal("PRE_DEPARTURE_SAFETY_NOT_VALID", runtime.BlockReasonCode);
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Null(runtime.ConsumedSafetyResultMessageId);
+    }
+
+    /// <summary>
+    /// #853 review L1 (probe P3): "newer" is newer by either clock. An UNSAFE answer received first but observed later than a
+    /// SAFE answer received after it -- a replay after a reconnect can deliver them in that order -- still holds the vehicle.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
+    public async Task AnUnsafeAnswerObservedLaterHoldsTheVehicleThoughASafeOneWasReceivedAfterIt()
+    {
+        await using RuntimeFixture fixture = await DemandAsync();
+        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        string checkId = runtime.PreDepartureSafetyCheckId!;
+        DateTimeOffset now = fixture.Clock.GetUtcNow();
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
+            Answer(checkId, 7, now.AddMilliseconds(-200), allTargetSlotsLocked: false), checkId,
+            receivedAt: now.AddMilliseconds(-100));
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
+            Answer(checkId, 7, now.AddSeconds(-1)), checkId, receivedAt: now);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
+        Assert.Equal("PRE_DEPARTURE_SAFETY_NOT_VALID", runtime.BlockReasonCode);
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+    }
+
+    /// <summary>
+    /// #853 review L3: the tolerance is bounded the way the onboard side bounds its own (<c>clockSkewToleranceMs</c>, at most
+    /// 1000 ms); a value outside 0..1 s refuses to start, and is not clamped.
+    /// </summary>
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(500, true)]
+    [InlineData(1000, true)]
+    [InlineData(-1, false)]
+    [InlineData(1001, false)]
+    [InlineData(2000, false)]
+    public void TheToleranceMustBeBetweenZeroAndOneSecond(int milliseconds, bool accepted)
+    {
+        const string failure = "PeerClockSkewTolerance must be between 0 and 1 s.";
+        Assert.Equal(TimeSpan.FromMilliseconds(500), new JourneyRuntimeOptions().PeerClockSkewTolerance);
+        JourneyRuntimeOptions options = JourneyRuntimeOptionsTests.ValidEnabledOptions();
+        options.PeerClockSkewTolerance = TimeSpan.FromMilliseconds(milliseconds);
+
+        string[] failures = [.. new JourneyRuntimeOptionsValidator(new ConfigurationBuilder().Build())
+            .Validate(null, options).Failures ?? []];
+
+        Assert.Equal(accepted, !failures.Contains(failure, StringComparer.Ordinal));
     }
 
     /// <summary>The tolerance is about the clock only: an answer that says the vehicle is not safe stays not safe.</summary>
