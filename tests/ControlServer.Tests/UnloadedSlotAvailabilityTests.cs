@@ -126,7 +126,8 @@ public sealed class UnloadedSlotAvailabilityTests
             "superseded" => SeedUnloadAsync(fixture, [1, 2], after, supersededBy: Guid.NewGuid().ToString("D")),
             "before-the-baseline" => SeedUnloadAsync(fixture, [1, 2], Now.AddSeconds(-30)),
             "at-the-baseline" => SeedUnloadAsync(fixture, [1, 2], Now),
-            "a-load" => SeedUnloadAsync(fixture, [1, 2], after, type: SlotOperationType.Load),
+            // 证据读空也不算：认的是卸货这件事，不是证据里的一个空字。
+            "a-load" => SeedUnloadAsync(fixture, [1, 2], after, type: SlotOperationType.Load, evidenceState: SlotBusinessState.Empty),
             "evidence-not-locked" => SeedUnloadAsync(fixture, [1, 2], after, doorLocked: false),
             "another-vehicle" => SeedUnloadAsync(fixture, [1, 2], after, agvId: "老厂前线新多仓位2"),
             _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, null),
@@ -137,17 +138,18 @@ public sealed class UnloadedSlotAvailabilityTests
     }
 
     /// <summary>
-    /// 卸空回到可用的只是「有货」这一条：握手时被禁用、或开锁输出没复位的仓，卸过也不回来。
+    /// 卸空回到可用的只是「有货」这一条：握手时被禁用、或开锁输出没复位的仓，卸过也不回来。5 号是对照：同样有货、同一次卸空，
+    /// 它回来了，所以卸货记录确实读过（基线里没有一个只因有货而不可用的仓时，根本不读）。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task ASlotTheBaselineRefusesForAnythingButItsCargoStaysOutAfterAnUnload()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        await OccupyInTheBaselineAsync(fixture, generation: 1, 1, 2);
+        await OccupyInTheBaselineAsync(fixture, generation: 1, 1, 2, 5);
         await RewriteBaselineSlotAsync(fixture, generation: 1, slot: 1, "administrativeAvailability", "DISABLED");
         await RewriteBaselineSlotAsync(fixture, generation: 1, slot: 2, "unlockOutputState", "ACTIVE");
-        await SeedUnloadAsync(fixture, [1, 2], Now.AddSeconds(30));
+        await SeedUnloadAsync(fixture, [1, 2, 5], Now.AddSeconds(30));
         await StayLiveAsync(fixture, TimeSpan.FromMinutes(1));
 
         Assert.Equal("3,4,5,6,7,8", Slots(await ReadAsync(fixture)));
@@ -327,12 +329,13 @@ public sealed class UnloadedSlotAvailabilityTests
         string? supersededBy = null,
         SlotOperationType type = SlotOperationType.Unload,
         bool doorLocked = true,
-        string? agvId = null)
+        string? agvId = null,
+        SlotBusinessState? evidenceState = null)
     {
         string attemptId = Guid.NewGuid().ToString("D");
         string evidence = JsonSerializer.Serialize(slots.Select(slot => new SlotPhysicalEvidence(
             slot,
-            type == SlotOperationType.Unload ? SlotBusinessState.Empty : SlotBusinessState.Occupied,
+            evidenceState ?? (type == SlotOperationType.Unload ? SlotBusinessState.Empty : SlotBusinessState.Occupied),
             doorLocked,
             true)));
         fixture.Context.StationOperations.Add(new StationOperationRow
