@@ -456,6 +456,31 @@ public sealed class TrialSublotAdmissionTests
         Assert.Contains(" 0 ", FilterLines(fixture)[2], StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 规则关着时受理的试验批，规则打开后不算「滤掉」（审查 L1）：日志只列那条从未受理的试验批，不列已受理的那条。
+    /// 取红：日志集合不排除已受理的（变异 N3），已受理的批号也出现在日志里。
+    /// </summary>
+    [Fact]
+    public async Task AnAcceptedTrialSublotIsNotLoggedAsFiltered()
+    {
+        await using RuntimeFixture fixture = await FixtureWithDemandAsync(TrialSublot, ruleOn: false);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal([Demand], await AcceptedAsync(fixture));
+        Assert.Empty(FilterLines(fixture));
+
+        TurnRuleOn(fixture);
+        fixture.Catalog.Set(
+            (await fixture.Catalog.ReadCatalogAsync(Token)).Items.Single(),
+            fixture.Demand(Other, "Q26079308-1", fixture.Clock.GetUtcNow().AddMinutes(-1)));
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        string line = Assert.Single(FilterLines(fixture));
+        Assert.Contains("Q26079308-1", line, StringComparison.Ordinal);
+        Assert.DoesNotContain(TrialSublot, line, StringComparison.Ordinal);
+        Assert.Contains(" 1 ", line, StringComparison.Ordinal);
+    }
+
     // ---- 看板与分类 ------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -511,7 +536,8 @@ public sealed class TrialSublotAdmissionTests
             options.TrialSublotCharacters = characters;
             Assert.DoesNotContain(validator.Validate(null, options).Failures ?? [], failure => failure.Contains("TrialSublot", StringComparison.Ordinal));
         }
-        foreach ((int position, string characters) in new[] { (6, ""), (0, "9"), (-1, "9"), (-1, "") })
+        // 审查 L4：取值里有空白字符的拒绝——" 9" 会把第 6 位是空格的批号也滤掉，读回结果行也带不了空格。
+        foreach ((int position, string characters) in new[] { (6, ""), (0, "9"), (-1, "9"), (-1, ""), (6, " 9"), (6, "9\t"), (6, "　") })
         {
             JourneyRuntimeOptions options = JourneyRuntimeOptionsTests.ValidEnabledOptions();
             options.TrialSublotCharacterPosition = position;

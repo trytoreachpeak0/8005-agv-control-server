@@ -778,7 +778,8 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
 
         using JsonDocument rendered = JsonDocument.Parse(RenderEvent(options, "http://127.0.0.1:58188", idleReturn: idleReturn));
 
-        Assert.EndsWith(" idleReturnEnabled={IdleReturnEnabled}", rendered.RootElement.GetProperty("@mt").GetString()!, StringComparison.Ordinal);
+        // No longer the last field since control-server#828 appended the catalog age window and the trial sublot rule.
+        Assert.Contains(" idleReturnEnabled={IdleReturnEnabled} ", rendered.RootElement.GetProperty("@mt").GetString()!, StringComparison.Ordinal);
         Assert.Equal(logged ? JsonValueKind.True : JsonValueKind.False, rendered.RootElement.GetProperty("IdleReturnEnabled").ValueKind);
     }
 
@@ -815,6 +816,67 @@ public sealed class ParallelInstanceEffectiveConfigurationTests
         string line = RenderEvent(options, configuration["MesIngest:baseUrl"]!, BindCatalog(configuration), gate, idleReturn);
 
         string verdict = JudgeReadBack(root, definitionFile, line, definitionEdit);
+
+        if (says is null)
+        {
+            Assert.StartsWith(expectedAction + "|", verdict, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.StartsWith(expectedAction + "|EFFECTIVE_CONFIGURATION_MISMATCH: ", verdict, StringComparison.Ordinal);
+            Assert.Contains(says, verdict, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// control-server#828 review M1, end to end: the catalog age window and the trial sublot rule as the overlay writes them from the
+    /// definition over the package's appsettings.json, bound as the Host binds <see cref="JourneyRuntimeOptions"/>, logged last in
+    /// the event, and judged by the installer's read-back. Production stage 3 writes character 6 and "9"; the shipped definition
+    /// leaves the rule out (off) and the window at the default. host stands for a Host that bound something else -- an
+    /// environment layer, a value left over from an earlier layer: the install is then stopped and refused.
+    /// </summary>
+    [Theory]
+    [InlineData("instance-factory01-v2.cutover-production-s3.runtime-on.json", "as-bound", 6, "9", "Pass", null)]
+    [InlineData("instance-factory01-v2.cutover-production-s3.runtime-on.json", "rule-off", 6, "9", "StopServiceAndRefuse", "trialSublotCharacterPosition bound '0', the definition says '6'")]
+    [InlineData("instance-factory01-v2.cutover-production-s3.runtime-on.json", "other-character", 6, "9", "StopServiceAndRefuse", "trialSublotCharacters bound '8', the definition says '9'")]
+    [InlineData("instance-factory01-v2.cutover-production-s3.runtime-on.json", "window-hour", 6, "9", "StopServiceAndRefuse", "catalogAgeWindow bound '01:00:00', the definition says '00:30:00'")]
+    [InlineData("instance-factory01-v2.json", "as-bound", 0, "", "Pass", null)]
+    [InlineData("instance-factory01-v2.json", "rule-on", 0, "", "StopServiceAndRefuse", "trialSublotCharacterPosition bound '6', the definition says '0'")]
+    public void TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(
+        string definitionFile, string host, int expectedPosition, string expectedCharacters, string expectedAction, string? says)
+    {
+        string root = FindRepositoryRoot();
+        bool shipped = definitionFile == "instance-factory01-v2.json";
+        JourneyRuntimeOptions options = Bind(
+            File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "appsettings.json")),
+            GenerateOverlay(root, definitionFile, checkDefinition: shipped),
+            out IConfiguration configuration);
+        Assert.Equal(expectedPosition, options.TrialSublotCharacterPosition);
+        Assert.Equal(expectedCharacters, options.TrialSublotCharacters);
+        Assert.Equal(TimeSpan.FromMinutes(30), options.CatalogAgeWindow);
+        switch (host)
+        {
+            case "rule-off":
+                options.TrialSublotCharacterPosition = 0;
+                options.TrialSublotCharacters = "";
+                break;
+            case "other-character":
+                options.TrialSublotCharacters = "8";
+                break;
+            case "window-hour":
+                options.CatalogAgeWindow = TimeSpan.FromHours(1);
+                break;
+            case "rule-on":
+                options.TrialSublotCharacterPosition = 6;
+                options.TrialSublotCharacters = "9";
+                break;
+        }
+        IdleReturnOptions idleReturn = new();
+        configuration.GetSection(IdleReturnOptions.SectionName).Bind(idleReturn);
+        string line = RenderEvent(
+            options, configuration["MesIngest:baseUrl"]!, BindCatalog(configuration), GovernanceModule.ResolveGateMode(configuration), idleReturn);
+
+        string verdict = JudgeReadBack(root, definitionFile, line);
 
         if (says is null)
         {

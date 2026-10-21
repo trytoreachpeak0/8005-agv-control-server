@@ -47,7 +47,7 @@ public sealed record TrialSublotRule(int Position, string Characters)
 /// <para>
 /// 四处共用：准入判据（<see cref="Criteria.TrialSublotCriterion"/>）、AREA→EQP 观测（<see cref="Criteria.AreaEqpUniqueCriterion"/>）、
 /// 防饥饿排除集合（<see cref="StarvationExclusions"/>）、派车轮的滤除日志。受理前重读目录时不另判：SUBLOT 是重读比对的决策事实之一
-/// （<c>DemandIntakeService.HasSameDecisionFacts</c>），重读出来的批号变了就放弃本次受理，下一轮按新批号经判据判；规则本身一轮只读一次。
+/// （<c>DemandIntakeService.HasSameDecisionFacts</c>，<c>src/ControlServer.Application/WireToGateOrchestration.cs</c>），重读出来的批号变了就放弃本次受理，下一轮按新批号经判据判；规则本身一轮只读一次。
 /// </para>
 /// </remarks>
 public static class TrialSublot

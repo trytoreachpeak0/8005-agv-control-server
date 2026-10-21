@@ -5233,7 +5233,8 @@ foreach ($case in @(
         @{ Position = 6; Characters = '9'; Ok = $true }, @{ Position = 0; Characters = ''; Ok = $true },
         @{ Position = 6; Characters = '89'; Ok = $true }, @{ Position = 6; Characters = ''; Ok = $false },
         @{ Position = 0; Characters = '9'; Ok = $false }, @{ Position = -1; Characters = '9'; Ok = $false },
-        @{ Position = '6'; Characters = '9'; Ok = $false }, @{ Position = 6; Characters = 9; Ok = $false })) {
+        @{ Position = '6'; Characters = '9'; Ok = $false }, @{ Position = 6; Characters = 9; Ok = $false },
+        @{ Position = 6; Characters = ' 9'; Ok = $false }, @{ Position = 6; Characters = "9`t"; Ok = $false })) {
     Invoke-SourceCase "trial sublot rule: $($case.Position) ($($case.Position.GetType().Name)) / '$($case.Characters)' ($($case.Characters.GetType().Name)) is $(if ($case.Ok) { 'accepted' } else { 'refused' })" {
         $d = Copy-Definition $baseline
         $d['journeyRuntime']['trialSublotCharacterPosition'] = $case.Position
@@ -5824,7 +5825,7 @@ Invoke-SourceCase 'catalog read-back: Program.cs logs the MapStationCatalogOptio
 # the cargo holding and station departure waits, as the Host bound them, read back from its EFFECTIVE_CONFIGURATION event
 # and compared with the definition; and the result line 19-deploy-control-server-parallel.ps1 compares after the install.
 # ------------------------------------------------------------------------------------------------
-$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled}"
+$bindingTemplate = "$catalogTemplate foreignRunningOrderRelease={ForeignRunningOrderRelease} admissionPolicyVersion={AdmissionPolicyVersion} admissionPolicyDeploymentId={AdmissionPolicyDeploymentId} cargoHoldingTimeout={CargoHoldingTimeout} stationDepartureWaitTimeout={StationDepartureWaitTimeout} slotConfigurationReadinessGate={SlotConfigurationReadinessGate} stagingDepartureRulesEnabled={StagingDepartureRulesEnabled} stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled} catalogAgeWindow={CatalogAgeWindow} trialSublotCharacterPosition={TrialSublotCharacterPosition} trialSublotCharacters={TrialSublotCharacters}"
 # -Bound '<absent>' leaves all four out, as a package older than #672 logs the event; otherwise a hashtable of the four
 # values as the Host would log them, a key left out of it left out of the event.
 function Get-BindingReadBack($Definition, $Bound) {
@@ -5838,7 +5839,7 @@ function Get-BindingReadBack($Definition, $Bound) {
         ClearanceToWaitingPointEnabled = $false
     }
     if ($Bound -isnot [string] -or $Bound -cne '<absent>') {
-        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout', 'SlotConfigurationReadinessGate', 'StagingDepartureRulesEnabled', 'IdleReturnEnabled')) {
+        foreach ($key in @('AdmissionPolicyVersion', 'AdmissionPolicyDeploymentId', 'CargoHoldingTimeout', 'StationDepartureWaitTimeout', 'SlotConfigurationReadinessGate', 'StagingDepartureRulesEnabled', 'IdleReturnEnabled', 'CatalogAgeWindow', 'TrialSublotCharacterPosition', 'TrialSublotCharacters')) {
             if ($Bound.Contains($key)) { $event[$key] = $Bound[$key] }
         }
     }
@@ -5860,6 +5861,10 @@ function New-BoundBinding([hashtable] $Change = @{}) {
         StagingDepartureRulesEnabled = $false
         # control-server#781. The baseline leaves idle return out, which is off, and the row always compares it.
         IdleReturnEnabled = $false
+        # control-server#828. What the overlay writes for a definition that leaves them out: the default window, the rule off.
+        CatalogAgeWindow = '00:30:00'
+        TrialSublotCharacterPosition = 0
+        TrialSublotCharacters = ''
     }
     foreach ($key in @($Change.Keys)) { if ($null -eq $Change[$key]) { $bound.Remove($key) } else { $bound[$key] = $Change[$key] } }
     return $bound
@@ -5877,6 +5882,13 @@ $bindingStagingOn['journeyRuntime']['stagingDepartureRules'] = [ordered]@{ enabl
 # control-server#781. The baseline with idle return on.
 $bindingIdleOn = Copy-Definition $baseline
 $bindingIdleOn['idleReturn'] = [ordered]@{ enabled = $true }
+# control-server#828. The baseline with the trial sublot rule on, as the production stages write it; and with a one-hour window.
+$bindingTrialOn = Copy-Definition $baseline
+$bindingTrialOn['journeyRuntime']['trialSublotCharacterPosition'] = 6
+$bindingTrialOn['journeyRuntime']['trialSublotCharacters'] = '9'
+$bindingTrialOnBound = @{ TrialSublotCharacterPosition = 6; TrialSublotCharacters = '9' }
+$bindingWindowHour = Copy-Definition $baseline
+$bindingWindowHour['journeyRuntime']['catalogAgeWindow'] = '01:00:00'
 # One row per row of the module's $script:JourneyBindingFields (the case below holds the two lists equal): a value the Host
 # might bind instead, and the problem text naming the field. A field added to the table is added here too.
 $bindingFieldCases = @(
@@ -5892,6 +5904,11 @@ $bindingFieldCases = @(
     @{ Logged = 'StagingDepartureRulesEnabled'; Wrong = $false; Right = $true; Definition = $bindingStagingOn; Says = "stagingDepartureRulesEnabled bound 'False', the definition says 'True'" }
     # control-server#781. Always compared; the definition turns idle return on, so off -- bound, or missing (read as off) -- is refused.
     @{ Logged = 'IdleReturnEnabled'; Wrong = $false; Right = $true; Definition = $bindingIdleOn; Says = "idleReturnEnabled bound 'False', the definition says 'True'" }
+    # control-server#828 review M1. Always compared; missing reads as the default 00:30:00, which the baseline expects: passes.
+    @{ Logged = 'CatalogAgeWindow'; Wrong = '01:00:00'; Says = "catalogAgeWindow bound '01:00:00', the definition says '00:30:00'"; MissingPasses = $true }
+    # The rule on in the definition; the field under test bound off, or missing (read as off, a package older than #828): refused.
+    @{ Logged = 'TrialSublotCharacterPosition'; Wrong = 0; Definition = $bindingTrialOn; Says = "trialSublotCharacterPosition bound '0', the definition says '6'" }
+    @{ Logged = 'TrialSublotCharacters'; Wrong = ''; Definition = $bindingTrialOn; Says = "trialSublotCharacters bound '', the definition says '9'" }
 )
 Invoke-SourceCase 'binding read-back: every row of the module''s JourneyBindingFields has a field case here, in table order' {
     $table = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | ForEach-Object Logged)
@@ -5930,7 +5947,18 @@ foreach ($case in @(
         @{ Name = 'idle return defined on, logged as the string "True" -- stop and refuse, not cast'; Definition = $bindingIdleOn; Bound = (New-BoundBinding @{ IdleReturnEnabled = 'True' }); Action = 'StopServiceAndRefuse'; Says = "idleReturnEnabled bound 'True', the definition says 'True'" }
         @{ Name = 'idle return defined on, event older than #672 -- stop and refuse (that package does not say)'; Definition = $bindingIdleOn; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "idleReturnEnabled bound 'not logged', the definition says 'True'" }
         @{ Name = 'idle return left out of the definition, bound on (left over, or an environment layer) -- stop and refuse: always compared'; Definition = $baseline; Bound = (New-BoundBinding @{ IdleReturnEnabled = $true }); Action = 'StopServiceAndRefuse'; Says = "idleReturnEnabled bound 'True', the definition says 'False'" }
-        @{ Name = 'idle return left out, a package older than #781 (logs the others, not it) -- pass, so a rollback to v5 with it off is not blocked'; Definition = $baseline; Bound = (New-BoundBinding @{ IdleReturnEnabled = $null }); Action = 'Pass'; Says = $null })) {
+        @{ Name = 'idle return left out, a package older than #781 (logs the others, not it) -- pass, so a rollback to v5 with it off is not blocked'; Definition = $baseline; Bound = (New-BoundBinding @{ IdleReturnEnabled = $null }); Action = 'Pass'; Says = $null }
+        # control-server#828 review M1.
+        @{ Name = 'trial sublot rule defined on, bound on -- pass'; Definition = $bindingTrialOn; Bound = (New-BoundBinding $bindingTrialOnBound); Action = 'Pass'; Says = $null }
+        @{ Name = 'trial sublot rule defined on, the position logged as the string "6" -- stop and refuse, not cast'; Definition = $bindingTrialOn; Bound = (New-BoundBinding @{ TrialSublotCharacterPosition = '6'; TrialSublotCharacters = '9' }); Action = 'StopServiceAndRefuse'; Says = "trialSublotCharacterPosition bound '6', the definition says '6'" }
+        @{ Name = 'trial sublot rule defined on, a full-width nine bound -- stop and refuse (ordinal)'; Definition = $bindingTrialOn; Bound = (New-BoundBinding @{ TrialSublotCharacterPosition = 6; TrialSublotCharacters = [string][char]0xFF19 }); Action = 'StopServiceAndRefuse'; Says = 'trialSublotCharacters bound' }
+        @{ Name = 'trial sublot rule defined on, a package older than #828 (logs the others, not the rule) -- stop and refuse: that package has no rule'; Definition = $bindingTrialOn; Bound = (New-BoundBinding @{ TrialSublotCharacterPosition = $null; TrialSublotCharacters = $null }); Action = 'StopServiceAndRefuse'; Says = "trialSublotCharacterPosition bound 'not logged', the definition says '6'" }
+        @{ Name = 'trial sublot rule defined on, event older than #672 -- stop and refuse'; Definition = $bindingTrialOn; Bound = '<absent>'; Action = 'StopServiceAndRefuse'; Says = "trialSublotCharacters bound 'not logged', the definition says '9'" }
+        @{ Name = 'trial sublot rule left out of the definition, bound on (left over, or an environment layer) -- stop and refuse: always compared'; Definition = $baseline; Bound = (New-BoundBinding $bindingTrialOnBound); Action = 'StopServiceAndRefuse'; Says = "trialSublotCharacterPosition bound '6', the definition says '0'" }
+        @{ Name = 'trial sublot rule left out, a package older than #828 -- pass, so a rollback with the rule off is not blocked'; Definition = $baseline; Bound = (New-BoundBinding @{ TrialSublotCharacterPosition = $null; TrialSublotCharacters = $null }); Action = 'Pass'; Says = $null }
+        @{ Name = 'catalog age window left out, a package older than #827 -- pass, so a rollback to v5 is not blocked'; Definition = $baseline; Bound = (New-BoundBinding @{ CatalogAgeWindow = $null; TrialSublotCharacterPosition = $null; TrialSublotCharacters = $null }); Action = 'Pass'; Says = $null }
+        @{ Name = 'catalog age window defined at one hour, a package older than #827 -- stop and refuse'; Definition = $bindingWindowHour; Bound = (New-BoundBinding @{ CatalogAgeWindow = $null }); Action = 'StopServiceAndRefuse'; Says = "catalogAgeWindow bound 'not logged', the definition says '01:00:00'" }
+        @{ Name = 'catalog age window defined at one hour, bound one hour -- pass'; Definition = $bindingWindowHour; Bound = (New-BoundBinding @{ CatalogAgeWindow = '01:00:00' }); Action = 'Pass'; Says = $null })) {
     Invoke-SourceCase "binding read-back: $($case.Name)" {
         $a = (Get-BindingReadBack $case.Definition $case.Bound).Action
         @{ Ok = ($a.Action -ceq $case.Action -and ($null -eq $case.Says -or (([string] $a.Message).Contains('EFFECTIVE_CONFIGURATION_MISMATCH') -and ([string] $a.Message).Contains($case.Says)))); Detail = "got: $(ConvertTo-Json $a -Compress)" }
@@ -5938,7 +5966,7 @@ foreach ($case in @(
 }
 Invoke-SourceCase 'binding result line: the four values as bound, in a fixed order, for 19' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline (New-BoundBinding)).Effective
-    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=8 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False idleReturnEnabled=False'); Detail = "got: $line" }
+    @{ Ok = ($line -ceq 'EFFECTIVE_JOURNEY_BINDING=admissionPolicyVersion=8 admissionPolicyDeploymentId=MAP-26-WIRE_TO_GATE-SELFTEST cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:05:00 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False idleReturnEnabled=False catalogAgeWindow=00:30:00 trialSublotCharacterPosition=0 trialSublotCharacters='); Detail = "got: $line" }
 }
 Invoke-SourceCase 'binding result line: an event older than #672 reads EFFECTIVE_JOURNEY_BINDING=not-logged, nothing else' {
     $line = Format-ParallelJourneyBindingLine -Effective (Get-BindingReadBack $baseline '<absent>').Effective
@@ -7104,9 +7132,9 @@ Invoke-SourceCase 'idle return read-back: Program.cs logs the IdleReturnOptions 
         'EffectiveConfigurationEvent\.Log\(app\.Logger, effective, catalog, app\.Configuration\["MesIngest:baseUrl"\] \?\? "http://127\.0\.0\.1:5088", release, gate, idleReturn\);')
     @{ Ok = $ok; Detail = 'Program.cs does not pass IOptions<IdleReturnOptions>.Value to EffectiveConfigurationEvent.Log' }
 }
-Invoke-SourceCase 'idle return read-back: the Host source logs the switch last, under the name the module reads' {
+Invoke-SourceCase 'idle return read-back: the Host source logs the switch after the staging rules (control-server#828 appended three fields after it), under the name the module reads' {
     $eventSource = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host') -Recurse -Filter '*.cs' |
-            Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Contains(' stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled}";') })
+            Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Contains(' stagingLoadNotSettledAlarmAfter={StagingLoadNotSettledAlarmAfter} idleReturnEnabled={IdleReturnEnabled} catalogAgeWindow={CatalogAgeWindow} trialSublotCharacterPosition={TrialSublotCharacterPosition} trialSublotCharacters={TrialSublotCharacters}";') })
     $logged = @(& (Get-Module ParallelInstance) { $script:JourneyBindingFields } | Where-Object Name -CEQ 'idleReturnEnabled' | ForEach-Object Logged)
     @{ Ok = ($eventSource.Count -eq 1 -and $eventSource[0].Name -ceq 'EffectiveConfigurationEvent.cs' -and ($logged -join ',') -ceq 'IdleReturnEnabled')
         Detail = "template found in: $(@($eventSource | ForEach-Object Name) -join ', '); module reads: $($logged -join ',')" }

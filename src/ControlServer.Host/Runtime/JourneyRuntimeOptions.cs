@@ -447,6 +447,12 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         {
             failures.Add("TrialSublotCharacterPosition and TrialSublotCharacters must both be set (a positive position, at least one character) or both be left empty.");
         }
+        // control-server#828 review L4: " 9" would filter every SUBLOT with a space at the position, and the read-back result line
+        // cannot carry a space.
+        if (options.TrialSublotCharacters?.Any(char.IsWhiteSpace) == true)
+        {
+            failures.Add("TrialSublotCharacters must not contain white space.");
+        }
         if (options.StationTimeoutRedispatchLimit < 0) failures.Add("StationTimeoutRedispatchLimit must not be negative.");
         if (options.MaximumJourneyStops < Dispatch.EnRouteAppendPlanner.MaximumLegs)
         {

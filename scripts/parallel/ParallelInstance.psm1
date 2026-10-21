@@ -1269,6 +1269,10 @@ function Test-ParallelInstanceDefinition {
             $failures += "journeyRuntime.trialSublotCharacterPosition must be a non-negative JSON integer, got '$trialPosition'."
         } elseif ($trialCharacters -isnot [string]) {
             $failures += "journeyRuntime.trialSublotCharacters must be a JSON string, got '$trialCharacters'."
+        } elseif ($trialCharacters -match '\s') {
+            # Review L4: " 9" would filter every SUBLOT with a space at the position; the Host refuses it as well, and the
+            # read-back result line (EFFECTIVE_JOURNEY_BINDING=) cannot carry a space.
+            $failures += "journeyRuntime.trialSublotCharacters must not contain white space, got '$trialCharacters'."
         } elseif (($trialPosition -gt 0) -ne ($trialCharacters.Length -gt 0)) {
             $failures += "journeyRuntime.trialSublotCharacterPosition and trialSublotCharacters must both be set or both be left empty, got $trialPosition and '$trialCharacters'."
         }
@@ -2903,7 +2907,35 @@ $script:JourneyBindingFields = @(
     # true left there survives it (cs#781 review H2): set it to false by hand before installing with such a checkout. Printed
     # as True / False, never a space.
     [pscustomobject]@{ Name = 'idleReturnEnabled'; Logged = 'IdleReturnEnabled'; Compare = 'Boolean'; Source = 'idleReturn.enabled'; AbsentMeans = $false }
+    # control-server#828 review M1. The catalog age window (REQ-0366, control-server#827) and the trial sublot rule (REQ-0368),
+    # always compared against what the overlay writes ($script:JourneyOverlayDefaults when the definition leaves them out).
+    # The window's AbsentMeans is the default, 00:30:00, like idle return's: a package that does not log it (older than #827)
+    # passes when the definition leaves the window at the default, so a rollback to v5 stays possible, and is refused when the
+    # definition sets another value. That proves nothing about such a package, which has no window at all. The rule's two rows
+    # read a package older than #828 as the rule off, which is what such a package has: a definition that turns it on (the
+    # production stages) is refused over it -- a rollback to it with that definition included -- and one that leaves it off is
+    # not. Printed without a space: hh:mm:ss, a number, and characters the definition check and the Host refuse white space in
+    # (review L4); off prints as 'trialSublotCharacters='.
+    [pscustomobject]@{ Name = 'catalogAgeWindow'; Logged = 'CatalogAgeWindow'; Compare = 'Duration'; Source = 'overlay.catalogAgeWindow'; AbsentMeans = '00:30:00' }
+    [pscustomobject]@{ Name = 'trialSublotCharacterPosition'; Logged = 'TrialSublotCharacterPosition'; Compare = 'Integer'; Source = 'overlay.trialSublotCharacterPosition'; AbsentMeans = 0 }
+    [pscustomobject]@{ Name = 'trialSublotCharacters'; Logged = 'TrialSublotCharacters'; Compare = 'Ordinal'; Source = 'overlay.trialSublotCharacters'; AbsentMeans = '' }
 )
+
+# control-server#828. The journeyRuntime keys the overlay always writes, with the value it writes when the definition leaves the
+# key out (REQ-0366's thirty minutes; the trial sublot rule off). New-ParallelInstanceConfigurationOverlay writes them and the
+# read-back's 'overlay.<key>' rows compare against them, so the two cannot disagree.
+$script:JourneyOverlayDefaults = [ordered]@{
+    catalogAgeWindow = '00:30:00'
+    trialSublotCharacterPosition = 0
+    trialSublotCharacters = ''
+}
+
+function Get-ParallelJourneyOverlayValue {
+    <# control-server#828. The value the overlay writes for one of $script:JourneyOverlayDefaults: the definition's, or the default. #>
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition, [Parameter(Mandatory = $true)][string] $Key)
+    $journey = $Definition['journeyRuntime']
+    return ($journey -is [System.Collections.IDictionary] -and $journey.Contains($Key)) ? $journey[$Key] : $script:JourneyOverlayDefaults[$Key]
+}
 
 function Get-ParallelJourneyBindingExpected {
     <# control-server#672. The value a row of $script:JourneyBindingFields expects, from its Source; $null when not compared. #>
@@ -2921,6 +2953,10 @@ function Get-ParallelJourneyBindingExpected {
     if ($Field.Source -ceq 'productionCutover.phase') { return Get-ParallelSlotConfigurationGateMode -Definition $Definition }
     # control-server#781. Derived, so always compared: the definition's idleReturn.enabled, false when it leaves the section out.
     if ($Field.Source -ceq 'idleReturn.enabled') { return Test-ParallelIdleReturnEnabled -Definition $Definition }
+    # control-server#828. Derived, so always compared: what the overlay writes for that key.
+    if ($Field.Source -cmatch '^overlay\.(?<key>[A-Za-z]+)$' -and $script:JourneyOverlayDefaults.Contains($Matches['key'])) {
+        return Get-ParallelJourneyOverlayValue -Definition $Definition -Key $Matches['key']
+    }
     throw "JourneyBindingFields: $($Field.Name) has an unknown Source '$($Field.Source)'."
 }
 
@@ -3261,11 +3297,12 @@ function New-ParallelInstanceConfigurationOverlay {
     $journeyOverlay['stationTimeoutRedispatchLimit'] = $journey.Contains('stationTimeoutRedispatchLimit') ? $journey['stationTimeoutRedispatchLimit'] : 0
     # control-server#827. Always written too, 00:30:00 (REQ-0366's default) when the definition leaves it out, for the same
     # reason: a widened window from an earlier install must not survive a reinstall in appsettings.Production.json unseen.
-    $journeyOverlay['catalogAgeWindow'] = $journey.Contains('catalogAgeWindow') ? $journey['catalogAgeWindow'] : '00:30:00'
-    # control-server#828. Always written too, off (0 and "") when the definition leaves the trial sublot rule out, for the same
-    # reason: a rule from an earlier install must not survive a reinstall in appsettings.Production.json unseen.
-    $journeyOverlay['trialSublotCharacterPosition'] = $journey.Contains('trialSublotCharacterPosition') ? $journey['trialSublotCharacterPosition'] : 0
-    $journeyOverlay['trialSublotCharacters'] = $journey.Contains('trialSublotCharacters') ? $journey['trialSublotCharacters'] : ''
+    # control-server#828. The trial sublot rule's two keys always written too, off (0 and "") when the definition leaves the rule
+    # out, for the same reason: a rule from an earlier install must not survive a reinstall in appsettings.Production.json unseen.
+    # The defaults are $script:JourneyOverlayDefaults, which the read-back compares against as well.
+    foreach ($key in $script:JourneyOverlayDefaults.Keys) {
+        $journeyOverlay[$key] = Get-ParallelJourneyOverlayValue -Definition $Definition -Key $key
+    }
 
     $routeGraphOverlay = [ordered]@{}
     foreach ($key in $routeGraph.Keys) { $routeGraphOverlay[$key] = $routeGraph[$key] }
