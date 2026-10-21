@@ -308,6 +308,25 @@ public sealed partial class OnboardMessageProcessor(
                 state.SessionGeneration!.Value,
                 cancellationToken).ConfigureAwait(false);
         }
+        // 「剩下的不装」（control-server#830）：请求、快照与装货结果都可能让一条待判的减篮请求判得出来——请求本身，读数到了，这次装货先结束了。
+        // 判与答复都在本条应答之后、握手之外，与出发答复同一个时机；同号同内容的请求再来，原样重放那一条答复。
+        if (state.HandshakeCompleted &&
+            messageType is RemainingBasketsSkips.RequestType or "SafetyStateSnapshot" or "OperationResult")
+        {
+            string? replaySkipRequestId = messageType == RemainingBasketsSkips.RequestType
+                ? RequiredString(root.GetProperty("payload"), "skipRequestId")
+                : null;
+            if (state.DeferOutboundUntilResponseWritten)
+            {
+                state.RemainingBasketsSkipAnswersDue = true;
+                state.RemainingBasketsSkipReplayRequestId = replaySkipRequestId;
+            }
+            else
+            {
+                state.RemainingBasketsSkipAwaitingReadings = await recoveryCoordinator.AnswerRemainingBasketsSkipsAsync(
+                    agvId, state.SessionGeneration!.Value, replaySkipRequestId, cancellationToken).ConfigureAwait(false);
+            }
+        }
         // A rebuild after a cleared fault with cargo on board waits for the vehicle to show the cargo in its slots (REQ-0362,
         // control-server#318): ask for a snapshot. Recorded only here, where AppendSafetySnapshotRequest is sure to send it --
         // past the handshake, and not on the recovery report that ends it, whose answer the vehicle still reads as the handshake's.
@@ -341,7 +360,10 @@ public sealed partial class OnboardMessageProcessor(
         // unanswered while it still holds an unacknowledged SafetyStateChanged -- which the refused one is -- and expects
         // the server to ask again (8005-agv-onboard-hmi WireToGateBusinessService.AnswerSafetyStateSnapshotRequestAsync).
         // Spaced by SafetySnapshotReaskInterval so a heartbeat every two seconds does not become a request every two seconds.
-        if (state.SafetyBaselineUntrusted &&
+        // A remaining-baskets skip waiting on stale readings (control-server#830, review M2) is asked for the same way: the
+        // snapshot requested when the skip arrived goes unanswered for the same reason, every onboard SafetyStateChanged
+        // naming slots 1..8.
+        if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings) &&
             timeProvider.GetUtcNow() - state.SafetySnapshotRequestedAt >= SafetySnapshotReaskInterval)
         {
             state.SafetySnapshotRequestDue = true;
@@ -414,6 +436,21 @@ public sealed partial class OnboardMessageProcessor(
     {
         string? line = state.DeferredRecoveryLine;
         state.DeferredRecoveryLine = null;
+        bool skipAnswersDue = state.RemainingBasketsSkipAnswersDue;
+        string? replaySkipRequestId = state.RemainingBasketsSkipReplayRequestId;
+        state.RemainingBasketsSkipAnswersDue = false;
+        state.RemainingBasketsSkipReplayRequestId = null;
+        await FlushDeferredLineAsync(line, cancellationToken).ConfigureAwait(false);
+        if (skipAnswersDue && state.AgvId is { } agvId && state.SessionGeneration is long generation)
+        {
+            state.RemainingBasketsSkipAwaitingReadings = await recoveryCoordinator
+                .AnswerRemainingBasketsSkipsAsync(agvId, generation, replaySkipRequestId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task FlushDeferredLineAsync(string? line, CancellationToken cancellationToken)
+    {
         if (line is null) return;
         using JsonDocument document = JsonDocument.Parse(line);
         JsonElement root = document.RootElement;
@@ -647,6 +684,24 @@ public sealed partial class OnboardMessageProcessor(
                     throw new InboundMessageRejectedException(
                         ServerReasonCodes.BusinessIdContentConflict,
                         "departureRequestId was used before with different content.");
+                }
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
+            case RemainingBasketsSkips.RequestType:
+                // 车载屏上的「剩下的不装」（协议 6.0.0 候选，REQ-0367，control-server#830）：这里只让它持久并回 DurableAck，判定在应答之后
+                // （RemainingBasketsSkips 的类注释）。同一个 skipRequestId 以别的 messageId、不同的内容再来，是业务号内容冲突：拒收、连接保持，
+                // 不答 RemainingBasketsSkipResult。手上的目标仓读数已经过期就先要一份快照，快照到了再判。
+                if (await RemainingBasketsSkips.ConflictsWithEarlierAsync(dbContext, messageId, agvId, payload, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    throw new InboundMessageRejectedException(
+                        ServerReasonCodes.BusinessIdContentConflict,
+                        "skipRequestId was used before with different content.");
+                }
+                if (await RemainingBasketsSkips.ReadingsAreStaleAsync(dbContext, agvId, payload, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    state.SafetySnapshotRequestDue = true;
+                    state.RemainingBasketsSkipAwaitingReadings = true;
                 }
                 return DurableAck(messageType, messageId, agvId, generation, contentHash);
             case "SlotOperationCommandRejected":
@@ -1858,4 +1913,19 @@ public sealed class OnboardConnectionState
 
     public bool DeferOutboundUntilResponseWritten { get; set; }
     public string? DeferredRecoveryLine { get; set; }
+
+    /// <summary>
+    /// The current line may have made a remaining-baskets skip decidable (control-server#830); decide and answer once its own
+    /// answer is written. Kept beside <see cref="DeferredRecoveryLine"/> rather than in it: an <c>OperationResult</c> needs both.
+    /// </summary>
+    public bool RemainingBasketsSkipAnswersDue { get; set; }
+
+    /// <summary>The <c>skipRequestId</c> the current line resubmitted, whose stored answer is replayed with the deferred answers.</summary>
+    public string? RemainingBasketsSkipReplayRequestId { get; set; }
+
+    /// <summary>
+    /// A remaining-baskets skip on this connection is waiting for fresh readings (control-server#830, review M2): asked for again
+    /// at <see cref="OnboardMessageProcessor.SafetySnapshotReaskInterval"/> until a decision clears it.
+    /// </summary>
+    public bool RemainingBasketsSkipAwaitingReadings { get; set; }
 }

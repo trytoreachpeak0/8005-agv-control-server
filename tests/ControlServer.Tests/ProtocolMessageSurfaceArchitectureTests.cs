@@ -100,9 +100,9 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
     /// wrong property is reported here.
     /// </remarks>
     [Fact]
-    public void TheManifestParsesIntoSixtySevenMessagesAndElevenDenylistedTypes()
+    public void TheManifestParsesIntoSixtyNineMessagesAndElevenDenylistedTypes()
     {
-        Assert.Equal(67, FrozenMessageTypes().Length);
+        Assert.Equal(69, FrozenMessageTypes().Length);
         Assert.Equal(11, DenylistedMessageTypes().Length);
         Assert.Empty(FrozenMessageTypes().Intersect(DenylistedMessageTypes(), StringComparer.Ordinal));
     }

@@ -39,12 +39,27 @@ public sealed class OnboardRecoveryCoordinator(
     public const string SlotFaultDeclaredCancellationMessage =
         "本次装卸有人工判故障在等结果或已生效，现在不能取消。请等判定结果：车载端拒绝判定后可以重试取消；判定生效后这次装卸转异常处置。";
 
+    /// <summary>
+    /// What the onboard shows when a load cancellation is refused because a remaining-baskets skip of the attempt is pending or
+    /// authorized (control-server#830). The baskets are in; the way out is the skip itself.
+    /// </summary>
+    public const string RemainingBasketsSkipHeldCancellationMessage =
+        "已经装进花篮，并且已申请剩下的不装，现在不能取消装货。请等剩下的不装的结果。";
+
     private static readonly Action<ILogger, string, string, string, Exception?> LogCancellationRefusedForDeclaration =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
             new EventId(9506, nameof(LogCancellationRefusedForDeclaration)),
             "Load cancellation {CancellationId} for demand {DemandId} refused: attempt {SlotOperationAttemptId} has a slot " +
             "fault declaration pending or applied (control-server#384).");
+
+    private static readonly Action<ILogger, string, string, string, string, string, string, Exception?>
+        LogRemainingBasketsSkipDecided =
+            LoggerMessage.Define<string, string, string, string, string, string>(
+                LogLevel.Information,
+                new EventId(8300, nameof(LogRemainingBasketsSkipDecided)),
+                "Remaining-baskets skip {SkipRequestId} of AGV {AgvId}, demand {DemandId}, attempt {SlotOperationAttemptId}: " +
+                "{Outcome}, {Detail} (REQ-0367, control-server#830).");
 
     private static readonly Action<ILogger, string, string, string, string?, Exception?> LogCancellationFoundStopDecided =
         LoggerMessage.Define<string, string, string, string?>(
@@ -881,7 +896,21 @@ public sealed class OnboardRecoveryCoordinator(
         string agvId = RequiredString(root, "agvId");
         long sessionGeneration = root.GetProperty("sessionGeneration").GetInt64();
         string departureRequestId = RequiredString(root.GetProperty("payload"), "departureRequestId");
-        string resultId = CurrentStopDepartures.ResultMessageId(departureRequestId);
+        await ReplayStoredResultAsync(
+                agvId, sessionGeneration, CurrentStopDepartures.ResultMessageId(departureRequestId), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 原样重发发件箱里存的一条答复（出发答复，减篮答复）：还没判过就什么也不做。代次没变就发存下的那一行；车已确认过而代次变了，先撤掉确认、
+    /// 由补发改写代次并落库再发（<see cref="ReplayDepartureResultAsync"/> 的注释）。
+    /// </summary>
+    private async Task ReplayStoredResultAsync(
+        string agvId,
+        long sessionGeneration,
+        string resultId,
+        CancellationToken cancellationToken)
+    {
         ProtocolOutboxRow? row = await dbContext.ProtocolOutbox
             .SingleOrDefaultAsync(item => item.MessageId == resultId, cancellationToken).ConfigureAwait(false);
         if (row is null || row.FencedAt is not null)
@@ -902,6 +931,53 @@ public sealed class OnboardRecoveryCoordinator(
         await publisher.ReplayPendingForSessionAsync(
             agvId, sessionGeneration, new HashSet<string>(StringComparer.Ordinal) { resultId }, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 应答之后判这辆车还没答的减篮请求、暂存答复，提交之后把这一次判出的发出去（REQ-0367，control-server#830）。不在握手中间调用。
+    /// 早先判出、车还没确认的答复不在这里重发：车断线重连后由恢复报告之后的补发送（<see cref="ReplayPendingCommandsAsync"/>）。
+    /// </summary>
+    /// <param name="replaySkipRequestId">
+    /// 车又提交了这个 <c>skipRequestId</c>（同号同内容）：它的答复车已确认过也再发一次，原样重放存下的那一行（wire-notes 减篮一节）。
+    /// </param>
+    /// <returns>还有请求因读数过期待判：入站据此按间隔再要快照（审查 M2）。</returns>
+    public async Task<bool> AnswerRemainingBasketsSkipsAsync(
+        string agvId,
+        long sessionGeneration,
+        string? replaySkipRequestId,
+        CancellationToken cancellationToken)
+    {
+        (IReadOnlyList<string> staged, bool awaitingReadings) = await RemainingBasketsSkips.DecidePendingAsync(
+            dbContext,
+            store,
+            agvId,
+            sessionGeneration,
+            timeProvider.GetUtcNow(),
+            (request, decision, expectedBasketCount) => LogRemainingBasketsSkipDecided(
+                logger ?? (ILogger)NullLogger.Instance,
+                request.SkipRequestId,
+                agvId,
+                request.DemandId,
+                request.SlotOperationAttemptId,
+                decision.Outcome,
+                FormattableString.Invariant(
+                    $"N={expectedBasketCount} -> k={request.LoadedSlots.Length}, loaded slots [{string.Join(',', request.LoadedSlots)}], operator {request.OperatorId ?? "unknown"}, requested at {request.ReceivedAt:O}, problem {decision.Problem?.ReasonCode ?? "none"}"),
+                null),
+            cancellationToken).ConfigureAwait(false);
+        if (staged.Count > 0)
+        {
+            await publisher.ReplayPendingForSessionAsync(
+                agvId, sessionGeneration, staged.ToHashSet(StringComparer.Ordinal), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        if (replaySkipRequestId is not null &&
+            !staged.Contains(RemainingBasketsSkips.ResultMessageId(replaySkipRequestId), StringComparer.Ordinal))
+        {
+            await ReplayStoredResultAsync(
+                    agvId, sessionGeneration, RemainingBasketsSkips.ResultMessageId(replaySkipRequestId), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        return awaitingReadings;
     }
 
     public async Task ReplayPendingCommandsAsync(
@@ -936,8 +1012,12 @@ public sealed class OnboardRecoveryCoordinator(
         // 不夹在握手中间（hmi#349 联调第 1 条）。
         IReadOnlyList<string> departureResultIds = await CurrentStopDepartures
             .PendingResultIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
+        // 车还没确认的减篮答复（control-server#830，PENDING_RESULT_REPLAY）：与出发答复同一个时机。
+        IReadOnlyList<string> skipResultIds = await RemainingBasketsSkips
+            .PendingResultIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
         string[] pendingIds =
-            [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds, .. declarationIds, .. doorHoldIds, .. departureResultIds];
+            [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds, .. declarationIds, .. doorHoldIds, .. departureResultIds,
+             .. skipResultIds];
         if (pendingIds.Length > 0)
             await publisher.ReplayPendingForSessionAsync(
                 agvId, sessionGeneration, pendingIds.ToHashSet(StringComparer.Ordinal), cancellationToken)
@@ -1318,7 +1398,11 @@ public sealed class OnboardRecoveryCoordinator(
                    (row.State == SlotFaultDeclarationStates.Pending || row.State == SlotFaultDeclarationStates.Applied ||
                     row.State == SlotFaultDeclarationStates.Unreconciled),
             cancellationToken).ConfigureAwait(false);
-        bool authorized = !declared &&
+        // A remaining-baskets skip of this attempt pending or authorized (control-server#830): a basket is in, by the vehicle's
+        // account or by this server's readings, and a load with a basket in it is never cancelled (the revised REQ-0211).
+        bool skipHeld = !declared && await RemainingBasketsSkips
+            .HoldsCancellationAsync(dbContext, demandId, attemptId!, cancellationToken).ConfigureAwait(false);
+        bool authorized = !declared && !skipHeld &&
                           demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&
                           (operation is null || operation.DemandId == demandId &&
                            operation.OperationType == SlotOperationType.Load &&
@@ -1341,11 +1425,17 @@ public sealed class OnboardRecoveryCoordinator(
             decision = authorized ? "AUTHORIZED" : "REJECTED",
             demandId,
             slotOperationAttemptId = attemptId,
-            slots,
+            // Empty on both decisions since protocol 6.0.0 (CP-0021, the revised REQ-0211): no door is opened to clear a cancelled
+            // load, and the Schema refuses any other scope. The workflow above still keeps the attempt's target slots, which is
+            // what its result is reconciled against.
+            slots = Array.Empty<int>(),
             problem = authorized ? null
                 : declared ? Problem(
                     ServerReasonCodes.ActionNotAllowedInState, "payload.slotOperationAttemptId",
                     SlotFaultDeclaredCancellationMessage)
+                : skipHeld ? Problem(
+                    ServerReasonCodes.LoadCancellationBasketLoaded, "payload.slotOperationAttemptId",
+                    RemainingBasketsSkipHeldCancellationMessage)
                 : RefusedCancellationProblem(
                     demand, "payload.demandId", "Load cancellation is not safe in the current state.")
         });
@@ -2033,7 +2123,9 @@ public sealed class OnboardRecoveryCoordinator(
             return;
         }
         bool safeEmpty = messageType is "LoadCancellationResult" or "LoadCompensationResult" or "FaultCargoRecoveryResult"
-            ? HasExactSafeSlotResult(payload, ParseSlots(workflow.SlotsJson), "EMPTY")
+            ? HasExactSafeSlotResult(payload, ParseSlots(workflow.SlotsJson), "EMPTY") ||
+              (messageType == "LoadCancellationResult" &&
+               await ServerReadingsProveEmptyScopeAllEmptyAsync(payload, workflow, cancellationToken).ConfigureAwait(false))
             : false;
         // REQ-0364 (CP-0009, control-server#385): the light curtains proved every target slot empty while a lock or an
         // unlock output could not be proven. The cargo business settles as the empty ending it would have had, and the
@@ -3164,6 +3256,42 @@ public sealed class OnboardRecoveryCoordinator(
         int[] actual = results.Select(item => item.GetProperty("slotNo").GetInt32()).Order().ToArray();
         return expectedSlots.Length > 0 && actual.SequenceEqual(expectedSlots) &&
                results.All(item => RequiredString(item, "finalPhysicalState") == "EMPTY");
+    }
+
+    /// <summary>
+    /// An ALL_EMPTY during-load cancellation reported with no slot results (control-server#830, review M1). Since protocol
+    /// v6 a during-load authorization carries empty <c>slots</c>, so the onboard has no scope to report per slot and may
+    /// send <c>slotResults: []</c>. That reconciles only on the server's own readings: the vehicle's current-session
+    /// snapshot since the load began (<see cref="SessionSlotReadings"/>), fresh, with every target slot of the workflow
+    /// EMPTY, LOCKED and RESET -- the same three facts <see cref="HasExactSafeSlotResult"/> asks of a per-slot result.
+    /// Stale or missing readings, or any slot not so proven, leave it to the per-slot rule, which refuses it.
+    /// </summary>
+    private async Task<bool> ServerReadingsProveEmptyScopeAllEmptyAsync(
+        JsonElement payload,
+        RecoveryWorkflowRow workflow,
+        CancellationToken cancellationToken)
+    {
+        if (workflow.SlotOperationAttemptId is not { } attemptId ||
+            RequiredString(payload, "overallOutcome") != "ALL_EMPTY" ||
+            payload.GetProperty("slotResults").GetArrayLength() != 0)
+        {
+            return false;
+        }
+        int[] targets = ParseSlots(workflow.SlotsJson);
+        DateTimeOffset? loadStartedAt = await dbContext.StationOperations.AsNoTracking()
+            .Where(row => row.SlotOperationAttemptId == attemptId)
+            .Select(row => (DateTimeOffset?)row.CreatedAt)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (targets.Length == 0 || loadStartedAt is not { } notBefore)
+        {
+            return false;
+        }
+        IReadOnlyDictionary<int, RemainingBasketsSkipRule.SlotReading>? readings =
+            await SessionSlotReadings.ReadAsync(dbContext, workflow.AgvId, targets, notBefore, cancellationToken)
+                .ConfigureAwait(false);
+        return readings is not null &&
+               targets.All(slot => readings.TryGetValue(slot, out RemainingBasketsSkipRule.SlotReading? reading) &&
+                                   reading.Physical == "EMPTY" && reading.Lock == "LOCKED" && reading.Output == "RESET");
     }
 
     private static bool HasExactSafeSlotResult(JsonElement payload, int[] expectedSlots, string? expectedState)

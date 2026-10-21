@@ -182,10 +182,18 @@ param(
     #   $OnboardCommit -> a3fdb194, the w2g/fp-v2-impl tip: onboard-hmi PR #369's merge commit.
     #   $SimulatorCommit unchanged: origin/main is still fb5f7c59.
     #   $ProtocolCommit unchanged: 18d4fb34 is what the protocol-v5.0.0 tag dereferences to.
+    #
+    # 2026-10-21, protocol 6.0.0 candidate (control-server#830, CP-0021; onboard-hmi#388 in the same package): the server binds
+    #   the candidate 98f17264 (protocol PR #27, content 13f52e67), not released yet -- protocol-v6.0.0 does not exist and both
+    #   halves say SUPERSEDING_CANDIDATE, so any evidence on it is UNRELEASED_CANDIDATE. Only the protocol binding and the
+    #   harness identity move here (tag protocol-v6.0.0, protocolVersion 7, its Protocol constants), so that the harness still
+    #   matches appsettings.json; the harness payloads do not move (6.0.0 adds the remaining-baskets skip, which the harness
+    #   never sends). $ControlServerCommit and $OnboardCommit move when both halves are merged and G3 runs on them together.
+    #   $ProtocolCommit -> 98f17264.
     [string]$ControlServerCommit = '7763bcf1a03df01e319dbb9a43452aa90ed6f2fc',
     [string]$OnboardCommit = 'a3fdb194be045c23a4661807f4d180833a419cf8',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '18d4fb3495033624cab412a7ee784f675dfe4cc2',
+    [string]$ProtocolCommit = '98f172642937994ed01668d81fe41e69cf089e10',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
     # branch carrying a line's onboard half moves with the line: batch 3 on the v2 line lives on
     # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
@@ -2926,9 +2934,9 @@ public static class StagedG3TlsHarness
         {
             ["repository"] = "8005-agv-protocol",
             ["releaseVersion"] = release,
-            ["tag"] = "protocol-v5.0.0",
+            ["tag"] = "protocol-v6.0.0",
             ["commit"] = Protocol.Commit,
-            ["protocolVersion"] = 6,
+            ["protocolVersion"] = 7,
             ["profileId"] = Protocol.Profile,
             ["manifestSha256"] = manifest,
             ["schemaBundleSha256"] = Protocol.Schema,
@@ -2975,7 +2983,7 @@ public static class StagedG3TlsHarness
         long? generation,
         object payload) => JsonSerializer.Serialize(new Dictionary<string, object?>
         {
-            ["protocolVersion"] = 6,
+            ["protocolVersion"] = 7,
             ["profileId"] = Protocol.Profile,
             ["protocolReleaseVersion"] = release,
             ["protocolReleaseManifestSha256"] = manifest,
@@ -3033,12 +3041,12 @@ public static class StagedG3TlsHarness
 
     private static class Protocol
     {
-        public const string Release = "5.0.0";
+        public const string Release = "6.0.0";
         public const string Profile = "AGV_FULL_PRODUCT";
-        public const string Commit = "18d4fb3495033624cab412a7ee784f675dfe4cc2";
-        public const string Manifest = "dd973918cc9c4fdf28ee2ad2ec4ad522bdcc6f2b6ecaa4a4fa1c57a29f29f5aa";
-        public const string Schema = "d51abe44036f32b5b2c28fd1bea6ec7a89cf3b4dea0f0b1d6c9daaf52f350933";
-        public const string Vectors = "291311b24bfcac75818ca9e4a888d436523e6ee14db661f6ba792ab8cc383e4a";
+        public const string Commit = "98f172642937994ed01668d81fe41e69cf089e10";
+        public const string Manifest = "a52876be2ddcc9b8cdd1f1e3b7b7ddbe70d31a307f1d3f017d7a1eb95ffd77b1";
+        public const string Schema = "0dab682174e2d3e4f931b3c0e87c7fa55bd2cb3395356d7845e595d8bfb1c795";
+        public const string Vectors = "e06ca9ea1d4445cd7d70fc190b0cf606a8e33cb7760d848c0270df24e2594c91";
     }
 
     private sealed class Connection : IAsyncDisposable

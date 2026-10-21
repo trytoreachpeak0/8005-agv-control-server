@@ -24,7 +24,8 @@ public sealed class OnboardPeerSession(
     FakeOnboardOptions options,
     SlotStateSeed slotStateSeed,
     FakeLoadCancellations? loadCancellations = null,
-    FakeSlotFaultDeclarations? slotFaultDeclarations = null) : IAsyncDisposable
+    FakeSlotFaultDeclarations? slotFaultDeclarations = null,
+    FakeRemainingBasketsSkips? remainingBasketsSkips = null) : IAsyncDisposable
 {
     // The envelope's own settings: this instance also hashes the OperationResult business content
     // the server hashes back, and the peer's line has to be the bytes the server validates.
@@ -292,6 +293,15 @@ public sealed class OnboardPeerSession(
                 return;
             case "DurableAck" when loadCancellations is not null:
                 loadCancellations.ObserveDurableAck(root);
+                return;
+            case "RemainingBasketsSkipResult":
+                // RELIABLE like the departure answer: acknowledged first, then acted on (control-server#830).
+                await AcknowledgeDurablyAsync(root, messageType, messageId, generation, cancellationToken).ConfigureAwait(false);
+                if (remainingBasketsSkips is not null)
+                {
+                    await remainingBasketsSkips.ObserveResultAsync(this, root, options.AgvId, generation, cancellationToken)
+                        .ConfigureAwait(false);
+                }
                 return;
             case "CurrentStopDepartureResult":
                 await AcknowledgeDurablyAsync(root, messageType, messageId, generation, cancellationToken).ConfigureAwait(false);

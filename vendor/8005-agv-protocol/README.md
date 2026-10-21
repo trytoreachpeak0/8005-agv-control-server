@@ -37,16 +37,23 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `18d4fb3495033624cab412a7ee784f675dfe4cc2`（protocol#25 为 control-server#767 合入 `fp/v2-candidate` 的合并提交，树与候选 `ede2060f` 逐字节相同；tag `protocol-v5.0.0`） |
-| 取用日期 | 2026-10-18 |
+| 来源提交 | `98f172642937994ed01668d81fe41e69cf089e10`（protocol PR #27 为 protocol#26 合入 `fp/v2-candidate` 的合并提交，内容提交 `13f52e67`；tag `protocol-v6.0.0` 尚不存在，用户 10-21 定两端与真装置跑通后再发布） |
+| 取用日期 | 2026-10-21 |
 
 | 来源路径 | 内容 |
 | --- | --- |
-| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 54、去重 51 |
-| `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 5.0.0`、`protocolVersion 6`、`profileId AGV_FULL_PRODUCT`、67 条消息、11 条 denylist |
-| `schemas/`（整棵树） | 73 个文件，`$id` 段 `agv-full-product/v6` |
+| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 61、去重 57 |
+| `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 6.0.0`、`protocolVersion 7`、`profileId AGV_FULL_PRODUCT`、69 条消息、11 条 denylist |
+| `schemas/`（整棵树） | 75 个文件，`$id` 段 `agv-full-product/v7` |
 
-2026-10-18 由 `8005-agv-control-server#767` 刷新到 `18d4fb34`（protocol#25 的合并提交，内容提交 `ede2060f`；与车载端同包）：v5 出口前的第三次修订，只改协议仓的 `docs/wire-notes.md`
+2026-10-21 由 `8005-agv-control-server#830` 刷新到 `98f17264`（protocol PR #27 的合并提交；与车载端 `8005-agv-onboard-hmi#388` 同包）：
+protocol#26 按 CP-0021 加了 `RemainingBasketsSkipRequested`／`RemainingBasketsSkipResult`、`OperationResult` 的 `COMPLETED_REMAINING_SKIPPED`、
+三个错误码（`REMAINING_BASKETS_SKIPPED`、`REMAINING_BASKETS_SKIP_NOTHING_LOADED`、`LOAD_CANCELLATION_BASKET_LOADED`），`LoadCancellationAuthorization`
+的 `AUTHORIZED` 只能带空 `slots`；闭合面变了，所以升大版本 6.0.0、`protocolVersion 7`。三份文件用 `git archive` 从合并提交的对象导出，
+逐个与 manifest 文件表 SHA-256 核对（75 个 schema 与 `index.json`，76 项全部命中）后整份拷入，manifest SHA-256 为 `a52876be…`。
+tag `protocol-v6.0.0` 尚不存在，身份是 `SUPERSEDING_CANDIDATE`，在它上面跑出的证据一律是 `UNRELEASED_CANDIDATE`；**合入须等 protocol-v6.0.0 发布后改绑 tag**。
+
+再早一份是 `18d4fb34`。2026-10-18 由 `8005-agv-control-server#767` 刷新到 `18d4fb34`（protocol#25 的合并提交，内容提交 `ede2060f`；与车载端同包）：v5 出口前的第三次修订，只改协议仓的 `docs/wire-notes.md`
 （剩余计划的规则对所有计划成立，唯一例外是清桩途中保留已完成的充电桩腿；出发口径 (4) 允许服务端从严；补出处 CP-0015 / REQ-0196），wire-notes 不在副本里，
 所以三份里只有 `manifest/release.json` 变了（文件表里 wire-notes 一行与 `fileTableSha256`），manifest SHA-256 为 `dd973918…`；
 `index.json` 与 `schemas/` 逐字节相同，`vectorsSha256 291311b2…` 不变。manifest 用 `git show` 从该提交的对象导出。

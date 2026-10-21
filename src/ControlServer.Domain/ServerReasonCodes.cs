@@ -53,16 +53,38 @@ public static class ServerReasonCodes
     public const string ActionNotAllowedInState = "ACTION_NOT_ALLOWED_IN_STATE";
     public const string BusinessIdContentConflict = "BUSINESS_ID_CONTENT_CONFLICT";
     public const string ContentHashMismatch = "CONTENT_HASH_MISMATCH";
+    public const string DemandNotCurrent = "DEMAND_NOT_CURRENT";
     public const string ExpectedBasketCountMismatch = "EXPECTED_BASKET_COUNT_MISMATCH";
     public const string ForcedRecoveryGenerationStale = "FORCED_RECOVERY_GENERATION_STALE";
+
+    /// <summary>
+    /// A load cancellation refused because a basket is in a target slot of the load (the revised REQ-0211, CP-0021, protocol
+    /// 6.0.0 candidate): a load with a basket in it is never cancelled. Here (control-server#830) it refuses a cancellation
+    /// asked for while a remaining-baskets skip of the same attempt is pending or authorized.
+    /// </summary>
+    public const string LoadCancellationBasketLoaded = "LOAD_CANCELLATION_BASKET_LOADED";
+    public const string LockNotClosed = "LOCK_NOT_CLOSED";
     public const string OperatorTimeout = "OPERATOR_TIMEOUT";
     public const string MessageIdContentConflict = "MESSAGE_ID_CONTENT_CONFLICT";
+    public const string OperationSessionMismatch = "OPERATION_SESSION_MISMATCH";
     public const string PackageCapacityUnresolved = "PACKAGE_CAPACITY_UNRESOLVED";
     public const string ProtocolReleaseIdentityMismatch = "PROTOCOL_RELEASE_IDENTITY_MISMATCH";
     public const string ProtocolSchemaInvalid = "PROTOCOL_SCHEMA_INVALID";
     public const string ProvenRecoveryCheckpointRequired = "PROVEN_RECOVERY_CHECKPOINT_REQUIRED";
     public const string RecoveryActionAlreadySelected = "RECOVERY_ACTION_ALREADY_SELECTED";
     public const string RecoveryActionRequired = "RECOVERY_ACTION_REQUIRED";
+
+    /// <summary>
+    /// Recognised, not produced (REQ-0367, CP-0021, control-server#830): the reason the vehicle puts on each remaining slot of a
+    /// <c>COMPLETED_REMAINING_SKIPPED</c> result, which the server checks when it settles that result.
+    /// </summary>
+    public const string RemainingBasketsSkipped = "REMAINING_BASKETS_SKIPPED";
+
+    /// <summary>
+    /// A remaining-baskets skip refused because, by the servers readings, no target slot has closed safely OCCUPIED (k = 0,
+    /// REQ-0367, control-server#830): with nothing loaded the demand is given up by a cancellation, not a skip.
+    /// </summary>
+    public const string RemainingBasketsSkipNothingLoaded = "REMAINING_BASKETS_SKIP_NOTHING_LOADED";
 
     /// <summary>
     /// Why an exception recovery session closed without its action reconciling (control-server#169, #187, #385): a result
@@ -105,6 +127,7 @@ public static class ServerReasonCodes
     public const string SlotOperationConflict = "SLOT_OPERATION_CONFLICT";
     public const string SnapshotRevisionContentConflict = "SNAPSHOT_REVISION_CONTENT_CONFLICT";
     public const string SlotSetInvalid = "SLOT_SET_INVALID";
+    public const string SlotStateUnknown = "SLOT_STATE_UNKNOWN";
     public const string SnapshotRevisionRegression = "SNAPSHOT_REVISION_REGRESSION";
 
     /// <summary>
@@ -114,6 +137,7 @@ public static class ServerReasonCodes
     public const string StationMismatch = "STATION_MISMATCH";
     public const string SublotBoxCountUnavailable = "SUBLOT_BOX_COUNT_UNAVAILABLE";
     public const string SublotNotInDispatchScope = "SUBLOT_NOT_IN_DISPATCH_SCOPE";
+    public const string UnlockOutputNotReset = "UNLOCK_OUTPUT_NOT_RESET";
 
     /// <summary>
     /// A sublot entry refused because this server cannot read where the vehicle stands right now: RIoT's reading is offline,

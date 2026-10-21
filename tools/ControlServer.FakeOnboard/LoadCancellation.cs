@@ -118,7 +118,10 @@ public sealed class FakeLoadCancellations
             DecidedAt = DateTimeOffset.UtcNow
         };
         cancellations[cancellationId] = record;
-        if (decision != "AUTHORIZED" || slots.Length > 0 || record.ResultMessageId is not null)
+        // Since protocol 6.0.0 every authorization carries empty slots (CP-0021), so only the missing attempt tells the
+        // cancellation before any sublot entry apart from one during a load, which this peer still leaves unanswered.
+        if (decision != "AUTHORIZED" || slots.Length > 0 || record.SlotOperationAttemptId is not null ||
+            record.ResultMessageId is not null)
         {
             return;
         }

@@ -34,6 +34,7 @@ public static class FakeOnboardHost
         builder.Services.AddSingleton(SlotStateSeed.Read(builder.Configuration));
         builder.Services.AddSingleton<FakeLoadCancellations>();
         builder.Services.AddSingleton<FakeSlotFaultDeclarations>();
+        builder.Services.AddSingleton<FakeRemainingBasketsSkips>();
 
         IPEndPoint? listener = ControlPlaneConventions.ResolveLoopbackListener(
             builder.Configuration, "FakeOnboard", DefaultControlPort);
@@ -53,6 +54,7 @@ public static class FakeOnboardHost
         app.MapControlPlaneManualChargingReturn();
         app.MapControlPlaneManualStationClearance();
         app.MapControlPlaneCurrentStopDeparture();
+        app.MapControlPlaneRemainingBasketsSkip();
         return app;
     }
 
@@ -94,7 +96,8 @@ public static class FakeOnboardHost
             app.Services.GetRequiredService<FakeOnboardOptions>(),
             app.Services.GetRequiredService<SlotStateSeed>(),
             app.Services.GetRequiredService<FakeLoadCancellations>(),
-            app.Services.GetRequiredService<FakeSlotFaultDeclarations>());
+            app.Services.GetRequiredService<FakeSlotFaultDeclarations>(),
+            app.Services.GetRequiredService<FakeRemainingBasketsSkips>());
         await peer.StartAsync(cancellationToken).ConfigureAwait(false);
         app.Services.GetRequiredService<OnboardPeerHolder>().Peer = peer;
         return peer;

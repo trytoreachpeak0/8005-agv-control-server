@@ -605,6 +605,9 @@ jobs:
               # control-server#783: the stop waits for a sublot, someone drives the vehicle off and it comes to rest at another
               # station, the operator scans -- the entry is refused as STATION_MISMATCH and no slot command reaches the vehicle.
               @{ Name = 'scan-while-vehicle-away-from-stop'; Runs = 1 }
+              # control-server#830 (REQ-0367, CP-0021, protocol 6.0.0 candidate): three baskets, two loaded, the operator asks to
+              # leave the rest -- authorized, settled as two, the third slot released, and the gate unloads only those two.
+              @{ Name = 'load-remaining-baskets-skipped'; Runs = 1; BatchId = 'program-210' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Measured, not
           # remembered: scripts/l2/Get-L2LaneEstimates.ps1 reads them out of past rounds' logs, and its -AsJson

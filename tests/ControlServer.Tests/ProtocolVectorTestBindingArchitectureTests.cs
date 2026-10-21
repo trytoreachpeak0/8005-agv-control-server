@@ -60,7 +60,7 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// (protocol#23) one more to <c>FP-IS-02</c> and renamed two outcome strings of <c>CV-MULTI-STOP-PLAN-NINE-LEGS</c>.
     /// </summary>
     private const string ApprovedIndexSha256 =
-        "5c64d0335218fe31b6a0d6362af3eaa7446832dda781eb9a7ffb6dbd90cbaa86";
+        "d9915a2e3a20b708d7d3c411f16ff36088b5ffe5db70e480249e8855d5da7ec2";
 
     /// <summary>
     /// The trait name a test uses to claim it proves a frozen vector.
@@ -88,7 +88,7 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// the smallest form it takes.
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> is what makes
     /// the set load-bearing instead of decorative, and
-    /// <see cref="TheIndexParsesIntoSixteenSlicesAndFiftyOneDistinctVectors"/> is what lets it be
+    /// <see cref="TheIndexParsesIntoSixteenSlicesAndFiftySevenDistinctVectors"/> is what lets it be
     /// stated as slice ids at all: it pins each slice's id to its own sequence, so the ids named
     /// here and the sequences the index carries cannot drift apart.
     /// </para>
@@ -149,7 +149,10 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// vectors are claimed by <c>#725</c>, which builds that departure, and stay pinned until it binds them.
     /// The <c>5.0.0</c> candidate's second revision (protocol#23) added one more to <c>FP-IS-02</c>,
     /// <c>CV-CURRENT-STOP-DEPARTURE-STALE-REVISION-ACCEPTED</c>, whose behaviour <c>#742</c> had already built; <c>#748</c>
-    /// vendored it and bound it in the same ticket, so it was never pinned.
+    /// vendored it and bound it in the same ticket, so it was never pinned. The <c>6.0.0</c> candidate (protocol#26, CP-0021) added six to
+    /// <c>FP-IS-02</c>, vendored by <c>#830</c>: the five remaining-baskets-skip vectors are built and bound there;
+    /// <c>CV-LOAD-CANCELLATION-BASKET-LOADED</c>, the refusal of a cancellation once a basket is loaded, is claimed by <c>#837</c>,
+    /// which builds that check, and stays pinned until it binds it.
     /// Such a pin must name its slice and the claiming ticket in exactly the
     /// form <see cref="ClaimedPinLabel"/> gives, and
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> refuses every other
@@ -170,6 +173,7 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     private static readonly IReadOnlyDictionary<string, string> VectorsAwaitingTheirSlice =
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
+            ["CV-LOAD-CANCELLATION-BASKET-LOADED"] = "FP-IS-02, claimed by 8005-agv-control-server#837",
             ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",
             ["CV-WORKLIST-SELECTION-STALE-REVISION"] = "FP-IS-09, batch 11"
         };
@@ -199,26 +203,28 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// </summary>
     /// <remarks>
     /// Without this, every assertion below could pass over an empty parse. The three counts are the
-    /// ones that differ from each other -- 16 slices, 54 <c>vectorIds</c> entries, 51 distinct
+    /// ones that differ from each other -- 16 slices, 61 <c>vectorIds</c> entries, 57 distinct
     /// vectors -- so a parse that lost a slice, or one that forgot to deduplicate, is reported here
-    /// rather than silently narrowing what the binding check covers. The three vectors shared
-    /// across slices are counted rather than named: the count is the entire difference between 54
-    /// and 51, and writing their ids out would put a hand-copied fragment of the vector list in a
+    /// rather than silently narrowing what the binding check covers. The four vectors shared
+    /// across slices are counted rather than named: the count is the entire difference between 61
+    /// and 57, and writing their ids out would put a hand-copied fragment of the vector list in a
     /// file whose whole point is not to hold one. v2 froze 34 and 31; <c>2.0.0</c> added two
     /// vectors, both to <c>FP-IS-02</c>; <c>3.0.0</c> added six, one to <c>FP-IS-02</c> and five to
     /// <c>FP-IS-07</c>; <c>4.0.0</c> added six, five to <c>FP-IS-02</c> and one to <c>FP-IS-13</c>, and its
     /// CP-0014 revision five more to <c>FP-IS-02</c>; the <c>5.0.0</c> candidate's second revision (protocol#23)
-    /// added one more to <c>FP-IS-02</c>; none of the twenty shared.
+    /// added one more to <c>FP-IS-02</c>; none of the twenty shared. The <c>6.0.0</c> candidate (protocol#26, CP-0021)
+    /// added six to <c>FP-IS-02</c>, one of which, <c>CV-REMAINING-BASKETS-SKIP-DUPLICATE-REQUEST</c>, is shared with
+    /// <c>FP-IS-05</c>.
     /// </remarks>
     [Fact]
-    public void TheIndexParsesIntoSixteenSlicesAndFiftyOneDistinctVectors()
+    public void TheIndexParsesIntoSixteenSlicesAndFiftySevenDistinctVectors()
     {
         Slice[] slices = Slices();
         string[] entries = [.. slices.SelectMany(slice => slice.VectorIds)];
 
         Assert.Equal(16, slices.Length);
-        Assert.Equal(54, entries.Length);
-        Assert.Equal(51, FrozenVectorIds().Length);
+        Assert.Equal(61, entries.Length);
+        Assert.Equal(57, FrozenVectorIds().Length);
 
         // Each slice's id paired with its own sequence, not the two sets compared separately.
         // LastSliceSequenceThisBatchImplements is stated as a sequence and read as a batch
@@ -230,7 +236,7 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
                     .Select(slice => $"{slice.SliceId}/{slice.Sequence}")
             ]);
         Assert.Equal(
-            3,
+            4,
             entries.GroupBy(vectorId => vectorId, StringComparer.Ordinal).Count(
                 group => group.Count() > 1));
     }

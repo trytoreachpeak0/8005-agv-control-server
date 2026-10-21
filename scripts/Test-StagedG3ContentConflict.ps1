@@ -158,7 +158,7 @@ if ($harnessRelease.Count -ne 1 -or $harnessTag.Count -ne 1 -or $harnessVersion.
            "literals, found $($harnessRelease.Count), $($harnessTag.Count) and $($harnessVersion.Count).")
 }
 # The releases whose payloads the harness sends unchanged. Any other identity at protocolVersion 4 or later is unknown.
-$sharedPayloadReleases = @{ '3.0.0' = 4; '4.0.0' = 5; '5.0.0' = 6 }
+$sharedPayloadReleases = @{ '3.0.0' = 4; '4.0.0' = 5; '5.0.0' = 6; '6.0.0' = 7 }
 foreach ($pair in @(@($harnessRelease[0].Groups[1].Value, [int]$harnessVersion[0].Groups[1].Value),
                     @([string]$identity.releaseVersion, [int]$identity.protocolVersion))) {
     if ($pair[1] -ge 4 -and $sharedPayloadReleases[$pair[0]] -ne $pair[1]) {
