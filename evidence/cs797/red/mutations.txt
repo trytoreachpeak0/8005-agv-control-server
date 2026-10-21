@@ -1,0 +1,69 @@
+# cs#797 mutations on a39eb5beb775fed4a05036fb7ee448e6eecee5b6, each alone, reverted after its run
+
+## M1 open-session grant check removed (GrantRequired && ... in OpenSessionAsync -> false) (src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+Failed!  - Failed:     8, Passed:    50, Skipped:     0, Total:    58, Duration: 13 s - ControlServer.Tests.dll (net8.0)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "other-journey")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "expired")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "vehicle-wide")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "restarted")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "other-vehicle")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "revoked")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "no-session-action")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithoutAGrantTheSessionIsRefusedUnderTheProofsCodeAndNothingIsOpened
+
+## M2 per-action grant check removed (SubmitActionAsync) (src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+Failed!  - Failed:     3, Passed:    55, Skipped:     0, Total:    58, Duration: 13 s - ControlServer.Tests.dll (net8.0)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionAfterTheGrantEndedIsRefusedBeforeTheSweep(revoked: False)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionAfterTheGrantEndedIsRefusedBeforeTheSweep(revoked: True)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionTheGrantDoesNotNameIsRefusedAndNothingIsSent
+
+## M3 sweep closes nothing (refusal ignored in EndSessionsOutsideGrantsAsync) (src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+Failed!  - Failed:     5, Passed:    53, Skipped:     0, Total:    58, Duration: 28 s - ControlServer.Tests.dll (net8.0)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "revoked")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "restarted")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "renewed-for-another-journey")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "expired")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.TheSweeperClosesTheSessionWhenTheGrantRunsOut
+
+## M4 allowedActions not filtered by the grant (src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+
+
+## M5 journey limit ignored (RecoveryGrant.RefusalFor never answers JourneyMismatch) (src/ControlServer.Host/Runtime/Recovery/RecoveryGrants.cs)
+Failed!  - Failed:     2, Passed:    56, Skipped:     0, Total:    58, Duration: 11 s - ControlServer.Tests.dll (net8.0)
+Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "RESUME_HELD_ORDER", granted: "RESUME_HELD_ORDER", scope: "vehicle-wide", code: "RECOVERY_GRANT_JOURNEY_MISMATCH")
+Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "RESUME_HELD_ORDER", granted: "RESUME_HELD_ORDER", scope: "other-journey", code: "RECOVERY_GRANT_JOURNEY_MISMATCH")
+
+## M6 confirmation code not compared (any code grants) (src/ControlServer.Host/Runtime/Recovery/RecoveryGrantIssuance.cs)
+
+
+## M7 grant never expires (Current ignores ExpiresAt) (src/ControlServer.Host/Runtime/Recovery/RecoveryGrants.cs)
+Failed!  - Failed:     6, Passed:    52, Skipped:     0, Total:    58, Duration: 29 s - ControlServer.Tests.dll (net8.0)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantThatDoesNotCoverTheSessionRefusesIt(shape: "expired")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOpenSessionIsClosedTheMomentItsGrantEnds(shape: "expired")
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnActionAfterTheGrantEndedIsRefusedBeforeTheSweep(revoked: False)
+Failed ControlServer.Tests.RecoveryGrantTests.AGrantThatDoesNotCoverTheRequestRefusesIt(action: "CLEAR_FAULT", granted: "CLEAR_FAULT", scope: "expired", code: "RECOVERY_GRANT_MISSING")
+Failed ControlServer.Tests.RecoveryGrantTests.AGrantRunsOutAtItsTime
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.TheSweeperClosesTheSessionWhenTheGrantRunsOut
+
+## M8 per-vehicle proof not enforced (shared proof always answers) (src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+
+
+# rerun of M4, M6, M8 with runtime-false conditions: the constant ones above did not compile (CS0162), so they ran nothing
+
+## M4 allowedActions not filtered by the grant (src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+  Error Message:   Error Message: Failed!  - Failed:     2, Passed:    56, Skipped:     0, Total:    58, Duration: 13 s - ControlServer.Tests.dll (net8.0)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ARenewalKeepsTheSessionOpenAndOffersWhatItAdds
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AGrantForTheVehicleAndJourneyOpensTheSessionOfferingOnlyTheRepairResume
+
+## M6 confirmation code not compared (any code grants) (src/ControlServer.Host/Runtime/Recovery/RecoveryGrantIssuance.cs)
+  Error Message:   Error Message:   Error Message:
+Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "minutes")
+Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "journey-stage")
+Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "actions")
+Failed ControlServer.Tests.RecoveryGrantTests.ACodeFromAnotherPlanIsStale(change: "replaces")
+Failed ControlServer.Tests.RecoveryGrantTests.AWrongCodeIsRefusedWithTheCurrentPlanAndCodeAndAudited
+
+## M8 per-vehicle proof not enforced (shared proof always answers) (src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs)
+  Error Message:   Error Message: Failed!  - Failed:     2, Passed:    56, Skipped:     0, Total:    58, Duration: 14 s - ControlServer.Tests.dll (net8.0)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "shared", accepted: False)
+Failed ControlServer.Tests.RecoveryStateMachineG2Tests.WithPerVehicleProofsOnlyTheVehiclesOwnIsAccepted(presented: "own", accepted: True)
