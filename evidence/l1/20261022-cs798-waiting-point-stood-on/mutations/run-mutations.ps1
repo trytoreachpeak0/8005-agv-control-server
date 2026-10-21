@@ -19,7 +19,7 @@ $mutations = @(
        Old = "        if (standing.Excludes(graph, vehicleKey, point.StationId) is { } stoodOn)"
        New = "        if (standing.Excludes(graph, vehicleKey, point.StationId) is { } stoodOn && origin < 0)" }
     @{ Id = 'M2'; File = "$r/JourneyRuntimeEngine.ClearanceMove.cs"; Class = $clearance; Expect = 'AVehicleOutsideTheIdleFleetStandingOnAPointKeepsTheClearingVehicleOffIt'
-       Old = ".ReadFleetStandingAsync([vehicle], cancellationToken)"; New = ".ReadFleetStandingAsync([], cancellationToken)" }
+       Old = "                        standing,`n"; New = "                        new FleetStanding([], []),`n" }
     @{ Id = 'M3'; File = $evaluator; Class = $commit; Expect = 'AStagingOriginAnotherVehicleStandsOnIsNotTakenAndTheVehicleFallsBackToAWaitingPoint'
        Old = "        if (standing.Excludes(reads.Graph.Graph!, vehicle.VehicleKey, stationId) is { } stoodOn)"
        New = "        if (standing.Excludes(reads.Graph.Graph!, vehicle.VehicleKey, stationId) is { } stoodOn && stationId < 0)" }
