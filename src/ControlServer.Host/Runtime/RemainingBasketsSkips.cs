@@ -111,17 +111,19 @@ internal static class RemainingBasketsSkips
             return false;
         }
         int[] targets = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson) ?? [];
-        return (await SlotReadingsAsync(dbContext, agvId, targets, cancellationToken).ConfigureAwait(false)) is null;
+        return (await SessionSlotReadings.ReadAsync(dbContext, agvId, targets, operation.CreatedAt, cancellationToken)
+            .ConfigureAwait(false)) is null;
     }
 
     /// <summary>
-    /// 判这辆车还没答的减篮请求，暂存答复；读数过期而又非看读数不可的那几条留着待判。返回暂存的答复的 messageId，提交之后由调用方发。
+    /// 判这辆车还没答的减篮请求，暂存答复；读数过期而又非看读数不可的那几条留着待判。返回暂存的答复的 messageId（提交之后由调用方发），
+    /// 与是否还有请求在等读数（入站据此按间隔再要快照，审查 M2）。
     /// </summary>
     /// <remarks>
     /// 在应答之后调用，收件箱那一次已经提交，所以这里自己开写事务（调用方已有事务就加入它）。这个库的写事务是 BEGIN IMMEDIATE，判定读到的是
     /// 此前提交的一切——这次装货的结果、别的连接上的取消与纠错、引擎的推进——判与写之间别人插不进来。
     /// </remarks>
-    public static async Task<IReadOnlyList<string>> DecidePendingAsync(
+    public static async Task<(IReadOnlyList<string> Staged, bool AwaitingReadings)> DecidePendingAsync(
         ControlServerDbContext dbContext,
         WireToGateStore store,
         string agvId,
@@ -137,12 +139,14 @@ internal static class RemainingBasketsSkips
                 ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
                 : null;
         List<string> staged = [];
+        bool awaitingReadings = false;
         foreach (Request request in await UnansweredAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false))
         {
             (RemainingBasketsSkipRule.Decision? decision, int expectedBasketCount) =
                 await DecideAsync(dbContext, request, cancellationToken).ConfigureAwait(false);
             if (decision is null)
             {
+                awaitingReadings = true;
                 continue;
             }
             await OnboardJourneyPublisher.StageRemainingBasketsSkipResultAsync(
@@ -164,7 +168,7 @@ internal static class RemainingBasketsSkips
         {
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        return staged;
+        return (staged, awaitingReadings);
     }
 
     /// <summary>
@@ -271,7 +275,8 @@ internal static class RemainingBasketsSkips
             return (early, expectedBasketCount);
         }
         IReadOnlyDictionary<int, RemainingBasketsSkipRule.SlotReading>? readings =
-            await SlotReadingsAsync(dbContext, request.AgvId, targets, cancellationToken).ConfigureAwait(false);
+            await SessionSlotReadings.ReadAsync(dbContext, request.AgvId, targets, operation!.CreatedAt, cancellationToken)
+                .ConfigureAwait(false);
         if (readings is null)
         {
             return (null, expectedBasketCount);
@@ -321,81 +326,6 @@ internal static class RemainingBasketsSkips
             return "这次装货已经同意过剩下的不装。";
         }
         return null;
-    }
-
-    /// <summary>
-    /// 这辆车当前会话里最新一份 <c>SafetyStateSnapshot</c> 给的目标仓读数；那份快照之后有 <c>SafetyStateChanged</c> 说某个目标仓变过，或者
-    /// 当前会话里一份快照都没有，就是过期，返回 null。
-    /// </summary>
-    /// <remarks>
-    /// 与看板逾期卡片、人工判故障的审计读数（<c>SlotReadings</c>）同一个读法：会话按会话行的代次、快照按 <c>safetyStateVersion</c> 取最新。
-    /// 那两处把快照之后的变化标出来给人看；这里要拿它做判定，所以变化之后的读数一律不用。
-    /// </remarks>
-    private static async Task<IReadOnlyDictionary<int, RemainingBasketsSkipRule.SlotReading>?> SlotReadingsAsync(
-        ControlServerDbContext dbContext,
-        string agvId,
-        IReadOnlyCollection<int> targets,
-        CancellationToken cancellationToken)
-    {
-        long? generation = await dbContext.SessionRecoveries.AsNoTracking()
-            .Where(row => row.AgvId == agvId)
-            .Select(row => (long?)row.SessionGeneration)
-            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-        if (generation is null)
-        {
-            return null;
-        }
-        string[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
-            .Select(row => row.RequestJson)
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        JsonElement? latest = null;
-        long latestVersion = long.MinValue;
-        List<(long Version, int[] Slots)> changes = [];
-        foreach (string json in rows)
-        {
-            using JsonDocument document = JsonDocument.Parse(json);
-            JsonElement root = document.RootElement;
-            if (!root.TryGetProperty("agvId", out JsonElement agv) || agv.GetString() != agvId ||
-                !root.TryGetProperty("sessionGeneration", out JsonElement session) ||
-                session.ValueKind != JsonValueKind.Number || session.GetInt64() != generation)
-            {
-                continue;
-            }
-            JsonElement payload = root.GetProperty("payload");
-            long version = payload.GetProperty("safetyStateVersion").GetInt64();
-            if (root.GetProperty("messageType").GetString() == "SafetyStateSnapshot")
-            {
-                if (version > latestVersion)
-                {
-                    latestVersion = version;
-                    latest = payload.Clone();
-                }
-            }
-            else if (payload.TryGetProperty("affectedSlots", out JsonElement affected) &&
-                     affected.ValueKind == JsonValueKind.Array)
-            {
-                changes.Add((version, [.. affected.EnumerateArray().Select(item => item.GetInt32())]));
-            }
-        }
-        if (latest is not JsonElement snapshot ||
-            changes.Any(change => change.Version > latestVersion && change.Slots.Any(targets.Contains)))
-        {
-            return null;
-        }
-        Dictionary<int, RemainingBasketsSkipRule.SlotReading> readings = [];
-        foreach (JsonElement state in snapshot.GetProperty("slotStates").EnumerateArray())
-        {
-            int slotNo = state.GetProperty("slotNo").GetInt32();
-            if (targets.Contains(slotNo))
-            {
-                readings[slotNo] = new RemainingBasketsSkipRule.SlotReading(
-                    state.GetProperty("physicalState").GetString()!,
-                    state.GetProperty("lockState").GetString()!,
-                    state.GetProperty("unlockOutputState").GetString()!);
-            }
-        }
-        return readings;
     }
 
     /// <summary>

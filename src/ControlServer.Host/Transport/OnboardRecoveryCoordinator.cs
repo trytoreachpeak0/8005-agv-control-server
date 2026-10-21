@@ -916,13 +916,14 @@ public sealed class OnboardRecoveryCoordinator(
     /// <param name="replaySkipRequestId">
     /// 车又提交了这个 <c>skipRequestId</c>（同号同内容）：它的答复车已确认过也再发一次，原样重放存下的那一行（wire-notes 减篮一节）。
     /// </param>
-    public async Task AnswerRemainingBasketsSkipsAsync(
+    /// <returns>还有请求因读数过期待判：入站据此按间隔再要快照（审查 M2）。</returns>
+    public async Task<bool> AnswerRemainingBasketsSkipsAsync(
         string agvId,
         long sessionGeneration,
         string? replaySkipRequestId,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<string> staged = await RemainingBasketsSkips.DecidePendingAsync(
+        (IReadOnlyList<string> staged, bool awaitingReadings) = await RemainingBasketsSkips.DecidePendingAsync(
             dbContext,
             store,
             agvId,
@@ -952,6 +953,7 @@ public sealed class OnboardRecoveryCoordinator(
                     agvId, sessionGeneration, RemainingBasketsSkips.ResultMessageId(replaySkipRequestId), cancellationToken)
                 .ConfigureAwait(false);
         }
+        return awaitingReadings;
     }
 
     public async Task ReplayPendingCommandsAsync(
@@ -2047,7 +2049,9 @@ public sealed class OnboardRecoveryCoordinator(
             return;
         }
         bool safeEmpty = messageType is "LoadCancellationResult" or "LoadCompensationResult" or "FaultCargoRecoveryResult"
-            ? HasExactSafeSlotResult(payload, ParseSlots(workflow.SlotsJson), "EMPTY")
+            ? HasExactSafeSlotResult(payload, ParseSlots(workflow.SlotsJson), "EMPTY") ||
+              (messageType == "LoadCancellationResult" &&
+               await ServerReadingsProveEmptyScopeAllEmptyAsync(payload, workflow, cancellationToken).ConfigureAwait(false))
             : false;
         // REQ-0364 (CP-0009, control-server#385): the light curtains proved every target slot empty while a lock or an
         // unlock output could not be proven. The cargo business settles as the empty ending it would have had, and the
@@ -3178,6 +3182,42 @@ public sealed class OnboardRecoveryCoordinator(
         int[] actual = results.Select(item => item.GetProperty("slotNo").GetInt32()).Order().ToArray();
         return expectedSlots.Length > 0 && actual.SequenceEqual(expectedSlots) &&
                results.All(item => RequiredString(item, "finalPhysicalState") == "EMPTY");
+    }
+
+    /// <summary>
+    /// An ALL_EMPTY during-load cancellation reported with no slot results (control-server#830, review M1). Since protocol
+    /// v6 a during-load authorization carries empty <c>slots</c>, so the onboard has no scope to report per slot and may
+    /// send <c>slotResults: []</c>. That reconciles only on the server's own readings: the vehicle's current-session
+    /// snapshot since the load began (<see cref="SessionSlotReadings"/>), fresh, with every target slot of the workflow
+    /// EMPTY, LOCKED and RESET -- the same three facts <see cref="HasExactSafeSlotResult"/> asks of a per-slot result.
+    /// Stale or missing readings, or any slot not so proven, leave it to the per-slot rule, which refuses it.
+    /// </summary>
+    private async Task<bool> ServerReadingsProveEmptyScopeAllEmptyAsync(
+        JsonElement payload,
+        RecoveryWorkflowRow workflow,
+        CancellationToken cancellationToken)
+    {
+        if (workflow.SlotOperationAttemptId is not { } attemptId ||
+            RequiredString(payload, "overallOutcome") != "ALL_EMPTY" ||
+            payload.GetProperty("slotResults").GetArrayLength() != 0)
+        {
+            return false;
+        }
+        int[] targets = ParseSlots(workflow.SlotsJson);
+        DateTimeOffset? loadStartedAt = await dbContext.StationOperations.AsNoTracking()
+            .Where(row => row.SlotOperationAttemptId == attemptId)
+            .Select(row => (DateTimeOffset?)row.CreatedAt)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (targets.Length == 0 || loadStartedAt is not { } notBefore)
+        {
+            return false;
+        }
+        IReadOnlyDictionary<int, RemainingBasketsSkipRule.SlotReading>? readings =
+            await SessionSlotReadings.ReadAsync(dbContext, workflow.AgvId, targets, notBefore, cancellationToken)
+                .ConfigureAwait(false);
+        return readings is not null &&
+               targets.All(slot => readings.TryGetValue(slot, out RemainingBasketsSkipRule.SlotReading? reading) &&
+                                   reading.Physical == "EMPTY" && reading.Lock == "LOCKED" && reading.Output == "RESET");
     }
 
     private static bool HasExactSafeSlotResult(JsonElement payload, int[] expectedSlots, string? expectedState)

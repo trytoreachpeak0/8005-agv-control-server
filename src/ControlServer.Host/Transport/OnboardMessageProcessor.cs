@@ -323,7 +323,7 @@ public sealed partial class OnboardMessageProcessor(
             }
             else
             {
-                await recoveryCoordinator.AnswerRemainingBasketsSkipsAsync(
+                state.RemainingBasketsSkipAwaitingReadings = await recoveryCoordinator.AnswerRemainingBasketsSkipsAsync(
                     agvId, state.SessionGeneration!.Value, replaySkipRequestId, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -360,7 +360,10 @@ public sealed partial class OnboardMessageProcessor(
         // unanswered while it still holds an unacknowledged SafetyStateChanged -- which the refused one is -- and expects
         // the server to ask again (8005-agv-onboard-hmi WireToGateBusinessService.AnswerSafetyStateSnapshotRequestAsync).
         // Spaced by SafetySnapshotReaskInterval so a heartbeat every two seconds does not become a request every two seconds.
-        if (state.SafetyBaselineUntrusted &&
+        // A remaining-baskets skip waiting on stale readings (control-server#830, review M2) is asked for the same way: the
+        // snapshot requested when the skip arrived goes unanswered for the same reason, every onboard SafetyStateChanged
+        // naming slots 1..8.
+        if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings) &&
             timeProvider.GetUtcNow() - state.SafetySnapshotRequestedAt >= SafetySnapshotReaskInterval)
         {
             state.SafetySnapshotRequestDue = true;
@@ -440,7 +443,8 @@ public sealed partial class OnboardMessageProcessor(
         await FlushDeferredLineAsync(line, cancellationToken).ConfigureAwait(false);
         if (skipAnswersDue && state.AgvId is { } agvId && state.SessionGeneration is long generation)
         {
-            await recoveryCoordinator.AnswerRemainingBasketsSkipsAsync(agvId, generation, replaySkipRequestId, cancellationToken)
+            state.RemainingBasketsSkipAwaitingReadings = await recoveryCoordinator
+                .AnswerRemainingBasketsSkipsAsync(agvId, generation, replaySkipRequestId, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -697,6 +701,7 @@ public sealed partial class OnboardMessageProcessor(
                         .ConfigureAwait(false))
                 {
                     state.SafetySnapshotRequestDue = true;
+                    state.RemainingBasketsSkipAwaitingReadings = true;
                 }
                 return DurableAck(messageType, messageId, agvId, generation, contentHash);
             case "SlotOperationCommandRejected":
@@ -1917,4 +1922,10 @@ public sealed class OnboardConnectionState
 
     /// <summary>The <c>skipRequestId</c> the current line resubmitted, whose stored answer is replayed with the deferred answers.</summary>
     public string? RemainingBasketsSkipReplayRequestId { get; set; }
+
+    /// <summary>
+    /// A remaining-baskets skip on this connection is waiting for fresh readings (control-server#830, review M2): asked for again
+    /// at <see cref="OnboardMessageProcessor.SafetySnapshotReaskInterval"/> until a decision clears it.
+    /// </summary>
+    public bool RemainingBasketsSkipAwaitingReadings { get; set; }
 }
