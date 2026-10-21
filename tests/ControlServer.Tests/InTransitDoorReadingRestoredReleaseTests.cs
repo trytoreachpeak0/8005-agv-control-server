@@ -200,6 +200,66 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
         Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
     }
 
+    /// <summary>
+    /// 还没有任何门锁异常时，两轮之间先收到「没锁」、再收到「读不到」，没有一轮读到那条「没锁」：同一轮按读到没锁交故障模型，之后读回锁闭
+    /// 多久都不自动解除（cs#839 复审情况 a、探针 P1）。修之前这一形宽限满 3 秒以 GRACE_EXPIRED 交出、记成「只是读不到」，读回锁闭被自动解除。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task ANotLockedThenAnUnreadBetweenTwoRoundsBeforeAnyFaultKeepsTheStopWithAPerson()
+    {
+        await using RuntimeFixture fixture = await DrivingBetweenStationsAsync(behindTheReadinessGate: false);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await ReportNotLockedAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await ReportUnknownAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        await DriveRoundsAsync(fixture, 2);
+        await LatchAsync(fixture);
+
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 宽限中 10 秒没被任何一轮看过（一轮读 RIoT 超时就够），期间先「没锁」又「读不到」：那条「没锁」照样记下，交故障模型之后读回锁闭
+    /// 也不会成为「读数已恢复」（复审情况 b、探针 P2：丢弃过期宽限发生在判两轮之间的没锁之前）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public void ANotLockedReadWhileAGraceWentUnobservedIsNotForgotten()
+    {
+        InTransitDoorReadings readings = new(Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
+        Assert.Equal(InTransitDoorAction.InGrace, readings.Observe(
+            "AGV-A", new InTransitDoorVerdict(InTransitDoorState.SlotStateUnknown, 1, 1, Now) { UnknownSince = Now }, false,
+            Now.AddSeconds(0.5)).Action);
+        Assert.Equal(Now, readings.SinceFor("AGV-A"));
+
+        InTransitDoorVerdict after = new(InTransitDoorState.SlotStateUnknown, 1, 4, Now.AddSeconds(8))
+        {
+            UnknownSince = Now.AddSeconds(8),
+            Between = [new(InTransitDoorState.ProvenLocked, Now.AddSeconds(5)), new(InTransitDoorState.NotLocked, Now.AddSeconds(7))],
+        };
+        InTransitDoorReading handed = readings.Observe("AGV-A", after, false, Now.AddSeconds(12));
+        Assert.Equal(
+            (InTransitDoorAction.HandToFault, InTransitDoorReadings.HandReadNotLocked), (handed.Action, handed.HandedBecause));
+
+        bool restored = false;
+        for (int second = 13; second <= 26; second++)
+        {
+            restored |= readings.Observe(
+                "AGV-A", new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, 1, 5, Now.AddSeconds(12.5)), true,
+                Now.AddSeconds(second)).ReadingRestored;
+        }
+
+        Assert.False(restored);
+        Assert.False(readings.OnlyUnreadAndLockedSince("AGV-A"));
+    }
+
     /// <summary>两轮之间夹着一条「读不到」：连续 10 秒读回锁闭从头数，满 10 秒才解除（审查 H1 的另一半）。</summary>
     [Fact]
     [Trait("Requirement", "REQ-0167")]

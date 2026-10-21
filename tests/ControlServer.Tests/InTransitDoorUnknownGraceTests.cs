@@ -207,6 +207,40 @@ public sealed class InTransitDoorUnknownGraceTests
             entry.Message.Contains(InTransitDoorReadings.HandGraceLimitReached, StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 两轮之间一次「锁闭」把「未知」断成两段，第二段算新开始的一次宽限（复审 M1、探针 P3）：10 分钟内第 3 段「未知」不再宽限。
+    /// 修之前已开着的宽限只沿用原来的起点，那条锁闭不算新一段，少算一次。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public void ALockedReadingBetweenTwoRoundsSplitsTheGraceIntoTwo()
+    {
+        InTransitDoorReadings readings = new(Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
+        Assert.Equal(InTransitDoorAction.InGrace, readings.Observe(
+            "AGV-A", new InTransitDoorVerdict(InTransitDoorState.SlotStateUnknown, 1, 1, Now) { UnknownSince = Now }, false,
+            Now.AddSeconds(0.2)).Action);
+        InTransitDoorReading second = readings.Observe(
+            "AGV-A",
+            new InTransitDoorVerdict(InTransitDoorState.SlotStateUnknown, 1, 3, Now.AddSeconds(1.2))
+            {
+                UnknownSince = Now.AddSeconds(1.2),
+                Between = [new(InTransitDoorState.ProvenLocked, Now.AddSeconds(0.8))],
+            },
+            false,
+            Now.AddSeconds(1.4));
+        Assert.Equal((InTransitDoorAction.InGrace, true), (second.Action, second.GraceStarted));
+        Assert.Equal(InTransitDoorAction.Nothing, readings.Observe(
+            "AGV-A", new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, 1, 4, Now.AddSeconds(1.6)), false,
+            Now.AddSeconds(2)).Action);
+
+        InTransitDoorReading third = readings.Observe(
+            "AGV-A", new InTransitDoorVerdict(InTransitDoorState.SlotStateUnknown, 1, 5, Now.AddSeconds(30)) { UnknownSince = Now.AddSeconds(30) },
+            false, Now.AddSeconds(30.2));
+
+        Assert.Equal(
+            (InTransitDoorAction.HandToFault, InTransitDoorReadings.HandGraceLimitReached), (third.Action, third.HandedBecause));
+    }
+
     /// <summary>窗口是滑动的：第 1 次宽限开始 10 分钟之后，又能给 1 次。</summary>
     [Fact]
     [Trait("Requirement", "REQ-0246")]
