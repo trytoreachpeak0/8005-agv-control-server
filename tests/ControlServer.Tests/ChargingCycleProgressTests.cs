@@ -624,7 +624,7 @@ public sealed class ChargingCycleProgressTests
     [Fact]
     public async Task AnotherVehicleDrivingAtNoStationDoesNotKeepALeftChargerFromBeingReleased()
     {
-        await using FleetFixture fleet = await FleetAsync();
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
         await CompletedAsync(fleet);
         fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
         for (int round = 0; round < 3; round++)
