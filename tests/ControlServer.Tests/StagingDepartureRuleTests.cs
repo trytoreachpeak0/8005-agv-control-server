@@ -70,12 +70,13 @@ public sealed class StagingDepartureRuleTests
     }
 
     /// <summary>
-    /// control-server#800（CP-0018 第五节第二张表第 1 项）：因本车占位被拒的候选，按它要的那一侧只扣已装货物之后的空仓重看——放得下它的篮数，挡住它的只是预留，
-    /// 换成非容量的码、不计入；放不下（已装货物挡住）、或篮数与侧说不出来的，照旧是容量。别的码不动。
+    /// control-server#800：派车因本车占位或会话基线不够拒掉的候选，按它要的那一侧重看。本车占位（CP-0018 第五节第二张表第 1 项）：只扣已装货物之后放得下它的篮数，
+    /// 挡住它的只是预留，换成非容量的码；放不下的照旧是容量。基线不够（CP-0024，cs#800 独立审查 M1）：篮数超过那一侧能用的仓（基线加已装的），挡住它的只是禁用仓，
+    /// 换成非容量的码；没超过（装货途中重连、已装的仓不在新基线里）照旧是容量。篮数或侧说不出来的、别的码不动。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
-    public void ACandidateRefusedOnlyForOwnReservationsIsNotCapacity()
+    public void CandidatesRefusedOnlyForReservationsOrDisabledSlotsAreNotCapacity()
     {
         DispatchCandidateVerdict[] verdicts =
         [
@@ -83,19 +84,32 @@ public sealed class StagingDepartureRuleTests
             StagingDepartureFullOrNoFitTests.Verdict("B", TransportTaskTypes.StagingToWire, 305, "FRONT", OwnCargo, baskets: 1),
             StagingDepartureFullOrNoFitTests.Verdict("C", TransportTaskTypes.StagingToWire, 305, "REAR", OwnCargo, baskets: 3),
             StagingDepartureFullOrNoFitTests.Verdict("D", TransportTaskTypes.StagingToWire, 305, "REAR", OwnCargo, baskets: 0),
-            StagingDepartureFullOrNoFitTests.Verdict("E", TransportTaskTypes.StagingToWire, 305, "REAR", ShortOfFreeSlots, baskets: 1),
+            StagingDepartureFullOrNoFitTests.Verdict("E", TransportTaskTypes.StagingToWire, 305, "REAR", ShortOfFreeSlots, baskets: 3),
+            StagingDepartureFullOrNoFitTests.Verdict("F", TransportTaskTypes.StagingToWire, 305, "FRONT", ShortOfFreeSlots, baskets: 2),
+            StagingDepartureFullOrNoFitTests.Verdict("G", TransportTaskTypes.StagingToWire, 305, "FRONT", ShortOfFreeSlots, baskets: 0),
         ];
-        Dictionary<string, int> freeOfLoadedCargo = new(StringComparer.Ordinal) { ["FRONT"] = 0, ["REAR"] = 2 };
+        // 前仓：能用 2 格（基线 1 格加已装 1 格，装货途中重连的样子），只扣已装后空 0 格。后仓：能用 2 格，空 2 格。
+        Dictionary<string, StagingDepartureRule.SlotRoom> room = new(StringComparer.Ordinal)
+        {
+            ["FRONT"] = new StagingDepartureRule.SlotRoom(Usable: 2, FreeOfLoadedCargo: 0),
+            ["REAR"] = new StagingDepartureRule.SlotRoom(Usable: 2, FreeOfLoadedCargo: 2),
+        };
 
-        IReadOnlyList<string> waiting = StagingDepartureRule.WaitingAt(verdicts, 305, freeOfLoadedCargo);
+        IReadOnlyList<string> waiting = StagingDepartureRule.WaitingAt(verdicts, 305, room);
 
         Assert.Equal(
-            [StagingDepartureRule.RefusedOnlyForOwnReservations, OwnCargo, OwnCargo, OwnCargo, ShortOfFreeSlots],
+            [
+                StagingDepartureRule.RefusedOnlyForOwnReservations, OwnCargo, OwnCargo, OwnCargo,
+                StagingDepartureRule.RefusedOnlyForDisabledSlots, ShortOfFreeSlots, ShortOfFreeSlots,
+            ],
             waiting);
         Assert.False(StagingDepartureRule.IsCapacityRefusal(StagingDepartureRule.RefusedOnlyForOwnReservations));
-        Assert.Equal(["FRONT", "REAR"], StagingDepartureRule.GroupsBlockedByLoadedCargo(verdicts, freeOfLoadedCargo).Order());
+        Assert.False(StagingDepartureRule.IsCapacityRefusal(StagingDepartureRule.RefusedOnlyForDisabledSlots));
+        Assert.Equal(["FRONT", "REAR"], StagingDepartureRule.GroupsBlockedByLoadedCargo(verdicts, room).Order());
         Assert.False(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(
-            false, StagingDepartureRule.WaitingAt(verdicts[..1], 305, freeOfLoadedCargo))));
+            false, StagingDepartureRule.WaitingAt([verdicts[0], verdicts[4]], 305, room))));
+        Assert.True(StagingDepartureRule.Decide(new StagingDepartureRule.Facts(
+            false, StagingDepartureRule.WaitingAt([verdicts[4], verdicts[5]], 305, room))));
     }
 
     /// <summary>容量只有三个码；票面列的四样里 9 段与 8 条共用一个。</summary>

@@ -5162,10 +5162,10 @@ public sealed partial class JourneyRuntimeEngine(
     /// 不保持就会在核验发出之前被撤回，操作员拿到了受理、没装的已放回，车却等到持货期限）。
     /// </para>
     /// <para>
-    /// 「每一侧都满」<b>只按已装货物</b>：会话基线里这一侧的仓，去掉已安全闭环装上车的需求占的仓（<see cref="FreeOfLoadedCargo"/>），一个不剩才算满。
+    /// 「每一侧都满」<b>只按已装货物</b>：会话基线里这一侧的仓，去掉已安全闭环装上车的需求占的仓（<see cref="SlotRoomAtStaging"/>），一个不剩才算满。
     /// 派车的账本（<see cref="JourneyAwareSlotLedger"/>，已装加已预留）不读：判满比派车严，判满成立时派车也必然没有空仓（CP-0018 修订项一末句）。
-    /// 「等着的需求」读派车轮上一轮对这辆车的全部裁决（<see cref="SlotGroupFullnessBoard.CandidateVerdictsOf"/>），只因预留装不下的不计入
-    /// （<see cref="StagingDepartureRule.OnlyOwnReservations"/>）。<c>FullSlotPositionsJson</c> 写哪几侧满（已装占满，或有候选被已装货物挡住）。
+    /// 「等着的需求」读派车轮上一轮对这辆车的全部裁决（<see cref="SlotGroupFullnessBoard.CandidateVerdictsOf"/>），只因预留装不下的
+    /// （<see cref="StagingDepartureRule.OnlyOwnReservations"/>）与只因禁用仓装不下的（<see cref="StagingDepartureRule.OnlyDisabledSlots"/>，CP-0024）不计入。<c>FullSlotPositionsJson</c> 写哪几侧满（已装占满，或有候选被已装货物挡住）。
     /// </para>
     /// <para>
     /// <b>车到站之后才判</b>（<paramref name="arrived"/>，审查 L5）：开往待送点的那一段（<c>AwaitingPickupArrival</c>）答说不出来。
@@ -5198,32 +5198,33 @@ public sealed partial class JourneyRuntimeEngine(
             .ReadAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
         OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
         bool? everyGroupFull = null;
-        IReadOnlyDictionary<string, int>? freeOfLoadedCargo = null;
+        IReadOnlyDictionary<string, StagingDepartureRule.SlotRoom>? room = null;
         if (positions is not null && onboard is not null && positions.PhysicalSlotCountByGroup.Count > 0)
         {
-            freeOfLoadedCargo = FreeOfLoadedCargo(stops, onboard, positions);
-            IReadOnlySet<string> blockedByLoadedCargo = StagingDepartureRule.GroupsBlockedByLoadedCargo(verdicts, freeOfLoadedCargo);
-            string[] full = [.. freeOfLoadedCargo
-                .Where(group => group.Value == 0 || blockedByLoadedCargo.Contains(group.Key))
+            room = SlotRoomAtStaging(stops, onboard, positions);
+            IReadOnlySet<string> blockedByLoadedCargo = StagingDepartureRule.GroupsBlockedByLoadedCargo(verdicts, room);
+            string[] full = [.. room
+                .Where(group => group.Value.FreeOfLoadedCargo == 0 || blockedByLoadedCargo.Contains(group.Key))
                 .Select(group => group.Key)];
             string fullJson = JsonSerializer.Serialize(full);
             if (!string.Equals(runtime.FullSlotPositionsJson, fullJson, StringComparison.Ordinal))
             {
                 runtime.FullSlotPositionsJson = fullJson;
             }
-            everyGroupFull = freeOfLoadedCargo.Values.All(free => free == 0);
+            everyGroupFull = room.Values.All(group => group.FreeOfLoadedCargo == 0);
         }
 
         return StagingDepartureRule.Decide(new StagingDepartureRule.Facts(
             everyGroupFull,
-            StagingDepartureRule.WaitingAt(verdicts, standing.StationRiotId, freeOfLoadedCargo)));
+            StagingDepartureRule.WaitingAt(verdicts, standing.StationRiotId, room)));
     }
 
     /// <summary>
-    /// 每一侧只扣已装货物还空着的仓（CP-0018 修订项一，control-server#800）：会话基线里这一侧的仓（禁用的不在里面，调度 10-21 的解释），去掉这趟旅程上
-    /// 已安全闭环装上车（归属 <c>LOADED</c>）的需求占的仓。已预留、已分仓而还没装的不扣；正在装的那一批也不扣——它还没有安全闭环。按侧名排序。
+    /// 每一侧的仓位余量（control-server#800）。只扣已装货物还空着的（CP-0018 修订项一）：会话基线里这一侧的仓（禁用的不在里面，调度 10-21 的解释、CP-0024），
+    /// 去掉这趟旅程上已安全闭环装上车（归属 <c>LOADED</c>）的需求占的仓；已预留、已分仓而还没装的不扣，正在装的那一批也不扣——它还没有安全闭环。
+    /// 能用的：会话基线加上这一侧已装货物占着的仓（装货途中重连，新会话的基线只收那时为空的仓，cs#800 独立审查 M1）。按侧名排序。
     /// </summary>
-    private static SortedDictionary<string, int> FreeOfLoadedCargo(
+    private static SortedDictionary<string, StagingDepartureRule.SlotRoom> SlotRoomAtStaging(
         JourneyStopCursor stops,
         OnboardDispatchFacts onboard,
         VehicleSlotPositions positions)
@@ -5231,12 +5232,18 @@ public sealed partial class JourneyRuntimeEngine(
         HashSet<int> loaded = [.. stops.Demands
             .Where(item => item.Membership.Status == JourneyDemandStatuses.Loaded)
             .SelectMany(item => JsonSerializer.Deserialize<int[]>(item.Membership.TargetSlotsJson) ?? [])];
-        SortedDictionary<string, int> free = new(StringComparer.Ordinal);
+        SortedDictionary<string, StagingDepartureRule.SlotRoom> room = new(StringComparer.Ordinal);
         foreach (string group in positions.PhysicalSlotCountByGroup.Keys)
         {
-            free[group] = SessionBaselineSlotLedger.BaselineSlots(onboard, positions, group).Count(slot => !loaded.Contains(slot));
+            IReadOnlyList<int> baseline = SessionBaselineSlotLedger.BaselineSlots(onboard, positions, group);
+            int loadedHere = loaded.Count(slot =>
+                positions.SlotPositionByPhysicalSlot.TryGetValue(slot, out string? position) &&
+                string.Equals(position, group, StringComparison.Ordinal));
+            room[group] = new StagingDepartureRule.SlotRoom(
+                Usable: baseline.Count(slot => !loaded.Contains(slot)) + loadedHere,
+                FreeOfLoadedCargo: baseline.Count(slot => !loaded.Contains(slot)));
         }
-        return free;
+        return room;
     }
 
     /// <summary>

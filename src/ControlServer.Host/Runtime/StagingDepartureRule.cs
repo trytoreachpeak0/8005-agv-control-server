@@ -31,7 +31,9 @@ namespace ControlServer.Host.Runtime;
 /// <b>「本车占位」分两种，派车分不出来，这里分</b>：派车按已装或已预留核对（ADR-cross-0059，不改），拒绝码只有一个
 /// <see cref="DispatchReasonCodes.SlotGroupOccupiedByOwnCargo"/>。候选要的那一侧只扣已装货物之后还放得下它的篮数，它就只是被预留挡住
 /// （<see cref="OnlyOwnReservations"/>），换成 <see cref="RefusedOnlyForOwnReservations"/> 这个非容量的码，从 S 里去掉。派车的拒绝码不动：
-/// 机台取货的判满与看板读的还是它。
+/// 机台取货的判满与看板读的还是它。<see cref="DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable"/>（会话基线本身不够）同理分两种：篮数超过那一侧
+/// 能用的仓，挡住它的只是禁用仓，换成 <see cref="RefusedOnlyForDisabledSlots"/>、不计入（CP-0024）；没超过，那是装货途中重连、已装的仓不在新基线里，照旧是容量
+/// （<see cref="OnlyDisabledSlots"/>）。
 /// </para>
 /// <para>
 /// <b>每一轮重判</b>（CP-0018 修订项一，用户 10-20 定；取代 CP-0012 第五节②「一旦判为该走就不翻回」）：判满前后追加的待装需求一样计入，
@@ -51,11 +53,24 @@ public static class StagingDepartureRule
     /// </summary>
     public const string RefusedOnlyForOwnReservations = "STAGING_OWN_RESERVATIONS_ONLY";
 
+    /// <summary>
+    /// 候选只因本车禁用的仓装不下（<see cref="OnlyDisabledSlots"/>）时，<see cref="WaitingAt"/> 换上的码（CP-0024，cs#800 独立审查 M1）。同样只活在这条规则里、
+    /// 不是容量。
+    /// </summary>
+    public const string RefusedOnlyForDisabledSlots = "STAGING_DISABLED_SLOTS_ONLY";
+
+    /// <summary>
+    /// 一侧的仓位余量，判一条候选被什么挡住用。
+    /// </summary>
+    /// <param name="Usable">这一侧能用的仓：会话基线里的（禁用的不在里面），加上这一侧已装货物占着的（装货途中重连，新会话的基线里没有它们）。</param>
+    /// <param name="FreeOfLoadedCargo">这一侧只扣已装货物还空着的仓：会话基线里的，去掉已装货物占着的。</param>
+    public sealed record SlotRoom(int Usable, int FreeOfLoadedCargo);
+
     /// <summary>判定一次所需的事实。</summary>
     /// <param name="EverySlotGroupFull">车上每一侧都被已装货物占满；车的仓位模型或车载端事实读不到时为空。</param>
     /// <param name="WaitingCandidateReasons">
     /// 派车轮这一轮对这辆车判过的、取货站是本站的每一条待送候选的裁决（<see cref="DispatchAdmissionChain.Eligible"/>、拒绝码，或
-    /// <see cref="RefusedOnlyForOwnReservations"/>）；这一轮没有这辆车的结论时为空引用。
+    /// <see cref="RefusedOnlyForOwnReservations"/>、<see cref="RefusedOnlyForDisabledSlots"/>）；这一轮没有这辆车的结论时为空引用。
     /// </param>
     public sealed record Facts(bool? EverySlotGroupFull, IReadOnlyList<string>? WaitingCandidateReasons);
 
@@ -84,8 +99,8 @@ public static class StagingDepartureRule
             or DispatchReasonCodes.EnRouteAppendJourneyStopLimitReached;
 
     /// <summary>
-    /// 一辆车一轮的裁决里，取货站是 <paramref name="stationRiotId"/> 的待送候选各自的裁决；给了 <paramref name="freeOfLoadedCargo"/> 时，只因本车预留
-    /// 装不下的那几条换成 <see cref="RefusedOnlyForOwnReservations"/>。
+    /// 一辆车一轮的裁决里，取货站是 <paramref name="stationRiotId"/> 的待送候选各自的裁决；给了 <paramref name="room"/> 时，只被预留挡住的换成
+    /// <see cref="RefusedOnlyForOwnReservations"/>，只被禁用仓挡住的换成 <see cref="RefusedOnlyForDisabledSlots"/>。
     /// </summary>
     /// <remarks>
     /// 取货站来自站点解析（Order 60）。在它之前就被拒的候选没有路线，这里认不出它取货在哪——它们反正是被非容量的判据拒的，本来就要从 S 里去掉。
@@ -94,7 +109,7 @@ public static class StagingDepartureRule
     public static IReadOnlyList<string> WaitingAt(
         IEnumerable<DispatchCandidateVerdict> verdicts,
         int stationRiotId,
-        IReadOnlyDictionary<string, int>? freeOfLoadedCargo = null)
+        IReadOnlyDictionary<string, SlotRoom>? room = null)
     {
         ArgumentNullException.ThrowIfNull(verdicts);
         return
@@ -103,8 +118,9 @@ public static class StagingDepartureRule
                 .Where(verdict =>
                     string.Equals(verdict.Evaluation.Candidate.WorkType, TransportTaskTypes.StagingToWire, StringComparison.Ordinal) &&
                     verdict.Evaluation.Route?.PickupStationRiotId == stationRiotId)
-                .Select(verdict => freeOfLoadedCargo is not null && OnlyOwnReservations(verdict, freeOfLoadedCargo)
-                    ? RefusedOnlyForOwnReservations
+                .Select(verdict => room is null ? verdict.ReasonCode
+                    : OnlyOwnReservations(verdict, room) ? RefusedOnlyForOwnReservations
+                    : OnlyDisabledSlots(verdict, room) ? RefusedOnlyForDisabledSlots
                     : verdict.ReasonCode)
         ];
     }
@@ -115,28 +131,42 @@ public static class StagingDepartureRule
     /// </summary>
     public static IReadOnlySet<string> GroupsBlockedByLoadedCargo(
         IEnumerable<DispatchCandidateVerdict> verdicts,
-        IReadOnlyDictionary<string, int> freeOfLoadedCargo)
+        IReadOnlyDictionary<string, SlotRoom> room)
     {
         ArgumentNullException.ThrowIfNull(verdicts);
-        ArgumentNullException.ThrowIfNull(freeOfLoadedCargo);
-        return SlotGroupFullnessBoard.OwnCargoBlockedGroups(
-            verdicts.Where(verdict => !OnlyOwnReservations(verdict, freeOfLoadedCargo)));
+        ArgumentNullException.ThrowIfNull(room);
+        return SlotGroupFullnessBoard.OwnCargoBlockedGroups(verdicts.Where(verdict => !OnlyOwnReservations(verdict, room)));
     }
 
     /// <summary>
     /// 派车因本车占位拒了它（<see cref="DispatchReasonCodes.SlotGroupOccupiedByOwnCargo"/>），而它要的那一侧只扣已装货物还放得下它的篮数：挡住它的只是预留。
     /// 篮数或侧说不出来（派车轮在判容量之前就已写上，这里是防御）按原码处理。
     /// </summary>
-    public static bool OnlyOwnReservations(
-        DispatchCandidateVerdict verdict,
-        IReadOnlyDictionary<string, int> freeOfLoadedCargo)
+    public static bool OnlyOwnReservations(DispatchCandidateVerdict verdict, IReadOnlyDictionary<string, SlotRoom> room) =>
+        verdict?.ReasonCode == DispatchReasonCodes.SlotGroupOccupiedByOwnCargo &&
+        RoomOf(verdict, room) is { } groupRoom &&
+        verdict.Evaluation.ExpectedBasketCount <= groupRoom.FreeOfLoadedCargo;
+
+    /// <summary>
+    /// 派车因会话基线本身不够拒了它（<see cref="DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable"/>，SlotCapacityCriterion），而它的篮数比这一侧能用的仓
+    /// （基线加上已装货物占着的）还多：挡住它的只是禁用的仓，CP-0024「因本车仓位禁用而无法装入的候选不计入」。
+    /// </summary>
+    /// <remarks>
+    /// 不能把这个码整个从容量里拿掉（cs#800 独立审查 M1）：会话基线只收会话建立时为空的仓，装货途中重连之后，本旅程已装的仓不在新基线里，同一个码说的其实是
+    /// 「被已装货物挡住」。所以按「能用的仓」重看：篮数不超过它、只是超过只扣已装后的空仓，照旧是容量。篮数或侧说不出来按原码处理。
+    /// </remarks>
+    public static bool OnlyDisabledSlots(DispatchCandidateVerdict verdict, IReadOnlyDictionary<string, SlotRoom> room) =>
+        verdict?.ReasonCode == DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable &&
+        RoomOf(verdict, room) is { } groupRoom &&
+        verdict.Evaluation.ExpectedBasketCount > groupRoom.Usable;
+
+    private static SlotRoom? RoomOf(DispatchCandidateVerdict verdict, IReadOnlyDictionary<string, SlotRoom> room)
     {
-        ArgumentNullException.ThrowIfNull(verdict);
-        ArgumentNullException.ThrowIfNull(freeOfLoadedCargo);
-        return verdict.ReasonCode == DispatchReasonCodes.SlotGroupOccupiedByOwnCargo &&
-               verdict.Evaluation.RequiredSlotPosition is { } group &&
+        ArgumentNullException.ThrowIfNull(room);
+        return verdict.Evaluation.RequiredSlotPosition is { } group &&
                verdict.Evaluation.ExpectedBasketCount > 0 &&
-               freeOfLoadedCargo.TryGetValue(group, out int free) &&
-               verdict.Evaluation.ExpectedBasketCount <= free;
+               room.TryGetValue(group, out SlotRoom? groupRoom)
+            ? groupRoom
+            : null;
     }
 }
