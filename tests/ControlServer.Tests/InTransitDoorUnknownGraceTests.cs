@@ -268,6 +268,36 @@ public sealed class InTransitDoorUnknownGraceTests
         Assert.Equal(expected, reading.Action);
     }
 
+    /// <summary>
+    /// 同一条规则从库里读一遍（cs#839 第二次复审）：车载端存下的「没锁」带 <c>vehicleStopped=true</c> 时，接着的「读不到」照样宽限，
+    /// 不当场交出；同一条不带 vehicleStopped 时当场交出。钉住的是从摘要里解析出的那一列，不是内存里手搭的样本。
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task ADoorReadNotLockedWhileStandingStillAsStoredIsGracedWhenAnUnknownFollows(bool stopped)
+    {
+        await using RuntimeFixture fixture = await DrivingAsync("behind-gate");
+        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED"], vehicleStopped: stopped);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await ReportUnknownAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+
+        if (stopped)
+        {
+            await AssertNothingRaisedAsync(fixture);
+        }
+        else
+        {
+            await AssertHeldThenStoppedAsync(fixture, upperId);
+        }
+    }
+
     /// <summary>窗口是滑动的：第 1 次宽限开始 10 分钟之后，又能给 1 次。</summary>
     [Fact]
     [Trait("Requirement", "REQ-0246")]

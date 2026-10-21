@@ -311,6 +311,33 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
         Assert.False(readings.OnlyUnreadAndLockedSince("AGV-A"));
     }
 
+    /// <summary>
+    /// 同上，但没人看的那 10 秒里先「没锁」、到这一轮已读回锁闭（cs#839 第二次复审，变异 MD）：判两轮之间的没锁仍在丢弃过期宽限之前，
+    /// 当场按读到没锁交出，不因为此刻锁闭、宽限又被丢掉就当作什么都没发生。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    [Trait("Requirement", "REQ-0246")]
+    public void ANotLockedReadWhileAGraceWentUnobservedIsReadThoughTheDoorsReadLockedNow()
+    {
+        InTransitDoorReadings readings = new(Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions()));
+        Assert.Equal(InTransitDoorAction.InGrace, readings.Observe(
+            "AGV-A", new InTransitDoorVerdict(InTransitDoorState.SlotStateUnknown, 1, 1, Now) { UnknownSince = Now }, false,
+            Now.AddSeconds(0.5)).Action);
+
+        InTransitDoorReading handed = readings.Observe(
+            "AGV-A",
+            new InTransitDoorVerdict(InTransitDoorState.ProvenLocked, 1, 3, Now.AddSeconds(8))
+            {
+                Between = [new(InTransitDoorState.NotLocked, Now.AddSeconds(7))],
+            },
+            false,
+            Now.AddSeconds(12));
+
+        Assert.Equal(
+            (InTransitDoorAction.HandToFault, InTransitDoorReadings.HandReadNotLocked), (handed.Action, handed.HandedBecause));
+    }
+
     /// <summary>两轮之间夹着一条「读不到」：连续 10 秒读回锁闭从头数，满 10 秒才解除（审查 H1 的另一半）。</summary>
     [Fact]
     [Trait("Requirement", "REQ-0167")]
@@ -327,6 +354,74 @@ public sealed class InTransitDoorReadingRestoredReleaseTests
 
         await DriveRoundsAsync(fixture, 2);
         Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 故障期间两轮之间锁跳了一下（「没锁」又「锁闭」），之后很久没有一轮去看（cs#839 第二次复审 M、探针 P4）：隔 9 分钟时那条「没锁」
+    /// 还在回看范围里，隔 11 分钟时它被 10 分钟回看上限截掉了——截掉的历史按不明处理，两种都不自动解除。
+    /// </summary>
+    [Theory]
+    [InlineData(9)]
+    [InlineData(11)]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ANotLockedReadBeyondTheLookBackKeepsTheStopWithAPerson(int gapMinutes)
+    {
+        await using RuntimeFixture fixture = await LatchedForUnreadDoorsAsync();
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 2);
+        await ReportNotLockedAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await ReportLockedAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMinutes(gapMinutes));
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 故障期间两轮之间锁跳了一下，下一轮恰好落在重连窗口里（会话行已换到新一代、安全版本号作废，约 100 ms；cs#839 第二次复审 H、探针 P7）：
+    /// 那一轮取上一代最新的一条当当前读数，两轮之间的「没锁」照样读到，不因为这一轮把读到的时刻推过去就漏掉。不走重连窗口的对照同样不解除。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task ANotLockedReadBetweenTwoRoundsIsReadThoughTheNextRoundFallsInAReconnect(bool reconnectWindow)
+    {
+        await using RuntimeFixture fixture = await LatchedForUnreadDoorsAsync();
+        await ReportLockedAsync(fixture);
+        await DriveRoundsAsync(fixture, 2);
+        await ReportNotLockedAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(200));
+        await ReportLockedAsync(fixture);
+        if (reconnectWindow)
+        {
+            long generation;
+            long? revision;
+            await using (ControlServerDbContext db = new(fixture.DbOptionsForTests))
+            {
+                SessionRecoveryRow row = await db.SessionRecoveries.SingleAsync(r => r.AgvId == fixture.Options.AgvId, Token);
+                (generation, revision) = (row.SessionGeneration, row.SafetyRevision);
+                row.SessionGeneration = generation + 1;
+                row.SafetyRevision = null;
+                await db.SaveChangesAsync(Token);
+            }
+
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Context.ChangeTracker.Clear();
+            await using (ControlServerDbContext db = new(fixture.DbOptionsForTests))
+            {
+                SessionRecoveryRow row = await db.SessionRecoveries.SingleAsync(r => r.AgvId == fixture.Options.AgvId, Token);
+                row.SessionGeneration = generation;
+                row.SafetyRevision = revision;
+                await db.SaveChangesAsync(Token);
+            }
+        }
+
+        await DriveRoundsAsync(fixture, 20);
+
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
     }
 
     /// <summary>
