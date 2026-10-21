@@ -66,6 +66,20 @@ public sealed class JourneyRuntimeOptions
     /// </remarks>
     public TimeSpan CargoHoldingTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>The default of <see cref="CatalogAgeWindow"/>: thirty minutes, the value REQ-0366 names.</summary>
+    public static readonly TimeSpan DefaultCatalogAgeWindow = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// The catalog age window (REQ-0366, CP-0020, control-server#827): an unaccepted demand is dispatched only while MesIngest
+    /// first read it no longer ago than this. One value for every task type; always positive.
+    /// </summary>
+    /// <remarks>
+    /// A commissioning value: thirty minutes by default, any other value only once the user approves it. Measured from the
+    /// catalog item's <c>createdAt</c> (REQ-0201's waiting age) against this server's clock, never from MES DATES. Accepted
+    /// demands, including ones released back for redispatch, are not subject to it.
+    /// </remarks>
+    public TimeSpan CatalogAgeWindow { get; set; } = DefaultCatalogAgeWindow;
+
     /// <summary>
     /// How many stops one transport journey may have in all, the completed ones included (control-server#749, REQ-0196 as
     /// revised by CP-0015). Twenty by default; never below <see cref="Dispatch.EnRouteAppendPlanner.MaximumLegs"/>, because
