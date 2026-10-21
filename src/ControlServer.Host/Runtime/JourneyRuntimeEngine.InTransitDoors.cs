@@ -74,8 +74,8 @@ public sealed partial class JourneyRuntimeEngine
             "Vehicle {AgvId} is driving on order {UpperId} with its doors {DoorState} (generation {Generation}, safety " +
             "version {SafetyStateVersion}); handed to the fault model ({HandedBecause}).");
 
-    private static readonly Action<ILogger, string, string, double, long?, long?, Exception?> LogDoorUnknownGraceStarted =
-        LoggerMessage.Define<string, string, double, long?, long?>(
+    private static readonly Action<ILogger, string, string, long?, long?, double, Exception?> LogDoorUnknownGraceStarted =
+        LoggerMessage.Define<string, string, long?, long?, double>(
             LogLevel.Warning,
             new EventId(2321, nameof(LogDoorUnknownGraceStarted)),
             "Vehicle {AgvId} is driving on order {UpperId} with a slot it cannot read (SLOT_STATE_UNKNOWN, generation " +
@@ -123,8 +123,8 @@ public sealed partial class JourneyRuntimeEngine
         if (reading.GraceStarted)
         {
             LogDoorUnknownGraceStarted(
-                logger, runtime.AgvId, intent.UpperId, _doorReadings.Grace.TotalSeconds, doors.Generation,
-                doors.SafetyStateVersion, null);
+                logger, runtime.AgvId, intent.UpperId, doors.Generation, doors.SafetyStateVersion,
+                _doorReadings.Grace.TotalSeconds, null);
         }
 
         if (reading.Action != InTransitDoorAction.HandToFault)

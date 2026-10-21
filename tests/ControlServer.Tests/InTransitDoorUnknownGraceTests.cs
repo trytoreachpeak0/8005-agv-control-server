@@ -244,6 +244,26 @@ public sealed class InTransitDoorUnknownGraceTests
     }
 
     /// <summary>
+    /// 满 3 秒时就判，不等下一轮（CP-0017 修订项一说明 5）：宽限到期早于下一个 2 秒的定时，引擎循环在到期那一刻多跑一轮；
+    /// 到期已过（那一轮已经跑过）或晚于下一个定时，照常等定时，循环不会空转。
+    /// </summary>
+    [Theory]
+    [InlineData(500, 500)]
+    [InlineData(1999, 1999)]
+    [InlineData(2000, null)]
+    [InlineData(0, null)]
+    [InlineData(-300, null)]
+    [Trait("Requirement", "REQ-0246")]
+    public void TheWorkerRunsARoundWhenAGraceRunsOutBeforeTheNextTick(int dueInMilliseconds, int? expectedMilliseconds)
+    {
+        TimeSpan? early = JourneyRuntimeWorker.EarlyRoundAfter(
+            Now.AddMilliseconds(dueInMilliseconds), Now, TimeSpan.FromSeconds(2));
+
+        Assert.Equal(expectedMilliseconds is int ms ? TimeSpan.FromMilliseconds(ms) : null, early);
+        Assert.Null(JourneyRuntimeWorker.EarlyRoundAfter(null, Now, TimeSpan.FromSeconds(2)));
+    }
+
+    /// <summary>
     /// 服务端重启（单例换新、引擎重建）：起点不随进程清零到「重启后第一次看到」，而是重新取那条摘要的收到时刻，所以宽限不被拉长——
     /// 收到后第 1 秒重启，第 3 秒照样交故障模型。
     /// </summary>
