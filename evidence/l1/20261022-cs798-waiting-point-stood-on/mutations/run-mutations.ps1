@@ -25,10 +25,10 @@ $mutations = @(
        New = "        if (standing.Excludes(reads.Graph.Graph!, vehicle.VehicleKey, stationId) is { } stoodOn && stationId < 0)" }
     # The fleet, not the vehicles handed in.
     @{ Id = 'M4'; File = $standing; Class = $commit; Expect = 'AVehicleNotHandedToTheEvaluationStandingOnTheOnlyPointKeepsOthersOffIt'
-       Old = "observed = await ReadWithinBudgetAsync(vehicle, cancellationToken).ConfigureAwait(false);"; New = "observed = await Task.FromResult<RiotVehicleObservation?>(null).ConfigureAwait(false);" }
+       Old = "await ReadWithinBudgetAsync(vehicle, budget.Token, cancellationToken).ConfigureAwait(false);"; New = "await Task.FromResult<RiotVehicleObservation?>(null).ConfigureAwait(false);" }
     @{ Id = 'M5'; File = $evaluator; Class = 'MultiVehicleExecutionTests'; Expect = 'AVehicleOutsideTheIdleFleetStandingOnTheWaitingPointKeepsTheIdleReturnOffIt'
-       Old = ".ReadAsync([.. candidates.Select(item => item.Facts.Vehicle)], cancellationToken)"
-       New = ".ReadAsync([.. candidates.Select(item => item.Facts.Vehicle)], cancellationToken).ContinueWith(task => new FleetStanding([.. task.Result.Vehicles.Where(vehicle => candidates.Any(item => item.Vehicle.VehicleKey == vehicle.VehicleKey))], []), cancellationToken)" }
+       Old = ".ReadAsync([.. candidates.Select(item => item.Facts.Vehicle), .. fleetReadThisRound], cancellationToken)"
+       New = ".ReadAsync([.. candidates.Select(item => item.Facts.Vehicle), .. fleetReadThisRound], cancellationToken).ContinueWith(task => new FleetStanding([.. task.Result.Vehicles.Where(vehicle => candidates.Any(item => item.Vehicle.VehicleKey == vehicle.VehicleKey))], []), cancellationToken)" }
     @{ Id = 'M6'; File = $standing; Class = $commit; Expect = 'AVehicleNotHandedToTheEvaluationOnAStationAtThePointsNodeKeepsOthersOffThePoint'
        Old = "from == stationId || graph.Traverse(from, stationId) is { Reachable: true, TraversalCostMm: 0 };"; New = "from == stationId;" }
     @{ Id = 'M7'; File = $standing; Class = $commit; Expect = 'AVehicleStandingOnNoPointOfThisMapKeepsNoOneOff'
@@ -39,15 +39,16 @@ $mutations = @(
     @{ Id = 'M9'; File = "$r/Dispatch/DispatchRoundRunner.cs"; Class = $clearance; Expect = 'AVehicleThatCannotBeReadCountsWhereItWasLastSeen'
        Old = "        idleReturn.RememberWhereVehiclesStand(participants.Select(p => p.Facts.Vehicle));`n"; New = '' }
     @{ Id = 'M10'; File = $standing; Class = $commit; Expect = 'AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint'
-       Old = "if (memory.FirstUnlocated(key))"; New = "if (memory.FirstUnlocated(key) && key.Length < 0)" }
+       Old = "unlocated.Add(vehicle.AgvId);`n            if (memory.FirstUnlocated(key))"; New = "unlocated.Add(vehicle.AgvId);`n            if (memory.FirstUnlocated(key) && key.Length < 0)" }
     @{ Id = 'M11'; File = $standing; Class = $commit; Expect = 'AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint'
        Old = "            return _warned.Add(vehicleKey);"; New = "            _warned.Add(vehicleKey);`n            return true;" }
     @{ Id = 'M12'; File = $standing; Class = $commit; Expect = 'AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint'
        Old = "            _warned.Remove(vehicleKey);`n"; New = '' }
     @{ Id = 'M13'; File = $standing; Class = $commit; Expect = 'AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint'
        Old = "<= Charging.ChargerOccupancyReader.NoStation => (true, null, null),"; New = "< Charging.ChargerOccupancyReader.NoStation => (true, null, null)," }
-    # A vehicle that hangs is cut off by its own budget, not left to stall the evaluation.
-    @{ Id = 'M14'; File = $standing; Class = 'IdleReturnExecutionTests'; Expect = 'AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict'
+    # A vehicle that hangs is cut off by its own budget, not left to stall the evaluation. Retired in the review rework: the
+    # fleet read budget (M18) now cuts off the same hang sooner, so dropping the per-vehicle budget alone changes no outcome.
+    @{ Id = 'M14'; Retired = $true; File = $standing; Class = 'IdleReturnExecutionTests'; Expect = 'AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict'
        Old = "CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);"; New = "CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);" }
     # Review rework (Coordinator13 2026-10-22): the reviewer's survivors P2 and P3, the fleet read budget (M2) and visibility (M3).
     @{ Id = 'M16'; File = $standing; Class = $clearance; Expect = 'AVehicleThatCannotBeReadCountsWhereItWasLastSeen'
@@ -72,6 +73,7 @@ $mutations = @(
 $summary = @()
 foreach ($m in $mutations) {
     if ($Only.Count -gt 0 -and $m.Id -notin $Only) { continue }
+    if ($m.Contains('Retired') -and $m.Retired) { $summary += "$($m.Id) RETIRED (see the comment above it)"; continue }
     $full = (Resolve-Path $m.File).Path
     $text = [IO.File]::ReadAllText($full)
     $count = ([regex]::Matches($text, [regex]::Escape($m.Old))).Count
