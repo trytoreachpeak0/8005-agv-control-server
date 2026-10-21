@@ -110,8 +110,16 @@ public sealed class OnboardDispatchFactsReader(
         }
         Dictionary<int, JsonElement> safetySlots = safetyPayload.GetProperty("slotStates")
             .EnumerateArray().ToDictionary(item => item.GetProperty("slotNo").GetInt32());
-        int[] available = capabilityPayload.GetProperty("slotStates").EnumerateArray()
-            .Where(item => SlotAvailable(item, safetySlots))
+        JsonElement[] capabilitySlots = [.. capabilityPayload.GetProperty("slotStates").EnumerateArray()];
+        HashSet<int> unloadedSinceBaseline = capabilitySlots.Any(item => SlotAvailableButForCargo(item, safetySlots))
+            ? await SlotsUnloadedSinceAsync(
+                    agvId, safetyPayload.GetProperty("observedAt").GetDateTimeOffset(), cancellationToken)
+                .ConfigureAwait(false)
+            : [];
+        int[] available = capabilitySlots
+            .Where(item => SlotAvailable(item, safetySlots) ||
+                           (SlotAvailableButForCargo(item, safetySlots) &&
+                            unloadedSinceBaseline.Contains(item.GetProperty("slotNo").GetInt32())))
             .Select(item => item.GetProperty("slotNo").GetInt32())
             .Order()
             .ToArray();
@@ -120,6 +128,15 @@ public sealed class OnboardDispatchFactsReader(
         // the slot reservation ledger is built against -- a load and its unload each "affect" the
         // slots they touch, and treating that as lost availability would strand every slot the
         // first journey used for the rest of the session.
+        //
+        // The one widening is a slot the baseline refused only for its cargo (control-server#802): a session
+        // established with cargo on board left those slots out for its whole life, so once this server unloaded
+        // them they stayed lost until the vehicle reconnected -- dispatch refused demands for capacity and the
+        // staging stop judged a side full with empty slots on it (agv02, 10-21: the session of 13:54:04 began
+        // with 1, 2, 5, 6 and 7 loaded and read only 3, 4 and 8 for the rest of the afternoon). Such a slot joins
+        // the baseline on this server's own committed unload of it, see SlotsUnloadedSinceAsync -- never on a
+        // later snapshot, which may read it mid-operation (control-server#142). From then on it is a baseline
+        // slot like any other: a load into it is taken off by the ledger's assigned slots, once.
         JsonElement safety = safetySummaryPayload.GetProperty("safety");
         return new OnboardDispatchFacts(
             session.SessionGeneration,
@@ -131,18 +148,88 @@ public sealed class OnboardDispatchFactsReader(
             safety.GetProperty("unknownPresent").GetBoolean());
     }
 
-    private static bool SlotAvailable(JsonElement capability, Dictionary<int, JsonElement> safetySlots)
+    private static bool SlotAvailable(JsonElement capability, Dictionary<int, JsonElement> safetySlots) =>
+        SlotUsableWith(capability, safetySlots, "EMPTY");
+
+    /// <summary>
+    /// A slot the baseline refused for its cargo and nothing else: both snapshots read it occupied, and it is operable,
+    /// enabled, locked and reset (control-server#802).
+    /// </summary>
+    private static bool SlotAvailableButForCargo(JsonElement capability, Dictionary<int, JsonElement> safetySlots) =>
+        SlotUsableWith(capability, safetySlots, "OCCUPIED");
+
+    private static bool SlotUsableWith(
+        JsonElement capability,
+        Dictionary<int, JsonElement> safetySlots,
+        string physicalState)
     {
         int slot = capability.GetProperty("slotNo").GetInt32();
         if (!safetySlots.TryGetValue(slot, out JsonElement safety)) return false;
         return RequiredString(capability, "operability") == "OPERABLE" &&
                RequiredString(capability, "administrativeAvailability") == "ENABLED" &&
-               RequiredString(capability, "physicalState") == "EMPTY" &&
+               RequiredString(capability, "physicalState") == physicalState &&
                RequiredString(capability, "lockState") == "LOCKED" &&
                RequiredString(capability, "unlockOutputState") == "RESET" &&
-               RequiredString(safety, "physicalState") == "EMPTY" &&
+               RequiredString(safety, "physicalState") == physicalState &&
                RequiredString(safety, "lockState") == "LOCKED" &&
                RequiredString(safety, "unlockOutputState") == "RESET";
+    }
+
+    /// <summary>
+    /// The slots this server's own unloads emptied on <paramref name="agvId"/> after <paramref name="baselineObservedAt"/>,
+    /// the session baseline's own <c>observedAt</c> (control-server#802).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Only the server's verdict counts.</b> An unload whose operation is <see cref="StationOperationStatus.Committed"/>
+    /// passed <c>WireToGateStore.ApplyOperationResultAsync</c>'s check that every target slot came back completed, empty,
+    /// locked and reset; its live result (not historical-only, not superseded) carries that evidence per slot, and the
+    /// slot must be in it as such. A result the server refused, one it only recorded (an attempt it never commanded, or an
+    /// operation already cancelled), and a load prove nothing about a slot being free. An operation still waiting for its
+    /// result has no result row at all, which is what keeps a slot mid-unload out.
+    /// </para>
+    /// <para>
+    /// <b>After the baseline, by the vehicle's clock.</b> The result's <c>ObservedAt</c> and the snapshot's
+    /// <c>observedAt</c> are both the vehicle's, so they order the two facts without trusting the server's receive time,
+    /// which can be stepped (control-server#142). An unload from before the baseline does not count: the baseline is newer
+    /// and says the slot has cargo again. That covers a result replayed into a later session too, since the replay keeps
+    /// its first row and its first time. Equal times count as before: the baseline wins a tie.
+    /// </para>
+    /// <para>
+    /// Read only for a session whose baseline has such a slot, so the ordinary session, established empty, reads nothing
+    /// more than it did.
+    /// </para>
+    /// </remarks>
+    private async Task<HashSet<int>> SlotsUnloadedSinceAsync(
+        string agvId,
+        DateTimeOffset baselineObservedAt,
+        CancellationToken cancellationToken)
+    {
+        var results = await dbContext.OperationResults.AsNoTracking()
+            .Where(result => result.AgvId == agvId &&
+                             !result.HistoricalOnly &&
+                             result.SupersededByResultId == null)
+            .Join(
+                dbContext.StationOperations.AsNoTracking()
+                    .Where(operation => operation.OperationType == SlotOperationType.Unload &&
+                                        operation.Status == StationOperationStatus.Committed),
+                result => result.SlotOperationAttemptId,
+                operation => operation.SlotOperationAttemptId,
+                (result, operation) => new { result.ObservedAt, result.EvidenceJson })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        HashSet<int> unloaded = [];
+        foreach (var result in results.Where(result => result.ObservedAt > baselineObservedAt))
+        {
+            foreach (SlotPhysicalEvidence evidence in
+                     JsonSerializer.Deserialize<SlotPhysicalEvidence[]>(result.EvidenceJson) ?? [])
+            {
+                if (evidence is { State: SlotBusinessState.Empty, DoorLocked: true, UnlockOutputReset: true })
+                {
+                    unloaded.Add(evidence.SlotNumber);
+                }
+            }
+        }
+        return unloaded;
     }
 
     private async Task<ProtocolInboxRow?> LatestInboxForSessionAsync(
