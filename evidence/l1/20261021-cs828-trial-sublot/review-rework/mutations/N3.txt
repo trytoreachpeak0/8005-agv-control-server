@@ -1,0 +1,47 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+index a21c4b78a..e18ac68bb 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+@@ -260,7 +260,7 @@ public sealed class DispatchRoundRunner(
+         };
+         // 每轮滤掉几条、哪几个批号，只在变化时记（票面第 5 条）。按目录里全部未受理的判，不管它在链上先被哪一道挡住。
+         string[] trialSublots = [.. round.Catalog.Items
+-            .Where(item => !acceptedDemandIds.Contains(item.DemandId) && TrialSublot.Refusal(round, item) is not null)
++            .Where(item => TrialSublot.Refusal(round, item) is not null)
+             .Select(item => item.Sublot)
+             .Order(StringComparer.Ordinal)];
+         if (trialSublotLog.Record(trialSublots))
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:12.27]     ControlServer.Tests.TrialSublotAdmissionTests.AnAcceptedTrialSublotIsNotLoggedAsFiltered [FAIL]
+  Failed ControlServer.Tests.TrialSublotAdmissionTests.AnAcceptedTrialSublotIsNotLoggedAsFiltered [476 ms]
+  Error Message:
+   Assert.DoesNotContain() Failure: Sub-string found
+                                                  ↓ (pos 106)
+String: ···"spatched; their sublots: Q26079308-1, Q26079458-1."
+Found:  "Q26079458-1"
+  Stack Trace:
+     at ControlServer.Tests.TrialSublotAdmissionTests.AnAcceptedTrialSublotIsNotLoggedAsFiltered() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 480
+   at ControlServer.Tests.TrialSublotAdmissionTests.AnAcceptedTrialSublotIsNotLoggedAsFiltered() in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\TrialSublotAdmissionTests.cs:line 481
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:    36, Skipped:     0, Total:    37, Duration: 8 s - ControlServer.Tests.dll (net8.0)

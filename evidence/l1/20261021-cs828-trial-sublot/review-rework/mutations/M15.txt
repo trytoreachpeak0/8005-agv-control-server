@@ -1,0 +1,66 @@
+diff --git a/src/ControlServer.Host/Runtime/EffectiveConfigurationEvent.cs b/src/ControlServer.Host/Runtime/EffectiveConfigurationEvent.cs
+index 2b87c7e8d..709649b2b 100644
+--- a/src/ControlServer.Host/Runtime/EffectiveConfigurationEvent.cs
++++ b/src/ControlServer.Host/Runtime/EffectiveConfigurationEvent.cs
+@@ -126,7 +126,7 @@ public static class EffectiveConfigurationEvent
+                 effective.StagingDepartureRules.LoadNotSettledAlarmAfter.ToString("c", CultureInfo.InvariantCulture)),
+             new("IdleReturnEnabled", (idleReturn ?? new IdleReturn.IdleReturnOptions()).Enabled),
+             new("CatalogAgeWindow", effective.CatalogAgeWindow.ToString("c", CultureInfo.InvariantCulture)),
+-            new("TrialSublotCharacterPosition", effective.TrialSublotCharacterPosition),
++            new("TrialSublotCharacterPosition", effective.TrialSublotCharacterPosition - effective.TrialSublotCharacterPosition),
+             new("TrialSublotCharacters", effective.TrialSublotCharacters),
+             new("{OriginalFormat}", Template),
+         ];
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs-828-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs-828-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:15.68]     ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheIdleReturnSwitchTheDefinitionWritesIsWhatTheHostBindsAndTheReadBackHoldsItThere(definitionFile: "instance-factory01-v2.cutover-production-s3.runtim"···, definitionEdit: "", flipped: False, expectedBound: False, expectedAction: "Pass", says: null) [FAIL]
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheIdleReturnSwitchTheDefinitionWritesIsWhatTheHostBindsAndTheReadBackHoldsItThere(definitionFile: "instance-factory01-v2.cutover-production-s3.runtim"···, definitionEdit: "", flipped: False, expectedBound: False, expectedAction: "Pass", says: null) [1 s]
+  Error Message:
+   Assert.StartsWith() Failure: String start does not match
+String:         "StopServiceAndRefuse|EFFECTIVE_CONFIGURATION_MISMA"···
+Expected start: "Pass|"
+  Stack Trace:
+     at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheIdleReturnSwitchTheDefinitionWritesIsWhatTheHostBindsAndTheReadBackHoldsItThere(String definitionFile, String definitionEdit, Boolean flipped, Boolean expectedBound, String expectedAction, String says) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 822
+   at InvokeStub_ParallelInstanceEffectiveConfigurationTests.TheIdleReturnSwitchTheDefinitionWritesIsWhatTheHostBindsAndTheReadBackHoldsItThere(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithManyArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:33.46]     ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(definitionFile: "instance-factory01-v2.json", host: "rule-on", expectedPosition: 0, expectedCharacters: "", expectedAction: "StopServiceAndRefuse", says: "trialSublotCharacterPosition bound '6', the defini"···) [FAIL]
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(definitionFile: "instance-factory01-v2.json", host: "rule-on", expectedPosition: 0, expectedCharacters: "", expectedAction: "StopServiceAndRefuse", says: "trialSublotCharacterPosition bound '6', the defini"···) [1 s]
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "StopServiceAndRefuse|EFFECTIVE_CONFIGURATION_MISMA"···
+Not found: "trialSublotCharacterPosition bound '6', the defini"···
+  Stack Trace:
+     at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(String definitionFile, String host, Int32 expectedPosition, String expectedCharacters, String expectedAction, String says) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 888
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithManyArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:37.95]     ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(definitionFile: "instance-factory01-v2.cutover-production-s3.runtim"···, host: "as-bound", expectedPosition: 6, expectedCharacters: "9", expectedAction: "Pass", says: null) [FAIL]
+  Failed ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(definitionFile: "instance-factory01-v2.cutover-production-s3.runtim"···, host: "as-bound", expectedPosition: 6, expectedCharacters: "9", expectedAction: "Pass", says: null) [1 s]
+  Error Message:
+   Assert.StartsWith() Failure: String start does not match
+String:         "StopServiceAndRefuse|EFFECTIVE_CONFIGURATION_MISMA"···
+Expected start: "Pass|"
+  Stack Trace:
+     at ControlServer.Tests.ParallelInstanceEffectiveConfigurationTests.TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(String definitionFile, String host, Int32 expectedPosition, String expectedCharacters, String expectedAction, String says) in C:\work\8005-wt\cs-828-8005-agv-control-server\tests\ControlServer.Tests\ParallelInstanceEffectiveConfigurationTests.cs:line 883
+   at InvokeStub_ParallelInstanceEffectiveConfigurationTests.TheTrialSublotRuleAndTheWindowTheDefinitionWritesAreWhatTheHostBindsAndTheReadBackHoldsThemThere(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithManyArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+
+Failed!  - Failed:     3, Passed:    73, Skipped:     0, Total:    76, Duration: 1 m 3 s - ControlServer.Tests.dll (net8.0)

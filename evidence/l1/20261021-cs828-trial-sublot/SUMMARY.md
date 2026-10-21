@@ -30,4 +30,24 @@
 
 M7、M11 第一轮写成 `if (false)`，编译器报 CS0162（不可达代码，警告即错误），测试根本没跑；改成运行期才知道的假条件（`Length < 0`）后重跑，两条都变红。目录里的 `M7.txt`、`M11.txt` 是重跑那一次。
 
+## 独立审查返工（Coordinator13 2026-10-21 裁定：M1 并入本票，L1、L3、L4 改，L2、L5 记剩余风险）
+
+| 文件 | 内容 |
+| --- | --- |
+| `review-rework/01-affected-classes-at-899ad2bce.txt` | `TrialSublotAdmissionTests`、`ParallelInstanceEffectiveConfigurationTests`、`JourneyRuntimeOptionsTests`、`CatalogAgeWindowTests`、`StructuralDispatchBlockTests` 与全部架构测试：345 条全过 |
+| `review-rework/02-parallel-instance-selftest-at-899ad2bce.txt` | `Test-ParallelInstance.ps1`：1348 条全过（读回三个新字段的逐字段用例与 11 条命名用例、空白取值拒收两例） |
+| `review-rework/03-format.txt` | 改动文件 `dotnet format`：style 0；whitespace 只报 `ParallelInstanceEffectiveConfigurationTests.cs:775` 既有行 |
+| `review-rework/mutations/` | 6 个变异全部变红，结论 `SUMMARY.txt` |
+
+| 变异 | 改了什么 | 变红的用例 |
+| --- | --- | --- |
+| N3 | 日志集合不排除已受理的（审查 L1） | `AnAcceptedTrialSublotIsNotLoggedAsFiltered` |
+| M14 | Host 校验放过含空白的取值（L4） | `TheRuleShipsEmptyAndHalfARuleIsRefused` |
+| M15 | 配置事件把字符位记成 0（M1） | `TheTrialSublotRuleAndTheWindow…HoldsThemThere`：生产段 s3 照实绑定却被拒 |
+| M16 | 读回只在定义写了字符位时才比对（M1） | 同上：出厂定义下 Host 绑了规则，拒绝原因不再点名字符位 |
+| M17 | 时间窗一行旧包未记录时按缺失拒绝 | 自检 `catalog age window left out, a package older than #827 -- pass`（回滚到 v5 会被拦） |
+| M18 | 定义校验只拒制表符、放过空格（L4） | 自检 `trial sublot rule: 6 (Int32) / ' 9' (String) is refused` |
+
+读回的取舍：三行都按「覆盖层实际写的值」比对（定义没写时是 00:30:00、0、空串）。比 #827 之前的包没记录时间窗，按默认 30 分钟放过，照 idle return 的先例保住回滚到 v5，这证明不了那个包真有时间窗；比 #828 之前的包没记录规则，如实按「规则关」比，所以用生产段定义回滚到 #828 之前的包会被读回拒绝并停服。
+
 受理前重读目录不另设一道：SUBLOT 是重读比对的决策事实之一，重读到批号变了就放弃受理（`ASublotThatTurnsIntoATrialOneAtIntakesRereadIsNotAccepted`）；规则一轮只读一次，所以最终门里再判一次的写法杀不死任何变异，没有加。
