@@ -248,7 +248,7 @@ public static class EmergencyStopDoorCause
         // the leg began read no door not locked either (cs#839 third re-review, the same last check as the automatic release);
         // anything else asks as before.
         if (doorReadings?.OnlyUnreadAndLockedSince(subject.AgvId) == true &&
-            await NoDoorReadNotLockedInTransitAsync(dbContext, faults, subject, doorReadings, cancellationToken)
+            await NoDoorReadNotLockedInTransitAsync(dbContext, faults, subject, cancellationToken)
                 .ConfigureAwait(false))
         {
             return false;
@@ -281,7 +281,6 @@ public static class EmergencyStopDoorCause
         ControlServerDbContext dbContext,
         IVehicleFaultStore faults,
         EmergencyStopSubject subject,
-        InTransitDoorReadings doorReadings,
         CancellationToken cancellationToken)
     {
         VehicleFaultFact? fault = await faults.ReadAsync(subject.AgvId, cancellationToken).ConfigureAwait(false);
@@ -300,7 +299,7 @@ public static class EmergencyStopDoorCause
         return await InTransitDoorFacts.NoDoorReadNotLockedSinceAsync(
                 dbContext,
                 subject.AgvId,
-                JourneyRuntimeEngine.InTransitDoorWindowStart(created, entered, doorReadings.EpisodeStartedAt(subject.AgvId)),
+                JourneyRuntimeEngine.InTransitDoorWindowStart(created, entered),
                 cancellationToken)
             .ConfigureAwait(false);
     }

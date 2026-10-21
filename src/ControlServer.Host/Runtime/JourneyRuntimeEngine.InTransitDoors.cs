@@ -90,26 +90,27 @@ public sealed partial class JourneyRuntimeEngine
 
     /// <summary>
     /// Where the release's last check reads from (cs#839 third re-review): when this leg's order was created -- it is created
-    /// on a departure the doors were proven locked for -- or, for an order created after the fault (one rebuilt), the run
-    /// look-back before the fault; and never later than the fault or the episode that led to it.
+    /// on a departure the doors were proven locked for -- or, for an order created after the fault, the run look-back before
+    /// the fault. Either way no later than the fault.
     /// </summary>
-    internal static DateTimeOffset InTransitDoorWindowStart(
-        DateTimeOffset orderCreatedAt,
-        DateTimeOffset? faultEnteredAt,
-        DateTimeOffset? episodeStartedAt)
+    /// <remarks>
+    /// <para>
+    /// Not bounded by the episode's first reading (cs#839 fourth re-review, M1): a leg's first round reads back to the previous
+    /// leg's last round, so an episode opened there begins at the station, and an authorised door open at the load would keep
+    /// every unread stop of the leg with a person.
+    /// </para>
+    /// <para>
+    /// The order created after the fault is defence, and not expected to be reached while a door fault stands: the rebuilds
+    /// that follow a fault start once a person has cleared it (<c>OwnOrderRebuildSources.FaultCleared*</c>), and a cleared
+    /// fault releases nothing here. That is read from the code, not proven, so the branch stays, and no test pins it (fourth
+    /// re-review, L2).
+    /// </para>
+    /// </remarks>
+    internal static DateTimeOffset InTransitDoorWindowStart(DateTimeOffset orderCreatedAt, DateTimeOffset? faultEnteredAt)
     {
-        DateTimeOffset start = faultEnteredAt is DateTimeOffset entered && orderCreatedAt > entered
+        return faultEnteredAt is DateTimeOffset entered && orderCreatedAt > entered
             ? entered - InTransitDoorFacts.UnknownRunLookBack
             : orderCreatedAt;
-        foreach (DateTimeOffset bound in new[] { faultEnteredAt, episodeStartedAt }.OfType<DateTimeOffset>())
-        {
-            if (bound < start)
-            {
-                start = bound;
-            }
-        }
-
-        return start;
     }
 
     private async Task<bool> ObserveDoorsInTransitAsync(
@@ -192,14 +193,13 @@ public sealed partial class JourneyRuntimeEngine
         // releases on it past this server's own confirmed hold, and the order stays held for a person's continue.
         // The rounds' reading is only the early answer; the last word before the release is the whole inbox since the leg began
         // (cs#839 third re-review, the user's ruling of 2026-10-21).
-        DateTimeOffset? episodeStartedAt = _doorReadings.EpisodeStartedAt(runtime.AgvId);
         FaultedVehicleContext context = inFlight with
         {
             DoorsNotProvenLocked = reading.DoorsNotProvenLocked,
             DoorReadingRestored = reading.ReadingRestored,
             NoDoorReadNotLockedInTransit = reading.ReadingRestored
                 ? (faultEnteredAt, token) => InTransitDoorFacts.NoDoorReadNotLockedSinceAsync(
-                    dbContext, runtime.AgvId, InTransitDoorWindowStart(intent.CreatedAt, faultEnteredAt, episodeStartedAt), token)
+                    dbContext, runtime.AgvId, InTransitDoorWindowStart(intent.CreatedAt, faultEnteredAt), token)
                 : null,
         };
         VehicleFaultDecision decision = await faults.ObserveAsync(

@@ -216,19 +216,6 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
         }
     }
 
-    /// <summary>
-    /// When the open episode of <paramref name="agvId"/> began, by the earliest receipt its first round read; null when none is
-    /// open. The release's last check reads the inbox from no later than this (cs#839 third re-review).
-    /// </summary>
-    public DateTimeOffset? EpisodeStartedAt(string agvId)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
-        lock (vehicles)
-        {
-            return vehicles.TryGetValue(agvId, out Vehicle? vehicle) ? vehicle.Episode?.StartedAt : null;
-        }
-    }
-
     private InTransitDoorReading BeforeFault(Vehicle vehicle, InTransitDoorVerdict doors, DateTimeOffset now)
     {
         Episode? episode = vehicle.Episode;
@@ -240,7 +227,7 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
         if ((ReadNotLockedWhileMovingBetween(doors) && (episode is not null || doors.State != InTransitDoorState.ProvenLocked)) ||
             (doors.State == InTransitDoorState.SlotStateUnknown && doors.UnknownRunAfterNotLocked))
         {
-            episode ??= vehicle.Episode = new Episode(historyKnown: true, EarliestReceipt(doors, now));
+            episode ??= vehicle.Episode = new Episode(historyKnown: true);
             episode.SawNotLocked = true;
             return Hand(episode, HandReadNotLocked);
         }
@@ -264,7 +251,7 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
                         : null);
 
             case InTransitDoorState.NotLocked:
-                episode ??= vehicle.Episode = new Episode(historyKnown: true, EarliestReceipt(doors, now));
+                episode ??= vehicle.Episode = new Episode(historyKnown: true);
                 episode.SawNotLocked = true;
                 return Hand(episode, HandReadNotLocked);
 
@@ -324,7 +311,7 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
                 at = now;
             }
 
-            episode ??= vehicle.Episode = new Episode(historyKnown: true, EarliestReceipt(doors, now));
+            episode ??= vehicle.Episode = new Episode(historyKnown: true);
             episode.UnknownSince = at;
             inRun = true;
             vehicle.GraceStarts.RemoveAll(start => start <= now - faultOptions.DoorUnknownGraceWindow);
@@ -347,7 +334,7 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
     {
         // A fault standing with no episode in this process was raised before a restart: its history is unknown, and is taken
         // to have read a door not locked.
-        Episode episode = vehicle.Episode ??= new Episode(historyKnown: false, EarliestReceipt(doors, now));
+        Episode episode = vehicle.Episode ??= new Episode(historyKnown: false);
         episode.Handed = true;
 
         // What arrived since the last round first (cs#839 review H1): a door read not locked there is read, and anything but
@@ -386,22 +373,6 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
             InTransitDoorAction.HandToFault,
             DoorsNotProvenLocked: doors.State != InTransitDoorState.ProvenLocked,
             ReadingRestored: restored);
-    }
-
-    private static DateTimeOffset EarliestReceipt(InTransitDoorVerdict doors, DateTimeOffset now)
-    {
-        DateTimeOffset earliest = now;
-        foreach (DateTimeOffset received in (doors.Between ?? []).Select(sample => sample.ReceivedAt)
-                     .Append(doors.UnknownSince ?? now)
-                     .Append(doors.ReceivedAt ?? now))
-        {
-            if (received < earliest)
-            {
-                earliest = received;
-            }
-        }
-
-        return earliest;
     }
 
     private static bool ReadNotLockedWhileMovingBetween(InTransitDoorVerdict doors) =>
@@ -447,13 +418,10 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
         public DateTimeOffset? ReadUpTo { get; set; }
     }
 
-    private sealed class Episode(bool historyKnown, DateTimeOffset startedAt)
+    private sealed class Episode(bool historyKnown)
     {
         /// <summary>This process saw the episode from its first reading; false for a fault standing at a restart.</summary>
         public bool HistoryKnown { get; } = historyKnown;
-
-        /// <summary>The earliest receipt the round that opened the episode read, or that round's time when it read none.</summary>
-        public DateTimeOffset StartedAt { get; } = startedAt;
 
         /// <summary>When this server received the unknown the grace counts from; null when the episode began otherwise.</summary>
         public DateTimeOffset? UnknownSince { get; set; }
