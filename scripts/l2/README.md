@@ -808,6 +808,10 @@ DispatchZoneParameters = @{
   `emergency-stop-single-trigger` 用它把急停重试退避调长：本装置每秒评估一次，默认退避会让「退避内
   又请求了一次」与「退避到期重试」挤在一起。退避是 `REQ-0248` 允许现场设的参数，不是开关。
   `emergency-stop-operator-release` 出于同一个理由也用它。
+- `VehicleFault` —— `VehicleFaultOptions` 的键原样变成 `VehicleFault__*`（control-server#789）。
+  `in-transit-door-unknown-graced` 与 `in-transit-door-unknown-stopped-released` 用它写明门锁读不到的宽限
+  （`DoorUnknownGrace`）与自动解除前连续读回锁闭的时长（`DoorReadingRestoredFor`），取红时只改这两个值：
+  宽限 0 即 CP-0017 之前的行为，5 分钟即没有自动解除。两者都是现场可设的参数，不是开关。
 
 - `EmergencyStopRelease = $true` —— 打开 `REQ-0356` 的人工确认解除入口（`EmergencyStopRelease__enabled`），并给它
   配一份本装置用的调用凭据，经 `Context.EmergencyReleaseCredential` 交给场景。产品里入口默认不挂；

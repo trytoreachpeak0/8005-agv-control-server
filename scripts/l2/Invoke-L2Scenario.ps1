@@ -880,6 +880,17 @@ try {
             (($setup.RiotCommands.Keys | Sort-Object | ForEach-Object { "$_=$($setup.RiotCommands[$_])" }) -join ', '))
     }
 
+    # The fault model's options, only when a scenario asks (control-server#789): the door grace and the run of locked
+    # readings that releases a stop raised only for doors that could not be read are site parameters (VehicleFault section),
+    # and a red run of the door-grace scenarios sets them to the values a defect would have -- no grace, a release never due.
+    if ($setup.ContainsKey('VehicleFault')) {
+        foreach ($key in ($setup.VehicleFault.Keys | Sort-Object)) {
+            $serverEnvironment["VehicleFault__$key"] = [string]$setup.VehicleFault[$key]
+        }
+        $journal.Note('Vehicle fault options for this scenario: ' +
+            (($setup.VehicleFault.Keys | Sort-Object | ForEach-Object { "$_=$($setup.VehicleFault[$_])" }) -join ', '))
+    }
+
     # The task type station preset (control-server#159), written into the stage and named to the server, so the run
     # never reads the preset that happens to sit next to the built host. Into the evidence too: what was installed is
     # part of what the run proves.
