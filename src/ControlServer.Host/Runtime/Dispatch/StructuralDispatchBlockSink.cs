@@ -205,7 +205,9 @@ public sealed class StructuralDispatchBlockSink(
         // the user's decision. Nothing is raised, and a block raised while it was inside the window is cleared -- a structural block
         // tells the floor to carry the demand by hand, and REQ-0366 hangs no manual-carry alarm on these. Unlike a silent code the
         // demand stays on the backlog card; only the alarm side is the same.
-        if (verdicts.Any(verdict => DispatchReasonCodes.IsCatalogAgeWindowRefusal(verdict.ReasonCode)))
+        // REQ-0368 (control-server#828): a trial sublot is the same -- not dispatched by the user's decision, no manual-carry alarm.
+        if (verdicts.Any(verdict => DispatchReasonCodes.IsCatalogAgeWindowRefusal(verdict.ReasonCode) ||
+                                    verdict.ReasonCode == DispatchReasonCodes.DemandTrialSublot))
         {
             return DemandJudgement.Silent;
         }

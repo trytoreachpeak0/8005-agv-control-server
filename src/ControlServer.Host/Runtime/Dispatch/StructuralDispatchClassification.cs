@@ -89,6 +89,7 @@ public static class StructuralDispatchClassification
     private const int VehicleTaskType = 25;
     private const int RequiredMesFacts = 30;
     private const int AreaScope = 40;
+    private const int TrialSublotAdmission = 42;
     private const int CatalogAgeWindowAdmission = 45;
     private const int AreaEqpUnique = 50;
     private const int CatalogAvailability = 55;
@@ -195,6 +196,12 @@ public static class StructuralDispatchClassification
             "REQ-0191: an AREA the assignment table leaves unmapped is not executed here, by configuration. " +
             "Silent (DispatchReasonCodes.IsSilent): never structural, never alarmed."),
 
+        // ---- TrialSublotCriterion (42) ------------------------------------------------------------------
+        Backlog(DispatchReasonCodes.DemandTrialSublot, TrialSublotAdmission,
+            "control-server#828, REQ-0368: the unaccepted demand's SUBLOT carries the configured trial machine character " +
+            "(character 6, counting the leading Q as 1, is a half-width 9). The user's decision not to dispatch it, not a fault: " +
+            "listed on the backlog card, never a structural block, never a starvation escalation or manual-carry alarm (the " +
+            "structural summary treats it as silent and clears a block raised before the rule was on)."),
         // ---- CatalogAgeWindowCriterion (45) -------------------------------------------------------------
         Backlog(DispatchReasonCodes.DemandOlderThanCatalogWindow, CatalogAgeWindowAdmission,
             "control-server#827, REQ-0366: MesIngest first read the unaccepted demand longer ago than the catalog age window. " +

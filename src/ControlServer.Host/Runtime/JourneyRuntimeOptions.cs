@@ -441,6 +441,12 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         {
             failures.Add("CatalogAgeWindow must be positive and at most 24 hours.");
         }
+        // control-server#828: half a trial sublot rule looks configured and filters nothing (TrialSublotRule.IsOn), so it is refused.
+        if (options.TrialSublotCharacterPosition < 0 ||
+            (options.TrialSublotCharacterPosition > 0) != !string.IsNullOrEmpty(options.TrialSublotCharacters))
+        {
+            failures.Add("TrialSublotCharacterPosition and TrialSublotCharacters must both be set (a positive position, at least one character) or both be left empty.");
+        }
         if (options.StationTimeoutRedispatchLimit < 0) failures.Add("StationTimeoutRedispatchLimit must not be negative.");
         if (options.MaximumJourneyStops < Dispatch.EnRouteAppendPlanner.MaximumLegs)
         {
