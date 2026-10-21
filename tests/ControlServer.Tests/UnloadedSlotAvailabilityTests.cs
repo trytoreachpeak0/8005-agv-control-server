@@ -227,6 +227,46 @@ public sealed class UnloadedSlotAvailabilityTests
     }
 
     /// <summary>
+    /// 走真实写库路径（审查要求）：一趟装上 1、2 号，开往关卡途中车重连、带着货握手；到关卡后卸货结果经
+    /// <c>WireToGateStore.ApplyOperationResultAsync</c> 落定。结果时间晚于新基线，1、2 并回；与基线同一时刻，基线优先、不并回。
+    /// 上面的用例都是照它写库的样子手工塞行，这一条证明真实写下的行形状认得出。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnUnloadAppliedByTheStoreBringsBackSlotsLoadedBeforeAReconnect(bool observedAfterTheBaseline)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(DemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 8);
+        await ArriveAtPickupAsync(fixture, DemandId);
+        await EnterSublotAsync(fixture, DemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, DemandId);
+        await AnswerDepartureSafetyAsync(fixture, DemandId, FirstSafetyResultId);
+        Assert.Equal("[1,2]", (await MembershipOfAsync(fixture, DemandId)).TargetSlotsJson);
+
+        DateTimeOffset baselineAt = fixture.Clock.GetUtcNow();
+        await ReconnectAsync(fixture, generation: 2, baselineAt);
+        await OccupyInTheBaselineAsync(fixture, generation: 2, 1, 2);
+        await ArriveAtCurrentStopAsync(fixture, DemandId, "TO_GATE");
+        StationOperationRow unload = await fixture.Context.StationOperations.AsNoTracking()
+            .SingleAsync(row => row.DemandId == DemandId && row.OperationType == SlotOperationType.Unload, Token);
+        await fixture.ApplySafeResultAsync(
+            unload,
+            SlotOperationType.Unload,
+            SlotBusinessState.Empty,
+            observedAfterTheBaseline ? fixture.Clock.GetUtcNow() : baselineAt);
+        await fixture.HearFromPeerAsync();
+
+        Assert.Equal(StationOperationStatus.Committed, (await fixture.Context.StationOperations.AsNoTracking()
+            .SingleAsync(row => row.SlotOperationAttemptId == unload.SlotOperationAttemptId, Token)).Status);
+        Assert.Equal(
+            observedAfterTheBaseline ? "1,2,3,4,5,6,7,8" : "3,4,5,6,7,8",
+            Slots(await ReadAsync(fixture)));
+    }
+
+    /// <summary>
     /// 重连后行为不变：新一代会话的基线说了算。车空着重连，八个仓都可用；车带着别的货重连（上一代卸过 1、2，之后又有了货），
     /// 上一代的卸货结果早于新基线，不让它们回来。
     /// </summary>
