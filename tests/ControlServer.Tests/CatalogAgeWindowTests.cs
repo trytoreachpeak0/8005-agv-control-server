@@ -209,7 +209,7 @@ public sealed class CatalogAgeWindowTests
     }
 
     /// <summary>
-    /// 在途追加这条路也在受理前重读目录之后再判（审查 L1）：开轮时 9 分钟、判据放行、车决定追加；受理前重读那一刻钟走到 34 分钟，
+    /// 在途追加这条路也在受理前重读目录之后再判（审查 L1）：开轮时差半秒满 30 分钟、判据放行、车决定追加；受理前重读那一刻钟再走 2 秒、超窗，
     /// 放弃这次追加——旅程仍只挂第一条需求，积压行写时间窗的码。先断言重读那一刻确实到过。
     /// </summary>
     /// <remarks>
@@ -227,13 +227,18 @@ public sealed class CatalogAgeWindowTests
         await fleet.RunRoundAsync();
         JourneyRuntimeRow journey = Assert.Single(await fleet.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token));
 
-        AcceptedDemandSnapshot appended = MultiVehicleExecutionTests.FleetFixture.Demand(1, "N1-2", 1);
+        // 开轮时差半秒满 30 分钟；重读那一刻只拨 2 秒，车的动态事实仍新鲜，没有时间窗时最终门会放行、追加会真的发生（变异 M11）。
+        DateTimeOffset roundAt = fleet.Clock.GetUtcNow() + TimeSpan.FromSeconds(1);
+        AcceptedDemandSnapshot appended = MultiVehicleExecutionTests.FleetFixture.Demand(1, "N1-2", 1) with
+        {
+            CreatedAt = roundAt - TimeSpan.FromMinutes(30) + TimeSpan.FromMilliseconds(500),
+        };
         fleet.Catalog.Set([first, appended]);
         bool intakeReread = false;
         fleet.Catalog.OnReread = () => fleet.Catalog.OnReread = () =>
         {
             intakeReread = true;
-            fleet.Clock.Advance(TimeSpan.FromMinutes(25));
+            fleet.Clock.Advance(TimeSpan.FromSeconds(2));
         };
         await fleet.RunRoundAsync(TimeSpan.FromSeconds(1));
 
