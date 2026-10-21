@@ -1061,6 +1061,9 @@ public sealed partial class IdleReturnCommitmentTests
         public Dictionary<string, Func<RiotVehicleObservation>> Others { get; } = new(StringComparer.Ordinal);
 
         /// <summary>跨评估保留，像宿主里的单例。</summary>
+        /// <summary>车队里读取会挂住、直到被取消的车（control-server#798 审查 M2）；它们也要在 <see cref="Others"/> 里，好进名册。</summary>
+        public HashSet<string> Hanging { get; } = new(StringComparer.Ordinal);
+
         public FleetStandingMemory StandingMemory { get; } = new();
 
         public EventRecordingLogger<FleetStandingReader> StandingLog { get; } = new();
@@ -1132,7 +1135,7 @@ public sealed partial class IdleReturnCommitmentTests
                         ],
                     },
                     new FixedClock(Now),
-                    new OtherVehicleFacts(Others),
+                    new OtherVehicleFacts(Others, Hanging),
                     StandingMemory,
                     StandingLog),
                 new FixedClock(Now),

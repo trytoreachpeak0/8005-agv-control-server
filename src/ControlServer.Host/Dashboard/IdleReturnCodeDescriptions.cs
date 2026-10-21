@@ -105,7 +105,9 @@ internal static class IdleReturnCodeDescriptions
             [IdleReturnReasons.PointTaken] = "这个等待点此刻被别的承诺预占或占用着",
             [IdleReturnReasons.PointStoodOn] =
                 "这个等待点没有占用记录，但车队里另一辆车此刻就停在点上（或停在与它路程为 0 的站上）：派车过去会停在点前等放行、堵在路上，所以不派。"
-                + "外来订单占着的车、在跑旅程的车都算；这一轮读不到位置的车按它上一次读到的站算。那辆车开走后自动恢复，不需要人处理",
+                + "外来订单占着的车、在跑旅程的车都算；这一轮读不到位置的车按它上一次读到的站算。服务端日志里逐点原因后面括号写着是哪辆车、位置从哪来"
+                + "（read 读到的、offline 离线车最后的位置、last-known 按上一次位置算）。那辆车开走后自动恢复，不需要人处理；"
+                + "按上一次位置算时，要等那辆车重新被读到",
             [IdleReturnReasons.PointUnreachable] = "路网上从车的位置到不了这个等待点，或它不在路网上",
             [IdleReturnReasons.PointAtVehicleNode] =
                 "车此刻停的站与这个点在路网上吸附到同一个位置（路程为 0）、却不是同一个站：保守起见不让车开过去。"

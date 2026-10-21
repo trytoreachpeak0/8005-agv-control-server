@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Charging;
@@ -37,7 +38,7 @@ public sealed partial class ChargingClearanceToWaitingPointTests
         Assert.Null(await StationAsync(fleet, 214));
         Assert.Equal(ChargingExecutionReasons.ClearanceNoWaitingPoint, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
         Assert.Contains(
-            "214=" + IdleReturnReasons.PointStoodOn,
+            $"214={IdleReturnReasons.PointStoodOn}({AgvB},{StandingSources.Read})",
             Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2301).Message,
             StringComparison.Ordinal);
 
@@ -73,11 +74,13 @@ public sealed partial class ChargingClearanceToWaitingPointTests
     }
 
     /// <summary>
-    /// B 先被读到停在 214，此后 RIoT 读不到它（这一轮问它的卡片失败）：选点按它上一次读到的站算，清桩不派 A 去 214（偏保守，control-server#798
-    /// 第 2 条）。
+    /// B 先被读到停在 214，此后 RIoT 读不到它：选点按它上一次读到的站算，清桩不派 A 去 214（偏保守，control-server#798 第 2 条），告警里 214 的
+    /// 来源是 <c>last-known</c>。两种读不到（审查 M1）：读取抛出；生产网关的形状——对 SDK 失败不抛，答一辆离线、地图为空、没有当前站的车。
     /// </summary>
-    [Fact]
-    public async Task AVehicleThatCannotBeReadCountsWhereItWasLastSeen()
+    [Theory]
+    [InlineData("throws")]
+    [InlineData("gateway-unknown-vehicle")]
+    public async Task AVehicleThatCannotBeReadCountsWhereItWasLastSeen(string unreadable)
     {
         await using FleetFixture fleet = await ClearanceFleetAsync(vehicles: 2);
         JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
@@ -85,13 +88,37 @@ public sealed partial class ChargingClearanceToWaitingPointTests
         await RoundAsync(fleet);
 
         fleet.Riot.CancelOrder(journey.PickupUpperId);
-        fleet.Riot.VehicleOverrides[KeyB] = _ => throw new HttpRequestException("RIoT did not answer for B.");
+        fleet.Riot.VehicleOverrides[KeyB] = unreadable == "throws"
+            ? _ => throw new HttpRequestException("RIoT did not answer for B.")
+            : seen => seen with { CurrentStationId = null, Connected = false, CurrentMap = "" };
         await RoundAsync(fleet);
         await RoundAsync(fleet);
 
         Assert.Empty(await ClearanceStopsAsync(fleet, journey));
         Assert.Null(await StationAsync(fleet, 214));
         Assert.Equal(ChargingExecutionReasons.ClearanceNoWaitingPoint, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Contains(
+            $"214={IdleReturnReasons.PointStoodOn}({AgvB},{StandingSources.LastKnown})",
+            Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2301).Message,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 清桩车自己不挡点（审查 L1）：等待点 216 与 A 停着的桩 211 在路网同一个节点 6、代价为 0。A 站在那个位置上，但「点上有车」只看别的车，
+    /// A 照常预占 216。
+    /// </summary>
+    [Fact]
+    public async Task TheClearingVehicleDoesNotKeepItselfOffAPointAtItsChargersNode()
+    {
+        WaitingPointEntry point216 = new(Map, 216, "等待点216", true, []);
+        await using FleetFixture fleet = await ClearanceFleetAsync(points: [point216]);
+        await fleet.ReplaceRouteGraphAsync(Edges(), [.. Stations(), new(216, point216.StationName, 5, 0, 5000, 6, 0)]);
+        JourneyRuntimeRow journey = await OldOrderEndedAsync(fleet);
+
+        await RoundAsync(fleet);
+
+        Assert.Equal(216, Assert.Single(await ClearanceStopsAsync(fleet, journey)).StationRiotId);
+        Assert.Equal((KeyA, journey.JourneyId), ((await StationAsync(fleet, 216))!.VehicleKey, (await StationAsync(fleet, 216))!.JourneyId));
     }
 
     /// <summary>挡着车的外来订单行直接写进库，与派车轮测它的写法相同（<c>AVehicleAForeignOrderHoldsTakesNoAppendedDemandUntilTheOrderHasEnded</c>）。</summary>

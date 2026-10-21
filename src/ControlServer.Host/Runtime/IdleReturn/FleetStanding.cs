@@ -5,8 +5,28 @@ using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime.IdleReturn;
 
-/// <summary>选点那一刻车队里的一辆车停在哪个站。<paramref name="LastKnown"/>：这一轮没读到它，用的是它上一次读到的站。</summary>
-public sealed record StandingVehicle(string VehicleKey, int StationId, bool LastKnown);
+/// <summary>
+/// 选点那一刻车队里的一辆车停在哪个站，与这个位置从哪来（<see cref="StandingSources"/>）：这一刻读到的、RIoT 报的离线车最后位置、
+/// 这一次没读到而按上一次读到的站算的。
+/// </summary>
+public sealed record StandingVehicle(string VehicleKey, string AgvId, int StationId, string Source)
+{
+    /// <summary>这一次没读到它，用的是它上一次读到的站。</summary>
+    public bool LastKnown => Source == StandingSources.LastKnown;
+}
+
+/// <summary><see cref="StandingVehicle.Source"/> 的取值，原样写进逐点原因（例如 <c>214=WAITING_POINT_STOOD_ON(AGV-03,last-known)</c>）。</summary>
+public static class StandingSources
+{
+    /// <summary>这一次读到它在线、停在这个站上。</summary>
+    public const string Read = "read";
+
+    /// <summary>这一次读到它离线，这个站是 RIoT 报的它最后的位置。</summary>
+    public const string Offline = "offline";
+
+    /// <summary>这一次没读到它（RIoT 没答、预算内没答完、读数过期、没有当前站），按它上一次读到的站算；要等它重新被读到才放开。</summary>
+    public const string LastKnown = "last-known";
+}
 
 /// <summary>
 /// 选等待点时全车队谁停在哪（control-server#798）：空闲返回与清桩开往等待点共用，由 <see cref="IdleReturnEvaluator.ExcludePointAsync"/> 读。
@@ -22,8 +42,13 @@ public sealed class FleetStanding
     /// <summary>停在某个站上的车（含按上一次读数算的）。</summary>
     public IReadOnlyList<StandingVehicle> Vehicles { get; }
 
-    /// <summary>这一轮读不到、此前也从没读到过位置的车（<c>VehicleKey</c>）：选点不知道它在哪，只告警。</summary>
+    /// <summary>这一次读不到、此前也从没读到过位置的车（<c>AgvId</c>）：选点不知道它在哪，不挡任何点，只告警；没有合格点时写进逐点原因的末尾。</summary>
     public IReadOnlyList<string> Unlocated { get; }
+
+    /// <summary>
+    /// 没有合格点时逐点原因末尾的那一条：位置不明、因此没有挡任何点的车（<c>unlocated=AGV-02,AGV-03</c>）；都读到了答空。
+    /// </summary>
+    internal string? UnlocatedNote => Unlocated.Count == 0 ? null : "unlocated=" + string.Join(",", Unlocated);
 
     /// <summary>
     /// 停在 <paramref name="from"/> 的车是不是就站在 <paramref name="stationId"/> 上：同一个站，或路网上同一个节点、代价为 0
@@ -39,10 +64,12 @@ public sealed class FleetStanding
 
     /// <summary>
     /// 「点上有车」这一格的判法，空闲返回（等待点与待送固定起点）与清桩开往等待点共用这一处：另一辆车站在这个站上答
-    /// <see cref="IdleReturnReasons.PointStoodOn"/>，否则答空。
+    /// <see cref="IdleReturnReasons.PointStoodOn"/>，后面括号里是那辆车与它的位置从哪来（<c>WAITING_POINT_STOOD_ON(AGV-03,last-known)</c>），否则答空。
     /// </summary>
     internal string? Excludes(Domain.RouteGraph graph, string vehicleKey, int stationId) =>
-        StoodOnByAnother(graph, vehicleKey, stationId) is null ? null : IdleReturnReasons.PointStoodOn;
+        StoodOnByAnother(graph, vehicleKey, stationId) is { } other
+            ? $"{IdleReturnReasons.PointStoodOn}({other.AgvId},{other.Source})"
+            : null;
 }
 
 /// <summary>读 <see cref="FleetStanding"/>（control-server#798）。</summary>
@@ -56,10 +83,16 @@ public sealed class FleetStanding
 /// 报的最后位置算；不在本图的车、报 <c>currentPosition</c> 为 0（在两站之间，<see cref="Charging.ChargerOccupancyReader.NoStation"/>）的车不站在任何点上。
 /// </para>
 /// <para>
-/// <b>读不到位置时</b>（RIoT 这一次没答或在这辆车自己的派车预算内没答完、读数过期、没有当前站）偏保守：按这辆车上一次读到的站算它还站在那里
-/// （<see cref="FleetStandingMemory"/>，服务端进程内跨轮次保留；每轮派车读到的车与每次选点读到的车都记进去，<see cref="Remember"/>）。
+/// <b>读不到位置时</b>（RIoT 这一次没答——网关对 SDK 失败不抛，答一辆离线、没有当前站的车——、在预算内没答完、读数过期、没有当前站）偏保守：
+/// 按这辆车上一次读到的站算它还站在那里（<see cref="FleetStandingMemory"/>，服务端进程内跨轮次保留，不设过期，与充电桩占用同一个口径；每轮派车读到的车与
+/// 每次选点读到的车都记进去，<see cref="Remember"/>），告警一次（事件 2339），逐点原因写 <c>last-known</c>；那辆车重新被读到、或服务端重启才放开。
 /// 启动之后一次都没读到过的车不知道在哪，不挡任何点，但告警（事件 2338），连着读不到只记一次——不静默当作不占点，也不因为一辆车读不到就让全车队的选点
 /// 都停下（清桩停下就是一直占着桩）。
+/// </para>
+/// <para>
+/// <b>预算</b>：一次读取里所有现问 RIoT 的车合起来不超过 <see cref="ReadBudget"/>（5 秒），每辆车另受它自己的派车预算截断。清桩选点跑在引擎推进轮里，
+/// 同一轮后面还有各车的急停确认；一辆挂住的车若按单车预算（默认 30 秒）逐辆等，每轮会多等最多（N−1）×30 秒。预算用完还没问到的车按读不到算。
+/// 本轮派车已经读过的车（空闲返回交来全部参加者的读数）不再问。
 /// </para>
 /// </remarks>
 public sealed class FleetStandingReader(
@@ -78,6 +111,17 @@ public sealed class FleetStandingReader(
             "server started: points are chosen as if it stood on none, so another vehicle may be sent to the point it is on. Said " +
             "once until it is read again.");
 
+    private static readonly Action<ILogger, string, string, string, int, Exception?> LogCountedAtLastSeen =
+        LoggerMessage.Define<string, string, string, int>(
+            LogLevel.Warning,
+            new EventId(2339, nameof(LogCountedAtLastSeen)),
+            "Waiting point selection cannot place vehicle {AgvId} [{VehicleKey}] ({Why}) and counts it where it was last seen, " +
+            "station {StationId}: no vehicle is sent to that point until this one is read again or the server restarts. Said once " +
+            "until it is read again.");
+
+    /// <summary>一次读取里所有现问 RIoT 的车合起来的上限。</summary>
+    public static readonly TimeSpan ReadBudget = TimeSpan.FromSeconds(5);
+
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
 
     /// <summary>读全车队此刻停在哪。<paramref name="readThisRound"/> 里已有的车不再问 RIoT。</summary>
@@ -94,33 +138,43 @@ public sealed class FleetStandingReader(
 
         List<StandingVehicle> standing = [];
         List<string> unlocated = [];
+        using CancellationTokenSource budget = new(ReadBudget, timeProvider);
         foreach (FleetVehicle vehicle in fleet.Vehicles)
         {
             string key = vehicle.VehicleKey;
             string? why;
             if (!read.TryGetValue(key, out RiotVehicleObservation? observed))
             {
-                observed = await ReadWithinBudgetAsync(vehicle, cancellationToken).ConfigureAwait(false);
+                observed = budget.IsCancellationRequested
+                    ? null
+                    : await ReadWithinBudgetAsync(vehicle, budget.Token, cancellationToken).ConfigureAwait(false);
             }
 
-            (bool located, int? station, why) = observed is null ? (false, null, "unreadable") : Locate(observed);
+            (bool located, int? station, why) = observed is null
+                ? (false, null, budget.IsCancellationRequested ? "not read within the fleet read budget" : "unreadable")
+                : Locate(observed);
             if (located)
             {
                 memory.Saw(key, station);
                 if (station is int on)
                 {
-                    standing.Add(new StandingVehicle(key, on, LastKnown: !observed!.Connected));
+                    standing.Add(new StandingVehicle(
+                        key, vehicle.AgvId, on, observed!.Connected ? StandingSources.Read : StandingSources.Offline));
                 }
                 continue;
             }
 
             if (memory.LastSeen(key) is int last)
             {
-                standing.Add(new StandingVehicle(key, last, LastKnown: true));
+                standing.Add(new StandingVehicle(key, vehicle.AgvId, last, StandingSources.LastKnown));
+                if (memory.FirstUnlocated(key))
+                {
+                    LogCountedAtLastSeen(logger, vehicle.AgvId, key, why ?? "unlocated", last, null);
+                }
                 continue;
             }
 
-            unlocated.Add(key);
+            unlocated.Add(vehicle.AgvId);
             if (memory.FirstUnlocated(key))
             {
                 LogUnlocated(logger, vehicle.AgvId, key, why ?? "unlocated", null);
@@ -173,16 +227,18 @@ public sealed class FleetStandingReader(
     }
 
     /// <summary>
-    /// 问 RIoT 这辆车在哪，用它自己的派车预算（<see cref="FleetVehicleOptions.RoundTimeoutMilliseconds"/>）截断：一辆挂住的车不拖住整次选点。
-    /// 读不到答空。
+    /// 问 RIoT 这辆车在哪，用它自己的派车预算（<see cref="FleetVehicleOptions.RoundTimeoutMilliseconds"/>）与这一次读取剩下的总预算截断：
+    /// 一辆挂住的车不拖住整次选点。读不到答空。
     /// </summary>
-    private async Task<RiotVehicleObservation?> ReadWithinBudgetAsync(FleetVehicle vehicle, CancellationToken cancellationToken)
+    private async Task<RiotVehicleObservation?> ReadWithinBudgetAsync(
+        FleetVehicle vehicle, CancellationToken fleetBudget, CancellationToken cancellationToken)
     {
         int milliseconds = VehicleDispatchPolicyAccess.ConfiguredFleet(_runtime)
             .FirstOrDefault(entry => string.Equals(entry.AgvId, vehicle.AgvId, StringComparison.Ordinal))?.RoundTimeoutMilliseconds ?? 0;
         using CancellationTokenSource expiry = new(
             TimeSpan.FromMilliseconds(milliseconds > 0 ? milliseconds : new FleetVehicleOptions().RoundTimeoutMilliseconds), timeProvider);
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);
+        using CancellationTokenSource linked =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token, fleetBudget);
         try
         {
             return await vehicleFacts.ReadVehicleAsync(vehicle.VehicleKey, linked.Token).ConfigureAwait(false);

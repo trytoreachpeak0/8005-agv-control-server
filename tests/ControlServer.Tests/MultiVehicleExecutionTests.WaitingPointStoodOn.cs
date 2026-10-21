@@ -54,7 +54,7 @@ public sealed partial class MultiVehicleExecutionTests
 
         Assert.Equal(IdleReturnReasons.NoWaitingPointAvailable, fixture.IdleReturnBoard.Reasons[evaluated]);
         Assert.Equal(
-            $"{FleetWaitingPointStation}={IdleReturnReasons.PointStoodOn}",
+            $"{FleetWaitingPointStation}={IdleReturnReasons.PointStoodOn}({FleetFixture.AgvIds[0]},{StandingSources.Read})",
             fixture.IdleReturnBoard.LatestCompletedPass!.Verdicts[evaluated].Detail);
         Assert.Empty(await fixture.Context.Set<StationExclusivityRow>().AsNoTracking()
             .Where(row => row.StationId == FleetWaitingPointStation)

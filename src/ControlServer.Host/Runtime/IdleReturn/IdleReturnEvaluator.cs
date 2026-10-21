@@ -138,11 +138,20 @@ public sealed class IdleReturnEvaluator(
 
     /// <summary>评估这一轮交来的每一辆车，依次，前一辆的承诺后一辆看得见。</summary>
     /// <param name="currentMap">这一轮读到的实时站点目录：等待点要在其中、站名一致才接新承诺（批次8-17 的判定函数）。</param>
+    public Task<IReadOnlyList<IdleReturnVerdict>> EvaluateAsync(
+        RiotMapStationCatalogSnapshot currentMap,
+        IReadOnlyList<IdleReturnCandidate> candidates,
+        CancellationToken cancellationToken) =>
+        EvaluateAsync(currentMap, candidates, [], cancellationToken);
+
+    /// <summary>同上；<paramref name="fleetReadThisRound"/> 是这一轮派车已经为别的车（在途的）读过的读数，选点看谁停在点上时不再为它们问 RIoT（control-server#798）。</summary>
     public async Task<IReadOnlyList<IdleReturnVerdict>> EvaluateAsync(
         RiotMapStationCatalogSnapshot currentMap,
         IReadOnlyList<IdleReturnCandidate> candidates,
+        IReadOnlyCollection<RiotVehicleObservation> fleetReadThisRound,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(fleetReadThisRound);
         ArgumentNullException.ThrowIfNull(currentMap);
         ArgumentNullException.ThrowIfNull(candidates);
         // control-server#392: every call is one pass, the early returns included, so a vehicle not handed over this round reads
@@ -186,7 +195,8 @@ public sealed class IdleReturnEvaluator(
                 // 后一辆要看得见。
                 reads ??= await ReadRoundAsync(cancellationToken).ConfigureAwait(false);
                 standing ??= await fleetStanding
-                    .ReadAsync([.. candidates.Select(item => item.Facts.Vehicle)], cancellationToken).ConfigureAwait(false);
+                    .ReadAsync([.. candidates.Select(item => item.Facts.Vehicle), .. fleetReadThisRound], cancellationToken)
+                    .ConfigureAwait(false);
                 verdicts.Add(await SelectAndCommitAsync(candidate, currentMap, reads, standing, cancellationToken).ConfigureAwait(false));
             }
             catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -438,7 +448,8 @@ public sealed class IdleReturnEvaluator(
             return Refuse(
                 vehicle,
                 IdleReturnReasons.NoWaitingPointAvailable,
-                excluded.Count == 0 ? "No waiting point is registered on this Map." : string.Join(", ", excluded));
+                (excluded.Count == 0 ? "No waiting point is registered on this Map." : string.Join(", ", excluded)) +
+                (standing.UnlocatedNote is { } unlocated ? "; " + unlocated : ""));
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();

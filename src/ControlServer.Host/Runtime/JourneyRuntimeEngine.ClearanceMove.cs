@@ -243,7 +243,8 @@ public sealed partial class JourneyRuntimeEngine
         return (
             IdleReturnEvaluator.Choose(eligible),
             registration,
-            excluded.Count == 0 ? "no waiting point is registered on this Map" : string.Join(", ", excluded));
+            (excluded.Count == 0 ? "no waiting point is registered on this Map" : string.Join(", ", excluded)) +
+            (standing.UnlocatedNote is { } unlocated ? "; " + unlocated : ""));
     }
 
     /// <summary>

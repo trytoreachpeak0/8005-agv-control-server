@@ -396,6 +396,8 @@ public sealed class DispatchRoundRunner(
                 currentMap,
                 [.. participants.Where(p => !p.UnderWay)
                     .Select(p => new IdleReturnCandidate(p.Vehicle, p.Facts, p.MayStillTakeWork))],
+                // control-server#798 review M2: the vehicles under way were read this round too; choosing a point asks RIoT for none of them again.
+                [.. participants.Where(p => p.UnderWay).Select(p => p.Facts.Vehicle)],
                 cancellationToken)
             .ConfigureAwait(false);
 

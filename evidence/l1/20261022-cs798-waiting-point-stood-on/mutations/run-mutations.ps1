@@ -49,6 +49,22 @@ $mutations = @(
     # A vehicle that hangs is cut off by its own budget, not left to stall the evaluation.
     @{ Id = 'M14'; File = $standing; Class = 'IdleReturnExecutionTests'; Expect = 'AVehicleCutOffByItsRoundBudgetReadsAsNotEvaluatedRatherThanItsPreviousVerdict'
        Old = "CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);"; New = "CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);" }
+    # Review rework (Coordinator13 2026-10-22): the reviewer's survivors P2 and P3, the fleet read budget (M2) and visibility (M3).
+    @{ Id = 'M16'; File = $standing; Class = $clearance; Expect = 'AVehicleThatCannotBeReadCountsWhereItWasLastSeen'
+       Old = 'null => (false, null, "no current station"),'; New = 'null => (true, null, null),' }
+    @{ Id = 'M17'; File = $standing; Class = $clearance; Expect = 'TheClearingVehicleDoesNotKeepItselfOffAPointAtItsChargersNode'
+       Old = "Vehicles.FirstOrDefault(other => !string.Equals(other.VehicleKey, vehicleKey, StringComparison.Ordinal) &&"
+       New = "Vehicles.FirstOrDefault(other => vehicleKey.Length >= 0 &&" }
+    @{ Id = 'M18'; File = $standing; Class = $commit; Expect = 'AVehicleWhoseReadHangsIsCutOffByTheFleetBudgetAndCountsWhereItWasLastSeen'
+       Old = "CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token, fleetBudget);"
+       New = "CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);" }
+    @{ Id = 'M19'; File = "$r/Dispatch/DispatchRoundRunner.cs"; Class = 'MultiVehicleExecutionTests'; Expect = 'AVehicleOutsideTheIdleFleetStandingOnTheWaitingPointKeepsTheIdleReturnOffIt'
+       Old = "[.. participants.Where(p => p.UnderWay).Select(p => p.Facts.Vehicle)],"
+       New = "[.. participants.Where(p => p.UnderWay).Select(p => p.Facts.Vehicle with { CurrentStationId = 300 })]," }
+    @{ Id = 'M20'; File = $standing; Class = $commit; Expect = 'AVehicleThatCannotBeReadCountsWhereItWasLastSeen'
+       Old = "                    LogCountedAtLastSeen(logger, vehicle.AgvId, key, why ?? `"unlocated`", last, null);`n"; New = '' }
+    @{ Id = 'M21'; File = $evaluator; Class = $commit; Expect = 'AVehicleNeverLocatedIsWarnedAboutOnceAndBlocksNoPoint'
+       Old = '(standing.UnlocatedNote is { } unlocated ? "; " + unlocated : ""));'; New = '"");' }
     # The dashboard description.
     @{ Id = 'M15'; File = 'src/ControlServer.Host/Dashboard/IdleReturnCodeDescriptions.cs'; Class = 'VehiclePurposeDashboardTests'; Expect = 'EveryIdleReturnVerdictCodeHasAChineseDescription'
        Old = "[IdleReturnReasons.PointStoodOn] ="; New = "[`"X_`" + IdleReturnReasons.PointStoodOn] =" }

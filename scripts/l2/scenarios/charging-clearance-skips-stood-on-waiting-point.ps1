@@ -8,7 +8,7 @@
 （A 低于强制充电线，不接搬运），在途中停在等待点 214 上：B 有旅程、不是空闲车，214 上没有占用行。215 不可达。空闲返回关着。
 
 **第一个事实（点上有车不派，另等）**：A 的旧单在 RIoT 里结束之后，A 原地排队、码 CHARGING_CLEARANCE_NO_WAITING_POINT，告警（事件 2301）里 214 的
-逐点原因是 WAITING_POINT_STOOD_ON；另等十秒：A 没有任何清桩移动的意图、214 一直没有占用行、RIoT 上没有 A 的第二张单。
+逐点原因是 WAITING_POINT_STOOD_ON(AGV-L2-002,read)；另等十秒：A 没有任何清桩移动的意图、214 一直没有占用行、RIoT 上没有 A 的第二张单。
 
 **第二个事实（车走了照常派，不误伤）**：B 离开 214（回到 210，旅程照旧在途），A 那一轮就预占 214。
 
@@ -179,12 +179,12 @@ $stays = Wait-L2ConditionOrLast -Description 'A was sent to the point B stands o
     -Until { param($v) $v -ne $queued }
 $warning = [regex]::Matches((Read-SharedText $serverLog), 'CHARGING_CLEARANCE_NO_WAITING_POINT: vehicle [^\r\n]*') |
     Select-Object -First 1 -ExpandProperty Value
-$stoodOn = $null -ne $warning -and $warning.Contains("$point=WAITING_POINT_STOOD_ON")
+$stoodOn = $null -ne $warning -and $warning.Contains("$point=WAITING_POINT_STOOD_ON($agvB,read)")
 $assertions.Add(
     'L2-CSO-02',
-    '旧单结束、B 站在 214 上（没有占用行）、215 不可达：A 原地排队（CHARGING_CLEARANCE_NO_WAITING_POINT），另等十秒没有清桩移动意图、214 一直没有占用行；告警里 214 的逐点原因是 WAITING_POINT_STOOD_ON',
+    '旧单结束、B 站在 214 上（没有占用行）、215 不可达：A 原地排队（CHARGING_CLEARANCE_NO_WAITING_POINT），另等十秒没有清桩移动意图、214 一直没有占用行；告警里 214 的逐点原因是 WAITING_POINT_STOOD_ON(AGV-L2-002,read)',
     ($stays -eq $queued -and $stoodOn),
-    "$queued / 214=WAITING_POINT_STOOD_ON",
+    "$queued / 214=WAITING_POINT_STOOD_ON($agvB,read)",
     "$stays / $warning")
 
 # --- 4. B 离开 214（旅程照旧在途）：A 那一轮就预占 214 ----------------------------------------------------------------
