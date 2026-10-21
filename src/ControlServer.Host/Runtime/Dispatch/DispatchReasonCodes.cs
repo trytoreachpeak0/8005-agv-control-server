@@ -102,6 +102,17 @@ public static class DispatchReasonCodes
     public const string DemandCatalogCreatedAtMissing = "DEMAND_CATALOG_CREATED_AT_MISSING";
 
     /// <summary>
+    /// <b>Not dispatched, by design.</b> The demand has not been accepted, and its SUBLOT carries the trial machine mark the
+    /// deployment configures (REQ-0368, CP-0023, control-server#828): today character 6, counting the leading <c>Q</c> as 1,
+    /// is <c>9</c>.
+    /// </summary>
+    /// <remarks>
+    /// Same treatment as the catalog age window's two codes: still in the catalog, listed on the backlog card, never a
+    /// structural dispatch block, never a starvation escalation and never a manual-carry alarm.
+    /// </remarks>
+    public const string DemandTrialSublot = "DEMAND_TRIAL_SUBLOT";
+
+    /// <summary>
     /// The rule table does not know the demand's task type, or the deployment's <c>AllowedWorkTypes</c> leaves it
     /// out. Configuration, not a fault.
     /// </summary>

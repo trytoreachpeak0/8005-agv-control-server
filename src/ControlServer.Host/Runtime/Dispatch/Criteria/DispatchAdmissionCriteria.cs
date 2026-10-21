@@ -221,6 +221,9 @@ public static class DispatchAdmissionCriteria
         // A required constructor argument, so a host that forgets this line fails to build the chain instead of logging every round.
         services.AddSingleton<ChargingPolicyCommissioningLog>();
         services.AddSingleton<SlotConfigurationReadinessLog>();
+        // control-server#828: which trial sublots the last round filtered outlives the per-round runner, so the log line fires on
+        // change. Required by the runner's constructor for the same reason as the line above.
+        services.AddSingleton<TrialSublotFilterLog>();
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like
         // the engine: both must be handed the engine's own DbContext -- see DispatchRoundRunner.
         services.AddScoped<OnboardDispatchFactsReader>();

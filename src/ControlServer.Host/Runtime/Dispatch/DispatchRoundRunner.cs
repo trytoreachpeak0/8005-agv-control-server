@@ -55,6 +55,7 @@ public sealed class DispatchRoundRunner(
     IdleReturnEvaluator idleReturn,
     IChargingPolicyResolver chargingPolicy,
     ChargingAllocator chargingAllocation,
+    TrialSublotFilterLog trialSublotLog,
     MandatoryChargeBoard? mandatoryCharge = null)
 {
     // The backlog's decision fingerprint is a hash over this serialisation, so it is the engine's setting exactly: a
@@ -250,6 +251,7 @@ public sealed class DispatchRoundRunner(
             // REQ-0366（control-server#827）：判据、受理前重判与轮末两个汇总都按这一个值判。
             CatalogAgeWindow = runtimeOptions.CatalogAgeWindow,
         };
+        _ = trialSublotLog;
 
         // 「上次成功接单」从既有旅程记录推出（票面第 6 条带内层），一轮查一次。
         // An idle return (control-server#390) is not work taken on: a vehicle that just went back to a waiting point has not

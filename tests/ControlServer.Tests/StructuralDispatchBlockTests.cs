@@ -142,6 +142,8 @@ public sealed class StructuralDispatchBlockTests
     // control-server#827（REQ-0366）：目录时间窗。用户定的有意不派，不是故障：普通积压、看板列出，不立结构性阻断。
     [InlineData("DEMAND_OLDER_THAN_CATALOG_WINDOW", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_CATALOG_CREATED_AT_MISSING", DispatchReasonClass.Backlog)]
+    // control-server#828（REQ-0368）：试验机批号。同时间窗：用户定的有意不派，普通积压、看板列出，不立结构性阻断。
+    [InlineData("DEMAND_TRIAL_SUBLOT", DispatchReasonClass.Backlog)]
     public void EveryReasonCodeHasItsClassAndARationale(string reasonCode, DispatchReasonClass expected)
     {
         DispatchReasonClassification row = Assert.Contains(reasonCode, StructuralDispatchClassification.ByCode);

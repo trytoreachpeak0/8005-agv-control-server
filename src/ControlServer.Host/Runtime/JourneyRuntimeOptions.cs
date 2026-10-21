@@ -81,6 +81,24 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan CatalogAgeWindow { get; set; } = DefaultCatalogAgeWindow;
 
     /// <summary>
+    /// The trial sublot rule's character position (REQ-0368, CP-0023, control-server#828): counted from 1, the leading
+    /// <c>Q</c> of a SUBLOT being character 1. Zero, the default, turns the rule off.
+    /// </summary>
+    /// <remarks>
+    /// A commissioning value, set with <see cref="TrialSublotCharacters"/>: the user confirmed character 6 and <c>9</c> on
+    /// 2026-10-21 (the first digit of the serial, <c>Q26109123-1</c>), and any other value takes the user's approval. Both
+    /// set or both left empty; the validator refuses half a rule.
+    /// </remarks>
+    public int TrialSublotCharacterPosition { get; set; }
+
+    /// <summary>
+    /// The trial sublot rule's values (REQ-0368, control-server#828): every character of this string is one value, so
+    /// <c>"9"</c> is the set {9}. Compared ordinally against the SUBLOT exactly as the catalog gives it -- no trimming, no
+    /// width folding (REQ-0009) -- so a full-width <c>９</c> is not a <c>9</c>. Empty, the default, turns the rule off.
+    /// </summary>
+    public string TrialSublotCharacters { get; set; } = "";
+
+    /// <summary>
     /// How many stops one transport journey may have in all, the completed ones included (control-server#749, REQ-0196 as
     /// revised by CP-0015). Twenty by default; never below <see cref="Dispatch.EnRouteAppendPlanner.MaximumLegs"/>, because
     /// a journey must be able to carry a full plan on the wire. An en-route append that would take the journey over it is
