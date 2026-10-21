@@ -368,6 +368,8 @@ public sealed class OnboardHandshakePushGateTests
     public async Task TheTestReadsThroughAConnectionOfItsOwn()
     {
         await using Rig rig = await Rig.StartAsync();
+        await rig.Onboard.StartAsync(rig.Lifetime.Token).WaitAsync(Guard, TestContext.Current.CancellationToken);
+        await rig.Served.WaitForAsync(1, Guard);
         await using ControlServerDbContext read = rig.NewContext();
 
         Assert.False(rig.SharesStateWith(read), "测试拿到的上下文与服务端处理器共用了连接。");
@@ -564,7 +566,7 @@ public sealed class OnboardHandshakePushGateTests
             OnboardPeer peer = new();
             ServiceCollection services = new();
             // A processor and a context per connection, as in the host (control-server#836).
-            services.AddScopedProcessor(connection.ConnectionString, TimeProvider.System, configuration, peer);
+            ServedContexts served = services.AddScopedProcessor(connection.ConnectionString, TimeProvider.System, configuration, peer);
             ServiceProvider provider = services.BuildServiceProvider();
 
             int serverPort = ReserveFreePort();
@@ -591,7 +593,7 @@ public sealed class OnboardHandshakePushGateTests
                     CredentialEnvironmentVariable = CredentialVariable
                 },
                 SlotStateSeed.Read(new ConfigurationBuilder().Build()));
-            return new Rig(connection, provider, server, peer, relay, engine, onboard);
+            return new Rig(connection, provider, server, peer, relay, engine, onboard) { Served = served };
         }
 
         /// <summary>
@@ -607,17 +609,13 @@ public sealed class OnboardHandshakePushGateTests
         public ControlServerDbContext NewContext() =>
             new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection.ConnectionString).Options);
 
+        /// <summary>The contexts the server's processors were built over, one per connection served (control-server#836).</summary>
+        public ServedContexts Served { get; private init; } = new();
+
         /// <summary>
-        /// Whether <paramref name="context"/> is, or shares a connection with, the context a server connection is served by.
+        /// Whether <paramref name="context"/> is, or shares a connection with, a context the server's processors were built over.
         /// </summary>
-        /// <remarks>The listener opens a scope of this provider per connection, so a scope opened here is what one gets.</remarks>
-        public bool SharesStateWith(ControlServerDbContext context)
-        {
-            using IServiceScope scope = _provider.CreateScope();
-            ControlServerDbContext server = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
-            return ReferenceEquals(context, server) ||
-                ReferenceEquals(context.Database.GetDbConnection(), server.Database.GetDbConnection());
-        }
+        public bool SharesStateWith(ControlServerDbContext context) => Served.SharesStateWith(context);
 
         /// <summary>
         /// What two server connections would share, from the scopes the listener would open for them: the processor, the

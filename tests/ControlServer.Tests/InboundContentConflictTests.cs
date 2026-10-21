@@ -213,6 +213,8 @@ public sealed class InboundContentConflictTests
     public async Task TheTestReadsThroughAContextAndConnectionOfItsOwn()
     {
         await using Rig rig = await Rig.StartAsync();
+        await rig.ConnectAsync();
+        await rig.Served.WaitForAsync(1, TimeSpan.FromSeconds(20));
         await using ControlServerDbContext read = await rig.OpenReadContextAsync();
 
         Assert.False(rig.SharesStateWith(read), "测试拿到的读库上下文与服务端处理器共用了上下文或连接。");
@@ -311,7 +313,7 @@ public sealed class InboundContentConflictTests
             OnboardPeer peer = new();
             ServiceCollection services = new();
             // A processor and a context per connection, as in the host (control-server#836).
-            services.AddScopedProcessor(connection.ConnectionString, TimeProvider.System, configuration, peer);
+            ServedContexts served = services.AddScopedProcessor(connection.ConnectionString, TimeProvider.System, configuration, peer);
             ServiceProvider provider = services.BuildServiceProvider();
 
             int serverPort = ReserveFreePort();
@@ -344,7 +346,7 @@ public sealed class InboundContentConflictTests
                     CredentialEnvironmentVariable = CredentialVariable
                 },
                 SlotStateSeed.Read(new ConfigurationBuilder().Build()));
-            return new Rig(connection, provider, server, relay, engine, onboard);
+            return new Rig(connection, provider, server, relay, engine, onboard) { Served = served };
         }
 
         /// <summary>A fresh connection and the full handshake, through the relay.</summary>
@@ -380,17 +382,13 @@ public sealed class InboundContentConflictTests
             Assert.Equal(closedBefore, Relay.ServerClosedConnections);
         }
 
+        /// <summary>The contexts the server's processors were built over, one per connection served (control-server#836).</summary>
+        public ServedContexts Served { get; private init; } = new();
+
         /// <summary>
-        /// Whether <paramref name="read"/> is, or shares a connection with, the context a server connection is served by.
+        /// Whether <paramref name="read"/> is, or shares a connection with, a context the server's processors were built over.
         /// </summary>
-        /// <remarks>The listener opens a scope of this provider per connection, so a scope opened here is what one gets.</remarks>
-        public bool SharesStateWith(ControlServerDbContext read)
-        {
-            using IServiceScope scope = _provider.CreateScope();
-            ControlServerDbContext server = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
-            return ReferenceEquals(read, server) ||
-                ReferenceEquals(read.Database.GetDbConnection(), server.Database.GetDbConnection());
-        }
+        public bool SharesStateWith(ControlServerDbContext read) => Served.SharesStateWith(read);
 
         /// <summary>
         /// A context of the test's own, on a connection of its own, to the same database the server writes

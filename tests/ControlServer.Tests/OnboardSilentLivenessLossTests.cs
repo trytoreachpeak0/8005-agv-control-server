@@ -460,6 +460,10 @@ public sealed class OnboardSilentLivenessLossTests
     public async Task TheTestReadsThroughAContextAndConnectionOfItsOwn()
     {
         await using LivenessRig rig = await LivenessRig.StartAsync(TimeSpan.FromMilliseconds(250));
+        // The listener builds a connection's processor as it accepts it; a connection is enough.
+        using TcpClient client = new();
+        await client.ConnectAsync(IPAddress.Loopback, rig.Port, TestContext.Current.CancellationToken);
+        await rig.Served.WaitForAsync(1, TimeSpan.FromSeconds(20));
         await using ControlServerDbContext read = await rig.OpenReadContextAsync();
 
         Assert.False(rig.SharesStateWith(read), "测试拿到的读库上下文与服务线程共用了上下文或连接。");
@@ -719,17 +723,13 @@ public sealed class OnboardSilentLivenessLossTests
         PortReservation port,
         OnboardTcpServer server) : IAsyncDisposable
     {
+        /// <summary>The contexts the server's processors were built over, one per connection served (control-server#836).</summary>
+        public ServedContexts Served { get; private init; } = new();
+
         /// <summary>
-        /// Whether <paramref name="read"/> is, or shares a connection with, the context a server connection is served by.
+        /// Whether <paramref name="read"/> is, or shares a connection with, a context the server's processors were built over.
         /// </summary>
-        /// <remarks>The listener opens a scope of this provider per connection, so a scope opened here is what one gets.</remarks>
-        public bool SharesStateWith(ControlServerDbContext read)
-        {
-            using IServiceScope scope = provider.CreateScope();
-            ControlServerDbContext server = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
-            return ReferenceEquals(read, server) ||
-                ReferenceEquals(read.Database.GetDbConnection(), server.Database.GetDbConnection());
-        }
+        public bool SharesStateWith(ControlServerDbContext read) => Served.SharesStateWith(read);
 
         /// <summary>
         /// A context of the test's own, on a connection of its own, to the same database the server writes
@@ -816,7 +816,7 @@ public sealed class OnboardSilentLivenessLossTests
                 .Build();
             ServiceCollection services = new();
             // A processor and a context per connection, as in the host (control-server#836).
-            services.AddScopedProcessor(connection.ConnectionString, clock, configuration);
+            ServedContexts served = services.AddScopedProcessor(connection.ConnectionString, clock, configuration);
             ServiceProvider provider = services.BuildServiceProvider();
 
             // Held until DisposeAsync, after the server has stopped: never free between being chosen and being bound.
@@ -848,7 +848,8 @@ public sealed class OnboardSilentLivenessLossTests
             {
                 Port = port.Port,
                 Log = log,
-                CredentialBefore = credentialBefore
+                CredentialBefore = credentialBefore,
+                Served = served
             };
         }
 

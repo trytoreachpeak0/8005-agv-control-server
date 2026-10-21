@@ -169,8 +169,8 @@ public sealed class OnboardPowerLossReconnectTests
         long oldGeneration = await rig.ConnectFirstSessionAsync();
 
         rig.Relay.CutPower(drainServerWrites: true);
-        // Staged after the cut: nothing reaches the server's side of the old connection any more, so this write to the
-        // database the processor shares cannot race one of its own.
+        // Staged after the cut, so the row is there before the reconnect's replay looks for it. The write goes through a
+        // context and connection of the test's own; SQLite serialises it with the server's (control-server#836).
         await rig.StageDepartureResultAsync(oldGeneration);
         Outcome outcome = await rig.ReconnectAfterPowerCutAsync(oldGeneration);
 
