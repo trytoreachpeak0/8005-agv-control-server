@@ -5589,6 +5589,22 @@ Invoke-SourceCase "cutover production stages: each stage definition turns the st
                 $overlay['stagingDepartureRules']['enabled'] -eq $true -and [long] $overlay['dispatchGeneration'] -eq $productionDispatchGeneration) })
     @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
 }
+# control-server#844: the user decided on 2026-10-21 to keep production's vehicle fault recovery entry open ("留着这个入口呗，
+# 省的关了"). 19-deploy rewrites the overlay from the definition, so a production stage still saying false would close it again.
+# With recoveryGrant left out, the grant requirement follows the entry (control-server#797), so the overlay must write both on.
+Invoke-SourceCase 'cutover production stages: each stage definition turns the vehicle fault recovery entry on (the section is exactly { enabled: true }), is accepted with -ProductionCutover, and its overlay writes VehicleFaultRecovery:enabled and RecoveryGrant:required true (control-server#844)' {
+    $wrong = @($productionStageDefinitions.Keys | Where-Object {
+            $path = Join-Path $PSScriptRoot $_
+            if (-not (Test-Path -LiteralPath $path)) { return $true }
+            $d = Read-ParallelInstanceDefinition -Path $path
+            $vfr = $d.Contains('vehicleFaultRecovery') ? $d['vehicleFaultRecovery'] : $null
+            $overlay = New-ParallelInstanceConfigurationOverlay -Definition (Copy-Definition $d)
+            -not ($vfr -is [System.Collections.IDictionary] -and $vfr.Count -eq 1 -and $vfr['enabled'] -is [bool] -and $vfr['enabled'] -and
+                -not $d.Contains('recoveryGrant') -and
+                @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $d) -ProductionCutover).Count -eq 0 -and
+                $overlay['VehicleFaultRecovery']['enabled'] -eq $true -and $overlay['RecoveryGrant']['required'] -eq $true) })
+    @{ Ok = ($wrong.Count -eq 0); Detail = "wrong: $($wrong -join ', ')" }
+}
 # control-server#828 (REQ-0368): every production stage turns the trial sublot rule on with the values the user confirmed on
 # 2026-10-21 -- character 6, "9" -- and its overlay writes them; the trial stages and the mother leave the rule out (off).
 Invoke-SourceCase 'cutover production stages: each stage definition carries the trial sublot rule, character 6 and "9" (user 2026-10-21), passes the definition check, and its overlay writes it; no trial stage carries it (control-server#828)' {
@@ -5608,7 +5624,7 @@ Invoke-SourceCase 'cutover production stages: each stage definition carries the 
 }
 # As PR #683 review S2 for the trial: nothing else may drift. Each production stage is its trial stage with only
 # productionCutover replaced and emergencyStopRelease added, so it is held to the same mother, key for key, and to its trial twin.
-Invoke-SourceCase 'cutover production stages: apart from productionCutover, emergencyStopRelease, fleet, allowedDispatchZones, the two runtime switches, the staging rules and the dispatch generation, each stage definition is the runtime-on cutover definition key for key, every fleet row is one of its rows verbatim, and the trial stage of the same name differs from it in those two sections only (control-server#564 step 18a)' {
+Invoke-SourceCase 'cutover production stages: apart from productionCutover, emergencyStopRelease, fleet, allowedDispatchZones, the two runtime switches, the staging rules, the dispatch generation and the fault recovery entry, each stage definition is the runtime-on cutover definition key for key, every fleet row is one of its rows verbatim, and the trial stage of the same name differs from it in those two sections only (control-server#564 step 18a)' {
     $mother = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-two-zones.runtime-on.json')
     $motherRows = @($mother['journeyRuntime']['fleet'] | ForEach-Object { $_ | ConvertTo-Json -Depth 20 -Compress })
     $motherJson = $mother | ConvertTo-Json -Depth 20 -Compress
@@ -5633,6 +5649,9 @@ Invoke-SourceCase 'cutover production stages: apart from productionCutover, emer
             $twin['journeyRuntime'].Remove('trialSublotCharacterPosition')
             $twin['journeyRuntime'].Remove('trialSublotCharacters')
             $twin['journeyRuntime']['dispatchGeneration'] = $trial['journeyRuntime']['dispatchGeneration']
+            # control-server#844: so is the fault recovery entry left open (pinned by its own case above); overwritten in place
+            # for the same reason as the generation.
+            $twin['vehicleFaultRecovery'] = Copy-Definition $trial['vehicleFaultRecovery']
             $n = Copy-Definition $twin
             $n['journeyRuntime']['dispatchGeneration'] = $mother['journeyRuntime']['dispatchGeneration']
             $n['journeyRuntime']['fleet'] = $mother['journeyRuntime']['fleet']
