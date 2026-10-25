@@ -1070,7 +1070,7 @@ public sealed class ChargingDashboardTests
             ChargingVehiclesQueryEndpoint => new ChargingVehiclesQueryEndpoint(
                 options ?? FleetOptions, board ?? new ChargingAllocationBoard(), TimeProvider.System),
             ChargingHoldsQueryEndpoint => new ChargingHoldsQueryEndpoint(new VehicleRoster(FleetOptions), TimeProvider.System),
-            ChargingAlarmsQueryEndpoint => new ChargingAlarmsQueryEndpoint(FleetOptions, TimeProvider.System),
+            ChargingAlarmsQueryEndpoint => new ChargingAlarmsQueryEndpoint(FleetOptions, board ?? new ChargingAllocationBoard(), TimeProvider.System),
             _ => throw new InvalidOperationException(path),
         };
         await using ControlServerDbContext context = database.NewContext();

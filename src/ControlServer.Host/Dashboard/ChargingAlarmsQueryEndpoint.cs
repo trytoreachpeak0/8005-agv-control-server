@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.Options;
@@ -40,6 +41,12 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
     public ChargingAlarmsQueryEndpoint(IOptions<JourneyRuntimeOptions> options)
         : this(options, TimeProvider.System)
     {
+    }
+
+    internal ChargingAlarmsQueryEndpoint(IOptions<JourneyRuntimeOptions> options, ChargingAllocationBoard board, TimeProvider clock)
+        : this(options, clock)
+    {
+        _ = board;
     }
 
     internal ChargingAlarmsQueryEndpoint(IOptions<JourneyRuntimeOptions> options, TimeProvider clock)

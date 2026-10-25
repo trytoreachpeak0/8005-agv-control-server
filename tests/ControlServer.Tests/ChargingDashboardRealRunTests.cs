@@ -4,6 +4,8 @@ using ControlServer.Dashboard;
 using ControlServer.Host.Dashboard;
 using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using static ControlServer.Tests.ChargingAllocationTests;
 using FleetFixture = ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture;
@@ -277,6 +279,71 @@ public sealed class ChargingDashboardRealRunTests
         }
     }
 
+    /// <summary>
+    /// 低于强制充电线、又因出发证明有缺口分不到桩（control-server#865，10-23 agv02 一直报 SLOT_1_NOT_LOCKED、电量掉到断电）：门照旧不放，
+    /// 但告警卡片有一条 <see cref="ChargingDashboardDescriptions.AlarmBelowMandatoryDepartureNotProven"/>，细节点名是哪一仓。门一好、分到桩，告警消失。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleBelowTheMandatoryLineHeldBackByAnUnlockedSlotIsAlarmedNamingTheSlot()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        await fleet.HearFromEveryVehicleAsync();
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        (JsonDocument alarms, string html) = await ReadAsync(fleet, "charging-alarms");
+        using (alarms)
+        {
+            JsonElement alarm = Assert.Single(
+                alarms.RootElement.GetProperty("alarms").EnumerateArray(),
+                a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryDepartureNotProven);
+            Assert.Equal(AgvA, alarm.GetProperty("agvId").GetString());
+            Assert.Equal(ChargingDashboardDescriptions.SeverityHigh, alarm.GetProperty("severity").GetString());
+            string detail = alarm.GetProperty("detail").GetString()!;
+            Assert.Contains("3号仓没锁好或开锁输出没复位（SLOT_3_NOT_LOCKED）", detail, StringComparison.Ordinal);
+            Assert.Contains("电量 20%", detail, StringComparison.Ordinal);
+            Assert.Contains("3号仓没锁好或开锁输出没复位", html, StringComparison.Ordinal);
+        }
+        Assert.Empty(await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().ToArrayAsync(Token));
+
+        await fleet.ReplaceSafetySnapshotAsync(AgvA);
+        await fleet.HearFromEveryVehicleAsync();
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        Assert.Single(await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().ToArrayAsync(Token));
+        (JsonDocument after, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (after)
+        {
+            Assert.DoesNotContain(
+                after.RootElement.GetProperty("alarms").EnumerateArray(),
+                a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryDepartureNotProven);
+        }
+    }
+
+    /// <summary>高于强制充电线的车仓门没锁：它本来就不需要充电，不告警（control-server#865）。</summary>
+    [Fact]
+    public async Task AVehicleAboveTheMandatoryLineWithAnUnlockedSlotIsNotAlarmed()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 90;
+        await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        await fleet.HearFromEveryVehicleAsync();
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        Assert.Equal(ChargingAllocationReasons.NotRequired, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        (JsonDocument alarms, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (alarms)
+        {
+            Assert.DoesNotContain(
+                alarms.RootElement.GetProperty("alarms").EnumerateArray(),
+                a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryDepartureNotProven);
+        }
+    }
+
     private static async Task<JsonElement> AllocationAsync(FleetFixture fleet, string agvId)
     {
         (JsonDocument vehicles, string _) = await ReadAsync(fleet, "charging-vehicles");
@@ -297,7 +364,7 @@ public sealed class ChargingDashboardRealRunTests
             "chargers" => new ChargersQueryEndpoint(options, fleet.Clock),
             "charging-vehicles" => new ChargingVehiclesQueryEndpoint(options, fleet.ChargingBoard, fleet.Clock),
             "charging-holds" => new ChargingHoldsQueryEndpoint(new VehicleRoster(options), fleet.Clock),
-            "charging-alarms" => new ChargingAlarmsQueryEndpoint(options, fleet.Clock),
+            "charging-alarms" => new ChargingAlarmsQueryEndpoint(options, fleet.ChargingBoard, fleet.Clock),
             _ => throw new InvalidOperationException(path),
         };
         fleet.Context.ChangeTracker.Clear();
