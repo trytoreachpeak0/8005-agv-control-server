@@ -42,6 +42,13 @@ namespace ControlServer.Tests;
 /// 这几条的摘要随之变。逐行差异在 <c>evidence/cs749/wirepin-diff-*.txt</c>。同 cs#382 那段，行为本身变了，只能在本票分支上录。
 /// </para>
 /// <para>
+/// <b>control-server#623（已出结果的 SlotOperationCommand 不再补发）改了四份基线，其余逐字未动。</b><c>normal-journey</c>、
+/// <c>two-journeys-one-vehicle</c>、<c>departure-check-expired</c> 的线上一节各删掉了每条装卸命令在结果到之后的那一次补发
+/// （每个命令 id 线上从 2 次变 1 次，首发保留）；后面的行只是序号前移，载荷与摘要逐字不变。<c>in-flight-cancellation</c>
+/// 发件箱一节里被取消的那条装货命令由 <c>fenced=no</c> 变为 <c>fenced=yes</c>（站点操作已取消，退出补发）。逐行差异在
+/// <c>evidence/cs623/wirepin/wirepin-diff-*.txt</c>。行为本身变了，只能在本票分支上录。
+/// </para>
+/// <para>
 /// <b>每条消息存的是规范化后的载荷全文，不只是摘要。</b>摘要能判等，判不出差在哪；审查要能独立复核「哪一个 id、哪一个修订号
 /// 变了」，就得看得见。规范化只做一件事：递归按键名排序，让 JSON 属性顺序的变动不算差异。
 /// </para>

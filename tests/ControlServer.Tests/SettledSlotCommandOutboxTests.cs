@@ -36,6 +36,7 @@ public sealed class SettledSlotCommandOutboxTests
     /// cs#205 的形状：装货结果在会话不就绪期间到、装货 Committed；会话回到就绪的第一轮不再补发这条命令——修之前这一轮先补发、后结算。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
     public async Task ALoadCommittedWhileTheSessionWasNotReadyIsNotReplayedOnTheFirstReadyRound()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -57,6 +58,7 @@ public sealed class SettledSlotCommandOutboxTests
     /// 服务端回 DurableAck，只记一条结果，站点操作的状态不变，命令行仍是已确认。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
     public async Task TheVehicleReplayingItsOriginalOperationResultIsAbsorbedAsADuplicate()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -86,6 +88,7 @@ public sealed class SettledSlotCommandOutboxTests
 
     /// <summary>护栏：结果还没到、需求与旅程都还活着，命令照常补发，行仍待补发。</summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
     public async Task ALoadStillAwaitingItsResultIsReplayedAsBefore()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -105,6 +108,7 @@ public sealed class SettledSlotCommandOutboxTests
     /// 会话因本服务端自己的在途单而未就绪（真车载端行驶全程的状态）：结果到了，引擎在就绪闸门前返回、不补发；回到就绪那一轮先结算，照样不补发。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
     public async Task ALoadAnsweredWhileTheSessionIsNotReadyOnTheServersOwnOrderIsNotReplayedOnceReady()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -125,6 +129,7 @@ public sealed class SettledSlotCommandOutboxTests
 
     /// <summary>结果没到、站点操作仍是 Prepared，而所属需求已终结：退役（不是确认——车没有作答）。</summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
     public async Task AnUnansweredCommandOfATerminatedDemandIsFenced()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -144,6 +149,7 @@ public sealed class SettledSlotCommandOutboxTests
 
     /// <summary>旅程收尾时还挂着一条没结果的装货命令（例如人工撤下旅程）：经唯一收尾出口 <see cref="JourneyClosure"/> 退役。</summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
     public async Task ClosingAJourneyFencesItsCommandStillAwaitingAResult()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -163,6 +169,7 @@ public sealed class SettledSlotCommandOutboxTests
     /// 还在等结果的命令不在扫描的残留里，启动修复也不动它。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
     public async Task TheStartupRepairSettlesAForeignIdentityAnsweredCommandSoTheIdentityCheckPasses()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -188,6 +195,7 @@ public sealed class SettledSlotCommandOutboxTests
 
     /// <summary>护栏：仍在等结果的命令，扫描不算残留，启动修复不动它，身份检查照旧拦（身份检查本身不放宽）。</summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
     public async Task TheStartupRepairLeavesACommandStillAwaitingItsResultAlone()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -210,6 +218,7 @@ public sealed class SettledSlotCommandOutboxTests
     /// 以 SQLite 只读模式开库，库文件一个字节都不变。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
     public async Task TheFieldOpsResidueVerbListsAnAnsweredCommandWithoutWritingTheDatabase()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -249,6 +258,7 @@ public sealed class SettledSlotCommandOutboxTests
 
     /// <summary>主机启动顺序：命令的启动修复在库迁移之后、发件箱身份检查之前。</summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
     public void TheHostConcludesSlotCommandsAfterMigratingAndBeforeTheOutboxIdentityCheck()
     {
         string[] lines = File.ReadAllLines(Path.Combine(RepositoryRoot(), "src", "ControlServer.Host", "Program.cs"));
