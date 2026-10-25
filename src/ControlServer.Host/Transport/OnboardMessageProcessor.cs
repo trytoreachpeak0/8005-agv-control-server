@@ -362,8 +362,8 @@ public sealed partial class OnboardMessageProcessor(
         // Spaced by SafetySnapshotReaskInterval so a heartbeat every two seconds does not become a request every two seconds.
         // A remaining-baskets skip waiting on stale readings (control-server#830, review M2) is asked for the same way: the
         // snapshot requested when the skip arrived goes unanswered for the same reason, every onboard SafetyStateChanged
-        // naming slots 1..8.
-        if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings) &&
+        // naming slots 1..8. So are slot locks a safety change may have changed (control-server#865).
+        if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings || state.SlotLocksAwaitingSnapshot) &&
             timeProvider.GetUtcNow() - state.SafetySnapshotRequestedAt >= SafetySnapshotReaskInterval)
         {
             state.SafetySnapshotRequestDue = true;
@@ -583,6 +583,7 @@ public sealed partial class OnboardMessageProcessor(
                     // An accepted snapshot is a whole new safety baseline, slot states included: what a refused safety
                     // message left untrusted is trusted again from here (control-server#478).
                     state.SafetyBaselineUntrusted = false;
+                    state.SlotLocksAwaitingSnapshot = false;
                     string snapshotAck = SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
                     if (!midSession)
                     {
@@ -1010,6 +1011,18 @@ public sealed partial class OnboardMessageProcessor(
                     if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
                     {
                         state.SafetySnapshotRequestDue = true;
+                    }
+                    // control-server#865: each slot's lock is read from the session's latest snapshot, and a change carries no slot
+                    // states. When that snapshot showed a slot unsecured, this change may be the slot being locked, which nothing
+                    // would tell the departure gate until the next handshake: ask for a snapshot, spaced like the re-asks below.
+                    // A slot that really is open is answered as open at the current revision, and the asking stops until the
+                    // next change.
+                    if (!state.SlotLocksAwaitingSnapshot &&
+                        await Runtime.Dispatch.OnboardDispatchFactsReader
+                            .LatestSnapshotHasUnsecuredSlotAsync(dbContext, agvId, generation, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        state.SlotLocksAwaitingSnapshot = true;
                     }
                     string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
                     return AnswerWithReadiness(ack, decision, agvId, generation, state, messageType, messageId, announceUnchanged: true);
@@ -1928,4 +1941,11 @@ public sealed class OnboardConnectionState
     /// at <see cref="OnboardMessageProcessor.SafetySnapshotReaskInterval"/> until a decision clears it.
     /// </summary>
     public bool RemainingBasketsSkipAwaitingReadings { get; set; }
+
+    /// <summary>
+    /// A safety change followed a snapshot of this session that showed a slot not <c>LOCKED</c>/<c>RESET</c>, and no snapshot
+    /// has been accepted on this connection since (control-server#865): the slot may have been locked since, and only a snapshot
+    /// says so. Asked for at <see cref="OnboardMessageProcessor.SafetySnapshotReaskInterval"/> until a snapshot arrives.
+    /// </summary>
+    public bool SlotLocksAwaitingSnapshot { get; set; }
 }

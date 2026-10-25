@@ -444,6 +444,57 @@ public sealed class OnboardDispatchFactsReader(
         long safetyRevision,
         CancellationToken cancellationToken)
     {
+        JsonElement? latestSlots = await LatestSnapshotSlotStatesAsync(dbContext, agvId, generation, cancellationToken)
+            .ConfigureAwait(false);
+        ProtocolInboxRow? summaryRow = await LatestSafetySummaryForSessionAsync(
+            agvId, generation, safetyRevision, cancellationToken).ConfigureAwait(false);
+        if (latestSlots is not JsonElement slots || summaryRow is null)
+        {
+            return ["SAFETY_STATE_UNREADABLE"];
+        }
+
+        List<string> gaps =
+        [
+            .. UnsecuredSlots(slots).Select(slotNo => FormattableString.Invariant($"SLOT_{slotNo}_NOT_LOCKED")),
+        ];
+        using JsonDocument summary = JsonDocument.Parse(summaryRow.RequestJson);
+        gaps.AddRange(summary.RootElement.GetProperty("payload").GetProperty("safety").GetProperty("reasonCodes")
+            .EnumerateArray().Select(code => code.GetString() ?? "UNNAMED_SAFETY_REASON"));
+        return gaps;
+    }
+
+    /// <summary>
+    /// Whether the latest <c>SafetyStateSnapshot</c> of this session generation shows a slot the departure gate reads as not
+    /// locked (<see cref="ReadDepartureSafetyGapsAsync"/>'s own rule); false when there is none. The transport asks for a fresh
+    /// snapshot on a safety change when it does (control-server#865): a change carries no slot states, so a slot locked after the
+    /// snapshot stays unsecured to the gate until a snapshot says otherwise.
+    /// </summary>
+    internal static async Task<bool> LatestSnapshotHasUnsecuredSlotAsync(
+        ControlServerDbContext dbContext,
+        string agvId,
+        long generation,
+        CancellationToken cancellationToken) =>
+        await LatestSnapshotSlotStatesAsync(dbContext, agvId, generation, cancellationToken).ConfigureAwait(false) is JsonElement slots &&
+        UnsecuredSlots(slots).Length > 0;
+
+    /// <summary>The slots the departure gate reads as not secured: lock not <c>LOCKED</c> or unlock output not <c>RESET</c>.</summary>
+    private static int[] UnsecuredSlots(JsonElement slotStates) =>
+        [
+            .. slotStates.EnumerateArray()
+                .Where(slot => RequiredString(slot, "lockState") != "LOCKED" || RequiredString(slot, "unlockOutputState") != "RESET")
+                .Select(slot => slot.GetProperty("slotNo").GetInt32()),
+        ];
+
+    /// <summary>
+    /// The <c>slotStates</c> of this session generation's <c>SafetyStateSnapshot</c> with the highest <c>safetyStateVersion</c>;
+    /// null when it has none. Each slot's lock is only on a snapshot (<c>SafetyStateChanged</c> names the slots that changed).
+    /// </summary>
+    private static async Task<JsonElement?> LatestSnapshotSlotStatesAsync(
+        ControlServerDbContext dbContext,
+        string agvId,
+        long generation,
+        CancellationToken cancellationToken)
+    {
         // Review L2: filtered in the database by message type only, with just the JSON column read, and parsed one row at a
         // time. Not by vehicle: the inbox has no vehicle column, and a text match on the id does not work -- the serializer
         // escapes non-ASCII, and the fleet's ids are Chinese (老厂前线新多仓位1 is stored with each character escaped, \u8001 and so on), so such a filter found
@@ -452,54 +503,25 @@ public sealed class OnboardDispatchFactsReader(
             .Where(row => row.MessageType == "SafetyStateSnapshot")
             .Select(row => row.RequestJson)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        JsonDocument? latest = null;
+        JsonElement? latest = null;
         long latestVersion = long.MinValue;
-        try
+        foreach (string json in snapshots)
         {
-            foreach (string json in snapshots)
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement root = document.RootElement;
+            if (RequiredString(root, "agvId") != agvId || root.GetProperty("sessionGeneration").GetInt64() != generation)
             {
-                JsonDocument document = JsonDocument.Parse(json);
-                JsonElement root = document.RootElement;
-                long version = RequiredString(root, "agvId") == agvId && root.GetProperty("sessionGeneration").GetInt64() == generation
-                    ? root.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64()
-                    : long.MinValue;
-                if (version > latestVersion)
-                {
-                    latest?.Dispose();
-                    latest = document;
-                    latestVersion = version;
-                }
-                else
-                {
-                    document.Dispose();
-                }
+                continue;
             }
-            JsonElement? latestSlots = latest?.RootElement.GetProperty("payload").GetProperty("slotStates");
-
-            ProtocolInboxRow? summaryRow = await LatestSafetySummaryForSessionAsync(
-                agvId, generation, safetyRevision, cancellationToken).ConfigureAwait(false);
-            if (latestSlots is not JsonElement slots || summaryRow is null)
+            JsonElement payload = root.GetProperty("payload");
+            long version = payload.GetProperty("safetyStateVersion").GetInt64();
+            if (version > latestVersion)
             {
-                return ["SAFETY_STATE_UNREADABLE"];
+                latest = payload.GetProperty("slotStates").Clone();
+                latestVersion = version;
             }
-
-            List<string> gaps = [];
-            foreach (JsonElement slot in slots.EnumerateArray())
-            {
-                if (RequiredString(slot, "lockState") != "LOCKED" || RequiredString(slot, "unlockOutputState") != "RESET")
-                {
-                    gaps.Add(FormattableString.Invariant($"SLOT_{slot.GetProperty("slotNo").GetInt32()}_NOT_LOCKED"));
-                }
-            }
-            using JsonDocument summary = JsonDocument.Parse(summaryRow.RequestJson);
-            gaps.AddRange(summary.RootElement.GetProperty("payload").GetProperty("safety").GetProperty("reasonCodes")
-                .EnumerateArray().Select(code => code.GetString() ?? "UNNAMED_SAFETY_REASON"));
-            return gaps;
         }
-        finally
-        {
-            latest?.Dispose();
-        }
+        return latest;
     }
 
     public Task<SessionRecoveryRow?> CurrentReadySessionAsync(string agvId, CancellationToken cancellationToken) =>
