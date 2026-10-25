@@ -4,6 +4,7 @@ using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.IdleReturn;
 using ControlServer.Host.Runtime.Release;
+using ControlServer.Host.Runtime.Withdrawal;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -528,6 +529,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             gateStationId = row.GateStationId,
             blockReasonCode = row.BlockReasonCode,
             blockReasonDescription = Describe(row.BlockReasonCode, foreignOrderHoldsVehicle, row.IsIdleReturn(), row.IsCharging()),
+            // control-server#771 part 2: where a person may take this journey off by hand.
+            manualWithdrawalHint = Withdrawable(row, explained) ? ManualWithdrawalHint : null,
             blockReasonSince = row.BlockReasonSince,
             blockedSeconds = blockedFor is TimeSpan elapsed ? (long?)elapsed.TotalSeconds : null,
             escalationLevel = level.ToString(),
@@ -606,8 +609,25 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         + "服务端无法判断那几个仓位里现在是什么货，所以这趟旅程不会自动放行，之后的异常处置成功了也不会放车；只有这趟旅程整体收尾（例如最后一条需求被交接或取消）才会结束它。"
         + "请到车前核对仓位与货物，联系系统维护人员处理。在那之前这辆车不接新单";
 
-    /// <summary>人工撤下的提示（control-server#771 第二部分）。桩：还没有行给它。</summary>
-    internal const string ManualWithdrawalHint = "";
+    /// <summary>
+    /// 人工撤下的提示（control-server#771 第二部分；D1 定看板只提示、不加按钮）。给维护人员看的字，不写票号。
+    /// </summary>
+    internal const string ManualWithdrawalHint =
+        "车上没货时，这一趟可以由系统维护人员在控制端人工撤下（现场运维工具 FieldOps 的 withdraw-journey，服务端不用停）："
+        + "需求退回待派、不作废，车回到可派状态。撤之前要到车前核对仓位与货物";
+
+    /// <summary>
+    /// 行上给不给 <see cref="ManualWithdrawalHint"/>：搬运旅程（空闲返回、充电不收）卡在撤下收的两形上——10-19 agv03 那一形，装货结果未知
+    /// （<c>Blocked/LOAD_RESULT_REQUIRES_RECOVERY</c>）；10-18 agv01 那一形，开往取货站途中车载端失联或未就绪（不是行驶中本服务端自己的单造成的
+    /// 那一种）。撤下本身还收别的阶段上的失联，但那些阶段（开往关卡、离站核验）车上多半有货，撤下会拒，这里不提示，免得把人引过去。
+    /// 车上有没有货、有没有故障这里不判：那要读归属、仓位与故障，是撤下演练的事，提示里写明「车上没货时」。
+    /// </summary>
+    private static bool Withdrawable(JourneyRuntimeRow row, bool explainedByOwnOrder) =>
+        !row.CarriesNoDemand() &&
+        JourneyWithdrawal.InAWithdrawableState(row) &&
+        (row is { Stage: JourneyRuntimeStage.Blocked, BlockReasonCode: "LOAD_RESULT_REQUIRES_RECOVERY" } ||
+         (row is { Stage: JourneyRuntimeStage.AwaitingPickupArrival, BlockReasonCode: SessionLostReason or SessionNotReadyReason } &&
+          !explainedByOwnOrder));
 
     /// <summary>车被外来订单挡着时加在阻断说明后面的那一句（control-server#330）。</summary>
     internal const string ForeignOrderHoldsVehicleNote =

@@ -568,7 +568,7 @@ public static class JourneyWithdrawal
     /// control-server#485), a trip handed to the exception recovery session. A journey later than its pickup with no block at all is
     /// the engine's, running.
     /// </remarks>
-    private static bool InAWithdrawableState(JourneyRuntimeRow runtime) =>
+    internal static bool InAWithdrawableState(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.Blocked
             ? string.Equals(runtime.BlockReasonCode, LoadResultRequiresRecovery, StringComparison.Ordinal)
             : runtime.Stage == JourneyRuntimeStage.AwaitingPickupArrival ||
