@@ -190,6 +190,31 @@ public sealed class LoadCancellationDuringLoadTests
     }
 
     /// <summary>
+    /// 同一个 <c>cancellationId</c> 先被拒、门关好读数到了再按（Coordinator13 10-25 定，直到 onboard-hmi#408 合入）：车载端被拒后再按仍用同一个 id
+    /// （由需求与 attempt 推出），载荷按新的一次按键重录。被拒的那次不留任何记录，所以这一次照常重判、授权，不回放先前的拒绝、也不当内容冲突。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-BASKET-LOADED")]
+    public async Task TheSameCancellationIdRejectedFirstIsJudgedAgainAndAuthorizedOnceTheReadingsProveIt()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        SlotReading[] open = Occupied();
+        open[0] = open[0] with { Lock = "UNLOCKED", Output = "ACTIVE" };
+        await rig.SendSnapshotAsync(open);
+        AssertRejected(await SendCancellationAsync(rig, CancellationId), "LOCK_NOT_CLOSED");
+
+        await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);
+        await rig.SendSnapshotAsync(Occupied());
+
+        JsonElement authorization = Payload(await SendCancellationAsync(rig, CancellationId, "Pressed again with the door shut."));
+        Assert.Equal("AUTHORIZED", authorization.GetProperty("decision").GetString());
+        Assert.Equal(CancellationId, authorization.GetProperty("cancellationId").GetString());
+        Assert.Single(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking()
+            .Where(row => row.WorkflowId == CancellationId).ToArrayAsync(Token));
+    }
+
+    /// <summary>
     /// 授权答复在路上丢了，车以新的 messageId 重提同一个 <c>cancellationId</c>（real-onboard-cancellation-authorization-lost 的形状）：照记录答
     /// 同一个授权，即便此后又有目标仓的变化让读数过期——授权之后车不为取消做任何仓位 IO，过期的读数说明不了授权当时不该给。
     /// </summary>
@@ -237,14 +262,15 @@ public sealed class LoadCancellationDuringLoadTests
         Assert.Contains(answer.Split('\n'), line => line.Length > 0 && MessageType(line) == "SafetyStateSnapshotRequested");
     }
 
-    private static async Task<string> SendCancellationAsync(SkipRig rig, string cancellationId) =>
+    private static async Task<string> SendCancellationAsync(
+        SkipRig rig, string cancellationId, string reason = "Operator pressed cancel.") =>
         await rig.SendAsync(rig.Envelope(Guid.NewGuid().ToString("D"), "LoadCancellationStartRequested", new
         {
             cancellationId,
             demandId = "10000000-0000-4000-8000-000000000001",
             slotOperationAttemptId = rig.AttemptId,
             @operator = new { operatorId = "OP-001", verificationMethod = "BADGE", verifiedAt = Now },
-            reason = "Operator pressed cancel."
+            reason
         }));
 
     private static JsonElement Payload(string answer)
