@@ -606,6 +606,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         + "服务端无法判断那几个仓位里现在是什么货，所以这趟旅程不会自动放行，之后的异常处置成功了也不会放车；只有这趟旅程整体收尾（例如最后一条需求被交接或取消）才会结束它。"
         + "请到车前核对仓位与货物，联系系统维护人员处理。在那之前这辆车不接新单";
 
+    /// <summary>人工撤下的提示（control-server#771 第二部分）。桩：还没有行给它。</summary>
+    internal const string ManualWithdrawalHint = "";
+
     /// <summary>车被外来订单挡着时加在阻断说明后面的那一句（control-server#330）。</summary>
     internal const string ForeignOrderHoldsVehicleNote =
         "这辆车上另有一张不是本服务端建的订单挡着：这辆车不接新单、不接途中追加，会话的「未知」也可能是它造成的。"
