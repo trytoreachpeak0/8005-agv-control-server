@@ -91,17 +91,39 @@ public sealed record JourneyWithdrawalPlan(
     JourneyWithdrawalRiotOrders? RiotOrders = null);
 
 /// <summary>
-/// 服务端在线时自己读到的 RIoT：这辆车有没有未结束的单、是哪几张（control-server#771 第二部分）。离线写法没有这一项，
+/// 服务端在线时自己读到的 RIoT：这辆车有没有未结束的单、是哪几张、每张怎么处置（control-server#771 第二部分）。离线写法没有这一项，
 /// 靠人填的 <c>--riot-verification</c>。不带读数时刻：确认码绑住它，而每读一次时刻都变。
 /// </summary>
 /// <param name="Known">RIoT 给出了完整的回答。</param>
-public sealed record JourneyWithdrawalRiotOrders(bool Known, IReadOnlyList<string> UnfinishedOrderIds);
+public sealed record JourneyWithdrawalRiotOrders(bool Known, IReadOnlyList<JourneyWithdrawalRiotOrder> Orders);
+
+/// <summary>RIoT 上这辆车的一张未结束的单。</summary>
+/// <param name="UpperId">这一趟名下与它对得上的订单意图；对不上为空。</param>
+/// <param name="Disposition">
+/// <c>CANCEL_BEFORE_WITHDRAWAL</c>：这一趟自己的单，服务端经订单命令面先取消、确认之后再撤（用户 10-25 选方案二）；
+/// <c>NOT_THIS_JOURNEYS</c>：不是这一趟的单，服务端不碰它，撤下拒。
+/// </param>
+public sealed record JourneyWithdrawalRiotOrder(string OrderId, string? UpperId, string Disposition);
+
+/// <summary>演练时车此刻在哪、动不动（给人看；只有单号进确认码，位置与速度一直在变，不进）。</summary>
+public sealed record JourneyWithdrawalVehicle(
+    bool Connected,
+    string? CurrentMap,
+    int? CurrentStationId,
+    double? Speed,
+    string? ProcState,
+    DateTimeOffset ObservedAt);
+
+/// <summary>撤下之前服务端发的一次取消，与对账的结果。</summary>
+public sealed record JourneyWithdrawalOrderCancellation(string OrderId, string UpperId, string Outcome);
 
 /// <summary>演练或撤下的结果。</summary>
 /// <param name="Outcome"><c>PLANNED</c>、<c>WITHDRAWN</c>、<c>ALREADY_DONE</c> 或 <c>REJECTED</c>。</param>
 /// <param name="AuditRecordId">撤下（含被拒）写的管理员审计；演练不写，为空。</param>
 /// <param name="RevokedGrantId">在线撤下一并收回的、点名这一趟的恢复授权（control-server#771 第二部分）；没有为空。</param>
 /// <param name="RiotObservedAt">在线时读 RIoT 的时刻；离线为空。</param>
+/// <param name="Vehicle">在线时车此刻的位置与速度；读不到或离线写法为空。</param>
+/// <param name="Cancellations">撤下之前取消的单与结果；没有为空。</param>
 public sealed record JourneyWithdrawalResult(
     string Outcome,
     IReadOnlyList<string> Codes,
@@ -109,7 +131,9 @@ public sealed record JourneyWithdrawalResult(
     string? ConfirmationCode,
     string? AuditRecordId,
     string? RevokedGrantId = null,
-    DateTimeOffset? RiotObservedAt = null);
+    DateTimeOffset? RiotObservedAt = null,
+    JourneyWithdrawalVehicle? Vehicle = null,
+    IReadOnlyList<JourneyWithdrawalOrderCancellation>? Cancellations = null);
 
 /// <summary>
 /// 人工撤下一趟旅程（control-server#771）：车上没货时，旅程收尾，需求退回待派、不抑制；挂着一次结果未知的装货时，那一次结成取消。
@@ -167,6 +191,13 @@ public static class JourneyWithdrawal
     public const string RiotOrdersUnknown = "RIOT_VEHICLE_ORDERS_UNKNOWN";
     public const string RiotOrderNotFinished = "RIOT_ORDER_NOT_FINISHED";
     public const string RuntimeBusy = "WITHDRAWAL_RUNTIME_BUSY";
+    public const string OrderCancelNotConfirmed = "ORDER_CANCEL_NOT_CONFIRMED";
+
+    /// <summary>RIoT 上这一趟自己的单：先取消、确认之后再撤。</summary>
+    public const string CancelBeforeWithdrawal = "CANCEL_BEFORE_WITHDRAWAL";
+
+    /// <summary>RIoT 上不是这一趟的单：不碰，撤下拒。</summary>
+    public const string NotThisJourneys = "NOT_THIS_JOURNEYS";
 
     /// <summary>理由、两条核实记录与那一篮去向的最长长度（去掉首尾空白后的 UTF-16 码元）。</summary>
     public const int MaxTextLength = 500;
@@ -357,7 +388,9 @@ public static class JourneyWithdrawal
         if (riotOrders is not null)
         {
             riot = new JourneyWithdrawalRiotOrders(
-                riotOrders.IsKnown, [.. riotOrders.UnfinishedOrderIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)]);
+                riotOrders.IsKnown,
+                [.. riotOrders.UnfinishedOrderIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+                    .Select(orderId => new JourneyWithdrawalRiotOrder(orderId, null, NotThisJourneys))]);
             if (!riotOrders.IsKnown)
             {
                 codes.Add(RiotOrdersUnknown);

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Unicode;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Recovery;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
@@ -37,6 +38,9 @@ public sealed class JourneyWithdrawalService(
     ControlServerDbContext dbContext,
     IGovernanceAuditWriter audit,
     IRiotVehicleOrderFacts orderFacts,
+    IRiotVehicleFacts vehicleFacts,
+    RiotOrderCommandService orderCommands,
+    IRiotOrderCommandAuditStore commandAudit,
     JourneyMutationGate gate,
     OnboardJourneyPublisher publisher,
     RecoveryGrantRegistry grants,
@@ -55,6 +59,9 @@ public sealed class JourneyWithdrawalService(
     };
 
     private readonly TimeSpan _gateWait = gateTimeout ?? DefaultGateTimeout;
+
+    // Stub until the cancellation is written (control-server#771 part 2, option 2).
+    private readonly object _pending = (vehicleFacts, orderCommands, commandAudit);
 
     /// <summary>演练：读一次 RIoT，判一次，一行不写、不写审计、不拿闸。</summary>
     public async Task<JourneyWithdrawalResult> PlanAsync(JourneyWithdrawalRequest request, CancellationToken cancellationToken)

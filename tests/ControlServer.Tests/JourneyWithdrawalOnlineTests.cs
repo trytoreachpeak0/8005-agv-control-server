@@ -3,6 +3,7 @@ using System.Text;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Recovery;
 using ControlServer.Host.Runtime.Withdrawal;
 using ControlServer.Host.Transport;
@@ -53,7 +54,7 @@ public sealed class JourneyWithdrawalOnlineTests
 
         JourneyWithdrawalResult planned = await online.Service().PlanAsync(request, Token);
         Assert.True(planned.Outcome == "PLANNED", string.Join(",", planned.Codes));
-        Assert.True(planned.Plan!.RiotOrders is { Known: true, UnfinishedOrderIds.Count: 0 }, $"{planned.Plan.RiotOrders}");
+        Assert.True(planned.Plan!.RiotOrders is { Known: true, Orders.Count: 0 }, $"{planned.Plan.RiotOrders}");
         Assert.NotNull(planned.RiotObservedAt);
 
         JourneyWithdrawalResult withdrawn = await online.Service().WithdrawAsync(
@@ -100,7 +101,11 @@ public sealed class JourneyWithdrawalOnlineTests
 
         JourneyWithdrawalResult planned = await AssertRefusedOnlineAsync(fixture, online, request, JourneyWithdrawal.RiotOrderNotFinished);
 
-        Assert.Equal(["RIOT-ORDER-771"], planned.Plan!.RiotOrders!.UnfinishedOrderIds);
+        Assert.Equal(
+            [new JourneyWithdrawalRiotOrder("RIOT-ORDER-771", null, JourneyWithdrawal.NotThisJourneys)],
+            planned.Plan!.RiotOrders!.Orders);
+        // Not this journey's: the server does not touch it.
+        Assert.Empty(fixture.Riot.OrderCommands);
     }
 
     /// <summary>
@@ -377,6 +382,213 @@ public sealed class JourneyWithdrawalOnlineTests
     }
 
     // ------------------------------------------------------------------------------------------------
+    // 方案二（用户 10-25 选）：车在 RIoT 上还挂着这一趟自己的单，服务端先取消、确认之后再撤。10-18 agv01 那一形：车开往取货站。
+    // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 演练列出那张单、要先取消，并列出车此刻的位置与速度（调度 10-25 要求）；撤下先经订单命令面取消（先武装审计行再发），对账确认后撤，
+    /// 需求退回待派。撤完之后引擎再跑一轮，不为这张单重建、不建任何新单。
+    /// </summary>
+    [Fact]
+    public async Task AnOrderOfThisJourneyStillRunningIsCancelledFirstAndThenTheJourneyIsWithdrawn()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow onItsWay = await OnItsWayToThePickupAsync(fixture);
+        OrderIntentRow pickup = await PickupIntentAsync(fixture, onItsWay);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 12, Speed = 0.8 };
+        Online online = new(fixture);
+        JourneyWithdrawalRequest request = JourneyWithdrawalTests.Request(onItsWay, slotFacts: null, cargoLocation: null);
+
+        JourneyWithdrawalResult planned = await online.Service().PlanAsync(request, Token);
+
+        Assert.True(planned.Outcome == "PLANNED", string.Join(",", planned.Codes));
+        Assert.Equal(
+            [new JourneyWithdrawalRiotOrder(pickup.OrderId!, pickup.UpperId, JourneyWithdrawal.CancelBeforeWithdrawal)],
+            planned.Plan!.RiotOrders!.Orders);
+        Assert.True(planned.Vehicle is { CurrentStationId: 12, Speed: 0.8 }, $"{planned.Vehicle}");
+        Assert.Empty(fixture.Riot.OrderCommands);
+
+        int createsBefore = fixture.Context.OrderIntents.Count();
+        JourneyWithdrawalResult withdrawn = await online.Service().WithdrawAsync(request with { ConfirmationCode = planned.ConfirmationCode }, Token);
+
+        Assert.True(withdrawn.Outcome == "WITHDRAWN", string.Join(",", withdrawn.Codes));
+        Assert.Equal(
+            [new JourneyWithdrawalOrderCancellation(pickup.OrderId!, pickup.UpperId, nameof(RiotOrderCommandOutcome.Confirmed))],
+            withdrawn.Cancellations);
+        Assert.Equal([(RiotOrderCommandKind.Cancel, pickup.OrderId!)], fixture.Riot.OrderCommands.Select(item => (item.Kind, item.OrderId)));
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(await fixture.Context.RiotOrderCommandAudit.AnyAsync(
+            row => row.TargetUpperId == pickup.UpperId && row.CommandType == RiotCommandTypeNames.CancelOrder, Token));
+        Assert.Equal(JourneyRuntimeStage.Completed, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        Assert.Contains(
+            FirstDemandId,
+            await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AsNoTracking().Select(row => row.DemandId).ToArrayAsync(Token));
+
+        Assert.Null(await UnloadCrashResumeTests.RunRoundAsync(fixture));
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Empty(await fixture.Context.OwnOrderRebuilds.AsNoTracking()
+            .Where(row => row.JourneyId == onItsWay.JourneyId && row.State != OwnOrderRebuildStates.Ended).ToArrayAsync(Token));
+        Assert.Equal(createsBefore, await fixture.Context.OrderIntents.CountAsync(Token));
+    }
+
+    /// <summary>
+    /// RIoT 接了取消却没把单结束：对账不是 Confirmed，就不撤——一行不改，审计记一条失败、列出取消结果，人去 RIoT 看。
+    /// </summary>
+    [Fact]
+    public async Task ACancellationRiotDoesNotConfirmLeavesTheJourneyAsItWas()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow onItsWay = await OnItsWayToThePickupAsync(fixture);
+        fixture.Riot.CancelTakesEffect = false;
+        Online online = new(fixture);
+        JourneyWithdrawalRequest request = JourneyWithdrawalTests.Request(onItsWay, slotFacts: null, cargoLocation: null);
+        JourneyWithdrawalResult planned = await online.Service().PlanAsync(request, Token);
+
+        JourneyWithdrawalResult withdrawn = await online.Service().WithdrawAsync(request with { ConfirmationCode = planned.ConfirmationCode }, Token);
+
+        Assert.Equal("REJECTED", withdrawn.Outcome);
+        Assert.Equal([JourneyWithdrawal.OrderCancelNotConfirmed], withdrawn.Codes);
+        Assert.NotEqual(nameof(RiotOrderCommandOutcome.Confirmed), Assert.Single(withdrawn.Cancellations!).Outcome);
+        await AssertNothingWithdrawnAsync(fixture);
+        AdministratorAuditRecordRow audit = await fixture.Context.Set<AdministratorAuditRecordRow>().AsNoTracking()
+            .SingleAsync(row => row.Action == JourneyWithdrawal.AuditAction, Token);
+        Assert.Equal(GovernanceActionOutcome.Failed, audit.Outcome);
+        Assert.Contains(JourneyWithdrawal.OrderCancelNotConfirmed, audit.DetailJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 上一次取消没确认，过一会儿 RIoT 好了：重新演练、再按，服务端再发一次取消（新的一次尝试，不覆盖旧的），确认后撤下。
+    /// </summary>
+    [Fact]
+    public async Task AWithdrawalRetriedAfterAnUnconfirmedCancellationCancelsAgainAndWithdraws()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow onItsWay = await OnItsWayToThePickupAsync(fixture);
+        fixture.Riot.CancelTakesEffect = false;
+        Online online = new(fixture);
+        JourneyWithdrawalRequest request = JourneyWithdrawalTests.Request(onItsWay, slotFacts: null, cargoLocation: null);
+        JourneyWithdrawalResult first = await online.Service().PlanAsync(request, Token);
+        Assert.Equal("REJECTED", (await online.Service().WithdrawAsync(request with { ConfirmationCode = first.ConfirmationCode }, Token)).Outcome);
+        fixture.Riot.CancelTakesEffect = true;
+
+        JourneyWithdrawalResult again = await online.Service().PlanAsync(request, Token);
+        Assert.True(again.Outcome == "PLANNED", string.Join(",", again.Codes));
+        JourneyWithdrawalResult withdrawn = await online.Service().WithdrawAsync(request with { ConfirmationCode = again.ConfirmationCode }, Token);
+
+        Assert.True(withdrawn.Outcome == "WITHDRAWN", string.Join(",", withdrawn.Codes));
+        Assert.Equal(2, fixture.Riot.OrderCommands.Count(item => item.Kind == RiotOrderCommandKind.Cancel));
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(2, await fixture.Context.RiotOrderCommandAudit.CountAsync(row => row.CommandType == RiotCommandTypeNames.CancelOrder, Token));
+    }
+
+    /// <summary>
+    /// 取消与撤下之间引擎跑了一轮，看见本服务端自己取消的单：不重建，把旅程标成等人（<c>ORDER_ENDED_WITHOUT_ARRIVAL</c>）。这一笔是取消本身
+    /// 带来的，不算「演练之后状态变了」：撤下照样成。
+    /// </summary>
+    [Fact]
+    public async Task AnEngineRoundBetweenTheCancellationAndTheWithdrawalDoesNotStaleTheConfirmation()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow onItsWay = await OnItsWayToThePickupAsync(fixture);
+        Online online = new(fixture);
+        JourneyWithdrawalRequest request = JourneyWithdrawalTests.Request(onItsWay, slotFacts: null, cargoLocation: null);
+        JourneyWithdrawalResult planned = await online.Service().PlanAsync(request, Token);
+        string? seenBetween = null;
+        // Read 1 was the rehearsal, read 2 the withdrawal's first; read 3 is the one after the cancellation.
+        online.Orders.BeforeRead = async read =>
+        {
+            if (read != 3) return;
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Context.ChangeTracker.Clear();
+            seenBetween = (await JourneyOfAsync(fixture, FirstDemandId)).BlockReasonCode;
+        };
+
+        JourneyWithdrawalResult withdrawn = await online.Service().WithdrawAsync(request with { ConfirmationCode = planned.ConfirmationCode }, Token);
+
+        Assert.Equal(JourneyRuntimeEngine.OrderEndedWithoutArrivalReason, seenBetween);
+        Assert.True(withdrawn.Outcome == "WITHDRAWN", string.Join(",", withdrawn.Codes));
+        Assert.Equal(JourneyRuntimeStage.Completed, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+    }
+
+    /// <summary>
+    /// 取消之后、撤下之前，有一件与取消无关的事变了（这里是车上开了一个恢复会话）：撤下重判每一条准入，拒；单已经取消了，结果里照列。
+    /// </summary>
+    [Fact]
+    public async Task EveryCriterionIsJudgedAgainAfterTheCancellation()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow onItsWay = await OnItsWayToThePickupAsync(fixture);
+        Online online = new(fixture);
+        JourneyWithdrawalRequest request = JourneyWithdrawalTests.Request(onItsWay, slotFacts: null, cargoLocation: null);
+        JourneyWithdrawalResult planned = await online.Service().PlanAsync(request, Token);
+        online.Orders.BeforeRead = async read =>
+        {
+            if (read != 3) return;
+            fixture.Context.ExceptionRecoverySessions.Add(new ExceptionRecoverySessionRow
+            {
+                ExceptionRecoverySessionId = "ers-771-2",
+                RequestId = "req-771-2",
+                RequestContentHash = new string('1', 64),
+                AgvId = fixture.Options.AgvId,
+                EventId = "evt-771-2",
+                DemandId = FirstDemandId,
+                SlotsJson = "[]",
+                AdministratorId = "ADMIN",
+                AdministratorRole = "ROLE",
+                Reason = "open",
+                State = "OPEN",
+                OpenedAt = Now,
+                UpdatedAt = Now
+            });
+            await fixture.Context.SaveChangesAsync(Token);
+            fixture.Context.ChangeTracker.Clear();
+        };
+
+        JourneyWithdrawalResult withdrawn = await online.Service().WithdrawAsync(request with { ConfirmationCode = planned.ConfirmationCode }, Token);
+
+        Assert.Equal("REJECTED", withdrawn.Outcome);
+        Assert.Contains(JourneyWithdrawal.RecoverySessionOpen, withdrawn.Codes);
+        Assert.Equal(nameof(RiotOrderCommandOutcome.Confirmed), Assert.Single(withdrawn.Cancellations!).Outcome);
+        await AssertNothingWithdrawnAsync(fixture);
+    }
+
+    /// <summary>确认码对不上（演练之后状态变了）：在发任何取消之前就拒，一张单都不取消。</summary>
+    [Fact]
+    public async Task AStaleConfirmationCancelsNothing()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow onItsWay = await OnItsWayToThePickupAsync(fixture);
+        Online online = new(fixture);
+        JourneyWithdrawalRequest request = JourneyWithdrawalTests.Request(onItsWay, slotFacts: null, cargoLocation: null);
+
+        JourneyWithdrawalResult withdrawn = await online.Service().WithdrawAsync(request with { ConfirmationCode = "000000000000" }, Token);
+
+        Assert.Equal(("REJECTED", JourneyWithdrawal.ConfirmationStale), (withdrawn.Outcome, Assert.Single(withdrawn.Codes)));
+        Assert.Empty(fixture.Riot.OrderCommands);
+        await AssertNothingWithdrawnAsync(fixture);
+    }
+
+    private static async Task<JourneyRuntimeRow> OnItsWayToThePickupAsync(RuntimeFixture fixture)
+    {
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 4);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow onItsWay = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, onItsWay.Stage);
+        fixture.Context.ChangeTracker.Clear();
+        return onItsWay;
+    }
+
+    private static async Task<OrderIntentRow> PickupIntentAsync(RuntimeFixture fixture, JourneyRuntimeRow journey)
+    {
+        OrderIntentRow intent = await fixture.Context.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.UpperId == journey.PickupUpperId, Token);
+        Assert.NotNull(intent.OrderId);
+        return intent;
+    }
+
+    // ------------------------------------------------------------------------------------------------
     // Helpers.
     // ------------------------------------------------------------------------------------------------
 
@@ -412,7 +624,7 @@ public sealed class JourneyWithdrawalOnlineTests
     /// <summary>The running server around one fixture: its RIoT order reading, its round gate, its grants.</summary>
     private sealed class Online(RuntimeFixture fixture)
     {
-        public RiotOrders Orders { get; } = new(fixture.Clock);
+        public RiotOrders Orders { get; } = new(fixture);
 
         public JourneyMutationGate Gate { get; } = new();
 
@@ -424,6 +636,9 @@ public sealed class JourneyWithdrawalOnlineTests
             fixture.Context,
             new GovernanceStore(fixture.Context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default),
             Orders,
+            fixture.Riot,
+            new RiotOrderCommandService(fixture.Riot, new RiotOrderCommandAuditStore(fixture.Context), fixture.Riot, fixture.Clock),
+            new RiotOrderCommandAuditStore(fixture.Context),
             Gate,
             new OnboardJourneyPublisher(new WireToGateStore(fixture.Context), fixture.Peer, fixture.Clock),
             Grants,
@@ -472,16 +687,43 @@ public sealed class JourneyWithdrawalOnlineTests
         }
     }
 
-    /// <summary>RIoT's list of this vehicle's unfinished orders, as the test sets it; read at the fixture clock.</summary>
-    private sealed class RiotOrders(TimeProvider clock) : IRiotVehicleOrderFacts
+    /// <summary>
+    /// RIoT's list of this vehicle's unfinished orders: the fixture's own live orders on the vehicle (this server's, as the engine
+    /// created them, cancelled when a cancel takes effect) and whatever the test adds; read at the fixture clock.
+    /// </summary>
+    private sealed class RiotOrders(RuntimeFixture fixture) : IRiotVehicleOrderFacts
     {
         public bool Known { get; set; } = true;
 
         public string[] Unfinished { get; set; } = [];
 
-        public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(string deviceKey, CancellationToken cancellationToken) =>
-            Task.FromResult(new RiotVehicleOrderObservation(
-                deviceKey, Known ? Unfinished.Length > 0 : null, Known ? Unfinished : [], clock.GetUtcNow()));
+        /// <summary>How many reads so far.</summary>
+        public int Reads { get; private set; }
+
+        /// <summary>Runs before a read, with that read's number (1-based): to land something between two reads.</summary>
+        public Func<int, Task>? BeforeRead { get; set; }
+
+        public async Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(string deviceKey, CancellationToken cancellationToken)
+        {
+            Reads++;
+            if (BeforeRead is { } before)
+            {
+                await before(Reads);
+            }
+            if (!Known)
+            {
+                return new RiotVehicleOrderObservation(deviceKey, null, [], fixture.Clock.GetUtcNow());
+            }
+            RiotUnfinishedOrderListing listing = await fixture.Riot.ListUnfinishedOrdersAsync(cancellationToken);
+            string[] ids =
+            [
+                .. listing.Orders
+                    .Where(order => order.ExecuteVehicleKey == deviceKey || order.AppointVehicleKey == deviceKey)
+                    .Select(order => order.OrderId),
+                .. Unfinished
+            ];
+            return new RiotVehicleOrderObservation(deviceKey, ids.Length > 0, ids, fixture.Clock.GetUtcNow());
+        }
     }
 
     private sealed class CredentialScope : IDisposable

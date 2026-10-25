@@ -5,6 +5,7 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Recovery;
 using ControlServer.Host.Runtime.Withdrawal;
 using ControlServer.Host.Transport;
@@ -313,6 +314,13 @@ public sealed class JourneyWithdrawalFieldOpsTests : IAsyncDisposable
         builder.Services.AddSingleton<JourneyMutationGate>();
         builder.Services.AddSingleton(new RecoveryGrantRegistry(TimeProvider.System));
         builder.Services.AddSingleton<IRiotVehicleOrderFacts>(new ListedOrders(unfinishedOrders));
+        // RIoT for the vehicle read and, were an order of this journey listed, its cancellation; these orders are none of its.
+        RecordingRiot riot = new(new JourneyRuntimeOptions(), new FixedTimeProvider(DateTimeOffset.UtcNow));
+        builder.Services.AddSingleton<IRiotVehicleFacts>(riot);
+        builder.Services.AddScoped<IRiotOrderCommandAuditStore>(services =>
+            new RiotOrderCommandAuditStore(services.GetRequiredService<ControlServerDbContext>()));
+        builder.Services.AddScoped(services => new RiotOrderCommandService(
+            riot, services.GetRequiredService<IRiotOrderCommandAuditStore>(), riot, TimeProvider.System));
         builder.Services.AddScoped(services => new OnboardJourneyPublisher(
             new WireToGateStore(services.GetRequiredService<ControlServerDbContext>()), new RecordingPeer(), TimeProvider.System));
         builder.Services.AddScoped<JourneyWithdrawalService>();
