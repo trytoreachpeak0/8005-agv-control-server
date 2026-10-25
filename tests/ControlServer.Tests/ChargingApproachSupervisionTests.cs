@@ -201,15 +201,24 @@ public sealed class ChargingApproachSupervisionTests
     /// <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 升级告警一次（事件 2261）。车可能还在动、可能已在桩上：不取消单、不放桩、不发急停或任何命令、
     /// 不建第二张单（<c>REQ-0287</c>）。车读回来、照常去桩：码清掉。
     /// </summary>
-    [Fact]
-    public async Task AVehicleLostOnTheWayIsNamedAlarmedOncePastTheWindowKeepsEverythingAndIsClearedWhenItIsBack()
+    [Theory]
+    [InlineData("read-fails")]
+    [InlineData("disconnected")]
+    public async Task AVehicleLostOnTheWayIsNamedAlarmedOncePastTheWindowKeepsEverythingAndIsClearedWhenItIsBack(string loss)
     {
         await using FleetFixture fleet = await FleetAsync();
         fleet.Riot.BatteryByVehicle[KeyA] = 20;
         JourneyRuntimeRow journey = await ChargingExecutionTests.CommittedAndSentAsync(fleet);
         (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
         fleet.Riot.BindOrder(journey.PickupUpperId);
-        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { Connected = false, CurrentStationId = 12 };
+        if (loss == "read-fails")
+        {
+            fleet.Riot.FailOn = KeyA;
+        }
+        else
+        {
+            fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { Connected = false, CurrentStationId = 12 };
+        }
 
         await RoundAsync(fleet);
         await RoundAsync(fleet);
@@ -233,6 +242,7 @@ public sealed class ChargingApproachSupervisionTests
         Assert.Empty(fleet.Riot.EmergencyCommands);
         Assert.Single(fleet.Riot.Creates);
 
+        fleet.Riot.FailOn = null;
         fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12 };
         await RoundAsync(fleet);
         Assert.Null((await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
@@ -268,6 +278,58 @@ public sealed class ChargingApproachSupervisionTests
         Assert.Null(await StationAsync(fleet, Near.StationId));
         Assert.Empty(await fleet.Context.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
         Assert.Single(fleet.Riot.Creates);
+    }
+
+    // ---- 会话因本服务端自己的在途单而未就绪 ---------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 真车载端在本服务端自己的单在途时整段未就绪（<c>RecoveryRequired</c>、<c>DEPARTURE_SAFETY_NOT_READY</c>，control-server#314）；合成车载端永远报安全，
+    /// 看不见这一格。两种点名都只看 RIoT：会话一直这样时，单没派出照样过窗口点名，车途中失联照样点名，桩照旧预占、什么命令也不发。
+    /// </summary>
+    [Fact]
+    public async Task BothNamingsGoAheadWhileTheSessionIsNotReadyBecauseOfOurOwnOrder()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await ChargingExecutionTests.CommittedAndSentAsync(fleet);
+        await DropSessionOnOwnOrderAsync(fleet);
+        fleet.Riot.QueueOrderUnbound(journey.PickupUpperId);
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.ChargingOrderUndispatchedAlarmAfter);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            ChargingExecutionReasons.OrderNotDispatched,
+            (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        fleet.Riot.BindOrder(journey.PickupUpperId);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { Connected = false, CurrentStationId = 12 };
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            ChargingExecutionReasons.VehicleObservationLost,
+            (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        Assert.Equal(
+            SessionReadiness.RecoveryRequired,
+            (await fleet.Context.SessionRecoveries.AsNoTracking().SingleAsync(row => row.AgvId == AgvA, Token)).Readiness);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Empty(fleet.Riot.OrderCommands);
+        Assert.Empty(fleet.Riot.EmergencyCommands);
+    }
+
+    /// <summary>真车载端开着本服务端的单时的会话（形状同 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>）。</summary>
+    private static async Task DropSessionOnOwnOrderAsync(FleetFixture fleet)
+    {
+        SessionRecoveryRow session = await fleet.Context.SessionRecoveries.SingleAsync(row => row.AgvId == AgvA, Token);
+        session.Readiness = SessionReadiness.RecoveryRequired;
+        session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        session.DepartureSafe = false;
+        session.SafetyReasonCodesJson = """["VEHICLE_NOT_READY"]""";
+        session.SafetyUnknownPresent = true;
+        session.UpdatedAt = fleet.Clock.GetUtcNowWithoutTick();
+        await fleet.Context.SaveChangesAsync(Token);
+        fleet.Context.ChangeTracker.Clear();
     }
 
     internal static ManualStationClearance ManualClearance(FleetFixture fleet) =>
