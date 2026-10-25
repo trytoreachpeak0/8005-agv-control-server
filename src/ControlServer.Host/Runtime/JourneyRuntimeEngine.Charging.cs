@@ -371,12 +371,52 @@ public sealed partial class JourneyRuntimeEngine
             return;
         }
 
-        if (await NameUndispatchedChargeOrderAsync(runtime, stop, cycle, order, now, cancellationToken).ConfigureAwait(false))
+        if (await NameUndispatchedChargeOrderAsync(runtime, stop, cycle, order, now, cancellationToken).ConfigureAwait(false) ||
+            await NameVehicleLostOnTheWayAsync(runtime, stop, now, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
 
         await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 去桩途中 RIoT 读不到这辆车、或报它离线（control-server#863）：写 <see cref="ChargingExecutionReasons.VehicleObservationLost"/>，持续超过
+    /// <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 升级告警一次（与到桩之后同一个 <see cref="NameChargingLossAsync"/>），答真。车读回来就清掉，答假。
+    /// </summary>
+    /// <remarks>
+    /// 车可能还在路上动、也可能已经停在桩上（<c>REQ-0287</c>：按车辆仍可能占桩处理）：不取消单、不放桩、不发停止或任何命令、不改派。这个码在人工清桩的
+    /// <see cref="ManualStationClearance.HeldCodes"/> 里，人在 RIoT 上取消单之后走取消那条路，再确认清桩。在此之前这一段不读车，失联整段无声。
+    /// </remarks>
+    private async Task<bool> NameVehicleLostOnTheWayAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        RiotVehicleObservation? vehicle;
+        try
+        {
+            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            vehicle = null;
+        }
+
+        if (vehicle is not { Connected: true })
+        {
+            await NameChargingLossAsync(runtime, stop, ChargingExecutionReasons.VehicleObservationLost, now, cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+
+        if (string.Equals(runtime.BlockReasonCode, ChargingExecutionReasons.VehicleObservationLost, StringComparison.Ordinal))
+        {
+            await ClearChargingCodeAsync(runtime, now, cancellationToken).ConfigureAwait(false);
+        }
+        return false;
     }
 
     /// <summary>
