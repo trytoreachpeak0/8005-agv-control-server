@@ -84,7 +84,13 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Equal(LogLevel.Information, dropped.Level);
         Assert.Contains(first.JourneyId, dropped.Message, StringComparison.Ordinal);
         Assert.Contains(second.DemandId, dropped.Message, StringComparison.Ordinal);
+        // 日志自己说出这单的去向：留在积压、下一轮重新分配（Coordinator12 10-25：生产日志看不出被跳过的需求后来补派没有）。
+        Assert.Contains("stays in the backlog", dropped.Message, StringComparison.Ordinal);
+        Assert.Contains("reassigned next round", dropped.Message, StringComparison.Ordinal);
+        Assert.Contains(DispatchReasonCodes.FinalAppendJourneyEnded, dropped.Message, StringComparison.Ordinal);
         Assert.Null(dropped.Error);
+        // 这一轮还没有人接走它，不该有「补派」那一条。
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2147);
 
         // 下一轮：车已经空下来，这条需求建一趟新旅程被接走。
         fixture.Riot.OnVehicleRead = null;
@@ -98,6 +104,14 @@ public sealed partial class MultiVehicleExecutionTests
         JourneyDemandRow taken = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
             .SingleAsync(row => row.DemandId == second.DemandId, token);
         Assert.NotEqual(first.JourneyId, taken.JourneyId);
+        // 补派留痕：同一个需求号、接走它的车、建的是新旅程，与上一轮的 2146 按需求号对得上。
+        EventRecordingLogger<Host.Runtime.JourneyRuntimeEngine>.Entry reassigned = Assert.Single(
+            fixture.EngineLog.Entries, entry => entry.EventId.Id == 2147);
+        Assert.Equal(LogLevel.Information, reassigned.Level);
+        Assert.Contains(second.DemandId, reassigned.Message, StringComparison.Ordinal);
+        Assert.Contains(FleetFixture.AgvIds[0], reassigned.Message, StringComparison.Ordinal);
+        Assert.Contains(taken.JourneyId, reassigned.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2146);
     }
 
     /// <summary>
@@ -131,6 +145,8 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.True(reads >= 3, $"the round read the vehicle {reads} time(s); the store-side moment needs a third");
         AssertNoRoundFault(fixture);
         Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2146);
+        // 补派那一条只给上一轮因旅程结束被放弃的需求，平常的受理不记。
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2147);
         JourneyDemandRow[] memberships = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking().ToArrayAsync(token);
         Assert.Equal([first.JourneyId, first.JourneyId], memberships.Select(row => row.JourneyId));
     }
