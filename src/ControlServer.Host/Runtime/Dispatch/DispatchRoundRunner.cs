@@ -138,7 +138,18 @@ public sealed class DispatchRoundRunner(
             LogLevel.Information,
             new EventId(2146, nameof(LogAppendJourneyEnded)),
             "Vehicle {AgvId}'s journey {JourneyId} ended before demand {DemandId} could be appended to it; the append " +
-            "was dropped for this round and the demand stays in the backlog ({ReasonCode}).");
+            "was dropped for this round, and the demand stays in the backlog to be reassigned next round ({ReasonCode}).");
+
+    /// <summary>
+    /// 上一轮因要追加的旅程已结束而被放弃的需求，这一轮被接走了（control-server#864）。与 2146 按需求号配对：
+    /// 生产 10-21～10-25 五次跳过，日志里看不出后来补派没有（Coordinator12 10-25）。
+    /// </summary>
+    private static readonly Action<ILogger, string, string, string, Exception?> LogDroppedAppendReassigned =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Information,
+            new EventId(2147, nameof(LogDroppedAppendReassigned)),
+            "Demand {DemandId}, whose append was dropped in an earlier round because the journey had ended, was " +
+            "reassigned this round: vehicle {AgvId} took it into journey {JourneyId}.");
 
     private static readonly Action<ILogger, string, int, int, long, string, Exception?> LogEnteredMandatoryCharge =
         LoggerMessage.Define<string, int, int, long, string>(
@@ -262,6 +273,11 @@ public sealed class DispatchRoundRunner(
             admissionPolicyDrifted)
         {
             ClaimsIntakeRefused = claimsIntakeRefused,
+            AppendsDroppedOnEndedJourney = backlogByDemandId.Values
+                .Where(row => row.AcceptedAt is null &&
+                              string.Equals(row.ReasonCode, DispatchReasonCodes.FinalAppendJourneyEnded, StringComparison.Ordinal))
+                .Select(row => row.DemandId)
+                .ToHashSet(StringComparer.Ordinal),
             ZoneParameters = zoneParameters,
             RedispatchGenerations = redispatchGenerations,
             // REQ-0366（control-server#827）：判据、受理前重判与轮末两个汇总都按这一个值判。
@@ -1075,7 +1091,9 @@ public sealed class DispatchRoundRunner(
         acceptedDemandIds.Add(demandId);
         claimedHere.Add(demandId);
         JourneyIntakeResult result = underWay
-            ? await AppendToJourneyAsync(selected, plan, intakeAt, FinalAdmissionAsync, cancellationToken)
+            ? await AppendToJourneyAsync(
+                    selected, plan, intakeAt, FinalAdmissionAsync, round.AppendsDroppedOnEndedJourney.Contains(demandId),
+                    cancellationToken)
                 .ConfigureAwait(false)
             : await intakeCoordinator.AcceptAndDispatchToPickupAsync(
                     selected.Candidate.Snapshot,
@@ -1141,6 +1159,11 @@ public sealed class DispatchRoundRunner(
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        if (round.AppendsDroppedOnEndedJourney.Contains(demandId))
+        {
+            LogDroppedAppendReassigned(logger, demandId, selected.Vehicle.AgvId, createdJourneyId, null);
+        }
+
         return CandidateDispatchOutcome.Taken;
     }
 
@@ -1169,6 +1192,7 @@ public sealed class DispatchRoundRunner(
         JourneyExecutionPlan plan,
         DateTimeOffset intakeAt,
         Func<CancellationToken, Task<bool>> finalAdmission,
+        bool reassigningADroppedAppend,
         CancellationToken cancellationToken)
     {
         EnRouteAppendPlacement placement = selected.Placement
@@ -1225,6 +1249,10 @@ public sealed class DispatchRoundRunner(
         {
             LogAppendJourneyEnded(
                 logger, selected.Vehicle.AgvId, runtime.JourneyId, demandId, DispatchReasonCodes.FinalAppendJourneyEnded, null);
+        }
+        else if (outcome == DemandIntakeOutcome.Accepted && reassigningADroppedAppend)
+        {
+            LogDroppedAppendReassigned(logger, demandId, selected.Vehicle.AgvId, runtime.JourneyId, null);
         }
 
         return new JourneyIntakeResult(outcome, null);
