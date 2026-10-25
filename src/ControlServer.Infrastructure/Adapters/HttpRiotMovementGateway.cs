@@ -969,7 +969,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             vehicleKey,
             movement.MapId,
             destination,
-            receipt);
+            receipt,
+            ExecuteVehicleBound: IsAssignedVehicleKey(order.ExecuteVehicleKey));
     }
 
     /// <summary>

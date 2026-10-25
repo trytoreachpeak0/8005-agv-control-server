@@ -73,6 +73,15 @@ public sealed partial class JourneyRuntimeEngine
             "purpose and the reservation of charger {StationId} are kept until it is, so no other vehicle can be allocated " +
             "that charger. Someone has to look at the vehicle (the manual release of a charger is control-server#406).");
 
+    private static readonly Action<ILogger, string, string, string, int, DateTimeOffset, Exception?> LogChargeOrderNotDispatched =
+        LoggerMessage.Define<string, string, string, int, DateTimeOffset>(
+            LogLevel.Warning,
+            new EventId(2284, nameof(LogChargeOrderNotDispatched)),
+            "CHARGING_ORDER_NOT_DISPATCHED: charge order {UpperId} (journey {JourneyId}, vehicle {VehicleKey}, charger {StationId}) " +
+            "has been QUEUEING in RIoT with no vehicle bound to run it since it was confirmed at {ConfirmedAt}. Nothing is " +
+            "cancelled, released or moved (REQ-0165, REQ-0169), and the charger stays this journey's. Look in RIoT why the order " +
+            "is not dispatched; to free the charger, cancel the order in RIoT, then confirm the charger clear (control-server#863).");
+
     private static readonly Action<ILogger, string, string, string, int, Exception?> LogChargingEnRoute =
         LoggerMessage.Define<string, string, string, int>(
             LogLevel.Information,
@@ -362,7 +371,64 @@ public sealed partial class JourneyRuntimeEngine
             return;
         }
 
+        if (await NameUndispatchedChargeOrderAsync(runtime, stop, cycle, order, now, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 已确认的充电单在 RIoT 一直排队、没有绑执行车（control-server#863）：从确认建单起超过
+    /// <c>JourneyRuntime:ChargingOrderUndispatchedAlarmAfter</c> 写 <see cref="ChargingExecutionReasons.OrderNotDispatched"/>、告警一次，答真
+    /// （这一轮不往下走：车没在跑这张单，没有交管等待可判）。没到窗口答假；单不再是「排队、未绑车」时清掉这个码、答假。
+    /// </summary>
+    /// <remarks>
+    /// 只点名：不取消单、不放桩、不动车。长期 <c>QUEUEING</c> 不凭停留时间推定失效（<c>REQ-0165</c>），原因未知时只告警转人工（<c>REQ-0168</c>；
+    /// 它点名的诊断接口不在调用白名单里），低电不授权取消排队单（<c>REQ-0169</c>）。人在 RIoT 上取消之后，取消那条路接手
+    /// （<see cref="OrderEndedWithoutArrivalReason"/>，不重建），桩由人工清桩放。「未绑车」只认网关读到的 <c>executeVehicleKey</c> 为空或 <c>--</c>
+    /// （<see cref="RiotOrderObservation.ExecuteVehicleBound"/> 为假）；读不出绑没绑的不算。窗口从周期落库的 <c>OrderConfirmedAt</c> 算，重启不重新计时。
+    /// </remarks>
+    private async Task<bool> NameUndispatchedChargeOrderAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        ChargingCycleRow cycle,
+        RiotOrderObservation order,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        string alarmKey = ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.OrderNotDispatched);
+        if (order is not { Kind: RiotOrderObservationKind.Active, OrderState: RiotOrderState.Queueing, ExecuteVehicleBound: false })
+        {
+            if (string.Equals(runtime.BlockReasonCode, ChargingExecutionReasons.OrderNotDispatched, StringComparison.Ordinal))
+            {
+                dispatchRound.Charging.Board.Unsay(alarmKey);
+                runtime.SetBlockReason(null, now);
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return false;
+        }
+
+        DateTimeOffset confirmedAt = cycle.OrderConfirmedAt ?? now;
+        if (now - confirmedAt < runtimeOptions.ChargingOrderUndispatchedAlarmAfter)
+        {
+            return false;
+        }
+
+        if (!string.Equals(runtime.BlockReasonCode, ChargingExecutionReasons.OrderNotDispatched, StringComparison.Ordinal))
+        {
+            runtime.SetBlockReason(ChargingExecutionReasons.OrderNotDispatched, now);
+            runtime.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        if (dispatchRound.Charging.Board.FirstTime(alarmKey))
+        {
+            LogChargeOrderNotDispatched(
+                logger, stop.UpperId, runtime.JourneyId, runtime.VehicleKey, stop.StationRiotId, confirmedAt, null);
+        }
+        return true;
     }
 
     /// <summary>

@@ -388,6 +388,8 @@ internal static class ChargingDashboardDescriptions
             [ChargingExecutionReasons.ReservationLostAtArrival] = "到现场确认车停的位置与桩的归属",
             [ChargingExecutionReasons.ArrivalNotProven] = "到现场看车停在哪里",
             [ChargingExecutionReasons.OrderNotFound] = "在 RIoT 上查这张充电单去了哪里、车在哪里",
+            [ChargingExecutionReasons.OrderNotDispatched] =
+                "在 RIoT 上看这张充电单为什么一直没派给车；要让出充电桩，先在 RIoT 上取消这张单，再由 R-11／R-13 名单里的人确认清桩",
             [ChargingExecutionReasons.DepartureNotProven] = "检查车载端连接与仓门",
             [ChargingExecutionReasons.DepartureRouteGraphUnavailable] =
                 "通常几秒内自行恢复，不用处理；持续不恢复时查路网页面的不可用原因与服务端到 RIoT 的连接",

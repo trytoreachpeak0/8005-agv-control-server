@@ -340,6 +340,10 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [ChargingExecutionReasons.OrderNotFound] =
                 "充电单已发出并确认，RIoT 现在却查不到这张单，车也没有停在充电桩上充电：服务端不重建、不发命令，预占和充电用途都保持，"
                 + "持续十分钟以上会告警一次。请在 RIoT 上查这张单去了哪里、车在哪里",
+            [ChargingExecutionReasons.OrderNotDispatched] =
+                "充电单 RIoT 已经收下，却一直在排队、没有派给任何车（超过 5 分钟，配置项 JourneyRuntime:ChargingOrderUndispatchedAlarmAfter）："
+                + "车没有去充电，充电桩却一直被这趟充电占着，别的低电车分不到。服务端不取消这张单、不放桩、不动车。请在 RIoT 上看这张单为什么没派出"
+                + "（车离线、电量太低、路线走不通等）；要把桩让出来，先在 RIoT 上取消这张单，再由 R-11／R-13 名单里的人做人工清桩确认。RIoT 派出之后这条自动消失",
             [ChargingExecutionReasons.RechargedOnHeldCharger] =
                 "这次充电已结束：车充满后一直停在桩上，电量又掉到强制充电线以下，服务端在同一个桩上给它开了下一次充电",
             [ChargingExecutionReasons.ChargerReleasedForRecharge] =
