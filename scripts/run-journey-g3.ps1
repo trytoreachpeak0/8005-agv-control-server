@@ -121,6 +121,10 @@ $scenarioAssertions = [ordered]@{
         'G3-02-13' = 'correctionOnlyBeforeDepartureAndHoldsTheVehicle'
     }
     'g3-load-cancellation' = [ordered]@{
+        # control-server#837 (protocol 6.0.0, the revised REQ-0211): a cancellation with a door open is refused and changes
+        # nothing; the server holds readings taken after the door closed before the operator presses.
+        'G3-02-20' = 'cancellationRefusedWithADoorNotProvenLocked'
+        'G3-02-29' = 'serverHoldsReadingsTakenAfterTheDoorClosed'
         'G3-02-21' = 'onboardOffersLoadCancellationDuringLoad'
         'G3-02-22' = 'cancellationAuthorizedExplicitly'
         'G3-02-23' = 'loadCancellationSequenceMatchesVector'

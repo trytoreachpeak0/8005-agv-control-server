@@ -49,6 +49,8 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Change.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealStation.psm1') -Force
+# Only for Close-L2RealEmptySlotForCancellation (section 5).
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealOnboard.psm1') -Force
 # Only for Add-G3VehicleReleasedForNextDemand (L2-DC-12); this scenario keeps its own readers.
 . (Join-Path $PSScriptRoot 'G3RecoveryCommon.ps1')
 
@@ -176,8 +178,12 @@ $assertions.Add(
 
 # --- 5. 操作员按取消 -------------------------------------------------------------------------------
 
-# 门此刻开着（最后一次重开之后），操作员决定不装了。取消执行器接手开着的门、不再打脉冲（onboard-hmi#78），
-# 所以先按取消、等服务端授权，再把空门带上；反过来先关门，车会把它当成又一次空关、锁着门等「重新开门」。
+# 门此刻开着（最后一次重开之后），操作员决定不装了。协议 6.0.0（修订后的 REQ-0211）起只有全部目标仓都空、门都锁闭、输出都复位
+# 才能取消，授权范围为空、不为取消开门：门开着时车载端不给「取消装货」（onboard-hmi#392），按出来服务端也拒（control-server#837）。
+# 所以先把空门带上——车锁着门等「重新开门」（CP-0019），正是可以取消的状态——等服务端拿到关门之后的快照，再按取消。
+# 5.x 的顺序（先按取消、授权之后再关门）在 v6 下按不出来。
+$readings = Close-L2RealEmptySlotForCancellation $Context $slotNo
+$journal.Note("Slot $slotNo reads $($readings.Shut); $($readings.Changes) change(s) since, $($readings.Snapshots) snapshot(s) after the last.")
 $offered = Wait-L2Condition -Description "the onboard offers $cancelButton with the factory recovery switch off" `
     -Journal $journal -Criterion 'onboard-cancel-offered' -TimeoutSeconds 60 `
     -Probe { [bool]$onboard.ButtonAvailable($cancelButton) } -Until { param($v) $v }
@@ -197,10 +203,7 @@ $assertions.Add(
         $null -ne $authorization -and [string]$authorization.decision -eq 'AUTHORIZED' -and
         @($authorization.slots).Count -eq 0),
     "$attemptId / LoadCancellationAuthorization AUTHORIZED []",
-    "$($request.Payload.slotOperationAttemptId) / $($request.Response) $(if ($authorization) { "$($authorization.decision) [$(@($authorization.slots) -join ',')]" })")
-
-$journal.Note("The operator shuts the empty slot $slotNo.")
-$null = $simulator.Command('Post', "slots/$slotNo/close-door", @{})
+    "$($request.Payload.slotOperationAttemptId) / $($request.Response) $(if ($authorization) { "$($authorization.decision) [$(@($authorization.slots) -join ',')]" }$(if ($authorization -and $authorization.problem) { " $($authorization.problem.reasonCode)" }))")
 
 # --- 6. 取消收敛：只判结果 -------------------------------------------------------------------------
 
