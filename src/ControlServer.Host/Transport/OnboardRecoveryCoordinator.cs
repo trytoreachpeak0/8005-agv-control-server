@@ -54,6 +54,14 @@ public sealed class OnboardRecoveryCoordinator(
             "fault declaration pending or applied (control-server#384).");
 
     private static readonly Action<ILogger, string, string, string, string, string, string, Exception?>
+        LogCancellationRefusedForSlots =
+            LoggerMessage.Define<string, string, string, string, string, string>(
+                LogLevel.Warning,
+                new EventId(8370, nameof(LogCancellationRefusedForSlots)),
+                "Load cancellation {CancellationId} for demand {DemandId} refused with {ReasonCode}: attempt " +
+                "{SlotOperationAttemptId}, target slots {TargetSlots}, readings {Readings} (control-server#837).");
+
+    private static readonly Action<ILogger, string, string, string, string, string, string, Exception?>
         LogRemainingBasketsSkipDecided =
             LoggerMessage.Define<string, string, string, string, string, string>(
                 LogLevel.Information,
@@ -1402,12 +1410,48 @@ public sealed class OnboardRecoveryCoordinator(
         // account or by this server's readings, and a load with a basket in it is never cancelled (the revised REQ-0211).
         bool skipHeld = !declared && await RemainingBasketsSkips
             .HoldsCancellationAsync(dbContext, demandId, attemptId!, cancellationToken).ConfigureAwait(false);
-        bool authorized = !declared && !skipHeld &&
-                          demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&
-                          (operation is null || operation.DemandId == demandId &&
-                           operation.OperationType == SlotOperationType.Load &&
-                           operation.Status != StationOperationStatus.RecoveryRequired);
+        bool allowedInState = !declared && !skipHeld &&
+                              demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&
+                              (operation is null || operation.DemandId == demandId &&
+                               operation.OperationType == SlotOperationType.Load &&
+                               operation.Status != StationOperationStatus.RecoveryRequired);
         int[] slots = operation is null ? [] : ParseSlots(operation.TargetSlotsJson);
+        // The second line of defence of the revised REQ-0211 (control-server#837, the onboard's own being onboard-hmi#392): once
+        // loading has started, a cancellation is authorized only with every target slot EMPTY, its door proven LOCKED and its
+        // output RESET, by this server's own readings (SessionSlotReadings, the read the remaining-baskets skip uses). Until then
+        // nothing here looked at the slots, and on 2026-10-21 agv03 @160 a cancellation was authorized with a basket in slot 5;
+        // the vehicle reported UNKNOWN and the journey was blocked with no way out.
+        //
+        // A cancellation already authorized and on file is answered from the record, the readings not judged again: its
+        // authorization went astray and the vehicle resubmits it under a new messageId (real-onboard-cancellation-authorization-
+        // lost). After an authorization the vehicle does no slot IO for the cancellation, so a change since then says nothing
+        // about whether it should have been given; UpsertSimpleWorkflowAsync still refuses one whose content differs.
+        string agvId = RequiredString(root, "agvId");
+        bool onFile = allowedInState && await dbContext.RecoveryWorkflows.AsNoTracking().AnyAsync(
+            row => row.WorkflowId == cancellationId && row.AgvId == agvId && row.WorkflowType == "LOAD_CANCELLATION" &&
+                   row.SlotOperationAttemptId == attemptId,
+            cancellationToken).ConfigureAwait(false);
+        object? slotRefusal = null;
+        if (allowedInState && !onFile)
+        {
+            IReadOnlyDictionary<int, RemainingBasketsSkipRule.SlotReading>? readings = operation is null
+                ? null
+                : await SessionSlotReadings.ReadAsync(dbContext, agvId, slots, operation.CreatedAt, cancellationToken)
+                    .ConfigureAwait(false);
+            if (LoadCancellationSlotRule.Refusal(slots, readings) is { } refusal)
+            {
+                slotRefusal = Problem(refusal.ReasonCode, refusal.FieldPath!, refusal.DisplayMessage!);
+                string readingsText = readings is null
+                    ? "none or stale"
+                    : string.Join(' ', slots.Select(slot => readings.TryGetValue(slot, out RemainingBasketsSkipRule.SlotReading? reading)
+                        ? $"{slot}={reading.Physical}/{reading.Lock}/{reading.Output}"
+                        : $"{slot}=none"));
+                LogCancellationRefusedForSlots(
+                    logger ?? (ILogger)NullLogger.Instance, cancellationId, demandId, refusal.ReasonCode, attemptId!,
+                    string.Join(',', slots), readingsText, null);
+            }
+        }
+        bool authorized = allowedInState && slotRefusal is null;
         if (declared)
         {
             LogCancellationRefusedForDeclaration(
@@ -1436,7 +1480,7 @@ public sealed class OnboardRecoveryCoordinator(
                 : skipHeld ? Problem(
                     ServerReasonCodes.LoadCancellationBasketLoaded, "payload.slotOperationAttemptId",
                     RemainingBasketsSkipHeldCancellationMessage)
-                : RefusedCancellationProblem(
+                : slotRefusal ?? RefusedCancellationProblem(
                     demand, "payload.demandId", "Load cancellation is not safe in the current state.")
         });
     }

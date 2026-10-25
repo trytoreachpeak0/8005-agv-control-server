@@ -91,7 +91,13 @@ public sealed class LoadCancellationDuringLoadTests
     public async Task UnprovenReadingsAreRejectedAsSlotStateUnknownAndASnapshotIsAskedFor(string shape)
     {
         await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
-        if (shape == "stale")
+        if (shape == "none")
+        {
+            // The rig's handshake left an all-empty snapshot on file, taken at the moment the load began.
+            await rig.Fixture.Context.ProtocolInbox.Where(row => row.MessageType == "SafetyStateSnapshot")
+                .ExecuteDeleteAsync(Token);
+        }
+        else if (shape == "stale")
         {
             await rig.SendSnapshotAsync(Occupied());
             await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);

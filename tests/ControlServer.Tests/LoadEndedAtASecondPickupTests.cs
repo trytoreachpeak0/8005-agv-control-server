@@ -198,6 +198,8 @@ public sealed class LoadEndedAtASecondPickupTests
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
         StationOperationRow load = await SecondLoadAsync(fixture);
         int[] slots = JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson) ?? [];
+        // Nothing loaded and every door shut since the second load began (control-server#837).
+        await TestSlotReadings.SeedProvenEmptyAsync(fixture.Context, fixture.Options.AgvId, fixture.Clock.GetUtcNow());
         await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
         {
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(

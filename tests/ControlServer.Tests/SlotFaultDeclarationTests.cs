@@ -1877,16 +1877,23 @@ public sealed class SlotFaultDeclarationTests
             return Assert.Single(await DeclarationsAsync());
         }
 
-        public Task<string> RequestLoadCancellationAsync() => Send(
-            "LoadCancellationStartRequested",
-            new
-            {
-                cancellationId = "c0000000-0000-4000-8000-000000000384",
-                demandId = DemandId,
-                slotOperationAttemptId = AttemptId,
-                @operator = new { operatorId = "operator-384", verificationMethod = "BADGE", verifiedAt = Now },
-                reason = "Operator cancels the load at the station."
-            });
+        public async Task<string> RequestLoadCancellationAsync()
+        {
+            // The operator has shut the open door empty first, as protocol 6.0.0 has it, and the vehicle's readings since show
+            // every target slot empty, locked and reset (control-server#837).
+            await TestSlotReadings.SeedProvenEmptyAsync(Context, AgvId, Clock.GetUtcNow());
+            Context.ChangeTracker.Clear();
+            return await Send(
+                "LoadCancellationStartRequested",
+                new
+                {
+                    cancellationId = "c0000000-0000-4000-8000-000000000384",
+                    demandId = DemandId,
+                    slotOperationAttemptId = AttemptId,
+                    @operator = new { operatorId = "operator-384", verificationMethod = "BADGE", verifiedAt = Now },
+                    reason = "Operator cancels the load at the station."
+                });
+        }
 
         public Task<string> SendResultAsync(
             string declarationId, string attemptId, string outcome, object? problem = null, string? messageId = null) => Send(

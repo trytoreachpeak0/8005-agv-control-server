@@ -831,9 +831,21 @@ public sealed partial class OnboardMessageProcessor(
                     return AnswerWithReadiness(
                         recordResult, recordDecision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
                 }
+            case "LoadCancellationStartRequested":
+                {
+                    string authorization = await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
+                        .ConfigureAwait(false);
+                    // Refused for want of current readings (control-server#837): ask for a snapshot after this answer, so the
+                    // operator's next press is judged on readings that are fresh. The answer is answered from the inbox on a resend,
+                    // which does not reach here, so a replay never asks twice.
+                    if (RefusedForUnknownSlots(authorization))
+                    {
+                        state.SafetySnapshotRequestDue = true;
+                    }
+                    return authorization;
+                }
             case "ExceptionRecoverySessionRequested":
             case "RecoveryActionSubmitted":
-            case "LoadCancellationStartRequested":
             case "LoadCompensationRequested":
             case "LoadCorrectionRequested":
                 return await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
@@ -1007,7 +1019,8 @@ public sealed partial class OnboardMessageProcessor(
                     }
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
+                    if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false) ||
+                        await AffectsALoadInProgressAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
                     {
                         state.SafetySnapshotRequestDue = true;
                     }
@@ -1541,6 +1554,47 @@ public sealed partial class OnboardMessageProcessor(
         new(overdue.Select(alarm => alarm.AlarmId
                                     ?? $"{alarm.PhysicalSlotNumber}@{alarm.RaisedAt.ToUnixTimeMilliseconds()}"),
             StringComparer.Ordinal);
+
+    /// <summary>
+    /// The change names a target slot of a load this vehicle is in the middle of (control-server#837): a door opened or shut, a
+    /// basket put in. A cancellation is judged on this server's readings, and only a snapshot carries them, so one is asked for
+    /// after each such change -- the operator who has just shut an empty door and presses cancel is then judged on readings
+    /// taken after it, not refused for stale ones. One per change, as for an overdue slot: the onboard leaves a request unanswered
+    /// while it still holds an unacknowledged change, so only the request after the last change of a burst is answered.
+    /// </summary>
+    private async Task<bool> AffectsALoadInProgressAsync(
+        string agvId, JsonElement payload, CancellationToken cancellationToken)
+    {
+        if (!payload.TryGetProperty("affectedSlots", out JsonElement affected) ||
+            affected.ValueKind != JsonValueKind.Array ||
+            affected.GetArrayLength() == 0)
+        {
+            return false;
+        }
+        string[] targets = await (
+                from runtime in dbContext.JourneyRuntimes.AsNoTracking()
+                where runtime.AgvId == agvId && runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult
+                join membership in dbContext.Set<JourneyDemandRow>().AsNoTracking()
+                    on runtime.JourneyId equals membership.JourneyId
+                where membership.RemovedAt == null
+                join operation in dbContext.StationOperations.AsNoTracking()
+                    on membership.LoadSlotOperationAttemptId equals operation.SlotOperationAttemptId
+                where operation.OperationType == SlotOperationType.Load && operation.Status == StationOperationStatus.Prepared
+                select operation.TargetSlotsJson)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        HashSet<int> targetSlots = [.. targets.SelectMany(json => JsonSerializer.Deserialize<int[]>(json) ?? [])];
+        return affected.EnumerateArray()
+            .Any(slot => slot.ValueKind == JsonValueKind.Number && targetSlots.Contains(slot.GetInt32()));
+    }
+
+    private static bool RefusedForUnknownSlots(string authorization)
+    {
+        using JsonDocument document = JsonDocument.Parse(authorization);
+        JsonElement payload = document.RootElement.GetProperty("payload");
+        return payload.GetProperty("decision").GetString() == "REJECTED" &&
+               payload.GetProperty("problem").ValueKind == JsonValueKind.Object &&
+               payload.GetProperty("problem").GetProperty("reasonCode").GetString() == ServerReasonCodes.SlotStateUnknown;
+    }
 
     private async Task<bool> AffectsAnOverdueSlotAsync(
         string agvId, JsonElement payload, CancellationToken cancellationToken)

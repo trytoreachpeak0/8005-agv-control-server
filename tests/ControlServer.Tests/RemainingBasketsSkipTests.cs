@@ -664,9 +664,12 @@ public sealed class RemainingBasketsSkipTests
         string line = rig.SkipRequest(SkipRequestId, [1, 2], messageId: "83000000-0000-4000-8000-0000000000b1");
         Assert.Equal(1, SnapshotRequests(await rig.SendAsync(line)));
 
+        // A change of a target slot during the load asks for its own snapshot (control-server#837); the skip's re-ask is what is
+        // spaced, so the retransmit within the interval asks for none.
         string withinInterval = await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);
         string retransmitWithin = await rig.SendAsync(line);
-        Assert.Equal(0, SnapshotRequests(withinInterval) + SnapshotRequests(retransmitWithin));
+        Assert.Equal(1, SnapshotRequests(withinInterval));
+        Assert.Equal(0, SnapshotRequests(retransmitWithin));
 
         rig.Fixture.Clock.Advance(OnboardMessageProcessor.SafetySnapshotReaskInterval + TimeSpan.FromSeconds(1));
         string retransmitAfter = await rig.SendAsync(line);
@@ -676,7 +679,8 @@ public sealed class RemainingBasketsSkipTests
         await rig.SendSnapshotAsync(Occupied(1, 2));
         Assert.Equal("AUTHORIZED", rig.SingleSkipResult().GetProperty("outcome").GetString());
         rig.Fixture.Clock.Advance(OnboardMessageProcessor.SafetySnapshotReaskInterval + TimeSpan.FromSeconds(1));
-        Assert.Equal(0, SnapshotRequests(await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8)));
+        Assert.Equal(0, SnapshotRequests(await rig.SendAsync(line)));
+        Assert.Equal(0, SnapshotRequests(await rig.SendSafetyChangedAsync(5)));
     }
 
     /// <summary>

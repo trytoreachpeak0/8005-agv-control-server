@@ -494,6 +494,8 @@ public sealed partial class RecoveryStateMachineG2Tests
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await SeedLoadAwaitingResultAsync(context, waitStartedAt ?? Now.AddMinutes(-1));
+        // The operator presses cancel with nothing loaded and every door shut (control-server#837).
+        await TestSlotReadings.SeedSnapshotAsync(context, AgvId, sessionGeneration: 3, receivedAt: Now);
         // A five-minute station wait, as DeadlineAwareProcessor has it, so a determinate failure can be judged against it.
         OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
             context,
