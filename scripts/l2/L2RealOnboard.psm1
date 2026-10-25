@@ -384,37 +384,7 @@ function Format-L2RealConnections([object]$Traffic) {
             }) -join '; ')
 }
 
-<#
-The operator shuts an open, empty slot before cancelling, as protocol 6.0.0 has it (the revised REQ-0211): once loading has
-started a cancellation is authorized only with every target slot empty, its door locked and its output reset, by the
-server's own readings (control-server#837). Waits until the simulator reads the slot shut, empty, locked and reset, and
-then until the server holds a SafetyStateSnapshot received after the last SafetyStateChanged the closing produced -- the
-one it asks for after each change of a load's target slot. Returns what it saw, for a criterion: Shut (the reading),
-Changes (changes received since the door was shut) and Snapshots (snapshots received after the last of them).
-#>
-function Close-L2RealEmptySlotForCancellation([object]$Context, [int]$SlotNo, [int]$TimeoutSeconds = 30) {
-    $journal = $Context.Journal
-    $connection = $Context.Connection
-    $simulator = $Context.Simulator
-    $closedAt = [DateTimeOffset]::UtcNow
-    $journal.Note("The operator shuts the empty slot $SlotNo before cancelling.")
-    $null = $simulator.Command('Post', "slots/$SlotNo/close-door", @{})
-    $shut = Wait-L2RealOrLast -Description "slot $SlotNo reads shut, empty, locked and reset" -Journal $journal `
-        -Criterion 'empty-slot-shut' -TimeoutSeconds $TimeoutSeconds `
-        -Probe { Get-L2RealSlotReading $simulator $SlotNo }.GetNewClosure() -Until { param($v) $v -eq 'CLOSED/EMPTY/1/0' }
-    $probe = {
-        $changes = @((Get-L2RealInbound $connection 'SafetyStateChanged') | Where-Object { $_.At -gt $closedAt })
-        $last = if ($changes.Count -ge 1) { $changes[-1].At } else { $null }
-        $snapshots = @((Get-L2RealInbound $connection 'SafetyStateSnapshot') | Where-Object { $null -ne $last -and $_.At -gt $last })
-        [pscustomobject]@{ Shut = $shut; Changes = $changes.Count; Snapshots = $snapshots.Count }
-    }.GetNewClosure()
-    return Wait-L2RealOrLast -Description 'the server holds a snapshot taken after the last change of the door closing' `
-        -Journal $journal -Criterion 'snapshot-after-close' -TimeoutSeconds $TimeoutSeconds `
-        -Probe $probe -Until { param($v) $v.Changes -ge 1 -and $v.Snapshots -ge 1 }
-}
-
 Export-ModuleMember -Function @(
-    'Close-L2RealEmptySlotForCancellation',
     'Test-L2RealPresent', 'ConvertTo-L2RealInstant', 'Get-L2RealScalar', 'Get-L2RealCount',
     'Get-L2RealInbound', 'Get-L2RealOutbound', 'Get-L2RealProgress', 'Get-L2RealSession', 'Format-L2RealSession',
     'Get-L2RealSlotReading', 'Format-L2RealSlots', 'Add-L2RealNotReached', 'Wait-L2RealOrLast',
