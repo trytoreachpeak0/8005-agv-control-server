@@ -700,6 +700,7 @@ public sealed class RemainingBasketsSkipTests
 
     /// <summary>
     /// 空报的 <c>ALL_EMPTY</c> 只在服务端读数证明全部目标仓空、锁闭、复位而且读数新鲜时才算对上：读数过期、有仓有货、有门未锁闭，都转人工恢复。
+    /// 这些读数是授权之后、结果之前到的：授权本身要求当时的读数证明全空（control-server#837），所以只有授权之后变了的读数走得到这里。
     /// </summary>
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-02")]
@@ -724,13 +725,16 @@ public sealed class RemainingBasketsSkipTests
                 readings[2] = readings[2] with { Output = "ACTIVE" };
                 break;
         }
-        await rig.SendSnapshotAsync(readings);
-        if (shape == "stale")
+        await rig.SendSnapshotAsync(Occupied());
+
+        RecoveryWorkflowState state = await rig.CancelAndReportAllEmptyAsync(perSlot: false, afterAuthorization: async () =>
         {
             await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);
-        }
-
-        RecoveryWorkflowState state = await rig.CancelAndReportAllEmptyAsync(perSlot: false);
+            if (shape != "stale")
+            {
+                await rig.SendSnapshotAsync(readings);
+            }
+        });
 
         Assert.Equal(RecoveryWorkflowState.RecoveryRequired, state);
     }
@@ -1147,7 +1151,7 @@ public sealed class RemainingBasketsSkipTests
         /// 装货途中按取消：服务端授权（范围为空），车报 <c>ALL_EMPTY</c>——<paramref name="perSlot"/> 时逐仓报全部目标仓，否则 <c>slotResults</c> 为空。
         /// 返回取消工作流对账后的状态。
         /// </summary>
-        public async Task<RecoveryWorkflowState> CancelAndReportAllEmptyAsync(bool perSlot)
+        public async Task<RecoveryWorkflowState> CancelAndReportAllEmptyAsync(bool perSlot, Func<Task>? afterAuthorization = null)
         {
             const string cancellationId = "83000000-0000-4000-8000-0000000000c9";
             string answer = await SendAsync(Envelope(Guid.NewGuid().ToString("D"), "LoadCancellationStartRequested", new
@@ -1163,6 +1167,10 @@ public sealed class RemainingBasketsSkipTests
                 JsonElement payload = authorization.RootElement.GetProperty("payload");
                 Assert.Equal("AUTHORIZED", payload.GetProperty("decision").GetString());
                 Assert.Empty(payload.GetProperty("slots").EnumerateArray());
+            }
+            if (afterAuthorization is not null)
+            {
+                await afterAuthorization();
             }
             object[] slotResults = perSlot
                 ? [.. TargetSlots.Order().Select(slot => SlotResult(slot, "COMPLETED", "EMPTY", []))]
