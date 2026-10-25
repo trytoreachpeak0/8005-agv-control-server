@@ -115,7 +115,7 @@ public sealed record DispatchRoundFacts(
     /// <see cref="Catalog"/>, read before the round started, and intake only found the demand gone on its re-read
     /// half way through. That rule clears the block a round later, so subtracting this outcome too would not lose
     /// the clearing — it would delay it, while an operator looks at an alarm about a demand that is already gone.
-    /// The other three refusals say nothing about the block either way.
+    /// The other refusals say nothing about the block either way.
     /// </para>
     /// <para>
     /// A grow-while-the-round-runs set like <see cref="AcceptedDemandIds"/>, and sound for the same reason: the
