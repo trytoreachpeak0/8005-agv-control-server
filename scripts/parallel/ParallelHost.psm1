@@ -810,6 +810,8 @@ function Get-ParallelJourneyDispatchState {
     }
 }
 
+function Read-ParallelRiotGateFacts { [CmdletBinding()] param($State, [string] $Direction, $Connection, [scriptblock] $Get) throw 'NOT_IMPLEMENTED (workspace#68)' }
+
 function Invoke-ParallelDispatchGateChange {
     <#
         .SYNOPSIS
@@ -1505,7 +1507,7 @@ function Invoke-ParallelFakeMesIngestSeed {
 Export-ModuleMember -Function @('Get-MvpFingerprint', 'Get-ParallelCutoverInstallState', 'Get-ParallelMvpRuntimeEvidence', 'Select-ParallelMvpProcessPath', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc', 'Get-ParallelProcessStartTimeUtc',
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
     'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled', 'Set-ParallelInstanceConfigurationFlag',
-    'Get-ParallelJourneyDispatchState', 'Invoke-ParallelDispatchGateChange',
+    'Get-ParallelJourneyDispatchState', 'Read-ParallelRiotGateFacts', 'Invoke-ParallelDispatchGateChange',
     'Write-ParallelOnboardSafetyCredentialForUpgrade', 'Invoke-ParallelProductUpgrade', 'Test-ParallelProductRollbackFailed', 'Test-ParallelInstalledRecordRestorable', 'Format-ParallelFailedInstallState',
     'Invoke-ParallelInstanceConfigurationStep', 'Invoke-ParallelJourneyRuntimeRelease',
     'Get-ParallelFakeMesIngestTaskAction', 'Register-ParallelFakeMesIngestTask', 'Get-ParallelFakeMesIngestTaskReport',

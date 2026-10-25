@@ -4316,6 +4316,10 @@ function ConvertTo-ParallelGateDirection {
     throw "GATE_STATE_INVALID: -State is 'Closed' or 'Open', exactly; '$State' is neither. Nothing was stopped or changed."
 }
 
+function Get-ParallelRiotVehicleMotionReason { [CmdletBinding()] param([string] $VehicleKey, $Riot) throw 'NOT_IMPLEMENTED (workspace#68)' }
+function Get-ParallelRiotOrderEndReason { [CmdletBinding()] param($Intent, $Riot) throw 'NOT_IMPLEMENTED (workspace#68)' }
+function Resolve-ParallelRiotGateConnection { [CmdletBinding()] param($BaseConfiguration, $Configuration, [string[]] $ServiceEnvironment, [scriptblock] $MachineVariable) throw 'NOT_IMPLEMENTED (workspace#68)' }
+
 function Get-ParallelDispatchGateRefusal {
     <#
         .SYNOPSIS
@@ -4745,4 +4749,7 @@ Export-ModuleMember -Function @(
     'ConvertTo-ParallelRecoveryJourneyArgument'
     'ConvertFrom-ParallelRecoveryJourneyArgument'
     'Get-ParallelRecoveryJourneyNotInFlight'
+    'Get-ParallelRiotVehicleMotionReason'
+    'Get-ParallelRiotOrderEndReason'
+    'Resolve-ParallelRiotGateConnection'
 )

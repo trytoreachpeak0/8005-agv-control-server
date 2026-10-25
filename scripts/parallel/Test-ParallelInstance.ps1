@@ -3157,6 +3157,171 @@ Write-Result -Ok ($got.Count -eq 1 -and $got[0] -ceq 'journey:done|g1' -and @(Ge
 Write-Result -Ok ($gateScriptText.Contains('if ($notInFlight.Count -gt 0) { Write-Step "WhatIf: named but not in flight (nothing to waive): $($notInFlight -join '', '')" }')) `
     -Name 'Set-ParallelDispatchGateLocal.ps1 (workspace#61, review L2): the dry run names the named journeys not in flight' -Detail 'pinned text missing'
 
+# --- 8005-workspace#68: closing judged vehicle by vehicle, opening order by order, against RIoT read now. A vehicle
+# stands still when RIoT lists no non-final order on it and its execution facts are the STOPPED set of
+# HttpRiotMovementGateway.Safety() (Get-ParallelRiotVehicleMotionReason); a CONFIRMED order intent whose RIoT order reads
+# SUCCESS, FAILED or CANCELED is not one that may be running. The shapes are the field's of 2026-10-21 (control-server#797
+# design, section 2, rings 5-7): a vehicle on its charger with its charge order long ended, and a pickup order ended at 11:23
+# on a journey that was not Completed.
+$agv03Key = 'BROKERX-7daca4ee91da498d8026c68b7b941127'
+$agv03 = '老厂前线新多仓位3'
+function New-RiotVehicle {
+    <#
+        getVehicleInfo/{deviceKey} as the real RIoT answers it (bare, no envelope). The defaults are agv03 on charger 211 at
+        2026-10-11 18:52 (evidence/field/20261011-W2-prep6-two-car/16-riot-3cars-before-stack.txt: sysState=CHARGING,
+        MODE_AUTO, MT_FINISHED, speed 0, procState IDLE, breakSwitchState MOVABLE, LOCATION_STATE_RUNNING, emergencyState OK);
+        the four that file does not show (controlState, processingOrder, enable, integrationLevel) are the STOPPED values.
+    #>
+    param([string] $Key = $agv03Key, [string] $Movement = 'MT_FINISHED', [string] $Mode = 'MODE_AUTO', $Speed = 0, [string] $Proc = 'IDLE',
+        $Processing = $false, $Enable = $true, [string] $Integration = 'ON_LINE', [string] $Emergency = 'OK', [string] $Brake = 'MOVABLE',
+        [string] $Control = 'CONTROL_STATE_OK', [string] $Location = 'LOCATION_STATE_RUNNING')
+    return [ordered]@{
+        vehicle = [ordered]@{ movementState = $Movement; controlState = $Control; emergencyState = $Emergency; breakSwitchState = $Brake
+            locationState = $Location; speed = $Speed; mode = $Mode }
+        vehicleTaskInfo = [ordered]@{ key = $Key; procState = $Proc; processingOrder = $Processing; enable = $Enable; integrationLevel = $Integration }
+    }
+}
+function New-RiotOrder {
+    param([string] $UpperId, [string] $OrderId, [int] $State, [string] $Appoint = $null, [string] $Execute = '--', [long] $Id = 1)
+    return [ordered]@{ id = $Id; orderId = $OrderId; upperId = $UpperId; orderState = $State; appointVehicleKey = $Appoint; executeVehicleKey = $Execute }
+}
+function New-RiotFacts {
+    <#
+        What Read-ParallelRiotGateFacts adds to the state as Riot: Vehicles (deviceKey -> @{ Vehicle } or, for a string,
+        @{ Error }), NonFinalOrders (@{ Records } or @{ Error }), Orders (upperId -> @{ Record }, $null when RIoT has none,
+        or for a string @{ Error }).
+    #>
+    param([hashtable] $Vehicles = @{}, [object[]] $NonFinal = @(), [hashtable] $Orders = @{}, [string] $ListingError)
+    $v = @{}; foreach ($k in $Vehicles.Keys) { $v[$k] = $Vehicles[$k] -is [string] ? @{ Error = $Vehicles[$k] } : @{ Vehicle = $Vehicles[$k] } }
+    $o = @{}; foreach ($k in $Orders.Keys) { $o[$k] = $Orders[$k] -is [string] ? @{ Error = $Orders[$k] } : @{ Record = $Orders[$k] } }
+    return [ordered]@{ Vehicles = $v; NonFinalOrders = ($ListingError ? @{ Error = $ListingError } : @{ Records = @($NonFinal) }); Orders = $o }
+}
+$chargeId = 'journey:charge-b6dd053c-1536-4352-851d-13fcf073adf4|g1'
+$chargeUpper = 'W2G-CHARGE-b6dd053c-1536-4352-851d-13fcf073adf4-1'
+$chargeOrder = 'order-2109213792419315712'
+function New-ChargingState {
+    <#
+        agv03 on its charger: the charging journey does not end until the battery reads full, so it stays
+        AwaitingPickupArrival with its charge order CONFIRMED (JourneyRuntimeEngine.ChargingCycle.cs). -Riot is what RIoT said,
+        -Others adds journeys, -Intents more intents, -Faults the VehicleFaultStates rows in effect, -NoFaults leaves that read out.
+    #>
+    param($Riot, [object[]] $Others = @(), [object[]] $Intents = @(), [object[]] $Faults = @(), [switch] $NoFaults)
+    $journey = [ordered]@{ JourneyId = $chargeId; Stage = 'AwaitingPickupArrival'; AgvId = $agv03; VehicleKey = $agv03Key; PickupUpperId = $chargeUpper
+        GateUpperId = $null; CreatedAt = '2026-10-21 06:10:00+08:00' }
+    $state = New-GateState -Journeys (@($journey) + @($Others)) -Intents (@((New-GateIntent $chargeUpper -Status CONFIRMED -Attempts 1L -AttemptId a1 -OrderId $chargeOrder `
+                    -VehicleKey $agv03Key -CreatedAt '2026-10-21 06:10:01+08:00')) + @($Intents))
+    if (-not $NoFaults) { $state['VehicleFaults'] = @($Faults) }
+    if ($null -ne $Riot) { $state['Riot'] = $Riot }
+    return $state
+}
+$restFacts = { param([hashtable] $Vehicle = @{}, [object[]] $NonFinal = @(), [hashtable] $Orders = @{})
+    $v = @{ $agv03Key = (New-RiotVehicle @Vehicle) }
+    New-RiotFacts -Vehicles $v -NonFinal $NonFinal -Orders $Orders
+}
+# agv02 under way on a pickup, for the cases with two vehicles.
+$agv02Journey = New-GateJourney j-agv02 -Stage AwaitingPickupArrival -Pickup q1 -CreatedAt '2026-10-21 07:00:00+08:00'
+$twoVehicles = { param([hashtable] $Agv03 = @{}, [hashtable] $Agv02 = @{})
+    New-RiotFacts -Vehicles @{ $agv03Key = (New-RiotVehicle @Agv03); $rjKey = (New-RiotVehicle -Key $rjKey @Agv02) }
+}
+$closeCases = @(
+    @{ Name = 'agv03 on its charger, the charge order ended long ago, standing still'; State = (New-ChargingState -Riot (& $restFacts)); Expect = $null }
+    @{ Name = 'a vehicle at rest whose MT_NA reads with MODE_AUTO and the brake engaged (control-server#639)'; State = (New-ChargingState -Riot (& $restFacts @{ Movement = 'MT_NA' })); Expect = $null }
+    @{ Name = 'a non-final order of another vehicle in the listing'; State = (New-ChargingState -Riot (& $restFacts -NonFinal @((New-RiotOrder u9 o9 3 -Appoint $otherVehicle -Execute $otherVehicle)))); Expect = $null }
+    @{ Name = 'a fault row of the vehicle at Level None'; State = (New-ChargingState -Riot (& $restFacts) -Faults @((& $fault $agv03 None))); Expect = $null }
+    @{ Name = 'a non-final order appointed to the vehicle'; State = (New-ChargingState -Riot (& $restFacts -NonFinal @((New-RiotOrder u9 o9 1 -Appoint $agv03Key)))); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_NONFINAL_ORDER_PRESENT', $agv03, $chargeId) }
+    @{ Name = 'a non-final order executed by the vehicle (appointed to none)'; State = (New-ChargingState -Riot (& $restFacts -NonFinal @((New-RiotOrder u9 o9 3 -Execute $agv03Key)))); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_NONFINAL_ORDER_PRESENT') }
+    @{ Name = 'a speed that is not 0'; State = (New-ChargingState -Riot (& $restFacts @{ Speed = 0.31 })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_MOTION_ACTIVE') }
+    @{ Name = 'MT_RUNNING at speed 0'; State = (New-ChargingState -Riot (& $restFacts @{ Movement = 'MT_RUNNING' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_MOTION_ACTIVE') }
+    @{ Name = 'MODE_MANUAL'; State = (New-ChargingState -Riot (& $restFacts @{ Mode = 'MODE_MANUAL' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_MODE_NOT_AUTO') }
+    @{ Name = 'MT_NA with the brake released'; State = (New-ChargingState -Riot (& $restFacts @{ Movement = 'MT_NA'; Brake = 'UNMOVABLE' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_BRAKE_NOT_MOVABLE', 'RIOT_MOVEMENT_NOT_FINISHED') }
+    @{ Name = 'MT_PAUSED (paused, not finished)'; State = (New-ChargingState -Riot (& $restFacts @{ Movement = 'MT_PAUSED' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_MOVEMENT_NOT_FINISHED') }
+    @{ Name = 'MT_WAIT_FOR_CHECKPOINT'; State = (New-ChargingState -Riot (& $restFacts @{ Movement = 'MT_WAIT_FOR_CHECKPOINT' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_MOVEMENT_NOT_FINISHED') }
+    @{ Name = 'procState not IDLE'; State = (New-ChargingState -Riot (& $restFacts @{ Proc = 'EXECUTING' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_PROC_NOT_IDLE') }
+    @{ Name = 'processingOrder true'; State = (New-ChargingState -Riot (& $restFacts @{ Processing = $true })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_PROCESSING_ORDER_UNKNOWN_OR_ACTIVE') }
+    @{ Name = 'processingOrder not given'; State = (New-ChargingState -Riot (& $restFacts @{ Processing = $null })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_PROCESSING_ORDER_UNKNOWN_OR_ACTIVE') }
+    @{ Name = 'not enabled'; State = (New-ChargingState -Riot (& $restFacts @{ Enable = $false })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_VEHICLE_NOT_ENABLED') }
+    @{ Name = 'OFF_LINE (its fields may be frozen)'; State = (New-ChargingState -Riot (& $restFacts @{ Integration = 'OFF_LINE' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_VEHICLE_NOT_ONLINE') }
+    @{ Name = 'emergencyState CAN_NOT_RECOVER'; State = (New-ChargingState -Riot (& $restFacts @{ Emergency = 'CAN_NOT_RECOVER' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_EMERGENCY_NOT_OK') }
+    @{ Name = 'controlState not OK'; State = (New-ChargingState -Riot (& $restFacts @{ Control = 'CONTROL_STATE_LOST' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_CONTROL_NOT_OK') }
+    @{ Name = 'locationState not running'; State = (New-ChargingState -Riot (& $restFacts @{ Location = 'LOCATION_STATE_INIT' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_LOCATION_NOT_RUNNING') }
+    @{ Name = 'no speed given'; State = (New-ChargingState -Riot (& $restFacts @{ Speed = $null })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_SPEED_NOT_ZERO') }
+    @{ Name = 'a speed that is not a number'; State = (New-ChargingState -Riot (& $restFacts @{ Speed = 'fast' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_SPEED_NOT_ZERO') }
+    @{ Name = "an answer for another vehicle's key"; State = (New-ChargingState -Riot (& $restFacts @{ Key = $otherVehicle })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_VEHICLE_KEY_MISMATCH') }
+    @{ Name = 'the vehicle not read'; State = (New-ChargingState -Riot (New-RiotFacts)); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_NOT_READ', $agv03Key) }
+    @{ Name = 'the vehicle read failed'; State = (New-ChargingState -Riot (New-RiotFacts -Vehicles @{ $agv03Key = 'HTTP 503' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_NOT_READ', 'HTTP 503') }
+    @{ Name = 'RIoT not read at all (no Riot in the state)'; State = (New-ChargingState); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_NOT_READ') }
+    @{ Name = 'RIoT not reachable (the read reported an error for all of it)'; State = (New-ChargingState -Riot ([ordered]@{ Error = 'RIOT_KEY_MISSING: no key (injected)' })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_NOT_READ', 'RIOT_KEY_MISSING') }
+    @{ Name = 'the non-final order listing incomplete'; State = (New-ChargingState -Riot (New-RiotFacts -Vehicles @{ $agv03Key = (New-RiotVehicle) } -ListingError 'page 2 of 3 does not add up')); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN', 'page 2 of 3') }
+    @{ Name = 'the vehicle at rest but holding a fault'; State = (New-ChargingState -Riot (& $restFacts) -Faults @((& $fault $agv03 SuspectedBlocked))); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('VEHICLE_FAULT', 'SuspectedBlocked') }
+    @{ Name = 'the vehicle faults not read'; State = (New-ChargingState -Riot (& $restFacts) -NoFaults); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('VEHICLE_FAULTS_NOT_READ') }
+    @{ Name = 'agv03 at rest on its charger, agv02 under way: only agv02 is named'; State = (New-ChargingState -Riot (& $twoVehicles -Agv02 @{ Movement = 'MT_RUNNING'; Speed = 0.8; Proc = 'EXECUTING'; Processing = $true }) -Others @($agv02Journey)); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT'; Has = @('j-agv02', $rjKey, 'RIOT_MOTION_ACTIVE'); HasNot = @($chargeId) }
+    @{ Name = 'agv03 on its charger and agv02 standing, both at rest'; State = (New-ChargingState -Riot (& $twoVehicles) -Others @($agv02Journey)); Expect = $null }
+)
+foreach ($case in $closeCases) {
+    try { $got = Get-ParallelDispatchGateRefusal -Direction Close -State $case.State -ServiceName $v2Service -DatabasePath $gateDatabase } catch { $got = "THREW: $($_.Exception.Message)" }
+    $named = $null -eq $got -or ($got.Contains($v2Service) -and $got.Contains($gateDatabase) -and $got.EndsWith(' Nothing was stopped or changed.'))
+    $has = @($case['Has'] | Where-Object { $_ } | Where-Object { $null -eq $got -or -not $got.Contains($_) })
+    $hasNot = @($case['HasNot'] | Where-Object { $_ } | Where-Object { $null -ne $got -and $got.Contains($_) })
+    Write-Result -Ok ($named -and $has.Count -eq 0 -and $hasNot.Count -eq 0 -and ($null -eq $case.Expect ? ($null -eq $got) : ($null -ne $got -and $got.StartsWith("$($case.Expect):")))) `
+        -Name "gate refusal by vehicle (workspace#68): close, $($case.Name) -> $($case.Expect ?? 'allowed')" -Detail "got: $got missing: $($has -join ', ') unwanted: $($hasNot -join ', ')"
+}
+# ws#61's named recovery journey still passes on its own rule beside a vehicle standing still, and only beside one.
+$stuckAndCharging = { param($Riot) $s = New-RecoveryState -Others @([ordered]@{ JourneyId = $chargeId; Stage = 'AwaitingPickupArrival'; AgvId = $agv03; VehicleKey = $agv03Key; PickupUpperId = $chargeUpper; GateUpperId = $null; CreatedAt = '2026-10-21 06:10:00+08:00' }); $s['Riot'] = $Riot; $s }
+foreach ($case in @(
+        @{ Name = 'the stuck journey named and agv03 standing on its charger'; State = (& $stuckAndCharging (& $restFacts)); Expect = $null }
+        @{ Name = 'the stuck journey named and agv03 moving'; State = (& $stuckAndCharging (& $restFacts @{ Speed = 0.5 })); Expect = 'GATE_CLOSE_REFUSED_IN_FLIGHT' }
+        @{ Name = 'the stuck journey named but released back to the engine, agv03 standing'; State = $(& { $s = New-RecoveryState -Stage AwaitingLoadResult -Block $null; $s['Riot'] = (& $restFacts); $s }); Expect = 'GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY' })) {
+    try { $got = Get-ParallelDispatchGateRefusal -Direction Close -State $case.State -ServiceName $v2Service -DatabasePath $gateDatabase -RecoveryJourney $rj } catch { $got = "THREW: $($_.Exception.Message)" }
+    Write-Result -Ok ($null -eq $case.Expect ? ($null -eq $got) : ($null -ne $got -and $got.StartsWith("$($case.Expect):"))) `
+        -Name "gate refusal by vehicle (workspace#68) with -RecoveryJourney: $($case.Name) -> $($case.Expect ?? 'allowed')" -Detail "got: $got"
+}
+
+# Opening: the field's instance 2 of 2026-10-21 -- agv03's pickup order to 160 SUCCESS at 11:23, the journey still not
+# Completed (two more pickup stops), the intent CONFIRMED -- and the charging journey of the same morning, same shape.
+$pickupUpper = 'W2G-ed84063a-PICKUP-101'
+$pickupOrder = 'order-2112745087690735616'
+function New-PickupState {
+    param($Riot, [string] $Status = 'CONFIRMED', $OrderId = $pickupOrder, [object[]] $Intents = @())
+    $journey = [ordered]@{ JourneyId = 'journey:ed84063a|g101'; Stage = 'AwaitingPickupArrival'; AgvId = $agv03; VehicleKey = $agv03Key; PickupUpperId = $pickupUpper
+        GateUpperId = $null; CreatedAt = '2026-10-21 11:00:00+08:00' }
+    $state = New-GateState -Journeys @($journey) -Intents (@((New-GateIntent $pickupUpper -Status $Status -Attempts 1L -AttemptId a1 -OrderId $OrderId -VehicleKey $agv03Key `
+                    -CreatedAt '2026-10-21 11:00:01+08:00')) + @($Intents))
+    if ($null -ne $Riot) { $state['Riot'] = $Riot }
+    return $state
+}
+$orderFacts = { param([int] $State, [string] $Upper = $pickupUpper, [string] $Order = $pickupOrder) New-RiotFacts -Orders @{ $Upper = (New-RiotOrder $Upper $Order $State -Appoint $agv03Key -Execute $agv03Key) } }
+$laterUpper = 'W2G-ed84063a-PICKUP-102'
+$openCases = @(
+    @{ Name = 'the pickup order SUCCESS, the journey not Completed (field instance 2)'; State = (New-PickupState -Riot (& $orderFacts 5)); Expect = $null }
+    @{ Name = 'the charge order SUCCESS, the charging journey not Completed'; State = (New-ChargingState -Riot (New-RiotFacts -Orders @{ $chargeUpper = (New-RiotOrder $chargeUpper $chargeOrder 5 -Appoint $agv03Key -Execute $agv03Key) })); Expect = $null }
+    @{ Name = 'the order CANCELED'; State = (New-PickupState -Riot (& $orderFacts 2)); Expect = $null }
+    @{ Name = 'the order FAILED'; State = (New-PickupState -Riot (& $orderFacts 4)); Expect = $null }
+    @{ Name = 'the order EXECUTING'; State = (New-PickupState -Riot (& $orderFacts 3)); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('orderState 3', $pickupUpper, $pickupOrder) }
+    @{ Name = 'the order QUEUEING'; State = (New-PickupState -Riot (& $orderFacts 1)); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('orderState 1') }
+    @{ Name = 'the order SUSPENDED (8)'; State = (New-PickupState -Riot (& $orderFacts 8)); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('orderState 8') }
+    @{ Name = 'the order DELETED (6, not one of the three endings)'; State = (New-PickupState -Riot (& $orderFacts 6)); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('orderState 6') }
+    @{ Name = 'the order not read'; State = (New-PickupState -Riot (New-RiotFacts)); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('RIOT_NOT_READ') }
+    @{ Name = 'the order read failed'; State = (New-PickupState -Riot (New-RiotFacts -Orders @{ $pickupUpper = 'timed out' })); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('RIOT_NOT_READ', 'timed out') }
+    @{ Name = 'RIoT not read at all'; State = (New-PickupState); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('RIOT_NOT_READ') }
+    @{ Name = 'RIoT has no order for the upperId'; State = (New-PickupState -Riot (New-RiotFacts -Orders @{ $pickupUpper = $null })); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('RIOT_ORDER_ABSENT') }
+    @{ Name = "RIoT's order under that upperId is another orderId"; State = (New-PickupState -Riot (& $orderFacts 5 -Order 'order-1')); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('RIOT_ORDER_MISMATCH') }
+    @{ Name = "RIoT's answer carries another upperId"; State = (New-PickupState -Riot (New-RiotFacts -Orders @{ $pickupUpper = (New-RiotOrder 'W2G-other' $pickupOrder 5) })); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('RIOT_ORDER_MISMATCH') }
+    @{ Name = 'CONFIRMED with no OrderId recorded'; State = (New-PickupState -OrderId $null -Riot (& $orderFacts 5)); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('RIOT_ORDER_MISMATCH') }
+    @{ Name = 'CREATE_ATTEMPTED, though RIoT shows it ended (only CONFIRMED is read)'; State = (New-PickupState -Status CREATE_ATTEMPTED -Riot (& $orderFacts 5)); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('CREATE_ATTEMPTED') }
+    @{ Name = 'TERMINAL_RECONCILIATION_REQUIRED, though RIoT shows it ended'; State = (New-PickupState -Status TERMINAL_RECONCILIATION_REQUIRED -Riot (& $orderFacts 5)); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @('TERMINAL_RECONCILIATION_REQUIRED') }
+    @{ Name = 'the first pickup order SUCCESS, a later stop of the journey EXECUTING: only the later one is named'; Expect = 'GATE_OPEN_REFUSED_ORDER_SENT'; Has = @($laterUpper, 'orderState 3'); HasNot = @("order intent $pickupUpper")
+        State = (New-PickupState -Intents @((New-GateIntent $laterUpper -Status CONFIRMED -Attempts 1L -AttemptId a2 -OrderId 'order-2' -VehicleKey $agv03Key -CreatedAt '2026-10-21 11:30:00+08:00')) `
+                -Riot (New-RiotFacts -Orders @{ $pickupUpper = (New-RiotOrder $pickupUpper $pickupOrder 5); $laterUpper = (New-RiotOrder $laterUpper 'order-2' 3) })) }
+)
+foreach ($case in $openCases) {
+    try { $got = Get-ParallelDispatchGateRefusal -Direction Open -State $case.State -ServiceName $v2Service -DatabasePath $gateDatabase } catch { $got = "THREW: $($_.Exception.Message)" }
+    $named = $null -eq $got -or ($got.Contains($v2Service) -and $got.Contains($gateDatabase) -and $got.EndsWith(' Nothing was stopped or changed.'))
+    $has = @($case['Has'] | Where-Object { $_ } | Where-Object { $null -eq $got -or -not $got.Contains($_) })
+    $hasNot = @($case['HasNot'] | Where-Object { $_ } | Where-Object { $null -ne $got -and $got.Contains($_) })
+    Write-Result -Ok ($named -and $has.Count -eq 0 -and $hasNot.Count -eq 0 -and ($null -eq $case.Expect ? ($null -eq $got) : ($null -ne $got -and $got.StartsWith("$($case.Expect):")))) `
+        -Name "gate refusal by order (workspace#68): open, $($case.Name) -> $($case.Expect ?? 'allowed')" -Detail "got: $got missing: $($has -join ', ') unwanted: $($hasNot -join ', ')"
+}
+
 # --- The writer: section ignoring case, the Chinese agvId kept byte for byte, every read-back live.
 $gateInstalled = Merge-ConfigurationTree -Base (Copy-Definition $productConfiguration) -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $baseline)
 $gateInstalled['RiotCreateDispatch'] = [ordered]@{ enabled = $true }
@@ -3363,6 +3528,195 @@ $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($stuck) -Start
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $r.Unchanged -and $r.Calls -notmatch 'Stop|Start(?!Time)') `
     -Name 'gate change (workspace#61): close, the stuck journey not named -> refused as before, before the stop' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 
+# --- 8005-workspace#68: RIoT is read with each read of the state, so the one after the stop counts as well -- a vehicle
+# somebody drives off by hand in RIoT between the first read and the restart is caught there.
+$chargingAtRest = New-ChargingState -Riot (& $restFacts)
+$chargingMoving = New-ChargingState -Riot (& $restFacts @{ Movement = 'MT_RUNNING'; Speed = 0.6 })
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($chargingAtRest, $chargingAtRest) -StartTimes @($gateStarted, $afterWrite)
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Result.Changed -and $r.Flag -eq $false -and $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start,Status,StartTime') `
+    -Name 'gate change (workspace#68): close, agv03 standing on its charger both times -> read, stop, read again, write, start, verified' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($chargingAtRest, $chargingMoving) -StartTimes @($gateStarted)
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('AFTER_STOP GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $r.Thrown.Contains('RIOT_MOTION_ACTIVE') -and $r.Unchanged -and
+    $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start,Status') `
+    -Name 'gate change (workspace#68): close, agv03 driven off between the two reads -> refused after the stop, started again, file unchanged' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
+$pickupEnded = New-PickupState -Riot (& $orderFacts 5)
+$r = Invoke-GateCase -Direction Open -Text $closedConfig -States @($pickupEnded, $pickupEnded) -StartTimes @($gateStarted, $afterWrite)
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Flag -eq $true -and $r.Result.Now -eq $true -and $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start,Status,StartTime') `
+    -Name 'gate change (workspace#68): open, the pickup order SUCCESS on a journey not Completed (field instance 2) -> opened' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
+$r = Invoke-GateCase -Direction Open -Text $closedConfig -States @($pickupEnded, (New-PickupState -Riot (& $orderFacts 3))) -StartTimes @($gateStarted)
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('AFTER_STOP GATE_OPEN_REFUSED_ORDER_SENT:') -and $r.Unchanged) `
+    -Name 'gate change (workspace#68): open, the order reads running on the second read -> refused after the stop, file unchanged' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
+
+# --- 8005-workspace#68: the RIoT read itself, with the HTTP GET replaced by a recorder. Only the three approved reads
+# (vendor/8005-agv-program/docs/riot-call-allowlist.md: getVehicleInfo, orderRecord by state, detailByUpperId).
+$riotConnection = [ordered]@{ BaseUrl = 'http://riot.selftest'; ApiKey = 'selftest-riot-key-ws68'; TimeoutSeconds = 5 }
+$listingPath = { param([int] $Page) "/api/order/v1/orderRecord?pageNum=$Page&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=8&filterByState=9&filterByState=10" }
+$envelope = { param($Result, [string] $Code = '0') @{ Status = 200; Content = (ConvertTo-Json -InputObject ([ordered]@{ code = $Code; message = '成功'; result = $Result }) -Depth 8 -Compress) } }
+$bare = { param($Body) @{ Status = 200; Content = (ConvertTo-Json -InputObject $Body -Depth 8 -Compress) } }
+$page = { param([int] $Current, [long] $Total, [object[]] $Records) & $envelope ([ordered]@{ current = $Current; size = 100; total = $Total; records = @($Records) }) }
+function Invoke-RiotRead {
+    <#
+        Read-ParallelRiotGateFacts against -Routes (path -> @{ Status; Content }, or a scriptblock that returns one or throws);
+        an unrouted path answers 404. Returns the state it gave back, the paths asked for in order, and anything thrown.
+    #>
+    param($State, [string] $Direction, [hashtable] $Routes = @{}, $Connection = $riotConnection)
+    $calls = [System.Collections.Generic.List[string]]::new()
+    $get = { param([string] $Path) $calls.Add($Path); if (-not $Routes.ContainsKey($Path)) { return @{ Status = 404; Content = '' } }; $answer = $Routes[$Path]; $answer -is [scriptblock] ? (& $answer) : $answer }.GetNewClosure()
+    $out = $null; $thrown = $null
+    try { $out = Read-ParallelRiotGateFacts -State $State -Direction $Direction -Connection $Connection -Get $get } catch { $thrown = $_.Exception.Message }
+    return [pscustomobject]@{ State = $out; Calls = @($calls); Thrown = $thrown }
+}
+$vehiclePath = { param([string] $Key) "/api/task/v1/task/getVehicleInfo/$Key" }
+$restRoutes = @{ (& $vehiclePath $agv03Key) = (& $bare (New-RiotVehicle)); (& $listingPath 1) = (& $page 1 1 @((New-RiotOrder u9 o9 8 -Execute '--'))) }
+$r = Invoke-RiotRead -State (New-ChargingState) -Direction Close -Routes $restRoutes
+$got = $r.State ? (Get-ParallelDispatchGateRefusal -Direction Close -State $r.State -ServiceName $v2Service -DatabasePath $gateDatabase) : 'no state'
+Write-Result -Ok ($null -eq $r.Thrown -and $null -eq $got -and ($r.Calls -join ' ') -ceq ((& $vehiclePath $agv03Key) + ' ' + (& $listingPath 1))) `
+    -Name 'RIoT read (workspace#68): close reads getVehicleInfo of each vehicle with an active journey and the non-final listing once; agv03 at rest passes' -Detail "calls $($r.Calls -join ' | ') got $got thrown $($r.Thrown)"
+$r = Invoke-RiotRead -State (New-ChargingState -Others @($agv02Journey, (New-GateJourney j-agv02-done -Stage Completed))) -Direction Close -Routes $restRoutes
+Write-Result -Ok ($null -eq $r.Thrown -and @($r.Calls | Where-Object { $_ -like '/api/task/v1/task/getVehicleInfo/*' }).Count -eq 2 -and @($r.Calls | Where-Object { $_ -like '/api/order/v1/orderRecord?*' }).Count -eq 1 -and
+    @($r.Calls | Where-Object { $_ -like '*detailByUpperId*' }).Count -eq 0) `
+    -Name 'RIoT read (workspace#68): close, two vehicles with active journeys (a Completed one not counted) -> two vehicle reads, one listing, no order detail' -Detail ($r.Calls -join ' | ')
+$r = Invoke-RiotRead -State (New-GateState) -Direction Close -Routes $restRoutes
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Calls.Count -eq 0) -Name 'RIoT read (workspace#68): close with no active journey reads nothing' -Detail ($r.Calls -join ' | ')
+$r = Invoke-RiotRead -State ([ordered]@{ Error = 'database is locked' }) -Direction Close -Routes $restRoutes
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Calls.Count -eq 0 -and $r.State -is [System.Collections.IDictionary] -and $r.State['Error'] -ceq 'database is locked') -Name 'RIoT read (workspace#68): an unreadable state is handed back as it is, nothing asked of RIoT' -Detail ($r.Calls -join ' | ')
+# Paging as HttpRiotMovementGateway.ReadAllNonFinalOrdersAsync pages: 253 non-final orders (the plant's count on 2026-10-11) in three pages.
+$records = { param([int] $From, [int] $Count) @(0..($Count - 1) | ForEach-Object { New-RiotOrder "PLANT-$($From + $_)" "o-$($From + $_)" 8 -Id ($From + $_) }) }
+$paged = @{ (& $vehiclePath $agv03Key) = (& $bare (New-RiotVehicle))
+    (& $listingPath 1) = (& $page 1 253 (& $records 1 100)); (& $listingPath 2) = (& $page 2 253 (& $records 101 100)); (& $listingPath 3) = (& $page 3 253 (@(& $records 201 52) + @((New-RiotOrder u-agv03 o-agv03 1 -Appoint $agv03Key -Id 999)))) }
+$r = Invoke-RiotRead -State (New-ChargingState) -Direction Close -Routes $paged
+$got = Get-ParallelDispatchGateRefusal -Direction Close -State $r.State -ServiceName $v2Service -DatabasePath $gateDatabase
+$recordsRead = try { @($r.State['Riot']['NonFinalOrders']['Records']).Count } catch { -1 }
+Write-Result -Ok ($null -eq $r.Thrown -and $recordsRead -eq 253 -and $null -ne $got -and $got.Contains('RIOT_NONFINAL_ORDER_PRESENT')) `
+    -Name 'RIoT read (workspace#68): 253 non-final orders over three pages are all read; agv03''s on page 3 refuses' -Detail "records $recordsRead got $got thrown $($r.Thrown)"
+foreach ($bad in @(
+        @{ Name = 'a page whose total moved'; Routes = @{ (& $listingPath 1) = (& $page 1 253 (& $records 1 100)); (& $listingPath 2) = (& $page 2 254 (& $records 101 100)) } }
+        @{ Name = 'a page short of records'; Routes = @{ (& $listingPath 1) = (& $page 1 253 (& $records 1 100)); (& $listingPath 2) = (& $page 2 253 (& $records 101 99)) } }
+        @{ Name = 'a record repeated from an earlier page'; Routes = @{ (& $listingPath 1) = (& $page 1 150 (& $records 1 100)); (& $listingPath 2) = (& $page 2 150 (& $records 100 50)) } }
+        @{ Name = 'more pages than the cap of 20'; Routes = @{ (& $listingPath 1) = (& $page 1 2001 (& $records 1 100)) } }
+        @{ Name = 'a business code that is not 0'; Routes = @{ (& $listingPath 1) = (& $envelope $null '500') } }
+        @{ Name = 'HTTP 500'; Routes = @{ (& $listingPath 1) = @{ Status = 500; Content = '{}' } } }
+        @{ Name = 'a body that is not JSON'; Routes = @{ (& $listingPath 1) = @{ Status = 200; Content = '<html>' } } }
+        @{ Name = 'a GET that throws (a timeout)'; Routes = @{ (& $listingPath 1) = { throw 'The operation has timed out (injected)' } } })) {
+    $routes = $bad.Routes.Clone(); $routes[(& $vehiclePath $agv03Key)] = (& $bare (New-RiotVehicle))
+    $r = Invoke-RiotRead -State (New-ChargingState) -Direction Close -Routes $routes
+    $listing = try { $r.State['Riot']['NonFinalOrders'] } catch { $null }
+    $got = $r.State ? (Get-ParallelDispatchGateRefusal -Direction Close -State $r.State -ServiceName $v2Service -DatabasePath $gateDatabase) : $null
+    Write-Result -Ok ($null -eq $r.Thrown -and $null -ne $listing -and $listing.Contains('Error') -and $null -ne $got -and $got.Contains('RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN') -and
+        -not $got.Contains($riotConnection.ApiKey)) `
+        -Name "RIoT read (workspace#68): the non-final listing with $($bad.Name) is an error, and close refuses" -Detail "thrown $($r.Thrown) got $got"
+}
+foreach ($bad in @(
+        @{ Name = 'HTTP 404'; Answer = @{ Status = 404; Content = '' } }
+        @{ Name = 'no vehicle object'; Answer = (& $bare ([ordered]@{ vehicleTaskInfo = [ordered]@{ key = $agv03Key } })) }
+        @{ Name = 'a GET that throws'; Answer = { throw 'connection refused (injected)' } })) {
+    $r = Invoke-RiotRead -State (New-ChargingState) -Direction Close -Routes @{ (& $vehiclePath $agv03Key) = $bad.Answer; (& $listingPath 1) = (& $page 1 0 @()) }
+    $got = $r.State ? (Get-ParallelDispatchGateRefusal -Direction Close -State $r.State -ServiceName $v2Service -DatabasePath $gateDatabase) : $null
+    Write-Result -Ok ($null -eq $r.Thrown -and $null -ne $got -and $got.Contains('RIOT_NOT_READ')) -Name "RIoT read (workspace#68): a vehicle read with $($bad.Name) refuses close (RIOT_NOT_READ)" -Detail "thrown $($r.Thrown) got $got"
+}
+# Opening reads the detail of each CONFIRMED intent the open rule counts, by upperId, and nothing else.
+$detailPath = { param([string] $Upper) "/api/order/v1/orderRecord/detailByUpperId/$([uri]::EscapeDataString($Upper))" }
+$r = Invoke-RiotRead -State (New-PickupState -Intents @((New-GateIntent never-sent -VehicleKey $agv03Key -CreatedAt '2026-10-21 11:40:00+08:00'))) -Direction Open `
+    -Routes @{ (& $detailPath $pickupUpper) = (& $envelope (New-RiotOrder $pickupUpper $pickupOrder 5)) }
+$got = Get-ParallelDispatchGateRefusal -Direction Open -State $r.State -ServiceName $v2Service -DatabasePath $gateDatabase
+Write-Result -Ok ($null -eq $r.Thrown -and ($r.Calls -join ' ') -ceq (& $detailPath $pickupUpper) -and $null -eq $got) `
+    -Name 'RIoT read (workspace#68): open reads detailByUpperId of the CONFIRMED intent only (not the never-sent one); SUCCESS passes' -Detail "calls $($r.Calls -join ' | ') got $got"
+foreach ($case in @(
+        @{ Name = 'a null result (the real RIoT on an order it does not have, 200)'; Answer = (& $envelope $null); Has = 'RIOT_ORDER_ABSENT' }
+        @{ Name = 'HTTP 404 (the fake RIoT on an order it does not have)'; Answer = @{ Status = 404; Content = '' }; Has = 'RIOT_ORDER_ABSENT' }
+        @{ Name = 'HTTP 503'; Answer = @{ Status = 503; Content = '{}' }; Has = 'RIOT_NOT_READ' }
+        @{ Name = 'a GET that throws'; Answer = { throw 'timed out (injected)' }; Has = 'RIOT_NOT_READ' })) {
+    $r = Invoke-RiotRead -State (New-PickupState) -Direction Open -Routes @{ (& $detailPath $pickupUpper) = $case.Answer }
+    $got = $r.State ? (Get-ParallelDispatchGateRefusal -Direction Open -State $r.State -ServiceName $v2Service -DatabasePath $gateDatabase) : $null
+    Write-Result -Ok ($null -eq $r.Thrown -and $null -ne $got -and $got.StartsWith('GATE_OPEN_REFUSED_ORDER_SENT:') -and $got.Contains($case.Has)) `
+        -Name "RIoT read (workspace#68): open, the order detail with $($case.Name) refuses ($($case.Has))" -Detail "thrown $($r.Thrown) got $got"
+}
+$odd = 'W2G-a b|c'
+$r = Invoke-RiotRead -State (New-PickupState -Intents @((New-GateIntent $odd -Status CONFIRMED -Attempts 1L -AttemptId a9 -OrderId o-odd -VehicleKey $agv03Key -CreatedAt '2026-10-21 11:41:00+08:00'))) -Direction Open
+Write-Result -Ok ($r.Calls -ccontains '/api/order/v1/orderRecord/detailByUpperId/W2G-a%20b%7Cc') -Name 'RIoT read (workspace#68): an upperId is escaped into the path' -Detail ($r.Calls -join ' | ')
+$r = Invoke-RiotRead -State (New-ChargingState) -Direction Close -Routes $restRoutes -Connection ([ordered]@{ Error = 'RIOT_KEY_MISSING: no RIoT call API key (injected)' })
+$got = $r.State ? (Get-ParallelDispatchGateRefusal -Direction Close -State $r.State -ServiceName $v2Service -DatabasePath $gateDatabase) : $null
+Write-Result -Ok ($null -eq $r.Thrown -and $r.Calls.Count -eq 0 -and $null -ne $got -and $got.Contains('RIOT_KEY_MISSING')) `
+    -Name 'RIoT read (workspace#68): no connection (no key) -> nothing asked, close refuses saying why' -Detail "calls $($r.Calls -join ' | ') got $got"
+# The default GET, against a loopback listener: the key travels as a Bearer header, never in the path, and is never echoed.
+$listener = [System.Net.HttpListener]::new()
+$port = & { $l = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $l.Start(); $p = $l.LocalEndpoint.Port; $l.Stop(); $p }
+$listener.Prefixes.Add("http://localhost:$port/")
+$serve = $null
+try {
+    $listener.Start()
+    $serve = Start-ThreadJob -ArgumentList $listener, (ConvertTo-Json -InputObject (New-RiotVehicle) -Depth 5 -Compress) -ScriptBlock {
+        param($Listener, [string] $VehicleJson)
+        for ($i = 0; $i -lt 2; $i++) {
+            $context = $Listener.GetContext()
+            "$($context.Request.RawUrl) auth=$($context.Request.Headers['Authorization'])"
+            $body = $context.Request.RawUrl.StartsWith('/api/task/') ? $VehicleJson : '{"code":"0","message":"ok","result":{"current":1,"size":100,"total":0,"records":[]}}'
+            $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+            $context.Response.ContentType = 'application/json'; $context.Response.OutputStream.Write($bytes, 0, $bytes.Length); $context.Response.Close()
+        }
+    }
+    $live = Read-ParallelRiotGateFacts -State (New-ChargingState) -Direction Close -Connection ([ordered]@{ BaseUrl = "http://localhost:$port"; ApiKey = 'selftest-riot-key-ws68'; TimeoutSeconds = 5 })
+    $lines = @($serve | Wait-Job -Timeout 5 | Receive-Job)
+    $got = Get-ParallelDispatchGateRefusal -Direction Close -State $live -ServiceName $v2Service -DatabasePath $gateDatabase
+    Write-Result -Ok ($lines.Count -eq 2 -and @($lines | Where-Object { $_.EndsWith(' auth=Bearer selftest-riot-key-ws68') -and -not $_.Contains('selftest-riot-key-ws68 ') -and $_ -notmatch 'key-ws68.*auth' }).Count -eq 2 -and $null -eq $got) `
+        -Name 'RIoT read (workspace#68): the default GET sends Authorization: Bearer <key> to the configured base URL and reads the answers' -Detail "$($lines -join ' | ') got $got"
+} catch {
+    Write-Result -Ok $false -Name 'RIoT read (workspace#68): the default GET against a loopback listener' -Detail $_.Exception.Message
+} finally {
+    $listener.Close()
+    if ($serve) { $serve | Remove-Job -Force -ErrorAction SilentlyContinue }
+}
+
+# --- 8005-workspace#68: where the RIoT connection comes from: the installed configuration (appsettings.json, then
+# appsettings.Production.json over it, as .NET reads them) and the key from the variable RIoT:callApiKeyEnvironmentVariable
+# names -- the service's own Environment first (the product installer writes it there), the machine scope after.
+$productSettings = Get-Content -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/appsettings.json') -Raw | ConvertFrom-Json -AsHashtable -Depth 12
+$serviceEnvironment = @('DOTNET_ENVIRONMENT=Production', 'CONTROL_SERVER_RIOT_CALL_API_KEY=selftest-service-key')
+$noMachine = { param([string] $Name) $null }
+$connectionCases = @(
+    @{ Name = "the product's appsettings.json and the key in the service Environment"; Base = $productSettings; Production = @{}; Env = $serviceEnvironment; Machine = $noMachine
+        Expect = @{ BaseUrl = 'http://172.19.206.222:8888'; ApiKey = 'selftest-service-key'; TimeoutSeconds = 30 } }
+    @{ Name = 'appsettings.Production.json over it, keys in other casing, a trailing slash'; Base = $productSettings; Production = @{ riot = @{ BASEURL = 'http://10.0.0.9:8888/'; TimeoutSeconds = 7 } }; Env = $serviceEnvironment; Machine = $noMachine
+        Expect = @{ BaseUrl = 'http://10.0.0.9:8888'; ApiKey = 'selftest-service-key'; TimeoutSeconds = 7 } }
+    @{ Name = "no baseUrl anywhere: the product's default"; Base = @{ RIoT = @{ callApiKeyEnvironmentVariable = 'K' } }; Production = @{}; Env = @('K=v'); Machine = $noMachine
+        Expect = @{ BaseUrl = 'http://127.0.0.1:58888'; ApiKey = 'v'; TimeoutSeconds = 30 } }
+    @{ Name = 'the key in the machine scope only'; Base = $productSettings; Production = @{}; Env = @('DOTNET_ENVIRONMENT=Production'); Machine = { param([string] $Name) $Name -ceq 'CONTROL_SERVER_RIOT_CALL_API_KEY' ? 'selftest-machine-key' : $null }
+        Expect = @{ BaseUrl = 'http://172.19.206.222:8888'; ApiKey = 'selftest-machine-key'; TimeoutSeconds = 30 } }
+    @{ Name = 'no key anywhere'; Base = $productSettings; Production = @{}; Env = @(); Machine = $noMachine; Error = 'RIOT_KEY_MISSING' }
+    @{ Name = 'no variable named for the key'; Base = @{ RIoT = @{ baseUrl = 'http://x' } }; Production = @{}; Env = $serviceEnvironment; Machine = $noMachine; Error = 'RIOT_KEY_MISSING' }
+    @{ Name = 'a timeout that is not positive'; Base = $productSettings; Production = @{ RIoT = @{ timeoutSeconds = 0 } }; Env = $serviceEnvironment; Machine = $noMachine; Error = 'RIOT_CONNECTION_INVALID' }
+    @{ Name = 'a baseUrl that is not an absolute http URL'; Base = $productSettings; Production = @{ RIoT = @{ baseUrl = 'riot.local' } }; Env = $serviceEnvironment; Machine = $noMachine; Error = 'RIOT_CONNECTION_INVALID' }
+)
+foreach ($case in $connectionCases) {
+    try { $c = Resolve-ParallelRiotGateConnection -BaseConfiguration $case.Base -Configuration $case.Production -ServiceEnvironment $case.Env -MachineVariable $case.Machine } catch { $c = @{ Error = "THREW: $($_.Exception.Message)" } }
+    $ok = $case.ContainsKey('Error') ? ($c.Contains('Error') -and ([string] $c['Error']).StartsWith("$($case.Error):") -and -not ([string] $c['Error']).Contains('selftest-service-key')) :
+        (-not $c.Contains('Error') -and $c['BaseUrl'] -ceq $case.Expect.BaseUrl -and $c['ApiKey'] -ceq $case.Expect.ApiKey -and $c['TimeoutSeconds'] -eq $case.Expect.TimeoutSeconds)
+    Write-Result -Ok $ok -Name "RIoT connection (workspace#68): $($case.Name) -> $($case.ContainsKey('Error') ? $case['Error'] : $case['Expect']['BaseUrl'])" -Detail (ConvertTo-Json $c -Compress)
+}
+
+# --- 8005-workspace#68: Set-ParallelDispatchGateLocal.ps1 reads RIoT with every read of the state -- the one with the
+# service running, the one after the stop (both through ReadState) and the dry run's -- with the direction it was asked for.
+$riotCalls = @(& $boundTo 'Read-ParallelRiotGateFacts' 'Direction' '$direction')
+$riotConnected = @(& $boundTo 'Read-ParallelRiotGateFacts' 'Connection' '$riotConnection')
+$riotStates = @($gateLocalAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -ceq 'Read-ParallelRiotGateFacts' }, $true) | ForEach-Object {
+        $elements = $_.CommandElements
+        $at = -1; for ($i = 0; $i -lt $elements.Count; $i++) { if ($elements[$i] -is [System.Management.Automation.Language.CommandParameterAst] -and $elements[$i].ParameterName -ceq 'State') { $at = $i } }
+        $at -ge 0 -and $at + 1 -lt $elements.Count -and $elements[$at + 1].Extent.Text.StartsWith('(Get-ParallelJourneyDispatchState ') })
+$readStateEntry = @($gateLocalAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true) | ForEach-Object { $_.KeyValuePairs } |
+        Where-Object { $_.Item1.Extent.Text -ceq 'ReadState' })
+Write-Result -Ok ($riotCalls.Count -eq 2 -and @($riotCalls | Where-Object { -not $_.Bound }).Count -eq 0 -and @($riotConnected | Where-Object { -not $_.Bound }).Count -eq 0 -and
+    @($riotStates | Where-Object { -not $_ }).Count -eq 0 -and $readStateEntry.Count -eq 1 -and $readStateEntry[0].Item2.Extent.Text.Contains('Read-ParallelRiotGateFacts')) `
+    -Name 'Set-ParallelDispatchGateLocal.ps1 (workspace#68): both reads (ReadState and the dry run) wrap the journey state in Read-ParallelRiotGateFacts -Direction $direction -Connection $riotConnection' `
+    -Detail (($riotCalls | ForEach-Object { "$($_.Bound): $($_.Text)" }) -join ' | ')
+$resolveCalls = @($gateLocalAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -ceq 'Resolve-ParallelRiotGateConnection' }, $true))
+$riotAssign = @($gateLocalAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ceq '$riotConnection' }, $true))
+Write-Result -Ok ($resolveCalls.Count -eq 1 -and $riotAssign.Count -eq 1 -and $riotAssign[0].Right.Extent.Text.Contains('Resolve-ParallelRiotGateConnection')) `
+    -Name 'Set-ParallelDispatchGateLocal.ps1 (workspace#68): the RIoT connection is resolved once, from the installed configuration and the service Environment' -Detail (@($riotAssign | ForEach-Object { $_.Extent.Text }) -join ' | ')
+# The reader reads the vehicle faults always now (the close rule asks of every vehicle), not only with -RecoveryJourneyId.
+$faultSelect = @($readerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Value.Contains('FROM VehicleFaultStates') }, $true))
+$faultInIf = @($faultSelect | Where-Object { $p = $_.Parent; $inIf = $false; while ($p -and $p -ne $readerAst) { if ($p -is [System.Management.Automation.Language.IfStatementAst]) { $inIf = $true }; $p = $p.Parent }; $inIf })
+Write-Result -Ok ($faultSelect.Count -eq 1 -and $faultInIf.Count -eq 0) -Name 'gate reader (workspace#68): the vehicle faults are read on every read, not inside a condition' -Detail "selects $($faultSelect.Count) in an if: $($faultInIf.Count)"
+
 # --- Review N3: a process that started at the very instant of the write is not shown to have read it.
 $atWrite = { param($Path) [IO.File]::GetLastWriteTimeUtc($Path) }
 $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) -StartTimes @($gateStarted, $atWrite)
@@ -3460,7 +3814,8 @@ if ($whatIf.Count -eq 1) {
     # on a dry run. Only these read-only commands; no reference to $actions; no .NET method call or static member access
     # of any kind (which also covers [IO.*]); no type expression naming IO.
     # workspace#61 review L2: the pure Get-ParallelRecoveryJourneyNotInFlight, which only names the ids not in flight.
-    $readOnlyCommands = @('Get-ParallelJourneyDispatchState', 'Get-ParallelDispatchGateRefusal', 'Get-ParallelRecoveryJourneyNotInFlight', 'Get-Service', 'Write-Step')
+    # workspace#68: Read-ParallelRiotGateFacts, which only GETs from RIoT.
+    $readOnlyCommands = @('Get-ParallelJourneyDispatchState', 'Read-ParallelRiotGateFacts', 'Get-ParallelDispatchGateRefusal', 'Get-ParallelRecoveryJourneyNotInFlight', 'Get-Service', 'Write-Step')
     $changing = @($commands | Where-Object { $null -eq $_ -or $readOnlyCommands -notcontains $_ } | ForEach-Object { "command $($_ ?? '(dynamic)')" })
     $changing += @($body.FindAll({ param($n) $n -is [System.Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -ieq 'actions' }, $true) |
             ForEach-Object { "reference $($_.Extent.Text)" })
@@ -3513,6 +3868,7 @@ if (-not $hostBuild) {
 CREATE TABLE JourneyRuntimes (JourneyId TEXT PRIMARY KEY, Stage TEXT, AgvId TEXT, VehicleKey TEXT, PickupUpperId TEXT, GateUpperId TEXT, CreatedAt TEXT);
 CREATE TABLE OrderIntents (MovementLegId TEXT PRIMARY KEY, UpperId TEXT, VehicleKey TEXT, Status TEXT, OrderId TEXT, CreateAttemptCount INTEGER, CreateAttemptId TEXT, DispatchAuditVersion INTEGER, ExperimentalCreateAuthorizationId TEXT, CreatedAt TEXT);
 CREATE TABLE RiotDispatchAuditEvents (AuditEventId TEXT PRIMARY KEY, MovementLegId TEXT, Phase TEXT, Outcome TEXT, AttemptId TEXT, ReturnedOrderId TEXT, ResultPresent INTEGER);
+CREATE TABLE VehicleFaultStates (AgvId TEXT PRIMARY KEY, Level TEXT, EvidenceCode TEXT);
 INSERT INTO JourneyRuntimes VALUES ('j-done', 'Completed', '老厂前线新多仓位2', 'K', 'p0', 'g0', '2026-10-08 07:00:00+08:00');
 INSERT INTO JourneyRuntimes VALUES ('j-wait', 'Blocked', '老厂前线新多仓位2', 'K', 'p1', NULL, '2026-10-08 09:00:00+08:00');
 INSERT INTO OrderIntents VALUES ('leg-p1', 'p1', 'K', 'RESULT_UNKNOWN', NULL, 0, NULL, 1, NULL, '2026-10-08 09:00:00+08:00');
@@ -3565,8 +3921,9 @@ INSERT INTO OrderIntents VALUES ('leg-s3', 's3', 'K3', 'CONFIRMED', 'O3', 1, 'a3
 "@
             $rjDb = @(@{ journeyId = $id; agvId = '老厂前线新多仓位3'; vehicleKey = 'K3' })
             $plain = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild
-            Write-Result -Ok (-not $plain.Contains('Error') -and -not $plain.Contains('RecoveryJourneys') -and -not $plain.Contains('VehicleFaults')) `
-                -Name 'gate reader (workspace#61): without -RecoveryJourneyId it reads what it read before, nothing more' -Detail (ConvertTo-Json $plain -Compress -Depth 5)
+            # workspace#68: the vehicle faults are read on every read now; the recovery rows only with -RecoveryJourneyId.
+            Write-Result -Ok (-not $plain.Contains('Error') -and -not $plain.Contains('RecoveryJourneys') -and $plain.Contains('VehicleFaults') -and @($plain['VehicleFaults']).Count -eq 0) `
+                -Name 'gate reader (workspace#61, #68): without -RecoveryJourneyId it reads no recovery rows, and the vehicle faults (none in effect)' -Detail (ConvertTo-Json $plain -Compress -Depth 5)
             $state = Get-ParallelJourneyDispatchState -DatabasePath $db -AssemblyDirectory $hostBuild -RecoveryJourneyId $id
             $row = @($state['RecoveryJourneys'])[0]
             Write-Result -Ok (-not $state.Contains('Error') -and @($state['RecoveryJourneys']).Count -eq 1 -and @($state['VehicleFaults']).Count -eq 0 -and $row['JourneyId'] -ceq $id -and $row['AgvId'] -ceq '老厂前线新多仓位3' -and $row['VehicleKey'] -ceq 'K3' -and
