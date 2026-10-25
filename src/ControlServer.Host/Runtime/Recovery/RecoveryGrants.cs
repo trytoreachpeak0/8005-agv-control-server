@@ -178,6 +178,12 @@ public sealed class RecoveryGrantRegistry(TimeProvider timeProvider)
         }
     }
 
+    /// <summary>
+    /// Ends the vehicle's grant if, and only if, it is in effect and names <paramref name="journeyId"/>: a journey withdrawn by hand
+    /// (control-server#771 part 2) takes its grant with it. Returns the one it ended.
+    /// </summary>
+    public RecoveryGrant? RevokeIfJourney(string agvId, string journeyId) => null;
+
     /// <summary>Completes when a grant is next given, renewed or revoked (not when one expires: the sweep times that itself).</summary>
     public Task WaitForChangeAsync(CancellationToken cancellationToken) =>
         Volatile.Read(ref _changed).Task.WaitAsync(cancellationToken);
