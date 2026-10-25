@@ -1,0 +1,85 @@
+# 8005-workspace#68 mutations (control-server), each on exactly one file, restored with git afterwards; 2026-10-25 10:36 +0800
+# Runner: pwsh -File Invoke-HeavyLocal.ps1 -Ticket ws#68 pwsh -File mutate-ws68.ps1 -Repo cs (scratch script; the edits are the -/+ lines below)
+# M2 note: 22 cases FAIL, then the run stops at review S5's case, which calls .Contains on the open refusal that the mutation made null (Test-ParallelInstance.ps1, 'Review S5'); the '24 passed' line is a nested run's.
+
+## M1-close-ignores-riot (scripts/parallel/ParallelInstance.psm1): 1417 passed, 49 failed
+   - if ($Riot -isnot [System.Collections.IDictionary]) { return [string[]] @('RIOT_NOT_READ: RIoT was not read') }
+   + return [string[]] @()  # MUTATION M1: RIoT not consulted
+   FAIL  gate refusal with -RecoveryJourney (workspace#61): close, the stuck journey alone, not named (unchanged) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal with -RecoveryJourney (workspace#61): close, the stuck journey named and another journey active -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal with -RecoveryJourney (workspace#61): close, another journey id named -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal with -RecoveryJourney (workspace#61): close, two stuck journeys, one named -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal with -RecoveryJourney (workspace#61, review L2): a named journey not in flight is named on the in-flight refusal
+   FAIL  gate refusal by vehicle (workspace#68): close, a non-final order appointed to the vehicle -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, a non-final order executed by the vehicle (appointed to none) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, a speed that is not 0 -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, MT_RUNNING at speed 0 -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, MODE_MANUAL -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, MT_NA with the brake released -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, MT_PAUSED (paused, not finished) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, MT_WAIT_FOR_CHECKPOINT -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, procState not IDLE -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, processingOrder true -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, processingOrder not given -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, not enabled -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, OFF_LINE (its fields may be frozen) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, emergencyState CAN_NOT_RECOVER -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, controlState not OK -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, locationState not running -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, no speed given -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, a speed that is not a number -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, an answer for another vehicle's key -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, the vehicle not read -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, the vehicle read failed -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, RIoT not read at all (no Riot in the state) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, RIoT not reachable (the read reported an error for all of it) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, the non-final order listing incomplete -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68): close, agv03 at rest on its charger, agv02 under way: only agv02 is named -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate refusal by vehicle (workspace#68) with -RecoveryJourney: the stuck journey named and agv03 moving -> GATE_CLOSE_REFUSED_IN_FLIGHT
+   FAIL  gate change (workspace#61): close, the stuck journey not named -> refused as before, before the stop
+   FAIL  gate change (workspace#68): close, agv03 driven off between the two reads -> refused after the stop, started again, file unchanged
+   FAIL  RIoT read (workspace#68): 253 non-final orders over three pages are all read; agv03's on page 3 refuses
+   FAIL  RIoT read (workspace#68): the non-final listing with a page whose total moved is an error, and close refuses
+   FAIL  RIoT read (workspace#68): the non-final listing with a page short of records is an error, and close refuses
+   FAIL  RIoT read (workspace#68): the non-final listing with a record repeated from an earlier page is an error, and close refuses
+   FAIL  RIoT read (workspace#68): the non-final listing with more pages than the cap of 20 is an error, and close refuses
+   FAIL  RIoT read (workspace#68): the non-final listing with a business code that is not 0 is an error, and close refuses
+   FAIL  RIoT read (workspace#68): the non-final listing with HTTP 500 is an error, and close refuses
+   FAIL  RIoT read (workspace#68): the non-final listing with a body that is not JSON is an error, and close refuses
+   FAIL  RIoT read (workspace#68): the non-final listing with a GET that throws (a timeout) is an error, and close refuses
+   FAIL  RIoT read (workspace#68): a vehicle read with HTTP 404 refuses close (RIOT_NOT_READ)
+   FAIL  RIoT read (workspace#68): a vehicle read with no vehicle object refuses close (RIOT_NOT_READ)
+   FAIL  RIoT read (workspace#68): a vehicle read with a GET that throws refuses close (RIOT_NOT_READ)
+   FAIL  RIoT read (workspace#68): no connection (no key) -> nothing asked, close refuses saying why
+   FAIL  gate reader: what it reads judges as expected (open allowed: never sent; close refused: a journey is active)
+   FAIL  gate (workspace#61, real SQLite): ... and refused as before when not named
+   FAIL  gate (workspace#61, real SQLite): close, named, with another journey active -> refused, naming only the other
+## M2-open-ignores-riot (scripts/parallel/ParallelInstance.psm1):     24 passed, 0 failed
+   - if ($Riot -isnot [System.Collections.IDictionary]) { return 'RIOT_NOT_READ: RIoT was not read' }
+   + return $null  # MUTATION M2: a CONFIRMED order passes without RIoT
+   FAIL  gate refusal: open, a journey whose named order is CONFIRMED (vehicle may be moving) -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal: open, the same instant in another offset counts as during the journey -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal with -RecoveryJourney (workspace#61): open, the released journey named: not widened, its sent legs refuse as before -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal with -RecoveryJourney (workspace#61): open, the stuck journey named: not widened -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, the order EXECUTING -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, the order QUEUEING -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, the order SUSPENDED (8) -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, the order DELETED (6, not one of the three endings) -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, the order not read -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, the order read failed -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, RIoT not read at all -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, RIoT has no order for the upperId -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, RIoT's order under that upperId is another orderId -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, RIoT's answer carries another upperId -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, CONFIRMED with no OrderId recorded -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate refusal by order (workspace#68): open, the first pickup order SUCCESS, a later stop of the journey EXECUTING: only the later one is named -> GATE_OPEN_REFUSED_ORDER_SENT
+   FAIL  gate change: open with a journey whose order was sent -> refused before the stop
+   FAIL  gate change (workspace#68): open, the order reads running on the second read -> refused after the stop, file unchanged
+   FAIL  RIoT read (workspace#68): open, the order detail with a null result (the real RIoT on an order it does not have, 200) refuses (RIOT_ORDER_ABSENT)
+   FAIL  RIoT read (workspace#68): open, the order detail with HTTP 404 (the fake RIoT on an order it does not have) refuses (RIOT_ORDER_ABSENT)
+   FAIL  RIoT read (workspace#68): open, the order detail with HTTP 503 refuses (RIOT_NOT_READ)
+   FAIL  RIoT read (workspace#68): open, the order detail with a GET that throws refuses (RIOT_NOT_READ)
+## M3-readstate-without-riot (scripts/parallel/Set-ParallelDispatchGateLocal.ps1): 1465 passed, 1 failed
+   - Read-ParallelRiotGateFacts -State (Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot -RecoveryJourneyId $recoveryJourneyId) `
+   + (Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot -RecoveryJourneyId $recoveryJourneyId) # MUTATION M3 `
+   FAIL  Set-ParallelDispatchGateLocal.ps1 (workspace#68): both reads (ReadState and the dry run) wrap the journey state in Read-ParallelRiotGateFacts -Direction $direction -Connection $riotConnection
