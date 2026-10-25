@@ -1,0 +1,56 @@
+mutation M3-window-kept-in-process-memory in src/ControlServer.Host/Runtime/JourneyRuntimeEngine.Charging.cs
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.Charging.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.Charging.cs
+index 07767b257..a85be28bb 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.Charging.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.Charging.cs
+@@ -430,6 +430,8 @@ public sealed partial class JourneyRuntimeEngine
+     /// （<see cref="OrderEndedWithoutArrivalReason"/>，不重建），桩由人工清桩放。「未绑车」只认网关读到的 <c>executeVehicleKey</c> 为空或 <c>--</c>
+     /// （<see cref="RiotOrderObservation.ExecuteVehicleBound"/> 为假）；读不出绑没绑的不算。窗口从周期落库的 <c>OrderConfirmedAt</c> 算，重启不重新计时。
+     /// </remarks>
++    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<JourneyRuntimeEngine, System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset>> UndispatchedSeen = new();
++
+     private async Task<bool> NameUndispatchedChargeOrderAsync(
+         JourneyRuntimeRow runtime,
+         JourneyStopRow stop,
+@@ -451,7 +453,7 @@ public sealed partial class JourneyRuntimeEngine
+             return false;
+         }
+ 
+-        DateTimeOffset confirmedAt = cycle.OrderConfirmedAt ?? now;
++        DateTimeOffset confirmedAt = UndispatchedSeen.GetValue(this, _ => new()).GetOrAdd(runtime.JourneyId, now); _ = cycle;
+         if (now - confirmedAt < runtimeOptions.ChargingOrderUndispatchedAlarmAfter)
+         {
+             return false;
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs863-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs863-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs863-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs863-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs863-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs863-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs863-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs863-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs863-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs863-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs863-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs863-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs863-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs863-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs863-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:12.45]     ControlServer.Tests.ChargingApproachSupervisionTests.ARestartInsideTheWindowDoesNotStartItAgain [FAIL]
+  Failed ControlServer.Tests.ChargingApproachSupervisionTests.ARestartInsideTheWindowDoesNotStartItAgain [7 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "CHARGING_ORDER_NOT_DISPATCHED"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.ChargingApproachSupervisionTests.ARestartInsideTheWindowDoesNotStartItAgain() in C:\work\8005-wt\cs863-8005-agv-control-server\tests\ControlServer.Tests\ChargingApproachSupervisionTests.cs:line 146
+   at ControlServer.Tests.ChargingApproachSupervisionTests.ARestartInsideTheWindowDoesNotStartItAgain() in C:\work\8005-wt\cs863-8005-agv-control-server\tests\ControlServer.Tests\ChargingApproachSupervisionTests.cs:line 146
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 7 s - ControlServer.Tests.dll (net8.0)
