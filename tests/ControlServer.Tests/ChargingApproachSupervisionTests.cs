@@ -194,6 +194,82 @@ public sealed class ChargingApproachSupervisionTests
         Assert.Empty(fleet.Riot.OrderCommands);
     }
 
+    // ---- 派出后途中失联 ---------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 单已派给车、车在去桩途中 RIoT 报它离线：写 <see cref="ChargingExecutionReasons.VehicleObservationLost"/>（人工清桩接得住），超过
+    /// <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 升级告警一次（事件 2261）。车可能还在动、可能已在桩上：不取消单、不放桩、不发急停或任何命令、
+    /// 不建第二张单（<c>REQ-0287</c>）。车读回来、照常去桩：码清掉。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleLostOnTheWayIsNamedAlarmedOncePastTheWindowKeepsEverythingAndIsClearedWhenItIsBack()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await ChargingExecutionTests.CommittedAndSentAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        fleet.Riot.BindOrder(journey.PickupUpperId);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { Connected = false, CurrentStationId = 12 };
+
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            ChargingExecutionReasons.VehicleObservationLost,
+            (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2261);
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromMinutes(1));
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        var alarm = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2261);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, alarm.Level);
+        Assert.Contains(KeyA, alarm.Message, StringComparison.Ordinal);
+        Assert.Contains(Near.StationId.ToString(System.Globalization.CultureInfo.InvariantCulture), alarm.Message, StringComparison.Ordinal);
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Empty(fleet.Riot.OrderCommands);
+        Assert.Empty(fleet.Riot.EmergencyCommands);
+        Assert.Single(fleet.Riot.Creates);
+
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12 };
+        await RoundAsync(fleet);
+        Assert.Null((await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+    }
+
+    /// <summary>
+    /// 途中失联点名之后，人在 RIoT 取消这张单：照取消走（不重建）；车离线证明不了停稳，预占照旧；人工清桩确认后桩放开。
+    /// </summary>
+    [Fact]
+    public async Task AfterAVehicleLostOnTheWayAPersonsCancelAndAManualClearanceFreeTheCharger()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await ChargingExecutionTests.CommittedAndSentAsync(fleet);
+        fleet.Riot.BindOrder(journey.PickupUpperId);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { Connected = false, CurrentStationId = 12 };
+        await RoundAsync(fleet);
+        Assert.Equal(
+            ChargingExecutionReasons.VehicleObservationLost,
+            (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            JourneyRuntimeEngine.OrderEndedWithoutArrivalReason,
+            (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        ManualStationClearanceConfirmation cleared =
+            await ManualClearance(fleet).DecideAsync(Request("00000000-0000-4000-8000-0000000c8633"), Token);
+        Assert.Equal((FieldConfirmationDecision.Confirmed, true), (cleared.Decision.Outcome, cleared.StationReleased));
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        Assert.Empty(await fleet.Context.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+        Assert.Single(fleet.Riot.Creates);
+    }
+
     internal static ManualStationClearance ManualClearance(FleetFixture fleet) =>
         new(
             fleet.Context,
