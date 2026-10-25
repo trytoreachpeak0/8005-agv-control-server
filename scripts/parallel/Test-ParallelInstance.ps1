@@ -1411,7 +1411,9 @@ $scanTargets = [ordered]@{
             'Invoke-ParallelRemovalSequence::$Actions.Service', 'Invoke-ParallelRemovalSequence::$Actions[$kind]',
             'Invoke-ParallelRemovalSequence::$Actions.Process', 'Invoke-ParallelRemovalSequence::$Actions.DirectoryPattern',
             'Invoke-ParallelRemovalSequence::$Actions.ReparsePoint', 'Invoke-ParallelRemovalSequence::$Actions.Directory',
-            'Invoke-ParallelRemovalSequence::$result'); Owners = $deleteFunctions; Expected = 12 }
+            'Invoke-ParallelRemovalSequence::$result',
+            # 8005-workspace#68: the machine-scope read of the RIoT key, injected so the connection can be resolved purely.
+            'Resolve-ParallelRiotGateConnection::$MachineVariable'); Owners = $deleteFunctions; Expected = 13 }
     'ParallelHost.psm1'                   = @{ Dynamic = @('Invoke-ParallelProductUninstaller::$UninstallerPath',
             # control-server#652: the credential write before the upgrade, and its own injected Environment actions.
             'Invoke-ParallelProductUpgrade::$Actions.WriteVehicleSafetyCredentials',
@@ -1431,9 +1433,11 @@ $scanTargets = [ordered]@{
             'Invoke-ParallelJourneyRuntimeRelease::$Actions.ServiceProcessId', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StopService',
             'Invoke-ParallelJourneyRuntimeRelease::$Actions.ProcessExited', 'Invoke-ParallelJourneyRuntimeRelease::$Actions.StartService',
             # control-server#578 review: the machine environment read before the restart, and setting the flag back to false.
-            'Invoke-ParallelInstanceConfigurationStep::$Actions.GetMachineEnvironment', 'Invoke-ParallelJourneyRuntimeRelease::$setBackFalse'); Owners = @()
+            'Invoke-ParallelInstanceConfigurationStep::$Actions.GetMachineEnvironment', 'Invoke-ParallelJourneyRuntimeRelease::$setBackFalse',
+            # 8005-workspace#68: the RIoT GET seam (the HTTP GET in production, a recorder in this test).
+            'Invoke-ParallelRiotGateGet::$Get'); Owners = @()
             # 8005-workspace#61: two more reads through the same $read, of each recovery journey's row and of the vehicle faults.
-            Expected = 42 }
+            Expected = 43 }
     'Set-ParallelDispatchGateLocal.ps1'   = @{ Dynamic = @(); Owners = @(); Expected = 0 }
 }
 foreach ($file in $scanTargets.Keys) {

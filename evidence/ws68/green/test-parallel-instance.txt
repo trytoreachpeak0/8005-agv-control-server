@@ -1,0 +1,97 @@
+# 8005-workspace#68 implementation; 2026-10-25 10:06 +0800; pwsh -File scripts/parallel/Test-ParallelInstance.ps1
+# (the real-SQLite reader cases are SKIPPED without a ControlServer.Host build; see test-parallel-instance-with-host-build.txt)
+    24 passed, 0 failed
+  PASS  gate refusal by vehicle (workspace#68): close, agv03 on its charger, the charge order ended long ago, standing still -> allowed
+  PASS  gate refusal by vehicle (workspace#68): close, a vehicle at rest whose MT_NA reads with MODE_AUTO and the brake engaged (control-server#639) -> allowed
+  PASS  gate refusal by vehicle (workspace#68): close, a non-final order of another vehicle in the listing -> allowed
+  PASS  gate refusal by vehicle (workspace#68): close, a fault row of the vehicle at Level None -> allowed
+  PASS  gate refusal by vehicle (workspace#68): close, a non-final order appointed to the vehicle -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, a non-final order executed by the vehicle (appointed to none) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, a speed that is not 0 -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, MT_RUNNING at speed 0 -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, MODE_MANUAL -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, MT_NA with the brake released -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, MT_PAUSED (paused, not finished) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, MT_WAIT_FOR_CHECKPOINT -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, procState not IDLE -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, processingOrder true -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, processingOrder not given -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, not enabled -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, OFF_LINE (its fields may be frozen) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, emergencyState CAN_NOT_RECOVER -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, controlState not OK -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, locationState not running -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, no speed given -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, a speed that is not a number -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, an answer for another vehicle's key -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, the vehicle not read -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, the vehicle read failed -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, RIoT not read at all (no Riot in the state) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, RIoT not reachable (the read reported an error for all of it) -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, the non-final order listing incomplete -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, the vehicle at rest but holding a fault -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, the vehicle faults not read -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, agv03 at rest on its charger, agv02 under way: only agv02 is named -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68): close, agv03 on its charger and agv02 standing, both at rest -> allowed
+  PASS  gate refusal by vehicle (workspace#68) with -RecoveryJourney: the stuck journey named and agv03 standing on its charger -> allowed
+  PASS  gate refusal by vehicle (workspace#68) with -RecoveryJourney: the stuck journey named and agv03 moving -> GATE_CLOSE_REFUSED_IN_FLIGHT
+  PASS  gate refusal by vehicle (workspace#68) with -RecoveryJourney: the stuck journey named but released back to the engine, agv03 standing -> GATE_CLOSE_RECOVERY_JOURNEY_NOT_AWAITING_RECOVERY
+  PASS  gate refusal by order (workspace#68): open, the pickup order SUCCESS, the journey not Completed (field instance 2) -> allowed
+  PASS  gate refusal by order (workspace#68): open, the charge order SUCCESS, the charging journey not Completed -> allowed
+  PASS  gate refusal by order (workspace#68): open, the order CANCELED -> allowed
+  PASS  gate refusal by order (workspace#68): open, the order FAILED -> allowed
+  PASS  gate refusal by order (workspace#68): open, the order EXECUTING -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, the order QUEUEING -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, the order SUSPENDED (8) -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, the order DELETED (6, not one of the three endings) -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, the order not read -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, the order read failed -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, RIoT not read at all -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, RIoT has no order for the upperId -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, RIoT's order under that upperId is another orderId -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, RIoT's answer carries another upperId -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, CONFIRMED with no OrderId recorded -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, CREATE_ATTEMPTED, though RIoT shows it ended (only CONFIRMED is read) -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, TERMINAL_RECONCILIATION_REQUIRED, though RIoT shows it ended -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate refusal by order (workspace#68): open, the first pickup order SUCCESS, a later stop of the journey EXECUTING: only the later one is named -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate change (workspace#68): close, agv03 standing on its charger both times -> read, stop, read again, write, start, verified
+  PASS  gate change (workspace#68): close, agv03 driven off between the two reads -> refused after the stop, started again, file unchanged
+  PASS  gate change (workspace#68): open, the pickup order SUCCESS on a journey not Completed (field instance 2) -> opened
+  PASS  gate change (workspace#68): open, the order reads running on the second read -> refused after the stop, file unchanged
+  PASS  RIoT read (workspace#68): close reads getVehicleInfo of each vehicle with an active journey and the non-final listing once; agv03 at rest passes
+  PASS  RIoT read (workspace#68): close, two vehicles with active journeys (a Completed one not counted) -> two vehicle reads, one listing, no order detail
+  PASS  RIoT read (workspace#68): close with no active journey reads nothing
+  PASS  RIoT read (workspace#68): an unreadable state is handed back as it is, nothing asked of RIoT
+  PASS  RIoT read (workspace#68): 253 non-final orders over three pages are all read; agv03's on page 3 refuses
+  PASS  RIoT read (workspace#68): the non-final listing with a page whose total moved is an error, and close refuses
+  PASS  RIoT read (workspace#68): the non-final listing with a page short of records is an error, and close refuses
+  PASS  RIoT read (workspace#68): the non-final listing with a record repeated from an earlier page is an error, and close refuses
+  PASS  RIoT read (workspace#68): the non-final listing with more pages than the cap of 20 is an error, and close refuses
+  PASS  RIoT read (workspace#68): the non-final listing with a business code that is not 0 is an error, and close refuses
+  PASS  RIoT read (workspace#68): the non-final listing with HTTP 500 is an error, and close refuses
+  PASS  RIoT read (workspace#68): the non-final listing with a body that is not JSON is an error, and close refuses
+  PASS  RIoT read (workspace#68): the non-final listing with a GET that throws (a timeout) is an error, and close refuses
+  PASS  RIoT read (workspace#68): a vehicle read with HTTP 404 refuses close (RIOT_NOT_READ)
+  PASS  RIoT read (workspace#68): a vehicle read with no vehicle object refuses close (RIOT_NOT_READ)
+  PASS  RIoT read (workspace#68): a vehicle read with a GET that throws refuses close (RIOT_NOT_READ)
+  PASS  RIoT read (workspace#68): open reads detailByUpperId of the CONFIRMED intent only (not the never-sent one); SUCCESS passes
+  PASS  RIoT read (workspace#68): open, the order detail with a null result (the real RIoT on an order it does not have, 200) refuses (RIOT_ORDER_ABSENT)
+  PASS  RIoT read (workspace#68): open, the order detail with HTTP 404 (the fake RIoT on an order it does not have) refuses (RIOT_ORDER_ABSENT)
+  PASS  RIoT read (workspace#68): open, the order detail with HTTP 503 refuses (RIOT_NOT_READ)
+  PASS  RIoT read (workspace#68): open, the order detail with a GET that throws refuses (RIOT_NOT_READ)
+  PASS  RIoT read (workspace#68): an upperId is escaped into the path
+  PASS  RIoT read (workspace#68): no connection (no key) -> nothing asked, close refuses saying why
+  PASS  RIoT read (workspace#68): the default GET sends Authorization: Bearer <key> to the configured base URL and reads the answers
+  PASS  RIoT connection (workspace#68): the product's appsettings.json and the key in the service Environment -> http://172.19.206.222:8888
+  PASS  RIoT connection (workspace#68): appsettings.Production.json over it, keys in other casing, a trailing slash -> http://10.0.0.9:8888
+  PASS  RIoT connection (workspace#68): no baseUrl anywhere: the product's default -> http://127.0.0.1:58888
+  PASS  RIoT connection (workspace#68): the key in the machine scope only -> http://172.19.206.222:8888
+  PASS  RIoT connection (workspace#68): no key anywhere -> RIOT_KEY_MISSING
+  PASS  RIoT connection (workspace#68): no variable named for the key -> RIOT_KEY_MISSING
+  PASS  RIoT connection (workspace#68): a timeout that is not positive -> RIOT_CONNECTION_INVALID
+  PASS  RIoT connection (workspace#68): a baseUrl that is not an absolute http URL -> RIOT_CONNECTION_INVALID
+  PASS  Set-ParallelDispatchGateLocal.ps1 (workspace#68): both reads (ReadState and the dry run) wrap the journey state in Read-ParallelRiotGateFacts -Direction $direction -Connection $riotConnection
+  PASS  Set-ParallelDispatchGateLocal.ps1 (workspace#68): the RIoT connection is resolved once, from the installed configuration and the service Environment
+  PASS  gate reader (workspace#68): the vehicle faults are read on every read, not inside a condition
+  SKIP  gate reader on a real SQLite file: no ControlServer.Host build under src/ControlServer.Host/bin (build it to run this case)
+1452 passed, 0 failed

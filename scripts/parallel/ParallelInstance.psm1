@@ -4316,9 +4316,279 @@ function ConvertTo-ParallelGateDirection {
     throw "GATE_STATE_INVALID: -State is 'Closed' or 'Open', exactly; '$State' is neither. Nothing was stopped or changed."
 }
 
-function Get-ParallelRiotVehicleMotionReason { [CmdletBinding()] param([string] $VehicleKey, $Riot) throw 'NOT_IMPLEMENTED (workspace#68)' }
-function Get-ParallelRiotOrderEndReason { [CmdletBinding()] param($Intent, $Riot) throw 'NOT_IMPLEMENTED (workspace#68)' }
-function Resolve-ParallelRiotGateConnection { [CmdletBinding()] param($BaseConfiguration, $Configuration, [string[]] $ServiceEnvironment, [scriptblock] $MachineVariable) throw 'NOT_IMPLEMENTED (workspace#68)' }
+# 8005-workspace#68. The RIoT order states (RiotOrderState) a CONFIRMED intent's order may be read as ended in: CANCELED 2,
+# FAILED 4, SUCCESS 5. Not DELETED 6, which the ticket did not name; an order in it still holds the gate.
+$script:RiotEndedOrderStates = @(2, 4, 5)
+# The non-final states the listing is filtered by, HttpRiotMovementGateway.NonFinalOrderStates: QUEUEING 1, EXECUTING 3,
+# PAUSED 7, SUSPENDED 8, HANG 9, QUEUE_PRIORITY 10.
+$script:RiotNonFinalOrderStates = @(1, 3, 7, 8, 9, 10)
+
+function Get-ParallelRiotText {
+    # One field of a RIoT answer as text, $null when absent or null.
+    param([System.Collections.IDictionary] $Node, [string] $Name)
+    return ($Node.Contains($Name) -and $null -ne $Node[$Name]) ? [string] $Node[$Name] : $null
+}
+
+function Get-ParallelRiotVehicleMotionReason {
+    <#
+        .SYNOPSIS
+            8005-workspace#68. Why RIoT does not show a vehicle standing still: nothing when it does, else one reason per
+            fact, each a code and what was read. Pure.
+
+        .DESCRIPTION
+            A port of HttpRiotMovementGateway.Safety() (src/ControlServer.Infrastructure/Adapters), the predicate every vehicle
+            safety read of the server uses -- the onboard safety projection, the charging stop proof, idle return -- so that
+            "standing still" here is what it is there, codes included. Over getVehicleInfo/{deviceKey} as RIoT answers it
+            (vehicle: movementState, mode, speed, breakSwitchState, emergencyState, controlState, locationState;
+            vehicleTaskInfo: key, procState, processingOrder, enable, integrationLevel) and one complete non-final order listing:
+              * moving outright: speed not 0, or MT_RUNNING (RIOT_MOTION_ACTIVE);
+              * otherwise every one of procState IDLE, processingOrder false, enable true, integrationLevel ON_LINE,
+                emergencyState OK, breakSwitchState MOVABLE (the brake engaged; the name runs against intuition),
+                MODE_AUTO, controlState CONTROL_STATE_OK, locationState LOCATION_STATE_RUNNING, speed exactly 0, and
+                movementState MT_FINISHED -- or MT_NA with MODE_AUTO and the brake engaged (control-server#639) --
+                and no non-final order appointed to or executed by the vehicle.
+            sysState is not among them: Safety() does not read it, and VehicleFaultCoordinator lists it as a candidate whose
+            meanings are not approved (agv03 on its charger reads CHARGING, agv01 under an emergency stop ERROR).
+            Anything RIoT did not answer -- the facts not read, a read that failed, an answer for another key, a listing that
+            did not add up -- is a reason too: "standing still" has to be something RIoT said (RIOT_NOT_READ,
+            RIOT_VEHICLE_KEY_MISMATCH, RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN).
+
+            -Riot is what Read-ParallelRiotGateFacts added to the state: Error, or Vehicles (deviceKey -> @{ Vehicle } or
+            @{ Error }) and NonFinalOrders (@{ Records } or @{ Error }).
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string] $VehicleKey, [AllowNull()] $Riot)
+    if ($Riot -isnot [System.Collections.IDictionary]) { return [string[]] @('RIOT_NOT_READ: RIoT was not read') }
+    if ($Riot.Contains('Error')) { return [string[]] @("RIOT_NOT_READ: $($Riot['Error'])") }
+    $entry = ($Riot['Vehicles'] -is [System.Collections.IDictionary] -and $Riot['Vehicles'].Contains($VehicleKey)) ? $Riot['Vehicles'][$VehicleKey] : $null
+    if ($entry -isnot [System.Collections.IDictionary] -or $entry.Contains('Error') -or $entry['Vehicle'] -isnot [System.Collections.IDictionary]) {
+        $why = ($entry -is [System.Collections.IDictionary] -and $entry.Contains('Error')) ? $entry['Error'] : 'no answer for this vehicle'
+        return [string[]] @("RIOT_NOT_READ: getVehicleInfo/$VehicleKey ($why)")
+    }
+    $vehicle = $entry['Vehicle']['vehicle']
+    $task = $entry['Vehicle']['vehicleTaskInfo']
+    if ($vehicle -isnot [System.Collections.IDictionary] -or $task -isnot [System.Collections.IDictionary]) {
+        return [string[]] @("RIOT_NOT_READ: getVehicleInfo/$VehicleKey has no vehicle or vehicleTaskInfo")
+    }
+    $listing = $Riot['NonFinalOrders']
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    # The SDK refuses an answer whose vehicleTaskInfo.key is not the key asked for; so does this.
+    if ([string] $task['key'] -cne $VehicleKey) { $reasons.Add("RIOT_VEHICLE_KEY_MISMATCH (vehicleTaskInfo.key '$($task['key'])')") }
+    $movement = Get-ParallelRiotText $vehicle 'movementState'
+    $mode = Get-ParallelRiotText $vehicle 'mode'
+    $brake = Get-ParallelRiotText $vehicle 'breakSwitchState'
+    $rawSpeed = $vehicle.Contains('speed') ? $vehicle['speed'] : $null
+    [double] $speed = 0
+    $speedKnown = $null -ne $rawSpeed -and $rawSpeed -isnot [bool] -and $rawSpeed -isnot [string] -and [double]::TryParse([string] $rawSpeed, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref] $speed)
+    if (($speedKnown -and $speed -ne 0) -or $movement -ceq 'MT_RUNNING') {
+        $reasons.Add("RIOT_MOTION_ACTIVE (movementState $($movement ?? 'none'), speed $($rawSpeed ?? 'none'))")
+        return [string[]] $reasons.ToArray()
+    }
+    $auto = $mode -ceq 'MODE_AUTO'
+    $braked = $brake -ceq 'MOVABLE'
+    $bootAtRest = $movement -ceq 'MT_NA' -and $auto -and $braked
+    if ((Get-ParallelRiotText $task 'procState') -cne 'IDLE') { $reasons.Add("RIOT_PROC_NOT_IDLE (procState $((Get-ParallelRiotText $task 'procState') ?? 'none'))") }
+    if (-not ($task.Contains('processingOrder') -and $task['processingOrder'] -is [bool] -and -not $task['processingOrder'])) {
+        $reasons.Add("RIOT_PROCESSING_ORDER_UNKNOWN_OR_ACTIVE (processingOrder $($task.Contains('processingOrder') ? ($task['processingOrder'] ?? 'null') : 'none'))")
+    }
+    if (-not ($task.Contains('enable') -and $task['enable'] -is [bool] -and $task['enable'])) { $reasons.Add("RIOT_VEHICLE_NOT_ENABLED (enable $((Get-ParallelRiotText $task 'enable') ?? 'none'))") }
+    if ((Get-ParallelRiotText $task 'integrationLevel') -cne 'ON_LINE') { $reasons.Add("RIOT_VEHICLE_NOT_ONLINE (integrationLevel $((Get-ParallelRiotText $task 'integrationLevel') ?? 'none'))") }
+    if ((Get-ParallelRiotText $vehicle 'emergencyState') -cne 'OK') { $reasons.Add("RIOT_EMERGENCY_NOT_OK (emergencyState $((Get-ParallelRiotText $vehicle 'emergencyState') ?? 'none'))") }
+    if (-not $braked) { $reasons.Add("RIOT_BRAKE_NOT_MOVABLE (breakSwitchState $($brake ?? 'none'))") }
+    if (-not $auto) { $reasons.Add("RIOT_MODE_NOT_AUTO (mode $($mode ?? 'none'))") }
+    if ((Get-ParallelRiotText $vehicle 'controlState') -cne 'CONTROL_STATE_OK') { $reasons.Add("RIOT_CONTROL_NOT_OK (controlState $((Get-ParallelRiotText $vehicle 'controlState') ?? 'none'))") }
+    if ((Get-ParallelRiotText $vehicle 'locationState') -cne 'LOCATION_STATE_RUNNING') { $reasons.Add("RIOT_LOCATION_NOT_RUNNING (locationState $((Get-ParallelRiotText $vehicle 'locationState') ?? 'none'))") }
+    if (-not $speedKnown -or $speed -ne 0) { $reasons.Add("RIOT_SPEED_NOT_ZERO (speed $($rawSpeed ?? 'none'))") }
+    if ($movement -cne 'MT_FINISHED' -and -not $bootAtRest) { $reasons.Add("RIOT_MOVEMENT_NOT_FINISHED (movementState $($movement ?? 'none'))") }
+    if ($listing -isnot [System.Collections.IDictionary] -or $listing.Contains('Error') -or -not $listing.Contains('Records')) {
+        $why = ($listing -is [System.Collections.IDictionary] -and $listing.Contains('Error')) ? $listing['Error'] : 'the non-final order listing was not read'
+        $reasons.Add("RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN ($why)")
+    } else {
+        $orders = @($listing['Records'] | Where-Object { $_ -is [System.Collections.IDictionary] -and
+                ([string] $_['appointVehicleKey'] -ceq $VehicleKey -or [string] $_['executeVehicleKey'] -ceq $VehicleKey) })
+        if ($orders.Count -gt 0) {
+            $reasons.Add("RIOT_NONFINAL_ORDER_PRESENT ($(@($orders | ForEach-Object { "$($_['orderId']) / $($_['upperId']) orderState $($_['orderState'])" }) -join ', '))")
+        }
+    }
+    return [string[]] $reasons.ToArray()
+}
+
+function Get-ParallelRiotOrderEndReason {
+    <#
+        .SYNOPSIS
+            8005-workspace#68. Nothing when RIoT, read now, shows the order of a CONFIRMED order intent ended (SUCCESS, FAILED
+            or CANCELED); otherwise why it may still be running. Pure.
+
+        .DESCRIPTION
+            The order is read by the intent's UpperId (detailByUpperId, the read the runtime itself reconciles with) and must
+            be the very order the intent recorded: the answer's upperId the intent's UpperId and its orderId the intent's
+            OrderId, both ordinal -- an intent without an OrderId cannot be matched and is not let through. Only CONFIRMED:
+            every other state that may have sent an order (CREATE_ATTEMPTED, RESULT_UNKNOWN, TERMINAL_RECONCILIATION_REQUIRED)
+            keeps refusing as before, whatever RIoT says, since the server has not settled what was created.
+
+            -Riot as Read-ParallelRiotGateFacts added it: Error, or Orders (upperId -> @{ Record }, the record $null when RIoT
+            has none, or @{ Error }).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Intent, [AllowNull()] $Riot)
+    $upper = [string] $Intent['UpperId']
+    if ([string] $Intent['Status'] -cne 'CONFIRMED') { return "the intent is $($Intent['Status']), not CONFIRMED, so RIoT's answer does not settle it" }
+    if ($Riot -isnot [System.Collections.IDictionary]) { return 'RIOT_NOT_READ: RIoT was not read' }
+    if ($Riot.Contains('Error')) { return "RIOT_NOT_READ: $($Riot['Error'])" }
+    $entry = ($Riot['Orders'] -is [System.Collections.IDictionary] -and $Riot['Orders'].Contains($upper)) ? $Riot['Orders'][$upper] : $null
+    if ($entry -isnot [System.Collections.IDictionary] -or $entry.Contains('Error') -or -not $entry.Contains('Record')) {
+        $why = ($entry -is [System.Collections.IDictionary] -and $entry.Contains('Error')) ? $entry['Error'] : 'no answer for this upperId'
+        return "RIOT_NOT_READ: detailByUpperId/$upper ($why)"
+    }
+    $record = $entry['Record']
+    if ($null -eq $record) { return "RIOT_ORDER_ABSENT: RIoT has no order under upperId $upper" }
+    if ($record -isnot [System.Collections.IDictionary]) { return "RIOT_NOT_READ: detailByUpperId/$upper answered something that is not an order" }
+    if ([string] $record['upperId'] -cne $upper -or [string]::IsNullOrEmpty([string] $Intent['OrderId']) -or [string] $record['orderId'] -cne [string] $Intent['OrderId']) {
+        return ("RIOT_ORDER_MISMATCH: RIoT answered order $($record['orderId']) / upperId $($record['upperId']) for the intent's order " +
+            "$($Intent['OrderId'] ?? '(none recorded)') / $upper")
+    }
+    $state = $record['orderState']
+    if ($null -ne $state -and $state -isnot [bool] -and $state -isnot [string] -and [string] $state -match '^\d+$' -and [int] $state -in $script:RiotEndedOrderStates) { return $null }
+    return "RIoT shows order $($record['orderId']) in orderState $($state ?? 'none'), not ended (SUCCESS 5, FAILED 4, CANCELED 2)"
+}
+
+function Get-ParallelRiotSetting {
+    # RIoT:<Key> from the first tree that has it (appsettings.Production.json before appsettings.json), ignoring case.
+    param([object[]] $Trees, [string] $Key)
+    foreach ($tree in $Trees) {
+        $found = Get-ConfigurationValue (Get-ConfigurationValue $tree 'RIoT') $Key
+        if ($null -ne $found) { return $found }
+    }
+    return $null
+}
+
+function Resolve-ParallelRiotGateConnection {
+    <#
+        .SYNOPSIS
+            8005-workspace#68. Where the gate script reads RIoT from, as the installed service would: [ordered]@{ BaseUrl;
+            ApiKey; KeyVariable; KeySource; TimeoutSeconds }, or @{ Error } when it cannot be told. Never carries the key into
+            an error. Pure.
+
+        .DESCRIPTION
+            RiotSdkRegistration.AddRiotSdkIntegration reads RIoT:baseUrl (default http://127.0.0.1:58888, trailing '/'
+            trimmed), RIoT:timeoutSeconds (default 30, positive) and the key from the environment variable
+            RIoT:callApiKeyEnvironmentVariable names. Read here as .NET configuration reads them: appsettings.json
+            (-BaseConfiguration) with appsettings.Production.json (-Configuration) over it, keys ignoring case. The key comes
+            from the service's own registry Environment (-ServiceEnvironment, where the product installer writes it) and
+            otherwise from the machine scope (-MachineVariable(name)), the two places the service process inherits it from.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowNull()][System.Collections.IDictionary] $BaseConfiguration,
+        [AllowNull()][System.Collections.IDictionary] $Configuration,
+        [AllowNull()][AllowEmptyCollection()][string[]] $ServiceEnvironment,
+        [Parameter(Mandatory = $true)][scriptblock] $MachineVariable
+    )
+
+    $baseUrl = ([string] ((Get-ParallelRiotSetting -Trees @($Configuration, $BaseConfiguration) -Key 'baseUrl') ?? 'http://127.0.0.1:58888')).TrimEnd('/')
+    [uri] $parsed = $null
+    if (-not [uri]::TryCreate($baseUrl, [UriKind]::Absolute, [ref] $parsed) -or $parsed.Scheme -cnotin @('http', 'https')) {
+        return @{ Error = "RIOT_CONNECTION_INVALID: RIoT:baseUrl '$baseUrl' is not an absolute http(s) URL." }
+    }
+    $timeout = Get-ParallelRiotSetting -Trees @($Configuration, $BaseConfiguration) -Key 'timeoutSeconds'
+    [double] $seconds = 30
+    if ($null -ne $timeout -and (-not [double]::TryParse([string] $timeout, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref] $seconds) -or $seconds -le 0)) {
+        return @{ Error = "RIOT_CONNECTION_INVALID: RIoT:timeoutSeconds '$timeout' is not a positive number." }
+    }
+    $variable = [string] (Get-ParallelRiotSetting -Trees @($Configuration, $BaseConfiguration) -Key 'callApiKeyEnvironmentVariable')
+    if ([string]::IsNullOrWhiteSpace($variable)) {
+        return @{ Error = 'RIOT_KEY_MISSING: the installed configuration names no RIoT:callApiKeyEnvironmentVariable, so the RIoT call API key cannot be found.' }
+    }
+    $key = Get-ParallelServiceEnvironmentEntry -Environment $ServiceEnvironment -Name $variable
+    $source = 'the service Environment'
+    if ([string]::IsNullOrEmpty($key)) { $key = [string] (& $MachineVariable $variable); $source = 'the machine scope' }
+    if ([string]::IsNullOrEmpty($key)) {
+        return @{ Error = "RIOT_KEY_MISSING: $variable is neither in the service's Environment nor in the machine scope, so RIoT cannot be read." }
+    }
+    return [ordered]@{ BaseUrl = $baseUrl; ApiKey = $key; KeyVariable = $variable; KeySource = $source; TimeoutSeconds = $seconds }
+}
+
+function Get-ParallelGateSentIntent {
+    <#
+        .SYNOPSIS
+            8005-workspace#68 (moved out of Get-ParallelDispatchGateRefusal). The order intents the open rule counts: for
+            each journey not Completed, those that may have been sent. One @{ Journey; Intent; Problem } per pair; Problem is
+            text (and Intent $null when nothing could be dated) for what cannot be read. Pure.
+
+        .DESCRIPTION
+            A journey's intents are those named on its row (PickupUpperId, GateUpperId) plus every intent for its vehicle
+            created at or after the journey was: the engine keeps at most one active journey per vehicle, and later stops,
+            rebuilds and charging legs get intents of their own that the row does not name. Sent is every intent not
+            certainly never sent (Test-ParallelOrderIntentNeverSent). Anything that cannot be dated is a Problem.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $State)
+    $intents = @($State['OrderIntents'])
+    foreach ($journey in @($State['Journeys'] | Where-Object { [string] $_['Stage'] -cne 'Completed' })) {
+        [DateTimeOffset] $since = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParse([string] $journey['CreatedAt'], [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $since)) {
+            @{ Journey = $journey; Intent = $null; Problem = "its CreatedAt '$($journey['CreatedAt'])' cannot be read" }
+            continue
+        }
+        $named = @([string] $journey['PickupUpperId'], [string] $journey['GateUpperId']) | Where-Object { $_ }
+        foreach ($intent in $intents) {
+            $mine = $named -ccontains [string] $intent['UpperId']
+            if (-not $mine -and [string] $intent['VehicleKey'] -ceq [string] $journey['VehicleKey']) {
+                [DateTimeOffset] $created = [DateTimeOffset]::MinValue
+                if (-not [DateTimeOffset]::TryParse([string] $intent['CreatedAt'], [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $created)) {
+                    @{ Journey = $journey; Intent = $intent; Problem = "order intent $($intent['UpperId']) has an unreadable CreatedAt '$($intent['CreatedAt'])'" }
+                    continue
+                }
+                $mine = $created -ge $since
+            }
+            if ($mine -and -not (Test-ParallelOrderIntentNeverSent -Intent $intent -AuditEvents @($State['AuditEvents']))) {
+                @{ Journey = $journey; Intent = $intent; Problem = $null }
+            }
+        }
+    }
+}
+
+function Get-ParallelGateVehicleMotion {
+    <#
+        .SYNOPSIS
+            8005-workspace#68. For each vehicle of -Journeys, whether it may be under way: one [ordered]@{ VehicleKey; AgvId;
+            Journeys (each "id (Stage)"); Reasons } per vehicle, Reasons empty when it stands still. Pure.
+
+        .DESCRIPTION
+            Standing still is Get-ParallelRiotVehicleMotionReason saying nothing, and on top of it the guard ws#61 put on a
+            named recovery journey: its vehicle holds no fault (no VehicleFaultStates row of its AgvId with a Level other than
+            None), because while a fault stands its stop proof lives in memory and a restart discards it (Program.cs:88-91).
+            The faults not read is a reason too. A journey row without a vehicle key cannot be judged and is a reason.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $State, [AllowEmptyCollection()][object[]] $Journeys)
+    $riot = $State.Contains('Riot') ? $State['Riot'] : $null
+    $byVehicle = [ordered]@{}
+    foreach ($journey in @($Journeys)) {
+        $key = [string] $journey['VehicleKey']
+        if (-not $byVehicle.Contains($key)) { $byVehicle[$key] = [System.Collections.Generic.List[object]]::new() }
+        $byVehicle[$key].Add($journey)
+    }
+    foreach ($key in @($byVehicle.Keys)) {
+        $rows = @($byVehicle[$key])
+        $agvIds = @($rows | ForEach-Object { [string] $_['AgvId'] } | Sort-Object -Unique -CaseSensitive)
+        $reasons = [System.Collections.Generic.List[string]]::new()
+        if ([string]::IsNullOrEmpty($key)) {
+            $reasons.Add('NO_VEHICLE_KEY: the journey row names no vehicle key, so RIoT cannot be asked about it')
+        } else {
+            foreach ($reason in @(Get-ParallelRiotVehicleMotionReason -VehicleKey $key -Riot $riot)) { $reasons.Add($reason) }
+        }
+        if (-not $State.Contains('VehicleFaults')) {
+            $reasons.Add('VEHICLE_FAULTS_NOT_READ: the vehicle faults were not read, so a stop proof a restart would drop cannot be ruled out')
+        } else {
+            foreach ($fault in @($State['VehicleFaults'] | Where-Object { [string] $_['AgvId'] -cin $agvIds -and [string] $_['Level'] -cne 'None' })) {
+                $reasons.Add("VEHICLE_FAULT ($($fault['Level']) / $($fault['EvidenceCode'] ?? 'no evidence code')): a restart would drop its stop proof")
+            }
+        }
+        [ordered]@{ VehicleKey = $key; AgvId = ($agvIds -join ', '); Journeys = @($rows | ForEach-Object { "$($_['JourneyId']) ($($_['Stage']))" }); Reasons = [string[]] $reasons.ToArray() }
+    }
+}
 
 function Get-ParallelDispatchGateRefusal {
     <#
@@ -4331,21 +4601,27 @@ function Get-ParallelDispatchGateRefusal {
             runtime's fault supervision for as long as the restart takes, so both refuse while a vehicle
             may be under one of this instance's RIoT orders. They differ in what counts:
 
-              * Close: any journey whose Stage is not Completed (the engine's own definition of active,
-                JourneyRuntimeEngine; Blocked counts). No HTTP endpoint lists them all -- each
-                /api/dashboard/* query returns a subset -- which is why this reads the database.
+              * Close: the journeys whose Stage is not Completed (the engine's own definition of active,
+                JourneyRuntimeEngine; Blocked counts), judged by their vehicle (8005-workspace#68): a
+                vehicle may be under way unless RIoT, read now, shows it standing still and it holds no
+                fault (Get-ParallelGateVehicleMotion). Until #68 every such journey refused, so a vehicle
+                parked on its charger -- its charging journey stays AwaitingPickupArrival until the
+                battery reads full, long after its charge order ended -- held a planned restart for
+                hours. No HTTP endpoint lists the journeys -- each /api/dashboard/* query returns a
+                subset -- which is why this reads the database.
               * Open: a journey whose order has been, or may have been, sent. With the gate closed no
                 order can be created (MovementDispatchService returns CreateDispatchDisabled and writes
                 nothing), so the journeys that exist then are waiting for exactly this gate, and refusing
                 them would be a deadlock only a database edit could break. Refused is any journey with an
-                order intent that is not certainly never sent (Test-ParallelOrderIntentNeverSent). A
-                journey's intents are those named on its row (PickupUpperId, GateUpperId) plus every
-                intent for its vehicle created at or after the journey was: the engine keeps at most one
-                active journey per vehicle, and later stops, rebuilds and charging legs get intents of
-                their own that the row does not name. Anything that cannot be dated or read refuses.
+                order intent that is not certainly never sent (Get-ParallelGateSentIntent), except a
+                CONFIRMED one whose order RIoT, read now, shows ended (Get-ParallelRiotOrderEndReason;
+                8005-workspace#68: until then CONFIRMED always counted, and a pickup order that had ended
+                at 11:23 held the gate on 2026-10-21). Anything that cannot be dated or read refuses.
 
-            $State is Get-ParallelJourneyDispatchState's output, or $null / an Error string when it could
-            not be read, which refuses in both directions (fail closed). Pure.
+            $State is Get-ParallelJourneyDispatchState's output with Read-ParallelRiotGateFacts' Riot added,
+            or $null / an Error string when it could not be read, which refuses in both directions (fail
+            closed). Without Riot every vehicle and every CONFIRMED order counts as RIOT_NOT_READ, which is
+            the rule from before #68. Pure.
 
             -RecoveryJourney (8005-workspace#61; ConvertFrom-ParallelRecoveryJourneyArgument's list of journeyId, agvId,
             vehicleKey), for closing only, names the journeys vehicles stuck on a slot operation result are recovered from.
@@ -4417,43 +4693,35 @@ function Get-ParallelDispatchGateRefusal {
             $journeys = @($journeys | Where-Object { [string] $_['JourneyId'] -cne $recoveryId })
         }
         if ($journeys.Count -eq 0) { return $null }
-        $listed = ($journeys | ForEach-Object { "$($_['JourneyId']) ($($_['AgvId']), $($_['Stage']))" }) -join '; '
+        # 8005-workspace#68: the rest are judged by their vehicle, and only a vehicle that may be under way holds the gate.
+        $moving = @(Get-ParallelGateVehicleMotion -State $State -Journeys $journeys | Where-Object { $_['Reasons'].Count -gt 0 })
+        if ($moving.Count -eq 0) { return $null }
+        $listed = ($moving | ForEach-Object { "vehicle $($_['AgvId']) / $($_['VehicleKey']) with $($_['Journeys'] -join ', '): $($_['Reasons'] -join '; ')" }) -join ' | '
         $notInFlight = @(Get-ParallelRecoveryJourneyNotInFlight -State $State -RecoveryJourney $RecoveryJourney)
         if ($notInFlight.Count -gt 0) { $listed += " (named but not in flight: $($notInFlight -join ', '))" }
-        return ("GATE_CLOSE_REFUSED_IN_FLIGHT: $DatabasePath has $($journeys.Count) journey(s) of '$ServiceName' not Completed: " +
-            "$listed. Stop new intake first -- fake source: stop injecting demand into its FakeMesIngest; production source (the " +
+        return ("GATE_CLOSE_REFUSED_IN_FLIGHT: $DatabasePath has journey(s) of '$ServiceName' not Completed on $($moving.Count) vehicle(s) " +
+            "that may be under way, judged from RIoT read now: $listed. A vehicle stands still for this when RIoT lists no unfinished " +
+            'order on it and reads it MODE_AUTO, MT_FINISHED (or MT_NA with the brake engaged), speed 0, procState IDLE, on line, ' +
+            'emergency OK, and it holds no fault; a journey on such a vehicle -- one charging on its charger, say -- does not hold ' +
+            'the gate. Stop new intake first -- fake source: stop injecting demand into its FakeMesIngest; production source (the ' +
             'cutover): import a header-only area assignment table, so that no AREA is in scope (docs/production-cutover-mode-plan.md ' +
-            'section 6, step 16a) -- then wait until every journey has finished, and run this again.' + $nothing)
+            'section 6, step 16a) -- then wait until those vehicles stand still or their journeys finish, and run this again.' + $nothing)
     }
 
-    $intents = @($State['OrderIntents'])
+    # 8005-workspace#68: a CONFIRMED intent whose RIoT order reads ended now is not one that may be running.
     $sent = [System.Collections.Generic.List[string]]::new()
-    foreach ($journey in $journeys) {
-        [DateTimeOffset] $since = [DateTimeOffset]::MinValue
-        if (-not [DateTimeOffset]::TryParse([string] $journey['CreatedAt'], [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $since)) {
-            $sent.Add("$($journey['JourneyId']): its CreatedAt '$($journey['CreatedAt'])' cannot be read")
-            continue
-        }
-        $named = @([string] $journey['PickupUpperId'], [string] $journey['GateUpperId']) | Where-Object { $_ }
-        foreach ($intent in $intents) {
-            $mine = $named -ccontains [string] $intent['UpperId']
-            if (-not $mine -and [string] $intent['VehicleKey'] -ceq [string] $journey['VehicleKey']) {
-                [DateTimeOffset] $created = [DateTimeOffset]::MinValue
-                if (-not [DateTimeOffset]::TryParse([string] $intent['CreatedAt'], [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $created)) {
-                    $sent.Add("$($journey['JourneyId']): order intent $($intent['UpperId']) has an unreadable CreatedAt '$($intent['CreatedAt'])'")
-                    continue
-                }
-                $mine = $created -ge $since
-            }
-            if ($mine -and -not (Test-ParallelOrderIntentNeverSent -Intent $intent -AuditEvents @($State['AuditEvents']))) {
-                $sent.Add("$($journey['JourneyId']) ($($journey['AgvId']), $($journey['Stage'])): order intent $($intent['UpperId']) is $($intent['Status'])" +
-                    $(if ($intent['OrderId']) { " with RIoT order $($intent['OrderId'])" } else { '' }))
-            }
-        }
+    foreach ($pair in @(Get-ParallelGateSentIntent -State $State)) {
+        $journey = $pair['Journey']; $intent = $pair['Intent']
+        if ($pair['Problem']) { $sent.Add("$($journey['JourneyId']): $($pair['Problem'])"); continue }
+        $why = Get-ParallelRiotOrderEndReason -Intent $intent -Riot ($State.Contains('Riot') ? $State['Riot'] : $null)
+        if ($null -eq $why) { continue }
+        $sent.Add("$($journey['JourneyId']) ($($journey['AgvId']), $($journey['Stage'])): order intent $($intent['UpperId']) is $($intent['Status'])" +
+            $(if ($intent['OrderId']) { " with RIoT order $($intent['OrderId'])" } else { '' }) + " -- $why")
     }
     if ($sent.Count -eq 0) { return $null }
     return ("GATE_OPEN_REFUSED_ORDER_SENT: in $DatabasePath, a journey of '$ServiceName' has an order that was or may have been sent " +
-        "to RIoT, so a vehicle may be under way and restarting the service would stop its fault supervision: $($sent -join '; '). " +
+        "to RIoT and is not shown ended there now (SUCCESS, FAILED or CANCELED, read for a CONFIRMED intent only), so a vehicle may be " +
+        "under way and restarting the service would stop its fault supervision: $($sent -join '; '). " +
         'With the gate closed through this script no such order can exist; it happens when the gate was closed by hand while ' +
         'a journey was under way, and then this refusal does not lift by itself -- the journey never becomes Completed while the ' +
         "gate stays closed. The way out, in this order: (1) in RIoT, confirm that no order is running on the vehicle(s) named " +
@@ -4752,4 +5020,6 @@ Export-ModuleMember -Function @(
     'Get-ParallelRiotVehicleMotionReason'
     'Get-ParallelRiotOrderEndReason'
     'Resolve-ParallelRiotGateConnection'
+    'Get-ParallelGateSentIntent'
+    'Get-ParallelGateVehicleMotion'
 )

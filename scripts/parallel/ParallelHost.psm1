@@ -747,8 +747,9 @@ function Get-ParallelJourneyDispatchState {
 
             -RecoveryJourneyId (8005-workspace#61) adds reads, in the same connection, that Get-ParallelDispatchGateRefusal
             -RecoveryJourney judges when closing: each named journey's row with its block reason (RecoveryJourneys, the rows
-            found), and the vehicle faults in effect (VehicleFaults: the VehicleFaultStates rows whose Level is not None).
-            Each id is a parameter, never text in the statement.
+            found). Each id is a parameter, never text in the statement. The vehicle faults in effect (VehicleFaults: the
+            VehicleFaultStates rows whose Level is not None) are read every time since 8005-workspace#68, whose close rule asks
+            it of every vehicle with an active journey; before, only with -RecoveryJourneyId.
     #>
     [CmdletBinding()]
     param(
@@ -800,8 +801,9 @@ function Get-ParallelJourneyDispatchState {
                 foreach ($one in $row) { $rows.Add($one) }
             }
             $state['RecoveryJourneys'] = $rows.ToArray()
-            $state['VehicleFaults'] = & $read "SELECT AgvId, Level, EvidenceCode FROM VehicleFaultStates WHERE Level <> 'None'"
         }
+        # 8005-workspace#68: on every read, for the close rule asks every vehicle with an active journey whether it holds one.
+        $state['VehicleFaults'] = & $read "SELECT AgvId, Level, EvidenceCode FROM VehicleFaultStates WHERE Level <> 'None'"
         return $state
     } catch {
         return [ordered]@{ Error = $_.Exception.Message }
@@ -810,7 +812,122 @@ function Get-ParallelJourneyDispatchState {
     }
 }
 
-function Read-ParallelRiotGateFacts { [CmdletBinding()] param($State, [string] $Direction, $Connection, [scriptblock] $Get) throw 'NOT_IMPLEMENTED (workspace#68)' }
+function Invoke-ParallelRiotGateGet {
+    # 8005-workspace#68. One GET through -Get: @{ Body } (parsed JSON; $null for a 404 with -AbsentOn404) or @{ Error }. Never throws.
+    param([Parameter(Mandatory = $true)][scriptblock] $Get, [Parameter(Mandatory = $true)][string] $PathAndQuery, [switch] $AbsentOn404)
+    try { $answer = & $Get $PathAndQuery } catch { return @{ Error = "GET $PathAndQuery failed: $($_.Exception.Message)" } }
+    $status = ($answer -is [System.Collections.IDictionary]) ? [int] $answer['Status'] : 0
+    if ($AbsentOn404 -and $status -eq 404) { return @{ Body = $null } }
+    if ($status -ne 200) { return @{ Error = "GET $PathAndQuery answered HTTP $status" } }
+    try { $body = ConvertFrom-Json -InputObject ([string] $answer['Content']) -AsHashtable -Depth 32 -ErrorAction Stop } catch { $body = $null }
+    if ($body -isnot [System.Collections.IDictionary]) { return @{ Error = "GET $PathAndQuery answered something that is not a JSON object" } }
+    return @{ Body = $body }
+}
+
+function ConvertFrom-ParallelRiotEnvelope {
+    # 8005-workspace#68. The envelope { code, message, result } RIoT's order reads wrap their answer in; code "0" is success.
+    # @{ Result } (a missing body, a 404 with -AbsentOn404, is a $null result) or @{ Error }.
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Fetched, [Parameter(Mandatory = $true)][string] $PathAndQuery)
+    if ($Fetched.Contains('Error')) { return $Fetched }
+    if ($null -eq $Fetched['Body']) { return @{ Result = $null } }
+    if ([string] $Fetched['Body']['code'] -cne '0') { return @{ Error = "GET $PathAndQuery answered business code '$($Fetched['Body']['code'])'" } }
+    return @{ Result = $Fetched['Body']['result'] }
+}
+
+function Read-ParallelRiotGateFacts {
+    <#
+        .SYNOPSIS
+            8005-workspace#68. Adds to a journey state what RIoT says now, as Riot, for Get-ParallelDispatchGateRefusal to
+            judge; returns the state. GET only, and never throws: what could not be read is recorded as an Error where it
+            belongs, and judges as "may be under way".
+
+        .DESCRIPTION
+            Only the three reads the product itself makes and the allowlist approves
+            (vendor/8005-agv-program/docs/riot-call-allowlist.md), in the shapes HttpRiotMovementGateway reads them:
+              * Close -- for each vehicle key of a journey not Completed, GET /api/task/v1/task/getVehicleInfo/{deviceKey}
+                (a bare object, no envelope) into Vehicles; and once, the non-final order listing GET
+                /api/order/v1/orderRecord?pageNum=N&pageSize=100&filterByState=1&...&filterByState=10 into
+                NonFinalOrders, paged as ReadAllNonFinalOrdersAsync pages it (control-server#525): every page must report the
+                same total and carry what it should, no record twice, at most 20 pages -- otherwise an Error.
+              * Open -- for each CONFIRMED intent the open rule counts (Get-ParallelGateSentIntent), GET
+                /api/order/v1/orderRecord/detailByUpperId/{upperId} into Orders: the result, or $null when RIoT has no such
+                order (the real RIoT answers 200 with a null result, the fake 404).
+            Nothing is read for a state that could not be read, or when -Connection carries an Error (no key, say): Riot is
+            then that Error. The key goes in an Authorization: Bearer header (remote-ops/fleet.md), never in a path or a
+            message.
+
+            -Get (for the self-test) replaces the HTTP GET: param([string] $PathAndQuery) -> @{ Status; Content }, or throws.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowNull()] $State,
+        [Parameter(Mandatory = $true)][ValidateSet('Close', 'Open')][string] $Direction,
+        [AllowNull()] $Connection,
+        [scriptblock] $Get
+    )
+    if ($State -isnot [System.Collections.IDictionary] -or $State.Contains('Error')) { return $State }
+    if ($Connection -isnot [System.Collections.IDictionary] -or $Connection.Contains('Error')) {
+        $State['Riot'] = [ordered]@{ Error = ($Connection -is [System.Collections.IDictionary]) ? [string] $Connection['Error'] : 'no RIoT connection was given' }
+        return $State
+    }
+    if (-not $Get) {
+        $baseUrl = [string] $Connection['BaseUrl']; $key = [string] $Connection['ApiKey']; $timeout = [int] [Math]::Ceiling([double] $Connection['TimeoutSeconds'])
+        $Get = {
+            param([string] $PathAndQuery)
+            $response = Invoke-WebRequest -Uri ($baseUrl + $PathAndQuery) -Method Get -Headers @{ Authorization = "Bearer $key" } -TimeoutSec $timeout `
+                -MaximumRedirection 0 -SkipHttpErrorCheck -UseBasicParsing -ErrorAction Stop
+            @{ Status = [int] $response.StatusCode; Content = [string] $response.Content }
+        }.GetNewClosure()
+    }
+    $riot =[ordered]@{ Vehicles = @{}; NonFinalOrders = $null; Orders = @{} }
+    $active = @($State['Journeys'] | Where-Object { [string] $_['Stage'] -cne 'Completed' })
+    if ($Direction -ceq 'Close') {
+        $keys = @($active | ForEach-Object { [string] $_['VehicleKey'] } | Where-Object { $_ } | Sort-Object -Unique -CaseSensitive)
+        foreach ($vehicleKey in $keys) {
+            $fetched = Invoke-ParallelRiotGateGet -Get $Get -PathAndQuery "/api/task/v1/task/getVehicleInfo/$([uri]::EscapeDataString($vehicleKey))"
+            $riot['Vehicles'][$vehicleKey] = $fetched.Contains('Error') ? @{ Error = $fetched['Error'] } : @{ Vehicle = $fetched['Body'] }
+        }
+        if ($keys.Count -gt 0) {
+            $pageSize = 100; $pageCap = 20
+            $filter = (@(1, 3, 7, 8, 9, 10) | ForEach-Object { "filterByState=$_" }) -join '&'
+            $records = [System.Collections.Generic.List[object]]::new(); $seen = [System.Collections.Generic.HashSet[string]]::new()
+            $failure = $null; $total = $null; $pageCount = 1
+            for ($pageNum = 1; $pageNum -le $pageCount -and -not $failure; $pageNum++) {
+                $path = "/api/order/v1/orderRecord?pageNum=$pageNum&pageSize=$pageSize&$filter"
+                $page = ConvertFrom-ParallelRiotEnvelope -Fetched (Invoke-ParallelRiotGateGet -Get $Get -PathAndQuery $path) -PathAndQuery $path
+                if ($page.Contains('Error')) { $failure = $page['Error']; break }
+                $result = $page['Result']
+                $pageRecords = ($result -is [System.Collections.IDictionary]) ? @($result['records'] | Where-Object { $null -ne $_ }) : $null
+                if ($null -eq $pageRecords -or ($result['total'] -isnot [long] -and $result['total'] -isnot [int])) { $failure = "page $pageNum has no records or no total"; break }
+                if ($pageNum -eq 1) {
+                    $total = [long] $result['total']
+                    $pageCount = [Math]::Max(1, [long] [Math]::Ceiling($total / $pageSize))
+                    if ($pageCount -gt $pageCap) { $failure = "truncated: total $total needs $pageCount pages, past the cap of $pageCap; only page 1 was read"; break }
+                }
+                $expected = [Math]::Min($pageSize, $total - ($pageNum - 1) * $pageSize)
+                if ([long] $result['current'] -ne $pageNum -or [long] $result['total'] -ne $total -or $pageRecords.Count -ne [Math]::Max(0, $expected)) {
+                    $failure = "page $pageNum of $pageCount does not add up (current $($result['current']), total $($result['total']) against $total, $($pageRecords.Count) records against $expected)"
+                    break
+                }
+                foreach ($record in $pageRecords) {
+                    if ($null -ne $record['id'] -and -not $seen.Add([string] $record['id'])) { $failure = "page $pageNum of $pageCount repeats record $($record['id']) from an earlier page"; break }
+                    $records.Add($record)
+                }
+            }
+            $riot['NonFinalOrders'] = $failure ? @{ Error = "the non-final order listing: $failure" } : @{ Records = $records.ToArray() }
+        }
+    } else {
+        $uppers = @(Get-ParallelGateSentIntent -State $State | Where-Object { $_['Intent'] -and [string] $_['Intent']['Status'] -ceq 'CONFIRMED' } |
+                ForEach-Object { [string] $_['Intent']['UpperId'] } | Sort-Object -Unique -CaseSensitive)
+        foreach ($upper in $uppers) {
+            $path = "/api/order/v1/orderRecord/detailByUpperId/$([uri]::EscapeDataString($upper))"
+            $detail = ConvertFrom-ParallelRiotEnvelope -Fetched (Invoke-ParallelRiotGateGet -Get $Get -PathAndQuery $path -AbsentOn404) -PathAndQuery $path
+            $riot['Orders'][$upper] = $detail.Contains('Error') ? @{ Error = $detail['Error'] } : @{ Record = $detail['Result'] }
+        }
+    }
+    $State['Riot'] = $riot
+    return $State
+}
 
 function Invoke-ParallelDispatchGateChange {
     <#

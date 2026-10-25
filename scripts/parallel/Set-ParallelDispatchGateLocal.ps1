@@ -17,10 +17,13 @@
     on factory01. It never touches the MVP, but it does stop and start the V2 service.
 
     The order, the refusals and the checks are Invoke-ParallelDispatchGateChange's (ParallelHost.psm1),
-    so Test-ParallelInstance.ps1 proves them without a machine. In short: closing refuses while any
-    journey is not Completed, opening while any journey has an order that was or may have been sent to
-    RIoT; both read the instance's own SQLite store read-only, once with the service running and once
-    after it stopped; the flag is written with the section found ignoring case and the whole file read
+    so Test-ParallelInstance.ps1 proves them without a machine. In short: closing refuses while a
+    journey is not Completed on a vehicle that may be under way -- one RIoT does not show standing still
+    with no unfinished order, or one holding a fault (8005-workspace#68: a vehicle parked on its charger
+    no longer holds it) -- and opening while a journey has an order that was or may have been sent to
+    RIoT, unless it is CONFIRMED and RIoT shows that order ended (SUCCESS, FAILED, CANCELED); both read
+    the instance's own SQLite store read-only and RIoT (GET only), once with the service running and
+    once after it stopped; the flag is written with the section found ignoring case and the whole file read
     back; the service is restarted and its process must have started after the write. Every refusal
     names the file and the service and says what was and was not changed. The MVP service is
     fingerprinted before and after.
@@ -110,10 +113,23 @@ if (-not (Test-Path -LiteralPath $configurationPath -PathType Leaf)) {
 }
 $configuration = Get-Content -LiteralPath $configurationPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
 $databasePath = Resolve-ParallelInstanceDatabasePath -Configuration $configuration -DataRoot $layout.DataRoot -ConfigurationPath $configurationPath
+# 8005-workspace#68: RIoT is read where the installed service reads it -- appsettings.json with the Production file over it,
+# the key from the service's own Environment (the product installer writes it there) or else the machine scope. A connection
+# that cannot be told is not thrown here: every vehicle and every order then judges as not read, and refuses.
+$baseConfigurationPath = "$($layout.InstallRoot)\appsettings.json"
+$baseConfiguration = (Test-Path -LiteralPath $baseConfigurationPath -PathType Leaf) ?
+    (Get-Content -LiteralPath $baseConfigurationPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12) : $null
+$serviceRegistry = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Services\$serviceName", $false)
+$serviceEnvironment = $serviceRegistry ? [string[]] @($serviceRegistry.GetValue('Environment', [string[]] @())) : [string[]] @()
+if ($serviceRegistry) { $serviceRegistry.Close() }
+$riotConnection = Resolve-ParallelRiotGateConnection -BaseConfiguration $baseConfiguration -Configuration $configuration -ServiceEnvironment $serviceEnvironment `
+    -MachineVariable { param([string] $Name) [Environment]::GetEnvironmentVariable($Name, 'Machine') }
 
 Write-Step "Definition: $InstanceDefinitionPath ($($definition['instanceId']))"
 Write-Step "Service: '$serviceName'  configuration: $configurationPath"
 Write-Step "Journey state (read-only): $databasePath"
+Write-Step ($riotConnection.Contains('Error') ? "RIoT: cannot be read -- $($riotConnection['Error']) Every vehicle and order will judge as not read." :
+    "RIoT (GET only, with each read of the journey state): $($riotConnection['BaseUrl']), key from $($riotConnection['KeyVariable']) in $($riotConnection['KeySource'])")
 Write-Step "Requested: RiotCreateDispatch.enabled=$($State -eq 'Open' ? 'true' : 'false')"
 foreach ($named in @($recovery | Where-Object { $_ })) { Write-Step "Recovery journey (workspace#61): $($named['journeyId']) on $($named['agvId']) / $($named['vehicleKey'])" }
 
@@ -122,7 +138,11 @@ $actions = @{
         $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
         $service ? [string] $service.Status : $null
     }
-    ReadState = { Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot -RecoveryJourneyId $recoveryJourneyId }
+    # 8005-workspace#68: RIoT with every read of the state, so the read after the stop asks RIoT again too.
+    ReadState = {
+        Read-ParallelRiotGateFacts -State (Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot -RecoveryJourneyId $recoveryJourneyId) `
+            -Direction $direction -Connection $riotConnection
+    }
     StopService = { Stop-Service -Name $serviceName -Force }
     StartService = { Start-Service -Name $serviceName }
     ProcessStartTimeUtc = { Get-ParallelServiceProcessStartTimeUtc -ServiceName $serviceName }
@@ -133,7 +153,8 @@ $actions = @{
 # "-WhatIf -State Open" open the gate for real, and journeys waiting for it would create orders at once.
 if (-not $PSCmdlet.ShouldProcess($serviceName, "Set RiotCreateDispatch.enabled=$($State -eq 'Open' ? 'true' : 'false') and restart")) {
     # Read-only preview: what the checks say right now. Nothing is stopped or written.
-    $journeyState = Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot -RecoveryJourneyId $recoveryJourneyId
+    $journeyState = Read-ParallelRiotGateFacts -State (Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot -RecoveryJourneyId $recoveryJourneyId) `
+        -Direction $direction -Connection $riotConnection
     $refusal = Get-ParallelDispatchGateRefusal -Direction $direction -State $journeyState -ServiceName $serviceName -DatabasePath $databasePath -RecoveryJourney $recovery
     $notInFlight = @(Get-ParallelRecoveryJourneyNotInFlight -State $journeyState -RecoveryJourney $recovery)
     if ($notInFlight.Count -gt 0) { Write-Step "WhatIf: named but not in flight (nothing to waive): $($notInFlight -join ', ')" }
