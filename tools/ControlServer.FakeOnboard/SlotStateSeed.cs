@@ -33,7 +33,10 @@ public sealed class SlotStateSeed
     {
         ["operability"] = ["OPERABLE", "INOPERABLE", "UNKNOWN"],
         ["administrativeAvailability"] = ["ENABLED", "DISABLE_PENDING", "DISABLED"],
-        ["physicalState"] = ["EMPTY", "OCCUPIED", "UNKNOWN"]
+        ["physicalState"] = ["EMPTY", "OCCUPIED", "UNKNOWN"],
+        // control-server#865: a session established while a slot door stands open. The handshake's SafetyStateSnapshot says
+        // so; a later lock is reported with PUT /safety (slotLocks) and shows only in the snapshot the server asks for.
+        ["lockState"] = ["LOCKED", "UNLOCKED", "UNKNOWN"]
     };
 
     private readonly IReadOnlyDictionary<int, IReadOnlyDictionary<string, string>> overrides;
@@ -88,8 +91,11 @@ public sealed class SlotStateSeed
         return new SlotStateSeed(overrides);
     }
 
-    /// <summary>The eight slots in the shape protocol v2's <c>SlotState</c> carries, slot 1 first.</summary>
-    public object[] Render() => Enumerable.Range(1, SlotCount)
+    /// <summary>
+    /// The eight slots in the shape protocol v2's <c>SlotState</c> carries, slot 1 first. <paramref name="locks"/> are the lock
+    /// states reported since the handshake (<see cref="FakeOnboardState.SlotLocks"/>), which win over the seed's.
+    /// </summary>
+    public object[] Render(IReadOnlyDictionary<int, string>? locks = null) => Enumerable.Range(1, SlotCount)
         .Select(slotNo =>
         {
             IReadOnlyDictionary<string, string>? fields = overrides.GetValueOrDefault(slotNo);
@@ -99,7 +105,7 @@ public sealed class SlotStateSeed
                 operability = Field(fields, "operability", "OPERABLE"),
                 administrativeAvailability = Field(fields, "administrativeAvailability", "ENABLED"),
                 physicalState = Field(fields, "physicalState", "EMPTY"),
-                lockState = "LOCKED",
+                lockState = locks?.GetValueOrDefault(slotNo) ?? Field(fields, "lockState", "LOCKED"),
                 unlockOutputState = "RESET",
                 reasonCodes = Array.Empty<string>()
             };

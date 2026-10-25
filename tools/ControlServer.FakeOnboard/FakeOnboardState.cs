@@ -48,6 +48,13 @@ public sealed record FakeOnboardPolicy
 
     /// <summary>Protocol v2 message 7. Manual is how a scenario withholds a result across a disconnect.</summary>
     public AnswerMode SlotConfigurationActivation { get; init; } = AnswerMode.Auto;
+
+    /// <summary>
+    /// Whether this peer answers SafetyStateSnapshotRequested with a snapshot at the next safetyStateVersion, the way the real
+    /// onboard does (control-server#865). Off by default: every scenario written before it ran against a peer that never
+    /// answered, and some read the server's state while a request stands unanswered.
+    /// </summary>
+    public bool AnswerSafetySnapshotRequests { get; init; }
 }
 
 /// <summary>
@@ -83,6 +90,13 @@ public sealed record FakeOnboardState
     public string? ReadinessReasonCode { get; init; }
     public long SafetyStateVersion { get; init; } = 1;
     public SafetySummary Safety { get; init; } = new();
+
+    /// <summary>
+    /// Slot lock states reported with PUT /safety since the peer started (control-server#865), over the seed's. Carried by every
+    /// SafetyStateSnapshot this peer sends after that, the handshake's of a later session included.
+    /// </summary>
+    public IReadOnlyDictionary<int, string> SlotLocks { get; init; } = new Dictionary<int, string>();
+
     public FakeOnboardPolicy Policy { get; init; } = new();
 
     /// <summary>Open requests keyed by the identity a scenario names them with.</summary>

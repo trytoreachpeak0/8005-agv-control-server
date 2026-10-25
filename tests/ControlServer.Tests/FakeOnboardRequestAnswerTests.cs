@@ -100,6 +100,52 @@ public sealed class FakeOnboardRequestAnswerTests
         Assert.Equal(checkPurpose, answer.GetProperty("payload").GetProperty("checkPurpose").GetString());
     }
 
+    /// <summary>
+    /// control-server#865: with answering on, a SafetyStateSnapshotRequested is answered the way the real onboard answers it --
+    /// a whole snapshot at the next safetyStateVersion -- carrying the slot locks reported since the handshake. The handshake's
+    /// snapshot carried the seed's open door.
+    /// </summary>
+    [Fact]
+    public async Task ASnapshotRequestIsAnsweredAtTheNextVersionWithTheLocksReportedSinceTheHandshake()
+    {
+        await using ServerSide server = await ServerSide.ConnectAsync(
+            new FakeOnboardState { SafetyStateVersion = 5, Policy = new FakeOnboardPolicy { AnswerSafetySnapshotRequests = true } },
+            "--FakeOnboard:Seed:slotStates:0:slotNo=1",
+            "--FakeOnboard:Seed:slotStates:0:lockState=UNLOCKED");
+        Assert.Equal("UNLOCKED", LockOf(server.HandshakeSafetySnapshot, slotNo: 1));
+        Assert.Equal(5, server.HandshakeSafetySnapshot.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64());
+
+        server.Engine.Mutate(state => (state with
+        {
+            SafetyStateVersion = 6,
+            SlotLocks = new Dictionary<int, string> { [1] = "LOCKED" }
+        }, 0));
+        await server.SendAsync(ServerSide.SafetyStateSnapshotRequested(Guid.NewGuid().ToString("D")));
+        JsonElement answer = await server.ReadAsync("SafetyStateSnapshot");
+
+        Assert.Equal(7, answer.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64());
+        Assert.Equal("LOCKED", LockOf(answer, slotNo: 1));
+        Assert.All(Enumerable.Range(2, 7), slotNo => Assert.Equal("LOCKED", LockOf(answer, slotNo)));
+        Assert.Equal(7, server.Engine.Snapshot().State.SafetyStateVersion);
+    }
+
+    /// <summary>Answering is off by default: every scenario before control-server#865 ran against a peer that never answered.</summary>
+    [Fact]
+    public async Task ASnapshotRequestIsNotAnsweredByDefault()
+    {
+        await using ServerSide server = await ServerSide.ConnectAsync();
+
+        await server.SendAsync(ServerSide.SafetyStateSnapshotRequested(Guid.NewGuid().ToString("D")));
+        // The next thing the peer sends after the request is the answer to a later request, not a snapshot.
+        await server.SendAsync(ServerSide.PreDepartureSafetyCheck(Guid.NewGuid().ToString("D"), Guid.NewGuid().ToString("D")));
+        await server.ReadAsync("PreDepartureSafetyCheckResult");
+        Assert.Equal(1, server.Engine.Snapshot().State.SafetyStateVersion);
+    }
+
+    private static string? LockOf(JsonElement snapshot, int slotNo) =>
+        snapshot.GetProperty("payload").GetProperty("slotStates").EnumerateArray()
+            .Single(slot => slot.GetProperty("slotNo").GetInt32() == slotNo).GetProperty("lockState").GetString();
+
     /// <summary>ControlServer's end of the session, just enough of it to get the peer to READY.</summary>
     private sealed class ServerSide : IAsyncDisposable
     {
@@ -122,7 +168,13 @@ public sealed class FakeOnboardRequestAnswerTests
             this.lifetime = lifetime;
         }
 
-        public static async Task<ServerSide> ConnectAsync()
+        /// <summary>The peer's state engine, for a test that changes what the peer reports after the handshake.</summary>
+        public CommandEngine<FakeOnboardState> Engine { get; private set; } = null!;
+
+        /// <summary>The SafetyStateSnapshot the peer sent in the handshake.</summary>
+        public JsonElement HandshakeSafetySnapshot { get; private set; }
+
+        public static async Task<ServerSide> ConnectAsync(FakeOnboardState? initial = null, params string[] seedArguments)
         {
             TcpListener listener = new(IPAddress.Loopback, 0);
             listener.Start();
@@ -134,12 +186,13 @@ public sealed class FakeOnboardRequestAnswerTests
                 AgvId = "AGV-FAKE-001",
                 CredentialEnvironmentVariable = credentialVariable
             };
+            CommandEngine<FakeOnboardState> engine = new("fake-onboard-test", () => initial ?? new FakeOnboardState());
             OnboardPeerSession peer = new(
-                new CommandEngine<FakeOnboardState>("fake-onboard-test", () => new FakeOnboardState()),
+                engine,
                 options,
-                SlotStateSeed.Read(new ConfigurationBuilder().Build()));
+                SlotStateSeed.Read(new ConfigurationBuilder().AddCommandLine(seedArguments).Build()));
             CancellationTokenSource lifetime = new(TimeSpan.FromSeconds(60));
-            ServerSide server = new(listener, peer, lifetime);
+            ServerSide server = new(listener, peer, lifetime) { Engine = engine };
 
             Task<TcpClient> accepting = listener.AcceptTcpClientAsync(lifetime.Token).AsTask();
             Task starting = peer.StartAsync(lifetime.Token);
@@ -162,6 +215,10 @@ public sealed class FakeOnboardRequestAnswerTests
             foreach (string snapshot in HandshakeSnapshots)
             {
                 JsonElement message = await server.ReadAsync(snapshot);
+                if (snapshot == "SafetyStateSnapshot")
+                {
+                    server.HandshakeSafetySnapshot = message;
+                }
                 await server.SendAsync(Reply("SnapshotAppliedAck", message.GetProperty("messageId").GetString()));
             }
             JsonElement report = await server.ReadAsync("RecoveryStateReport");
@@ -220,6 +277,9 @@ public sealed class FakeOnboardRequestAnswerTests
                 return document.RootElement.Clone();
             }
         }
+
+        public static object SafetyStateSnapshotRequested(string messageId) =>
+            Request("SafetyStateSnapshotRequested", messageId, new { requestedSafetyStateVersion = (long?)null, reason = "VERSION_GAP" });
 
         private static object Request(string messageType, string messageId, object payload) => new
         {

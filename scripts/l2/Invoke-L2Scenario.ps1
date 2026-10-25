@@ -318,7 +318,7 @@ if ($expectedStartupRefusal) {
 }
 # The synthetic peer's handshake slot states. Only the fields a vehicle's own state decides; lockState and
 # unlockOutputState stay what an idle vehicle reports, and slotNo is how an entry names its slot.
-$slotStateFields = @('physicalState', 'administrativeAvailability', 'operability')
+$slotStateFields = @('physicalState', 'administrativeAvailability', 'operability', 'lockState')
 function ConvertTo-SlotStateArguments {
     param([Parameter(Mandatory)][object[]]$Entries, [Parameter(Mandatory)][string]$Where)
     $arguments = @()

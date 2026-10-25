@@ -608,6 +608,10 @@ jobs:
               # control-server#830 (REQ-0367, CP-0021, protocol 6.0.0 candidate): three baskets, two loaded, the operator asks to
               # leave the rest -- authorized, settled as two, the third slot released, and the gate unloads only those two.
               @{ Name = 'load-remaining-baskets-skipped'; Runs = 1; BatchId = 'program-210' }
+              # control-server#865: the session is established while slot 1's door stands open, then the door is locked. Below
+              # the mandatory line the vehicle gets no charger while the door is open; once locked, the server asks for a fresh
+              # snapshot (a SafetyStateChanged carries no slot states) and the vehicle is sent to charge.
+              @{ Name = 'charging-door-open-at-handshake-then-locked'; Runs = 1; BatchId = 'program-210' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Measured, not
           # remembered: scripts/l2/Get-L2LaneEstimates.ps1 reads them out of past rounds' logs, and its -AsJson
