@@ -66,6 +66,8 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal(RiotOrderObservationKind.Active, result.Kind);
         Assert.Equal("VEHICLE-KEY-01", result.VehicleKey);
         Assert.Equal("ORDER-001", result.OrderId);
+        // control-server#863: not yet bound, which VehicleKey (the appointed one) cannot say.
+        Assert.False(result.ExecuteVehicleBound);
     }
 
     [Fact]
@@ -83,6 +85,7 @@ public sealed class HttpRiotMovementGatewayTests
             "UPPER-001", TestContext.Current.CancellationToken);
 
         Assert.Equal("EXECUTING-VEHICLE-KEY", result.VehicleKey);
+        Assert.True(result.ExecuteVehicleBound);
     }
 
     [Theory]
