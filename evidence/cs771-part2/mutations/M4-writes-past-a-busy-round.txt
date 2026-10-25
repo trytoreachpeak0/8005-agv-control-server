@@ -1,0 +1,6 @@
+== M4-writes-past-a-busy-round (src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawalService.cs), exit=1
+-        using (IDisposable? round = await gate.TryEnterAsync(_gateWait, cancellationToken).ConfigureAwait(false))
++        using (IDisposable? round = await gate.TryEnterAsync(_gateWait, cancellationToken).ConfigureAwait(false) ?? new System.IO.MemoryStream())
+  Failed ControlServer.Tests.JourneyWithdrawalOnlineTests.ARuntimeRoundThatDoesNotEndIsServiceUnavailable [442 ms]
+  Failed ControlServer.Tests.JourneyWithdrawalOnlineTests.AWithdrawalWaitsForTheRuntimeRoundAndIsRefusedWhenTheRoundDoesNotEnd [275 ms]
+Failed!  - Failed:     2, Passed:    13, Skipped:     0, Total:    15, Duration: 8 s - ControlServer.Tests.dll (net8.0)

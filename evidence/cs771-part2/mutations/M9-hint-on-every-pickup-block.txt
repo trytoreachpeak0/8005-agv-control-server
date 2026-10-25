@@ -1,0 +1,5 @@
+== M9-hint-on-every-pickup-block (src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs), exit=1
+-         (row is { Stage: JourneyRuntimeStage.AwaitingPickupArrival, BlockReasonCode: SessionLostReason or SessionNotReadyReason } &&
++         (row is { Stage: JourneyRuntimeStage.AwaitingPickupArrival } &&
+  Failed ControlServer.Tests.Batch7CargoHoldingDashboardTests.AJourneyAPersonMayWithdrawCarriesTheWithdrawalHint(stage: AwaitingPickupArrival, code: "ORDER_HANG", hinted: False) [3 s]
+Failed!  - Failed:     1, Passed:    66, Skipped:     0, Total:    67, Duration: 3 s - ControlServer.Tests.dll (net8.0)
