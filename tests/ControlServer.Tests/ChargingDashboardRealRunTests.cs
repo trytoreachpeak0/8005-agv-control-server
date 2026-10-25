@@ -323,6 +323,31 @@ public sealed class ChargingDashboardRealRunTests
         }
     }
 
+    /// <summary>
+    /// 充电分配停跑（最近一轮已完成的分配超过三个轮询间隔）时，不拿那一轮的结论告警：它说的是分配停下之前的事，与逐车卡片同一个窗口（control-server#865）。
+    /// </summary>
+    [Fact]
+    public async Task AStalePassRaisesNoDepartureAlarm()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        await fleet.HearFromEveryVehicleAsync();
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingAllocationReasons.DepartureNotProven, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+
+        fleet.Clock.Advance(fleet.Options.PollInterval * ChargingVehiclesQueryEndpoint.PassLivenessPollIntervals + TimeSpan.FromSeconds(1));
+        await fleet.HearFromEveryVehicleAsync();
+
+        (JsonDocument alarms, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (alarms)
+        {
+            Assert.DoesNotContain(
+                alarms.RootElement.GetProperty("alarms").EnumerateArray(),
+                a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryDepartureNotProven);
+        }
+    }
+
     /// <summary>高于强制充电线的车仓门没锁：它本来就不需要充电，不告警（control-server#865）。</summary>
     [Fact]
     public async Task AVehicleAboveTheMandatoryLineWithAnUnlockedSlotIsNotAlarmed()
