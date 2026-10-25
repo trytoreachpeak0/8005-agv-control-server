@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "load-result-while-not-ready-not-replayed",
+  "runId": "20261025T022006031Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "2f72d98a6156080d85e5f0d266f5994b935badde",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "unspecified",
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "6.0.0",
+      "tag": "protocol-v6.0.0",
+      "commit": "98f172642937994ed01668d81fe41e69cf089e10",
+      "protocolVersion": 7,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a52876be2ddcc9b8cdd1f1e3b7b7ddbe70d31a307f1d3f017d7a1eb95ffd77b1",
+      "schemaBundleSha256": "0dab682174e2d3e4f931b3c0e87c7fa55bd2cb3395356d7845e595d8bfb1c795",
+      "vectorsSha256": "e06ca9ea1d4445cd7d70fc190b0cf606a8e33cb7760d848c0270df24e2594c91",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261025T022006031Z-slot3",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-RN-01",
+      "description": "前置：装货命令已下发（发件箱恰好一条），旅程在等结果",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult, 1 SlotOperationCommand",
+      "actual": "AwaitingLoadResult, 1 SlotOperationCommand"
+    },
+    {
+      "id": "L2-RN-02",
+      "description": "前置：车报不能出发之后，会话离开 Ready",
+      "outcome": "PASS",
+      "expected": "not Ready",
+      "actual": "RecoveryRequired/DEPARTURE_SAFETY_NOT_READY"
+    },
+    {
+      "id": "L2-RN-03",
+      "description": "前置：会话不就绪期间的装货结果被采信（Committed），之后会话回到 Ready",
+      "outcome": "PASS",
+      "expected": "Committed, Ready",
+      "actual": "Committed, Ready/READY"
+    },
+    {
+      "id": "L2-RN-04",
+      "description": "会话回到 Ready 之后车没有再收到这条装货命令（同一 messageId）",
+      "outcome": "FAIL",
+      "expected": 0,
+      "actual": 1
+    },
+    {
+      "id": "L2-RN-05",
+      "description": "发件箱里这条装货命令已确认（不会留到换协议身份时挡启动）",
+      "outcome": "PASS",
+      "expected": "AcknowledgedAt set",
+      "actual": "AcknowledgedAt=2026-10-25 02:20:44.2096242+00:00 FencedAt="
+    }
+  ]
+}
