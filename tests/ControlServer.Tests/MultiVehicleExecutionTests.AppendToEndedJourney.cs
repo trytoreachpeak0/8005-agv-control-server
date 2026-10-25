@@ -280,6 +280,49 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 一条挂着结构性阻断的需求，本轮追加撞上旅程结束：阻断熬过这一轮——它没有被接走，什么也没证明阻断不再成立。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// cs#242 那三条（<see cref="ACandidateChangedAtIntakeDoesNotClearAStructuralBlock"/> 等）的第四条：认领在调受理之前就记进
+    /// 本轮已接走的集合，轮末的结构性告警按那个集合清阻断，所以受理拒收的需求要记进 <c>ClaimsIntakeRefused</c> 扣掉。
+    /// <c>JourneyEnded</c> 漏记时，轮末误清阻断（2115）、下一轮又立起（2114），告警闪一下；防饥饿升级读同一个集合，晚一轮。
+    /// </para>
+    /// <para>
+    /// 独立审查 S1（control-server#864）：删掉 <c>or DemandIntakeOutcome.JourneyEnded</c> 时本 PR 原有用例全绿。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData(BeforeTheRunnerReadsTheJourney)]
+    [InlineData(BeforeTheStoreTransaction)]
+    public async Task AnAppendWhoseJourneyEndedDoesNotClearAStructuralBlock(string moment)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        AcceptedDemandSnapshot firstDemand = FleetFixture.Demand(0, "N1-1", 0);
+        AcceptedDemandSnapshot second = FleetFixture.Demand(1, "N1-2", 1);
+        fixture.Catalog.Set([firstDemand]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow first = Assert.Single(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(token));
+
+        DateTimeOffset raisedAt = Now.AddMinutes(-30);
+        EventRecordingLogger<StructuralDispatchBlockSink> blockLog = await RaiseStandingBlockAsync(fixture, second, raisedAt);
+        EndedFlag ended = EndTheJourneyOnRead(
+            fixture, FleetFixture.VehicleKeys[0], moment == BeforeTheRunnerReadsTheJourney ? 2 : 3, first.JourneyId, "cancelled");
+        fixture.Catalog.Set([firstDemand, second]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(ended.Ended, "the round never reached the read the journey was to end on");
+        Assert.Equal(
+            DispatchReasonCodes.FinalAppendJourneyEnded,
+            (await fixture.Context.JourneyBacklog.AsNoTracking().SingleAsync(row => row.DemandId == second.DemandId, token))
+            .ReasonCode);
+        await AssertBlockSurvivedTheRoundAsync(fixture, blockLog, raisedAt);
+    }
+
+    /// <summary>
     /// 这一轮对 <paramref name="vehicleKey"/> 的第 <paramref name="onRead"/> 次读车时，照真实收尾的形状结束这趟旅程。
     /// 返回的标志在轮后读：是否真的结束了。
     /// </summary>
