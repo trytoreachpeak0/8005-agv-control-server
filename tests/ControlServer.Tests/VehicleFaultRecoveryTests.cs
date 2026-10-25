@@ -1302,11 +1302,17 @@ public sealed class VehicleFaultRecoveryTests
     /// 又恰好解析成这两个方法的可能极小，而一旦发生，结果是多报一个持有者（这里红），不是漏报。
     /// <see cref="TheGateHolderScanSeesACallSite"/> 证明它认得出调用点。
     /// </para>
+    /// <para>
+    /// <b>第三个持有者：在线人工撤下</b>（control-server#771 第二部分），与故障恢复同一个做法：RIoT 在拿锁之前读，持锁期间只读写本库、
+    /// 不调 RIoT，调用的撤下核心与收尾都不拿锁，所以与 worker 不会互等；收尾快照的发送与恢复授权的收回在放锁之后。
+    /// </para>
     /// </remarks>
     [Fact]
     public void OnlyTheRuntimeRoundAndTheRecoveryTakeTheGate()
     {
-        Assert.Equal(["JourneyRuntimeWorker", "VehicleFaultRecoveryService"], GateHolders(typeof(JourneyMutationGate).Assembly));
+        Assert.Equal(
+            ["JourneyRuntimeWorker", "JourneyWithdrawalService", "VehicleFaultRecoveryService"],
+            GateHolders(typeof(JourneyMutationGate).Assembly));
     }
 
     /// <summary>扫描器自己的正例：本测试程序集里的 <see cref="GateHolderProbe"/> 调了 <c>EnterAsync</c>，必须被认出来。</summary>

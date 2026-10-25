@@ -106,6 +106,8 @@ builder.Services.AddScoped<VehicleFaultCoordinator>();
 builder.Services.AddSingleton<JourneyMutationGate>();
 builder.Services.AddSingleton<ControlServer.Host.Runtime.Faults.VehicleFaultResumeFlights>();
 builder.Services.AddScoped<VehicleFaultRecoveryService>();
+// control-server#771 part 2: the online journey withdrawal, serialised with the runtime loop through the same gate.
+builder.Services.AddScoped<ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawalService>();
 // control-server#383: REQ-0359, an administrator declares the slot a vehicle waits on faulty.
 builder.Services.AddScoped<SlotFaultDeclarationService>();
 // B2 multi-vehicle: the roster is the identity register and is fixed for the life of the process;

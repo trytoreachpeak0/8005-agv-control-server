@@ -1,0 +1,5 @@
+== M8-hint-on-own-order-in-flight (src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs), exit=1
+-          !explainedByOwnOrder));
++          (!explainedByOwnOrder || row.Stage == JourneyRuntimeStage.AwaitingPickupArrival)));
+  Failed ControlServer.Tests.BlockedJourneyDashboardTests.AVehicleOnItsOwnMoveOrderIsNotSentToMaintenanceButEveryOtherUnknownStillIs [33 ms]
+Failed!  - Failed:     1, Passed:    66, Skipped:     0, Total:    67, Duration: 3 s - ControlServer.Tests.dll (net8.0)

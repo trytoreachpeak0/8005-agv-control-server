@@ -51,6 +51,12 @@ namespace ControlServer.Tests;
 /// （<c>evidence/cs217/green/01-dashboard-pin-rerecord-additions-only.txt</c>，在工作区证据目录）。期待动作超时的两份基线不受影响。
 /// </para>
 /// <para>
+/// <b>control-server#771 第二部分给同两份阻断旅程看板基线每行加了一个字段 <c>manualWithdrawalHint</c>，其余逐字未动。</b>判据同上：把新输出里这个字段
+/// 删掉，与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@3e62d65b9</c>）逐字相同，两份都成立，删掉 3 个与 7 个字段。值只有 <c>null</c>，唯一例外是
+/// <c>D-FAULTED</c> 那一行（开往取货站、会话未就绪且不是本服务端在途单造成的）带着撤下提示——它正是提示要覆盖的一形
+/// （<c>evidence/cs771-part2/green/01-dashboard-pin-rerecord-additions-only.txt</c>）。
+/// </para>
+/// <para>
 /// <b>control-server#273 给十份终结状态基线的 <c>JourneyRuntimes</c> 行加了四列，其余逐字未动。</b>那一票加了等人起点
 /// <c>WaitingSince</c> 与等人监看的三列（<c>WaitingBatteryPercent</c>、<c>WaitingBatteryObservedAt</c>、<c>WaitingWarnedAt</c>）。
 /// 判据与 cs#228、cs#217 同一个形状：把新输出里这四个字段删掉，与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@8ec088b1</c>）逐字相同。

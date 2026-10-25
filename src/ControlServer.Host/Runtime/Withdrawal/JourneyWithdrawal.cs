@@ -87,17 +87,29 @@ public sealed record JourneyWithdrawalPlan(
     IReadOnlyList<string>? SessionSafetyReasonCodes = null,
     DateTimeOffset? SessionSafetySummaryObservedAt = null,
     DateTimeOffset? SessionUpdatedAt = null,
-    IReadOnlyList<JourneyWithdrawalRebuild>? Rebuilds = null);
+    IReadOnlyList<JourneyWithdrawalRebuild>? Rebuilds = null,
+    JourneyWithdrawalRiotOrders? RiotOrders = null);
+
+/// <summary>
+/// 服务端在线时自己读到的 RIoT：这辆车有没有未结束的单、是哪几张（control-server#771 第二部分）。离线写法没有这一项，
+/// 靠人填的 <c>--riot-verification</c>。不带读数时刻：确认码绑住它，而每读一次时刻都变。
+/// </summary>
+/// <param name="Known">RIoT 给出了完整的回答。</param>
+public sealed record JourneyWithdrawalRiotOrders(bool Known, IReadOnlyList<string> UnfinishedOrderIds);
 
 /// <summary>演练或撤下的结果。</summary>
 /// <param name="Outcome"><c>PLANNED</c>、<c>WITHDRAWN</c>、<c>ALREADY_DONE</c> 或 <c>REJECTED</c>。</param>
 /// <param name="AuditRecordId">撤下（含被拒）写的管理员审计；演练不写，为空。</param>
+/// <param name="RevokedGrantId">在线撤下一并收回的、点名这一趟的恢复授权（control-server#771 第二部分）；没有为空。</param>
+/// <param name="RiotObservedAt">在线时读 RIoT 的时刻；离线为空。</param>
 public sealed record JourneyWithdrawalResult(
     string Outcome,
     IReadOnlyList<string> Codes,
     JourneyWithdrawalPlan? Plan,
     string? ConfirmationCode,
-    string? AuditRecordId);
+    string? AuditRecordId,
+    string? RevokedGrantId = null,
+    DateTimeOffset? RiotObservedAt = null);
 
 /// <summary>
 /// 人工撤下一趟旅程（control-server#771）：车上没货时，旅程收尾，需求退回待派、不抑制；挂着一次结果未知的装货时，那一次结成取消。
@@ -152,6 +164,9 @@ public static class JourneyWithdrawal
     public const string OtherDemandRecoveryRequired = "OTHER_DEMAND_RECOVERY_REQUIRED";
     public const string ConfirmationRequired = "CONFIRMATION_REQUIRED";
     public const string ConfirmationStale = "CONFIRMATION_STALE";
+    public const string RiotOrdersUnknown = "RIOT_VEHICLE_ORDERS_UNKNOWN";
+    public const string RiotOrderNotFinished = "RIOT_ORDER_NOT_FINISHED";
+    public const string RuntimeBusy = "WITHDRAWAL_RUNTIME_BUSY";
 
     /// <summary>理由、两条核实记录与那一篮去向的最长长度（去掉首尾空白后的 UTF-16 码元）。</summary>
     public const int MaxTextLength = 500;
@@ -160,21 +175,30 @@ public static class JourneyWithdrawal
     public const int MaxIdentifierLength = 128;
 
     /// <summary>演练：只读，一行不写，不写审计。给出计划与确认码，或者拒绝的理由。</summary>
+    public static Task<JourneyWithdrawalResult> PlanAsync(
+        ControlServerDbContext dbContext,
+        JourneyWithdrawalRequest request,
+        CancellationToken cancellationToken) =>
+        PlanAsync(dbContext, request, riotOrders: null, cancellationToken);
+
+    /// <summary>演练，带服务端在线时自己读到的 RIoT（<paramref name="riotOrders"/> 为空即离线写法）。</summary>
     public static async Task<JourneyWithdrawalResult> PlanAsync(
         ControlServerDbContext dbContext,
         JourneyWithdrawalRequest request,
+        RiotVehicleOrderObservation? riotOrders,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(request);
-        Assessment assessment = await AssessAsync(dbContext, request, cancellationToken).ConfigureAwait(false);
+        Assessment assessment = await AssessAsync(dbContext, request, riotOrders, cancellationToken).ConfigureAwait(false);
         if (assessment.AlreadyWithdrawn)
         {
-            return new JourneyWithdrawalResult(Rejected, [JourneyAlreadyCompleted], null, null, null);
+            return new JourneyWithdrawalResult(Rejected, [JourneyAlreadyCompleted], null, null, null, RiotObservedAt: riotOrders?.ObservedAt);
         }
         return assessment.Codes.Count > 0
-            ? new JourneyWithdrawalResult(Rejected, [.. assessment.Codes], assessment.Plan, null, null)
-            : new JourneyWithdrawalResult(Planned, [], assessment.Plan, assessment.ConfirmationCode, null);
+            ? new JourneyWithdrawalResult(Rejected, [.. assessment.Codes], assessment.Plan, null, null, RiotObservedAt: riotOrders?.ObservedAt)
+            : new JourneyWithdrawalResult(
+                Planned, [], assessment.Plan, assessment.ConfirmationCode, null, RiotObservedAt: riotOrders?.ObservedAt);
     }
 
     /// <summary>
@@ -198,12 +222,23 @@ public static class JourneyWithdrawal
     /// （与握手时做的同一件事），所以撤下之后会话不再因那一次而 RecoveryRequired。
     /// </para>
     /// </remarks>
+    public static Task<JourneyWithdrawalResult> WithdrawAsync(
+        ControlServerDbContext dbContext,
+        IGovernanceAuditWriter audit,
+        JourneyWithdrawalRequest request,
+        DateTimeOffset now,
+        OnboardJourneyPublisher? publisher,
+        CancellationToken cancellationToken) =>
+        WithdrawAsync(dbContext, audit, request, now, publisher, riotOrders: null, cancellationToken);
+
+    /// <summary>撤下，带服务端在线时自己读到的 RIoT（<paramref name="riotOrders"/> 为空即离线写法）。</summary>
     public static async Task<JourneyWithdrawalResult> WithdrawAsync(
         ControlServerDbContext dbContext,
         IGovernanceAuditWriter audit,
         JourneyWithdrawalRequest request,
         DateTimeOffset now,
         OnboardJourneyPublisher? publisher,
+        RiotVehicleOrderObservation? riotOrders,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
@@ -217,7 +252,7 @@ public static class JourneyWithdrawal
         string? withdrawnVehicle = null;
         await using (transaction)
         {
-            Assessment assessment = await AssessAsync(dbContext, request, cancellationToken).ConfigureAwait(false);
+            Assessment assessment = await AssessAsync(dbContext, request, riotOrders, cancellationToken).ConfigureAwait(false);
             if (assessment.AlreadyWithdrawn)
             {
                 string id = await WriteAuditAsync(
@@ -275,7 +310,7 @@ public static class JourneyWithdrawal
             }
             await SettleSessionAsync(dbContext, withdrawnVehicle, cancellationToken).ConfigureAwait(false);
         }
-        return result;
+        return result with { RiotObservedAt = riotOrders?.ObservedAt };
     }
 
     private const string Planned = "PLANNED";
@@ -301,10 +336,11 @@ public static class JourneyWithdrawal
 
     private sealed record SlotFact(int Slot, string Fact);
 
-    /// <summary>判一次，只读。</summary>
+    /// <summary>判一次，只读。<paramref name="riotOrders"/> 不为空是在线写法：RIoT 由服务端自己读，人填的核对文本不再必填（照录）。</summary>
     private static async Task<Assessment> AssessAsync(
         ControlServerDbContext dbContext,
         JourneyWithdrawalRequest request,
+        RiotVehicleOrderObservation? riotOrders,
         CancellationToken cancellationToken)
     {
         List<string> codes = [];
@@ -313,7 +349,24 @@ public static class JourneyWithdrawal
         if (Trimmed(request.OperatorId) is null) codes.Add(OperatorRequired);
         if (Trimmed(request.Reason) is null) codes.Add(ReasonRequired);
         if (Trimmed(request.SiteVerification) is null) codes.Add(SiteVerificationRequired);
-        if (Trimmed(request.RiotVerification) is null) codes.Add(RiotVerificationRequired);
+        if (riotOrders is null && Trimmed(request.RiotVerification) is null) codes.Add(RiotVerificationRequired);
+        // Online, the server reads RIoT for itself (control-server#771 part 2), as the fault recovery does for the same question
+        // (VehicleFaultRecoveryService.VehicleOrderReasons). An incomplete answer is refused, never taken as "no order": nobody typed
+        // a verification to fall back on. An unfinished order is refused here too -- the floor every option of the user's Q1 shares.
+        JourneyWithdrawalRiotOrders? riot = null;
+        if (riotOrders is not null)
+        {
+            riot = new JourneyWithdrawalRiotOrders(
+                riotOrders.IsKnown, [.. riotOrders.UnfinishedOrderIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)]);
+            if (!riotOrders.IsKnown)
+            {
+                codes.Add(RiotOrdersUnknown);
+            }
+            else if (riotOrders.HasUnfinishedOrder == true)
+            {
+                codes.Add(RiotOrderNotFinished);
+            }
+        }
         if (journeyId is null) codes.Add(JourneyRequired);
         if (vehicleKey is null) codes.Add(VehicleRequired);
         if (!Fits(request)) codes.Add(FieldTooLong);
@@ -498,7 +551,8 @@ public static class JourneyWithdrawal
                     .ConfigureAwait(false)
                 : null,
             session?.UpdatedAt,
-            [.. rebuilds.Select(row => new JourneyWithdrawalRebuild(row.RebuildId, row.State, row.StoppedReason, row.EndedUpperId))]);
+            [.. rebuilds.Select(row => new JourneyWithdrawalRebuild(row.RebuildId, row.State, row.StoppedReason, row.EndedUpperId))],
+            riot);
         string[] distinct = [.. codes.Distinct(StringComparer.Ordinal)];
         return new Assessment(
             distinct, plan, distinct.Length == 0 ? CodeOf(plan, facts, Trimmed(request.CargoLocation)) : null, false);
@@ -514,7 +568,7 @@ public static class JourneyWithdrawal
     /// control-server#485), a trip handed to the exception recovery session. A journey later than its pickup with no block at all is
     /// the engine's, running.
     /// </remarks>
-    private static bool InAWithdrawableState(JourneyRuntimeRow runtime) =>
+    internal static bool InAWithdrawableState(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.Blocked
             ? string.Equals(runtime.BlockReasonCode, LoadResultRequiresRecovery, StringComparison.Ordinal)
             : runtime.Stage == JourneyRuntimeStage.AwaitingPickupArrival ||

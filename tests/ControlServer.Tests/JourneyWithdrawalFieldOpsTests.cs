@@ -2,8 +2,12 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Recovery;
 using ControlServer.Host.Runtime.Withdrawal;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -146,6 +150,88 @@ public sealed class JourneyWithdrawalFieldOpsTests : IAsyncDisposable
         await AssertBlockedAndUnauditedAsync();
     }
 
+    // ------------------------------------------------------------------------------------------------
+    // 第二部分：服务端在跑，--server 把演练与撤下交给 Host（control-server#771 第二部分）。
+    // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 服务端在跑：两个动词都带 <c>--server</c>，不要 <c>--database</c>、不探、不拿库锁；RIoT 由服务端自己读，所以不填 <c>--riot-verification</c>
+    /// 也能撤。演练给码，带码撤下，输出写明 <c>via=server</c>。
+    /// </summary>
+    [Fact]
+    public async Task WithTheServerRunningBothVerbsGoThroughTheHostEntry()
+    {
+        string[] arguments = WithoutRiotVerification(await SeedAsync());
+        using CredentialVariable credential = new();
+        await using WebApplication app = await StartWithdrawalServerAsync(credential.Name, unfinishedOrders: []);
+        string[] server = ["--server", Address(app), "--credential-env", credential.Name];
+
+        (int planExit, JsonElement planned) = await RunAsync([PlanVerb, .. arguments, .. server]);
+        Assert.Equal((0, "PLANNED", "server"), (planExit, planned.GetProperty("outcome").GetString(), planned.GetProperty("via").GetString()));
+        string code = planned.GetProperty("confirmationCode").GetString()!;
+        Assert.Equal(2, planned.GetProperty("plan").GetProperty("demands").GetArrayLength());
+
+        (int exit, JsonElement output) = await RunAsync([WithdrawVerb, .. arguments, "--confirm", code, .. server]);
+        await app.StopAsync(Token);
+
+        Assert.Equal((0, "WITHDRAWN", "server", 200), (exit, output.GetProperty("outcome").GetString(),
+            output.GetProperty("via").GetString(), output.GetProperty("httpStatus").GetInt32()));
+        Assert.False(string.IsNullOrWhiteSpace(output.GetProperty("auditRecordId").GetString()));
+        await using ControlServerDbContext read = Open();
+        Assert.Equal(
+            JourneyRuntimeStage.Completed,
+            (await read.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.BlockReasonCode == JourneyWithdrawal.WithdrawnReason, Token)).Stage);
+    }
+
+    /// <summary>Host 拒绝（RIoT 上本车还有一张没结束的单）：<c>REJECTED</c>、退出码 1，理由码照 Host 给的列出，一行不动。</summary>
+    [Fact]
+    public async Task AHostRefusalIsARejectionListingTheHostsCodes()
+    {
+        string[] arguments = await SeedAsync();
+        using CredentialVariable credential = new();
+        await using WebApplication app = await StartWithdrawalServerAsync(credential.Name, unfinishedOrders: ["RIOT-ORDER-771"]);
+
+        (int exit, JsonElement output) = await RunAsync(
+            [PlanVerb, .. arguments, "--server", Address(app), "--credential-env", credential.Name]);
+        await app.StopAsync(Token);
+
+        Assert.Equal((1, "REJECTED", 409), (exit, output.GetProperty("outcome").GetString(), output.GetProperty("httpStatus").GetInt32()));
+        Assert.Contains(
+            JourneyWithdrawal.RiotOrderNotFinished,
+            output.GetProperty("codes").EnumerateArray().Select(item => item.GetString()));
+        await AssertBlockedAndUnauditedAsync();
+    }
+
+    /// <summary>凭据变量没给到进程：用法错误（退出码 2），什么都不发。</summary>
+    [Fact]
+    public async Task WithoutTheCredentialTheServerVerbIsAUsageError()
+    {
+        string[] arguments = await SeedAsync();
+
+        (int exit, _, string error) = await RunWithErrorAsync(
+            [WithdrawVerb, .. arguments, "--confirm", "X", "--server", NobodyListens,
+                "--credential-env", "CONTROL_SERVER_TEST_MISSING_" + Guid.NewGuid().ToString("N")]);
+
+        Assert.Equal(2, exit);
+        Assert.Contains("needs the credential in environment variable", error, StringComparison.Ordinal);
+        await AssertBlockedAndUnauditedAsync();
+    }
+
+    /// <summary>服务端没应答：<c>UNAVAILABLE</c>、退出码 1，说清要么起服务、要么停了服务走 <c>--database</c>。</summary>
+    [Fact]
+    public async Task AServerThatDoesNotAnswerIsUnavailable()
+    {
+        string[] arguments = await SeedAsync();
+        using CredentialVariable credential = new();
+
+        (int exit, JsonElement output) = await RunAsync(
+            [WithdrawVerb, .. arguments, "--confirm", "X", "--server", NobodyListens, "--credential-env", credential.Name]);
+
+        Assert.Equal((1, "UNAVAILABLE"), (exit, output.GetProperty("outcome").GetString()));
+        Assert.Contains("--database", output.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        await AssertBlockedAndUnauditedAsync();
+    }
+
     public ValueTask DisposeAsync()
     {
         SqliteConnection.ClearAllPools();
@@ -195,6 +281,66 @@ public sealed class JourneyWithdrawalFieldOpsTests : IAsyncDisposable
         WebApplication app = builder.Build();
         await app.StartAsync(Token);
         return app;
+    }
+
+    private const string ServerCredential = "journey-withdrawal-fieldops-credential";
+
+    private static string Address(WebApplication app) =>
+        app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+
+    private static string[] WithoutRiotVerification(string[] arguments)
+    {
+        int at = Array.IndexOf(arguments, "--riot-verification");
+        return [.. arguments[..at], .. arguments[(at + 2)..]];
+    }
+
+    /// <summary>
+    /// A Host with the real journey withdrawal entry over the exported database: RIoT lists <paramref name="unfinishedOrders"/> for
+    /// the vehicle, the credential is in <paramref name="credentialVariable"/>.
+    /// </summary>
+    private async Task<WebApplication> StartWithdrawalServerAsync(string credentialVariable, string[] unfinishedOrders)
+    {
+        WebApplicationBuilder builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Logging.ClearProviders();
+        builder.Services.AddDbContext<ControlServerDbContext>(
+            options => options.UseSqlite(ControlServerSqlite.ForDatabaseFile(DatabasePath, readOnly: false)));
+        builder.Services.AddScoped<IGovernanceAuditWriter>(services => new GovernanceStore(
+            services.GetRequiredService<ControlServerDbContext>(),
+            new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+            AuditRetentionPolicy.Default));
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<JourneyMutationGate>();
+        builder.Services.AddSingleton(new RecoveryGrantRegistry(TimeProvider.System));
+        builder.Services.AddSingleton<IRiotVehicleOrderFacts>(new ListedOrders(unfinishedOrders));
+        builder.Services.AddScoped(services => new OnboardJourneyPublisher(
+            new WireToGateStore(services.GetRequiredService<ControlServerDbContext>()), new RecordingPeer(), TimeProvider.System));
+        builder.Services.AddScoped<JourneyWithdrawalService>();
+        builder.Services.Configure<VehicleFaultRecoveryOptions>(options =>
+        {
+            options.Enabled = true;
+            options.CredentialEnvironmentVariable = credentialVariable;
+        });
+        WebApplication app = builder.Build();
+        app.MapJourneyWithdrawal();
+        await app.StartAsync(Token);
+        return app;
+    }
+
+    private sealed class ListedOrders(string[] unfinished) : IRiotVehicleOrderFacts
+    {
+        public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(string deviceKey, CancellationToken cancellationToken) =>
+            Task.FromResult(new RiotVehicleOrderObservation(deviceKey, unfinished.Length > 0, unfinished, DateTimeOffset.UtcNow));
+    }
+
+    /// <summary>The credential in a variable of this process, which the FieldOps child inherits.</summary>
+    private sealed class CredentialVariable : IDisposable
+    {
+        public CredentialVariable() => Environment.SetEnvironmentVariable(Name, ServerCredential);
+
+        public string Name { get; } = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+
+        public void Dispose() => Environment.SetEnvironmentVariable(Name, null);
     }
 
     private static async Task<(int ExitCode, JsonElement Output)> RunAsync(string[] arguments)
