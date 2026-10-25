@@ -1,5 +1,5 @@
-# 8005-workspace#68 implementation; 2026-10-25 10:06 +0800; pwsh -File scripts/parallel/Test-ParallelInstance.ps1
-# (the real-SQLite reader cases are SKIPPED without a ControlServer.Host build; see test-parallel-instance-with-host-build.txt)
+# 8005-workspace#68 implementation (f57c8aefe); 2026-10-25 10:29 +0800; pwsh -File scripts/parallel/Test-ParallelInstance.ps1
+# with a ControlServer.Host Debug build present, so the real-SQLite reader cases ran (no SKIP)
     24 passed, 0 failed
   PASS  gate refusal by vehicle (workspace#68): close, agv03 on its charger, the charge order ended long ago, standing still -> allowed
   PASS  gate refusal by vehicle (workspace#68): close, a vehicle at rest whose MT_NA reads with MODE_AUTO and the brake engaged (control-server#639) -> allowed
@@ -54,6 +54,7 @@
   PASS  gate refusal by order (workspace#68): open, CREATE_ATTEMPTED, though RIoT shows it ended (only CONFIRMED is read) -> GATE_OPEN_REFUSED_ORDER_SENT
   PASS  gate refusal by order (workspace#68): open, TERMINAL_RECONCILIATION_REQUIRED, though RIoT shows it ended -> GATE_OPEN_REFUSED_ORDER_SENT
   PASS  gate refusal by order (workspace#68): open, the first pickup order SUCCESS, a later stop of the journey EXECUTING: only the later one is named -> GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate reader: every column its SQL selects exists in the EF model snapshot (JourneyRuntimes, OrderIntents, RiotDispatchAuditEvents; workspace#61 adds a JourneyRuntimes and a VehicleFaultStates read)
   PASS  gate change (workspace#68): close, agv03 standing on its charger both times -> read, stop, read again, write, start, verified
   PASS  gate change (workspace#68): close, agv03 driven off between the two reads -> refused after the stop, started again, file unchanged
   PASS  gate change (workspace#68): open, the pickup order SUCCESS on a journey not Completed (field instance 2) -> opened
@@ -93,5 +94,19 @@
   PASS  Set-ParallelDispatchGateLocal.ps1 (workspace#68): both reads (ReadState and the dry run) wrap the journey state in Read-ParallelRiotGateFacts -Direction $direction -Connection $riotConnection
   PASS  Set-ParallelDispatchGateLocal.ps1 (workspace#68): the RIoT connection is resolved once, from the installed configuration and the service Environment
   PASS  gate reader (workspace#68): the vehicle faults are read on every read, not inside a condition
-  SKIP  gate reader on a real SQLite file: no ControlServer.Host build under src/ControlServer.Host/bin (build it to run this case)
-1452 passed, 0 failed
+  PASS  gate reader: the one SqliteConnection it opens is Mode=ReadOnly
+  PASS  gate reader: a missing database is an error, and is not created
+  PASS  gate reader: reads the journeys not Completed (Chinese agvId intact) and the audit events of RESULT_UNKNOWN intents
+  PASS  gate reader: what it reads judges as expected (open allowed: never sent; close refused: a journey is active)
+  PASS  gate reader: a missing table is an error, not an empty state
+  PASS  gate reader (workspace#61, #68): without -RecoveryJourneyId it reads no recovery rows, and the vehicle faults (none in effect)
+  PASS  gate reader (workspace#61): -RecoveryJourneyId reads that row with its block reason (Chinese agvId intact)
+  PASS  gate (workspace#61, real SQLite): close, the journey Blocked on LOAD_RESULT_REQUIRES_RECOVERY -> allowed when named
+  PASS  gate (workspace#61, real SQLite): ... and refused as before when not named
+  PASS  gate (workspace#61, real SQLite): close, named on another vehicle -> refused
+  PASS  gate (workspace#61, real SQLite): open is not widened: named or not, the same GATE_OPEN_REFUSED_ORDER_SENT
+  PASS  gate (workspace#61, real SQLite): close, named, its vehicle holds a fault -> refused
+  PASS  gate (workspace#61, real SQLite): close, named, released back to the engine -> refused
+  PASS  gate (workspace#61, real SQLite): close, named, with another journey active -> refused, naming only the other
+  PASS  gate reader (workspace#61): the journey id is a parameter, not SQL
+1466 passed, 0 failed

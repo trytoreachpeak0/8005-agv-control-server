@@ -1,0 +1,4 @@
+# 8005-workspace#68: the .NET tests that scan or run scripts/parallel, at f57c8aefe; 2026-10-25 10:29 +0800
+# pwsh -File C:/work/8005-workspace-v2/Invoke-HeavyLocal.ps1 -Ticket ws#68 dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj --filter "FullyQualifiedName~Batch8OccupancyRetirementMigrationTests|FullyQualifiedName~JourneyWithdrawalDispatchGateTests|FullyQualifiedName~DispatchGatePremiseArchitectureTests|FullyQualifiedName~ParallelInstanceEffectiveConfigurationTests|FullyQualifiedName~AdmissionPolicyVersionGuardTests|FullyQualifiedName~G2GateScriptReportLocationTests"
+Passed!  - Failed:     0, Passed:   118, Skipped:     0, Total:   118, Duration: 1 m 6 s - ControlServer.Tests.dll (net8.0)
+exit=0
