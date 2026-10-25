@@ -190,14 +190,15 @@ public static class JourneyWithdrawal
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(request);
-        Assessment assessment = await AssessAsync(dbContext, request, cancellationToken).ConfigureAwait(false);
+        Assessment assessment = await AssessAsync(dbContext, request, riotOrders, cancellationToken).ConfigureAwait(false);
         if (assessment.AlreadyWithdrawn)
         {
-            return new JourneyWithdrawalResult(Rejected, [JourneyAlreadyCompleted], null, null, null);
+            return new JourneyWithdrawalResult(Rejected, [JourneyAlreadyCompleted], null, null, null, RiotObservedAt: riotOrders?.ObservedAt);
         }
         return assessment.Codes.Count > 0
-            ? new JourneyWithdrawalResult(Rejected, [.. assessment.Codes], assessment.Plan, null, null)
-            : new JourneyWithdrawalResult(Planned, [], assessment.Plan, assessment.ConfirmationCode, null);
+            ? new JourneyWithdrawalResult(Rejected, [.. assessment.Codes], assessment.Plan, null, null, RiotObservedAt: riotOrders?.ObservedAt)
+            : new JourneyWithdrawalResult(
+                Planned, [], assessment.Plan, assessment.ConfirmationCode, null, RiotObservedAt: riotOrders?.ObservedAt);
     }
 
     /// <summary>
@@ -251,7 +252,7 @@ public static class JourneyWithdrawal
         string? withdrawnVehicle = null;
         await using (transaction)
         {
-            Assessment assessment = await AssessAsync(dbContext, request, cancellationToken).ConfigureAwait(false);
+            Assessment assessment = await AssessAsync(dbContext, request, riotOrders, cancellationToken).ConfigureAwait(false);
             if (assessment.AlreadyWithdrawn)
             {
                 string id = await WriteAuditAsync(
@@ -309,7 +310,7 @@ public static class JourneyWithdrawal
             }
             await SettleSessionAsync(dbContext, withdrawnVehicle, cancellationToken).ConfigureAwait(false);
         }
-        return result;
+        return result with { RiotObservedAt = riotOrders?.ObservedAt };
     }
 
     private const string Planned = "PLANNED";
@@ -335,10 +336,11 @@ public static class JourneyWithdrawal
 
     private sealed record SlotFact(int Slot, string Fact);
 
-    /// <summary>判一次，只读。</summary>
+    /// <summary>判一次，只读。<paramref name="riotOrders"/> 不为空是在线写法：RIoT 由服务端自己读，人填的核对文本不再必填（照录）。</summary>
     private static async Task<Assessment> AssessAsync(
         ControlServerDbContext dbContext,
         JourneyWithdrawalRequest request,
+        RiotVehicleOrderObservation? riotOrders,
         CancellationToken cancellationToken)
     {
         List<string> codes = [];
@@ -347,7 +349,24 @@ public static class JourneyWithdrawal
         if (Trimmed(request.OperatorId) is null) codes.Add(OperatorRequired);
         if (Trimmed(request.Reason) is null) codes.Add(ReasonRequired);
         if (Trimmed(request.SiteVerification) is null) codes.Add(SiteVerificationRequired);
-        if (Trimmed(request.RiotVerification) is null) codes.Add(RiotVerificationRequired);
+        if (riotOrders is null && Trimmed(request.RiotVerification) is null) codes.Add(RiotVerificationRequired);
+        // Online, the server reads RIoT for itself (control-server#771 part 2), as the fault recovery does for the same question
+        // (VehicleFaultRecoveryService.VehicleOrderReasons). An incomplete answer is refused, never taken as "no order": nobody typed
+        // a verification to fall back on. An unfinished order is refused here too -- the floor every option of the user's Q1 shares.
+        JourneyWithdrawalRiotOrders? riot = null;
+        if (riotOrders is not null)
+        {
+            riot = new JourneyWithdrawalRiotOrders(
+                riotOrders.IsKnown, [.. riotOrders.UnfinishedOrderIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)]);
+            if (!riotOrders.IsKnown)
+            {
+                codes.Add(RiotOrdersUnknown);
+            }
+            else if (riotOrders.HasUnfinishedOrder == true)
+            {
+                codes.Add(RiotOrderNotFinished);
+            }
+        }
         if (journeyId is null) codes.Add(JourneyRequired);
         if (vehicleKey is null) codes.Add(VehicleRequired);
         if (!Fits(request)) codes.Add(FieldTooLong);
@@ -532,7 +551,8 @@ public static class JourneyWithdrawal
                     .ConfigureAwait(false)
                 : null,
             session?.UpdatedAt,
-            [.. rebuilds.Select(row => new JourneyWithdrawalRebuild(row.RebuildId, row.State, row.StoppedReason, row.EndedUpperId))]);
+            [.. rebuilds.Select(row => new JourneyWithdrawalRebuild(row.RebuildId, row.State, row.StoppedReason, row.EndedUpperId))],
+            riot);
         string[] distinct = [.. codes.Distinct(StringComparer.Ordinal)];
         return new Assessment(
             distinct, plan, distinct.Length == 0 ? CodeOf(plan, facts, Trimmed(request.CargoLocation)) : null, false);

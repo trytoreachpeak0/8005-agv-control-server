@@ -165,7 +165,8 @@ public sealed class JourneyWithdrawalOnlineTests
         JourneyWithdrawalResult withdrawn = await online.Service(TimeSpan.FromMilliseconds(50))
             .WithdrawAsync(request with { ConfirmationCode = planned.ConfirmationCode }, Token);
 
-        Assert.Equal(("REJECTED", new[] { JourneyWithdrawal.RuntimeBusy }), (withdrawn.Outcome, withdrawn.Codes.ToArray()));
+        Assert.Equal("REJECTED", withdrawn.Outcome);
+        Assert.Equal([JourneyWithdrawal.RuntimeBusy], withdrawn.Codes);
         await AssertNothingWithdrawnAsync(fixture);
     }
 

@@ -104,6 +104,16 @@ public sealed class RecoveryGrantHostWiringTests : IAsyncDisposable
         string throughBody = await through.Content.ReadAsStringAsync(Token);
         Assert.NotEqual(HttpStatusCode.Forbidden, through.StatusCode);
         Assert.DoesNotContain("RECOVERY_GRANT_", throughBody, StringComparison.Ordinal);
+
+        // control-server#771 part 2: the online journey withdrawal is mapped on the same switch and its service resolves in the real
+        // Host -- a rehearsal for a journey this server does not have is a judged refusal (409), not a wiring failure (500).
+        using HttpResponseMessage withdrawal = await client.PostAsJsonAsync(
+            "api/field-ops/v1/journey-withdrawals",
+            new { journeyId = "journey:none-771", vehicleKey = VehicleKey, operatorId = "maintenance-771", reason = "L1", siteVerification = "L1-SITE" },
+            Token);
+        string withdrawalBody = await withdrawal.Content.ReadAsStringAsync(Token);
+        Assert.True(withdrawal.StatusCode == HttpStatusCode.Conflict, $"{(int)withdrawal.StatusCode}: {withdrawalBody}");
+        Assert.Contains("JOURNEY_NOT_FOUND", withdrawalBody, StringComparison.Ordinal);
     }
 
     public async ValueTask DisposeAsync()
