@@ -5,7 +5,11 @@
 
 本入口由 control-server#771 落地（2026-10-19 用户定方案 D1～D6，方案全文在票上与工作区 `ds-tasks/cs771-design.md`）。
 实现在 `src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs`，命令行在 `tools/ControlServer.FieldOps/Program.JourneyWithdrawal.cs`。
-**这是第一部分，只有服务端停着时直接写库这一种走法**；服务端在线的接口、看板上的提示是第二部分。
+有两种走法：**服务端在跑时经 Host 接口撤（`--server`，第二部分，推荐）**，服务不停、闸门不动、别的车照常跑；
+**服务端停着时直接写库（`--database`，第一部分）**，留作后备（服务端起不来、升级前后）。两种走法的判定与写入是同一段代码。
+看板「被阻断的旅程」卡片上，撤下收的那两形（装货结果未知；开往取货站途中车载端失联或未就绪）会多一句提示，告诉维护人员可以在这里撤。
+
+**生产上每次使用都先问用户**（调度 2026-10-25 定）：撤完之后车与退回的需求下一轮就可能被派出去，车会动。
 
 ## 什么时候用
 
@@ -42,7 +46,37 @@
 不动 MES；不动车载端的日志簿。车载端那条待答的 UNKNOWN 结果，
 在车接到下一条仓位命令时，由车自己先核实门关着、再覆盖掉（车载端的既有设计）。
 
+## 在线撤下（服务端在跑，`--server`）
+
+服务端开着故障人工恢复那组入口（`VehicleFaultRecovery:enabled`，生产 2026-10-21 起常开）时，Host 上有撤下接口
+`POST /api/field-ops/v1/journey-withdrawals`，与 `grant-recovery`、`release-station-exclusivity --server` 同一把凭据
+（FieldOps 从 `--credential-env` 点名的环境变量读，默认 `CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL`）。
+
+```powershell
+dotnet ControlServer.FieldOps.dll plan-journey-withdrawal --server http://<v2 基址>/ --credential-env <凭据变量> `
+  --journey <JourneyId> --vehicle-key <RIoT VehicleKey> `
+  --operator <工号> --reason <理由> --site-verification <现场核实记录> `
+  --slot-facts 5=EMPTY_LOCKED --cargo-location 在机台上
+dotnet ControlServer.FieldOps.dll withdraw-journey --server http://<v2 基址>/ --credential-env <凭据变量> `
+  <同上的参数> --confirm <confirmationCode>
+```
+
+和离线写法不同的地方：
+
+- **RIoT 由服务端自己读**：这辆车在 RIoT 上有没有未结束的单，读到的单号进计划、进确认码。读不全拒（`RIOT_VEHICLE_ORDERS_UNKNOWN`），
+  有未结束的单拒（`RIOT_ORDER_NOT_FINISHED`），所以 `--riot-verification` 可以不填（填了照录进审计）。
+  车还挂着活单时怎么办（拒，还是由服务端先取消再撤）在等用户定，这一版是拒；**不要自己去 RIoT 上取消本服务端的单**：服务端在跑时会把它当误操作、过一会儿自动重建。
+- **与运行轮次串行**：撤下要等引擎这一轮做完才写，30 秒内等不到就拒（`WITHDRAWAL_RUNTIME_BUSY`，HTTP 503），一行不写，过一会儿再试。
+- **不用停受理、不用关闸开闸**：撤下只看这一辆车，别的车有没有在途旅程不相干。收尾快照当场发给在线的车；车停稳（`MODE_AUTO`、`MT_FINISHED`）后会话回到 Ready。
+- **恢复授权**：这辆车的恢复授权（`grant-recovery`）若点名的正是这一趟，撤下时一并收回，并写一条收回审计（理由 `JOURNEY_WITHDRAWN_BY_OPERATOR`）；
+  点名别的旅程或按车的授权不动。车上开着恢复会话时撤下照旧拒（`RECOVERY_SESSION_OPEN`），先在屏上做完、`revoke-recovery` 或等授权到期。
+- **撤完之后车会被派活**：闸门开着，下一轮派车就可能把退回的需求、甚至这辆车本身派出去。想让这辆车先别接活，今天没有按车暂停的开关，撤之前先想好。
+- **车离线时撤的，留意站点独占**：旅程收尾后，它预占的公共站点（例如关卡）要等 RIoT 报出车在别的站上才自动释放。车一直离线就不会放，
+  要用 `release-station-exclusivity`（现场确认车不在那个站上）人工释放。
+
 ## 先决条件
+
+以下按离线写法写；在线写法第 1 条不需要，第 2 条由服务端自己读。
 
 1. **v2 服务停着。**撤下动词先探服务端的健康检查，有应答就拒；再拿服务进程持有的那把库锁，拿不到也拒。停服务会停掉挂在
    别的车旅程上的故障监看，所以先停受理、等其他车收完手上的旅程。
@@ -141,3 +175,6 @@ dotnet ControlServer.FieldOps.dll withdraw-journey --database <v2 库文件> --p
 | `ORDER_OUTCOME_UNKNOWN` | 这一趟有一张建单结果未知的单 | RIoT 上可能有活单，先查清 |
 | `FAULT_IN_EFFECT`／`EMERGENCY_STOP_OPEN`／`FAULTED_CARGO_BOUND` | 车的故障在效、急停没解除，或有故障货物绑定 | 先走故障清除与急停解除 |
 | `CONFIRMATION_REQUIRED`／`CONFIRMATION_STALE` | 没带确认码，或演练之后状态变了 | 重新演练 |
+| `RIOT_VEHICLE_ORDERS_UNKNOWN` | 在线：服务端读 RIoT 没读到完整回答 | 过一会儿重新演练；RIoT 一直读不了就交工程师 |
+| `RIOT_ORDER_NOT_FINISHED` | 在线：RIoT 上这辆车还有未结束的单（演练输出 `plan.riotOrders` 列出单号） | 车可能还在动，交工程师；不要自己在 RIoT 上取消 |
+| `WITHDRAWAL_RUNTIME_BUSY` | 在线：引擎这一轮 30 秒没做完 | 过一会儿再按同一个确认码；一直这样交工程师 |
