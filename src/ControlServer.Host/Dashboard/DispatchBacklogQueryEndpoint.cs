@@ -138,6 +138,9 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "在途车正驶向的那一站之后已经没有可插入的位置，这一趟不追加",
             [DispatchReasonCodes.EnRouteAppendDemandLeftThisJourney] =
                 "这条需求刚从这趟旅程上释放出去，不再追加回同一趟，可以由别的车接",
+            // control-server#864：正常竞态，不是故障。
+            [DispatchReasonCodes.FinalAppendJourneyEnded] =
+                "本轮要把这条需求追加进一辆在途车的这一趟，提交前这一趟已经结束（被取消或已送完），本轮不追加，下一轮重新分配",
             [DispatchReasonCodes.LoadingPhaseClosed] =
                 "在途车的装货阶段已经结束（持货超时、让站、装满后离开或计划装货完成），不再接新的待装需求",
             [DispatchReasonCodes.SublotTaskTypeConflict] =

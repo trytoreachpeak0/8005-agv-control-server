@@ -115,7 +115,7 @@ public sealed record DispatchRoundFacts(
     /// <see cref="Catalog"/>, read before the round started, and intake only found the demand gone on its re-read
     /// half way through. That rule clears the block a round later, so subtracting this outcome too would not lose
     /// the clearing — it would delay it, while an operator looks at an alarm about a demand that is already gone.
-    /// The other three refusals say nothing about the block either way.
+    /// The other refusals say nothing about the block either way.
     /// </para>
     /// <para>
     /// A grow-while-the-round-runs set like <see cref="AcceptedDemandIds"/>, and sound for the same reason: the
@@ -123,6 +123,16 @@ public sealed record DispatchRoundFacts(
     /// </para>
     /// </remarks>
     public IReadOnlySet<string> ClaimsIntakeRefused { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 开轮时积压行仍记着 <see cref="DispatchReasonCodes.FinalAppendJourneyEnded"/> 的需求：上一轮要追加进的旅程在提交前结束了
+    /// （control-server#864）。这一轮有车接走其中一条时补记一条日志，让「被跳过的需求后来补派了」在日志里按需求号对得上。
+    /// </summary>
+    /// <remarks>
+    /// 开轮时取，因为本轮判它之前就会把积压行的理由改写成本轮的裁决。只认上一轮留下的那个码：中间又有一轮因别的理由没派出去，
+    /// 这个码就被那一轮的理由盖掉了，之后的受理不再补记——那时看板的积压行与那一轮的理由已经说明了它的去向。
+    /// </remarks>
+    public IReadOnlySet<string> AppendsDroppedOnEndedJourney { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 }
 
 /// <summary>

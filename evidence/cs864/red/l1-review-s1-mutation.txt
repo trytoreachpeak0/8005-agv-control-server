@@ -1,0 +1,49 @@
+# cs#864 review S1: mutation on 3ebdcefe7 -- removed 'or DemandIntakeOutcome.JourneyEnded' from the claimsIntakeRefused condition in DispatchRoundRunner.cs only,,# ran the cs#864 cases, then git checkout -- that file. Only the new AnAppendWhoseJourneyEndedDoesNotClearAStructuralBlock goes red.
+  ControlServer.Domain -> src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendWhoseJourneyEndedDoesNotClearAStructuralBlock(moment: "before-store-transaction") [4 s]
+  Error Message:
+   Assert.Null() Failure: Value of type 'Nullable<DateTimeOffset>' has a value
+Expected: null
+Actual:   2026-09-08T06:00:01.0000000+00:00
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.AssertBlockSurvivedTheRoundAsync(FleetFixture fixture, EventRecordingLogger`1 blockLog, DateTimeOffset raisedAt) in tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 1866
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendWhoseJourneyEndedDoesNotClearAStructuralBlock(String moment) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 322
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendWhoseJourneyEndedDoesNotClearAStructuralBlock(String moment) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 322
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendWhoseJourneyEndedDoesNotClearAStructuralBlock(moment: "before-runner-read") [135 ms]
+  Error Message:
+   Assert.Null() Failure: Value of type 'Nullable<DateTimeOffset>' has a value
+Expected: null
+Actual:   2026-09-08T06:00:01.0000000+00:00
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.AssertBlockSurvivedTheRoundAsync(FleetFixture fixture, EventRecordingLogger`1 blockLog, DateTimeOffset raisedAt) in tests\ControlServer.Tests\MultiVehicleExecutionTests.DispatchRound.cs:line 1866
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendWhoseJourneyEndedDoesNotClearAStructuralBlock(String moment) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 322
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendWhoseJourneyEndedDoesNotClearAStructuralBlock(String moment) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 322
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AJourneyThatEndsBetweenTheAppendDecisionAndTheAppendIsSkippedForTheRound [154 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnotherVehicleInTheSameRoundTakesItsOwnDemandWhileTheAppendIsDropped [192 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-runner-read", ending: "cancelled") [159 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-store-transaction", ending: "cancelled") [156 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-store-transaction", ending: "delivered") [129 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-runner-read", ending: "delivered") [132 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyStillRunningAtItsCommitIsTaken [119 ms]
+Test Run Failed.
+Total tests: 9
+     Passed: 7
+     Failed: 2
+ Total time: 13.3202 Seconds
