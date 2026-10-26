@@ -126,6 +126,48 @@ public sealed class ChargingApproachSupervisionTests
     }
 
     /// <summary>
+    /// 点名之后 RIoT 一两轮读不出（网关网络异常答 <c>Unknown</c>，或单仍在排队但读不出绑没绑）：码、开始时刻与已报的键都保留，读回「排队、未绑车」时
+    /// 不重新计时、不再报 2284（独立审查 S1：读不出曾被当成「不再排队」清掉码，再读回来又报一次）。
+    /// </summary>
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("binding-unread")]
+    public async Task AnUnreadRoundAfterTheNamingKeepsTheCodeItsSinceAndTheAlarmSaid(string unread)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await ChargingExecutionTests.CommittedAndSentAsync(fleet);
+        fleet.Riot.QueueOrderUnbound(journey.PickupUpperId);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.ChargingOrderUndispatchedAlarmAfter);
+        await RoundAsync(fleet);
+        JourneyRuntimeRow named = (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!;
+        Assert.Equal(ChargingExecutionReasons.OrderNotDispatched, named.BlockReasonCode);
+        DateTimeOffset? since = named.BlockReasonSince;
+        Assert.NotNull(since);
+
+        RiotOrderObservation queued = fleet.Riot.OrderOf(journey.PickupUpperId)!;
+        fleet.Riot.PutOrder(unread == "unknown"
+            ? new RiotOrderObservation(journey.PickupUpperId, RiotOrderObservationKind.Unknown, null)
+            : queued with { ExecuteVehicleBound = null });
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        JourneyRuntimeRow duringUnread = (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!;
+        Assert.Equal(ChargingExecutionReasons.OrderNotDispatched, duringUnread.BlockReasonCode);
+        Assert.Equal(since, duringUnread.BlockReasonSince);
+
+        fleet.Riot.PutOrder(queued);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        JourneyRuntimeRow after = (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!;
+        Assert.Equal(ChargingExecutionReasons.OrderNotDispatched, after.BlockReasonCode);
+        Assert.Equal(since, after.BlockReasonSince);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2284);
+        Assert.Empty(fleet.Riot.OrderCommands);
+        Assert.Single(fleet.Riot.Creates);
+    }
+
+    /// <summary>
     /// 窗口从周期落库的确认时刻算：进程在窗口里重启，不从头计时——重启后再过剩下的那一点就点名。
     /// </summary>
     [Fact]
