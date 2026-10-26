@@ -262,6 +262,17 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan ChargingOrderAbsentAbandonAfter { get; set; } = TimeSpan.FromSeconds(120);
 
     /// <summary>
+    /// How long a confirmed charge order may stay QUEUEING with no vehicle bound to run it (RIoT's <c>executeVehicleKey</c> still
+    /// <c>--</c>) before the charging journey is named <c>CHARGING_ORDER_NOT_DISPATCHED</c>, alarmed and shown overdue on the
+    /// charger card (control-server#863). An alarm window only: nothing is cancelled, released or moved when it runs out
+    /// (REQ-0165, REQ-0168, REQ-0169), and it is not a battery parameter of REQ-0282. Five minutes by default: REQ-0165 and
+    /// BC-ORDER-013 say an executable order normally binds within seconds, while 2026-10-22's order stayed unbound for
+    /// three hours holding the only charger. Counted from the cycle's <c>OrderConfirmedAt</c>, so a restart does not reset
+    /// it. Positive and at most one hour.
+    /// </summary>
+    public TimeSpan ChargingOrderUndispatchedAlarmAfter { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// Whether the server itself cancels the old charge order of a cycle in the clearing loop after an unable-to-charge
     /// (control-server#406). <b>Off by default.</b> REQ-0148 as revised in requirements baseline v1.9.0 (CP-0010) allows
     /// <c>CMD_ORDER_CANCEL</c> for this server's own charge order in its first case -- the vehicle is in REQ-0178's clearing
@@ -530,6 +541,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             failures.Add(
                 "ChargingOrderAbsentAbandonAfter plus OwnOrderRebuildDelay must be shorter than OwnOrderRebuildRepeatWindow, " +
                 "or a repeatedly failing create is never stopped.");
+        }
+        if (options.ChargingOrderUndispatchedAlarmAfter <= TimeSpan.Zero ||
+            options.ChargingOrderUndispatchedAlarmAfter > TimeSpan.FromHours(1))
+        {
+            failures.Add("ChargingOrderUndispatchedAlarmAfter must be positive and at most 1 h.");
         }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);

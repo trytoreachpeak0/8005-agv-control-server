@@ -122,6 +122,14 @@ public static class ChargingExecutionReasons
     public const string OrderNotFound = "CHARGING_ORDER_NOT_FOUND";
 
     /// <summary>
+    /// 已确认的充电单在 RIoT 一直排队（<c>QUEUEING</c>），没有绑定执行车，超过 <c>JourneyRuntime:ChargingOrderUndispatchedAlarmAfter</c>
+    /// （control-server#863；10-22 一张单这样挂了三个小时，占着唯一的桩）。只点名、告警、看板标超时：不取消单、不放桩、不动车——长期排队不凭时长
+    /// 推定失效，未知原因只告警转人工（<c>REQ-0165</c>、<c>REQ-0168</c>、<c>REQ-0169</c>）。人在 RIoT 上取消之后照取消走
+    /// （<see cref="JourneyRuntimeEngine.OrderEndedWithoutArrivalReason"/>，不重建），再由人工清桩放桩。RIoT 绑了车就清掉。
+    /// </summary>
+    public const string OrderNotDispatched = "CHARGING_ORDER_NOT_DISPATCHED";
+
+    /// <summary>
     /// 充满之后一直留在桩上的车电量又掉到强制充电线以下（独立审查 S6）：它持有的这一轮以这个原因收尾，桩随之释放、同一轮按正常分配链在原桩上重新充电。
     /// 不是失败。
     /// </summary>
