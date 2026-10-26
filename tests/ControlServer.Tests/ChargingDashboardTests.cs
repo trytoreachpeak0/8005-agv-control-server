@@ -863,6 +863,17 @@ public sealed class ChargingDashboardTests
         Assert.Equal(severity, ChargingDashboardDescriptions.SeverityOf(code));
     }
 
+    /// <summary>
+    /// 去桩这一段的两种点名（control-server#863，独立审查 S2）都是 High：唯一的桩被一趟去不了桩的充电占着，只有人能清。
+    /// </summary>
+    [Theory]
+    [InlineData(ChargingExecutionReasons.OrderNotDispatched)]
+    [InlineData(ChargingExecutionReasons.VehicleObservationLost)]
+    public void EachApproachAlarmIsHigh(string code)
+    {
+        Assert.Equal(ChargingDashboardDescriptions.SeverityHigh, ChargingDashboardDescriptions.SeverityOf(code));
+    }
+
     // ---------------- 说明与共用读法 ----------------
 
     /// <summary>每个取值集合的每个值都有中文说明（新加一个而忘了说明就红）；真实跑出来的码另由 <see cref="ChargingDashboardCodeRecorder"/> 核。</summary>
