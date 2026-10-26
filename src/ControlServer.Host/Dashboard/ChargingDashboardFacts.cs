@@ -441,6 +441,8 @@ internal static class ChargingDashboardDescriptions
             or ChargingExecutionReasons.ClearanceMoveHeld
             or ChargingExecutionReasons.ClearanceMoveEnded
             or ChargingExecutionReasons.VehicleObservationLost
+            // control-server#863: the only charger held by a charge that cannot go, which only a person can clear.
+            or ChargingExecutionReasons.OrderNotDispatched
             or ChargingExecutionReasons.ReservationLostAtArrival
             or ChargingExecutionReasons.CycleMissing
             or VehicleFaultEvidence.OrderFailed => SeverityHigh,
