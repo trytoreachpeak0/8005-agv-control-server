@@ -422,7 +422,8 @@ public sealed partial class JourneyRuntimeEngine
     /// <summary>
     /// 已确认的充电单在 RIoT 一直排队、没有绑执行车（control-server#863）：从确认建单起超过
     /// <c>JourneyRuntime:ChargingOrderUndispatchedAlarmAfter</c> 写 <see cref="ChargingExecutionReasons.OrderNotDispatched"/>、告警一次，答真
-    /// （这一轮不往下走：车没在跑这张单，没有交管等待可判）。没到窗口答假；单不再是「排队、未绑车」时清掉这个码、答假。
+    /// （这一轮不往下走：车没在跑这张单，没有交管等待可判）。没到窗口答假；读到已绑车、不再排队或终态时清掉这个码、答假。
+    /// 读不出（<c>Unknown</c>，或排队但读不出绑没绑）不算变化：已点名的保留码、开始时刻与已报的键，答真；没点名的答假。
     /// </summary>
     /// <remarks>
     /// 只点名：不取消单、不放桩、不动车。长期 <c>QUEUEING</c> 不凭停留时间推定失效（<c>REQ-0165</c>），原因未知时只告警转人工（<c>REQ-0168</c>；
@@ -439,9 +440,17 @@ public sealed partial class JourneyRuntimeEngine
         CancellationToken cancellationToken)
     {
         string alarmKey = ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.OrderNotDispatched);
+        bool named = string.Equals(runtime.BlockReasonCode, ChargingExecutionReasons.OrderNotDispatched, StringComparison.Ordinal);
+        if (order.Kind is not (RiotOrderObservationKind.Active or RiotOrderObservationKind.Terminal) ||
+            order is { Kind: RiotOrderObservationKind.Active, OrderState: RiotOrderState.Queueing, ExecuteVehicleBound: null })
+        {
+            // Independent review S1: a read that says nothing (Unknown, or queueing with the binding not read) is not "no longer
+            // queueing": a named order keeps its code, its since and the alarm said, and this round goes no further.
+            return named;
+        }
         if (order is not { Kind: RiotOrderObservationKind.Active, OrderState: RiotOrderState.Queueing, ExecuteVehicleBound: false })
         {
-            if (string.Equals(runtime.BlockReasonCode, ChargingExecutionReasons.OrderNotDispatched, StringComparison.Ordinal))
+            if (named)
             {
                 dispatchRound.Charging.Board.Unsay(alarmKey);
                 runtime.SetBlockReason(null, now);
@@ -457,7 +466,7 @@ public sealed partial class JourneyRuntimeEngine
             return false;
         }
 
-        if (!string.Equals(runtime.BlockReasonCode, ChargingExecutionReasons.OrderNotDispatched, StringComparison.Ordinal))
+        if (!named)
         {
             runtime.SetBlockReason(ChargingExecutionReasons.OrderNotDispatched, now);
             runtime.UpdatedAt = now;
