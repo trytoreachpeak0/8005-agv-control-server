@@ -16,8 +16,9 @@
 ORDER_ENDED_WITHOUT_ARRIVAL、不重建；车证明不了停稳，211 照旧预占。L2-R11 经主车的车载端确认清桩：CONFIRMED、stationReleased=true，
 之后第二台取得 211 的预占与 CHARGING 用途。主车的充电单始终只建过一张。
 
-**红证据（缺陷版本）**：fp/v2-impl 3e62d65b9（本票之前）上，窗口过后旅程上没有任何码、日志里没有 2284，L2-COND-01 变红；之后人工清桩也会被拒
-（车不在任何清桩接得住的状态里），L2-COND-02 跟着红。
+**红证据（缺陷版本）**：fp/v2-impl 3e62d65b9（本票之前）上，窗口过后旅程上没有任何码、日志里没有 2284，L2-COND-01 变红。
+L2-COND-00 与 L2-COND-02 在缺陷版本上照样通过：取消之后旅程是 ORDER_ENDED_WITHOUT_ARRIVAL，人工清桩本来就接得住（10-22 现场查实的处置路径），
+L2-COND-02 守的是这条现场处置不回退，不是红点（独立审查 L1）。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -148,13 +149,14 @@ $assertions.Add(
 
 # --- 2. 第二个事实：窗口过后点名，什么也不取消、不放 ---------------------------------------------------------------
 
+# The code is saved before the 2284 line is logged; waiting for both keeps the reading off that gap (independent review L2).
 $named = Wait-L2ConditionOrLast -Description 'the undispatched charge order was named' `
     -Journal $journal -Criterion 'order-not-dispatched-named' -TimeoutSeconds 90 `
     -Probe {
         "$(Get-JourneyCode $journeyId) | $(Get-UndispatchedLines) alarms | $(Get-ChargerHeld) | $(Get-RiotOrderState $upperId) | " +
             "$(Get-Count 'SELECT COUNT(*) AS N FROM RiotOrderCommandAudit') order commands | second $(Get-Claim $second.VehicleKey)"
     } `
-    -Until { param($v) $v.StartsWith('CHARGING_ORDER_NOT_DISPATCHED |') }
+    -Until { param($v) $v.StartsWith('CHARGING_ORDER_NOT_DISPATCHED | 1 alarms |') }
 $expectedNamed = "CHARGING_ORDER_NOT_DISPATCHED | 1 alarms | $heldByMain | 1 -- | 0 order commands | second (none)"
 $assertions.Add(
     'L2-COND-01',
