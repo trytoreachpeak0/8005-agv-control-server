@@ -156,6 +156,30 @@ public sealed class RemainingBasketsSkipTests
     }
 
     /// <summary>
+    /// 安全基线不可信（车报的一条安全变化被拒收）时，此前那份快照不算读数：申请到时不判、要一份快照，快照被接受、基线可信了再判（control-server#837
+    /// 审查 S2 下沉到读数本身）。修之前申请到时就按那份旧快照授权了。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-REMAINING-BASKETS-SKIP-AUTHORIZED")]
+    public async Task ARequestWhileTheSafetyBaselineIsUntrustedWaitsForASnapshotAndIsDecidedWhenItComes()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied(1));
+        await rig.SendRefusedSafetyChangedAsync();
+        rig.Fixture.Clock.Advance(OnboardMessageProcessor.SafetySnapshotReaskInterval + TimeSpan.FromSeconds(1));
+
+        string answer = await rig.SendSkipRequestAsync(SkipRequestId, [1]);
+
+        Assert.Empty(rig.SkipResults());
+        Assert.Contains(answer.Split('\n'), line => MessageType(line) == "SafetyStateSnapshotRequested");
+        await rig.SendSnapshotAsync(Occupied(1));
+        JsonElement result = rig.SingleSkipResult();
+        Assert.Equal("AUTHORIZED", result.GetProperty("outcome").GetString());
+        Assert.Equal([1], Slots(result.GetProperty("loadedSlots")));
+    }
+
+    /// <summary>
     /// 拒绝的各格（wire-notes 的检查先后），每一格：答 <c>REJECTED</c>、带那个码、<c>loadedSlots</c> 为空，业务状态一样不动——装货照旧在进行。
     /// </summary>
     [Theory]
@@ -713,6 +737,7 @@ public sealed class RemainingBasketsSkipTests
     [InlineData("occupied")]
     [InlineData("door-unlocked")]
     [InlineData("output-active")]
+    [InlineData("baseline-untrusted")]
     public async Task AnAllEmptyWithoutSlotResultsOverReadingsThatDoNotProveItGoesToRecovery(string shape)
     {
         await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
@@ -733,6 +758,13 @@ public sealed class RemainingBasketsSkipTests
 
         RecoveryWorkflowState state = await rig.CancelAndReportAllEmptyAsync(perSlot: false, afterAuthorization: async () =>
         {
+            if (shape == "baseline-untrusted")
+            {
+                // The snapshot before the authorization still reads as the latest with no change after it: only the refused
+                // change says the vehicle holds something else (control-server#837 review S2).
+                await rig.SendRefusedSafetyChangedAsync();
+                return;
+            }
             await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);
             if (shape != "stale")
             {
@@ -887,6 +919,31 @@ public sealed class RemainingBasketsSkipTests
                 },
                 affectedSlots
             }));
+
+        /// <summary>
+        /// 车报一条修订号倒退的 <c>SafetyStateChanged</c>：服务端拒收、不进收件箱，本会话的安全基线从此不可信，直到下一份被接受的快照
+        /// （control-server#478）。收件箱里此前那份快照仍像是最新、之后没有变化的读数（control-server#837 审查 S2）。
+        /// </summary>
+        public async Task SendRefusedSafetyChangedAsync()
+        {
+            string answer = await SendAsync(Envelope(Guid.NewGuid().ToString("D"), "SafetyStateChanged", new
+            {
+                safetyStateVersion = _safetyVersion - 1,
+                observedAt = Fixture.Clock.GetUtcNow(),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                },
+                affectedSlots = TargetSlots
+            }));
+            Assert.Equal("ProtocolProblem", MessageType(answer.Split('\n')[0]));
+            Assert.True(State.SafetyBaselineUntrusted);
+        }
 
         public string SkipRequest(
             string skipRequestId,
