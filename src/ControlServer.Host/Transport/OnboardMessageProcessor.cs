@@ -26,10 +26,15 @@ public sealed partial class OnboardMessageProcessor(
     ILogger<OnboardMessageProcessor> logger,
     Runtime.Fleet.VehicleRoster? fleet = null,
     Runtime.Charging.ManualStationClearance? stationClearance = null,
-    Runtime.Charging.UnableToChargeFieldConfirmations? fieldConfirmations = null)
+    Runtime.Charging.UnableToChargeFieldConfirmations? fieldConfirmations = null,
+    SessionReadinessRecheck? readinessRecheck = null)
 {
     // The host's one roster (a singleton); a processor built without it, as the tests build it, reads the same options.
     private readonly Runtime.Fleet.VehicleRoster _fleet = fleet ?? new Runtime.Fleet.VehicleRoster(runtimeOptions);
+
+    // The host's one register (a singleton) of readiness changes a background round made (control-server#837); a processor
+    // built without it has its own, which nothing registers in.
+    private readonly SessionReadinessRecheck _readinessRecheck = readinessRecheck ?? new SessionReadinessRecheck();
 
     // The envelope's own settings, not a second copy of them: this instance also hashes the business
     // content the peer hashes, and the two only agree while both use the same serializer settings.
@@ -494,9 +499,22 @@ public sealed partial class OnboardMessageProcessor(
         switch (messageType)
         {
             case "Heartbeat":
-                return SerializeEnvelope(
-                    "HeartbeatAck", messageId, agvId, generation,
-                    new { receivedHeartbeatMessageId = messageId, serverTime = timeProvider.GetUtcNow() });
+                {
+                    string heartbeatAck = SerializeEnvelope(
+                        "HeartbeatAck", messageId, agvId, generation,
+                        new { receivedHeartbeatMessageId = messageId, serverTime = timeProvider.GetUtcNow() });
+                    // A background round changed this vehicle's readiness with nothing to answer (control-server#837, a load
+                    // cancellation timed out into recovery): decided afresh and announced once, even if the readiness reads the
+                    // same, since its reason changed. Every other heartbeat stays one line and touches no database.
+                    if (!_readinessRecheck.TryTake(agvId))
+                    {
+                        return heartbeatAck;
+                    }
+                    SessionReadinessDecision recheckDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    return AnswerWithReadiness(
+                        heartbeatAck, recheckDecision, agvId, generation, state, messageType, messageId, announceUnchanged: true);
+                }
             case "CapabilitySnapshot":
                 {
                     long revision = payload.GetProperty("capabilityVersion").GetInt64();

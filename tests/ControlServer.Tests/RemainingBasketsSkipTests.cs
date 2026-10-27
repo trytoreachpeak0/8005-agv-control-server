@@ -824,7 +824,8 @@ public sealed class RemainingBasketsSkipTests
                 fixture.Clock,
                 new ConfigurationBuilder().Build(),
                 peer: Peer,
-                runtimeOptions: fixture.Options);
+                runtimeOptions: fixture.Options,
+                readinessRecheck: fixture.ReadinessRecheck);
             State = new OnboardConnectionState
             {
                 AgvId = fixture.Options.AgvId,
