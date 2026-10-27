@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -315,6 +316,88 @@ public sealed class LoadCancellationDuringLoadTests
         Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
         Assert.Single(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
     }
+
+    /// <summary>
+    /// 授权在路上时这次装货先完成了（车载端已记下 COMPLETED 的装货结果），授权到达后车载端不做任何仓位 IO，回 <c>LoadCancellationResult</c> FAILED，
+    /// 逐仓带 <c>ACTION_NOT_ALLOWED_IN_STATE</c> 或不带逐仓结果（调度对 onboard-hmi#392 的裁定，#413 审查 S1）。装好的货照旧：装货仍是 Committed，需求不进
+    /// RecoveryRequired，旅程不挂 Blocked、照常往下走；取消工作流收口为 Reconciled。修之前服务端把它当成没对上的取消结果，需求进人工恢复、旅程挂在
+    /// <c>LoadCancellationResult_NOT_RECONCILED</c>，能解开它的补偿与交接都会把这条装好的需求终结掉。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ACancellationTheVehicleRefusesOverACompletedLoadLeavesTheLoadStanding(bool perSlot)
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied());
+        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
+        await rig.SendAsync(rig.OperationResult(
+            "COMPLETED", [.. rig.TargetSlots.Select(slot => SkipRig.SlotResult(slot, "COMPLETED", "OCCUPIED", []))]));
+        await rig.Fixture.Engine.ExecuteOnceAsync(Token);
+        rig.Fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow before = await rig.Fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, before.Stage);
+
+        string answer = await SendFailedCancellationResultAsync(
+            rig, perSlot ? CancellationResultSlots(rig, LoadCancellationRefusedReason) : []);
+
+        Assert.Equal("DurableAck", MessageType(answer.Split('\n')[0]));
+        rig.Fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(StationOperationStatus.Committed, (await rig.Fixture.Context.StationOperations.AsNoTracking()
+            .SingleAsync(row => row.SlotOperationAttemptId == rig.AttemptId, Token)).Status);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await rig.Fixture.DemandRowAsync()).Status);
+        JourneyRuntimeRow after = await rig.Fixture.RuntimeAsync();
+        Assert.Equal((before.Stage, before.BlockReasonCode), (after.Stage, after.BlockReasonCode));
+        RecoveryWorkflowRow workflow = await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((RecoveryWorkflowState.Reconciled, "FAILED"), (workflow.State, workflow.Outcome));
+        await rig.Fixture.Engine.ExecuteOnceAsync(Token);
+        rig.Fixture.Context.ChangeTracker.Clear();
+        Assert.NotEqual(JourneyRuntimeStage.Blocked, (await rig.Fixture.RuntimeAsync()).Stage);
+    }
+
+    /// <summary>
+    /// 同样先完成后 FAILED，但逐仓结果没说「授权到达时装货已有结论、没做 IO」（例如旧车载端照旧重开了这次装货、读到货才报 FAILED）：门可能开过，
+    /// 这份结果说明不了仓里还是装好的那些货，照旧按没对上的取消结果交人工恢复。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    public async Task AFailedCancellationOverACompletedLoadThatDoesNotSayItDidNothingStillGoesToRecovery()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied());
+        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
+        await rig.SendAsync(rig.OperationResult(
+            "COMPLETED", [.. rig.TargetSlots.Select(slot => SkipRig.SlotResult(slot, "COMPLETED", "OCCUPIED", []))]));
+        await rig.Fixture.Engine.ExecuteOnceAsync(Token);
+
+        await SendFailedCancellationResultAsync(rig, CancellationResultSlots(rig, "LOCK_NOT_CLOSED"));
+
+        rig.Fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await rig.Fixture.DemandRowAsync()).Status);
+        JourneyRuntimeRow blocked = await rig.Fixture.RuntimeAsync();
+        Assert.Equal((JourneyRuntimeStage.Blocked, "LoadCancellationResult_NOT_RECONCILED"), (blocked.Stage, blocked.BlockReasonCode));
+        Assert.Equal(RecoveryWorkflowState.RecoveryRequired,
+            (await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).State);
+    }
+
+    private const string LoadCancellationRefusedReason = "ACTION_NOT_ALLOWED_IN_STATE";
+
+    private static object[] CancellationResultSlots(SkipRig rig, string reasonCode) =>
+        [.. rig.TargetSlots.Order().Select(slot => SkipRig.SlotResult(slot, "NOT_STARTED", "OCCUPIED", [reasonCode]))];
+
+    private static Task<string> SendFailedCancellationResultAsync(SkipRig rig, object[] slotResults) =>
+        rig.SendAsync(rig.Envelope(Guid.NewGuid().ToString("D"), "LoadCancellationResult", new
+        {
+            cancellationId = CancellationId,
+            demandId = "10000000-0000-4000-8000-000000000001",
+            slotOperationAttemptId = rig.AttemptId,
+            overallOutcome = "FAILED",
+            slotResults,
+            observedAt = Now
+        }));
 
     /// <summary>故障判定在先：照旧 <c>ACTION_NOT_ALLOWED_IN_STATE</c>，不看读数（有货也一样）。</summary>
     [Fact]
