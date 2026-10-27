@@ -106,6 +106,13 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "车有未清除的故障，需求不释放也不取消，车留给故障处理（急停与故障监看跟着这趟旅程走）",
             [DemandReleaseReasons.OrderStalledOrRebuilding] =
                 "这一段的运单停住了（挂起、被取消后等着同车重建、故障清除后等着重建），需求不释放也不取消，车况变了由重建的护栏与人处理",
+            // control-server#837：装货中取消授权之后车一直没答复，过了配置的时限（默认 2 分钟），这次装货交人工恢复。
+            [LoadCancellationAnswerTimeout.BlockReason] =
+                "操作员在装货中按了取消装货、服务端已同意，但车一直没有报回取消的结果（常见原因是车载端断网或程序崩溃），"
+                + "过了配置项 JourneyRuntime:LoadCancellationAnswerTimeout 规定的时长，服务端不再等，这次装货转人工恢复。"
+                + "请到车前核对这次装货的仓位里有没有货、仓门是否关好，再由维护管理员在车载端开异常处置："
+                + "仓位都是空的选补偿（证明全空），有货的选故障货物交接；处理不了请联系系统维护人员。"
+                + "车之后才报回的取消结果服务端只记录、不再执行",
             // control-server#754：扫码后分仓位时这一侧可用仓位不够（派车之后有仓位被禁用），这次录入已按 SLOT_INOPERABLE 拒收。
             [JourneyRuntimeEngine.LoadSlotAssignmentShortReason] =
                 "操作员扫码之后，服务端给这条需求分仓位时，这一侧可分配的空仓不够它要的花篮数，或者读不到这一侧的仓位信息"

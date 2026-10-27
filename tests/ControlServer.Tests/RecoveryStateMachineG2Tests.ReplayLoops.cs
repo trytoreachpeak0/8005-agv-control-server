@@ -551,6 +551,7 @@ public sealed partial class RecoveryStateMachineG2Tests
             (await context.AcceptedDemands.SingleAsync(token)).Status = DemandExecutionStatus.Accepted;
             (await context.StationOperations.SingleAsync(token)).Status = StationOperationStatus.Prepared;
             await context.SaveChangesAsync(token);
+            await TestSlotReadings.SeedProvenEmptyAsync(context, AgvId, Now);
             RecordingPeer peer = new(context);
             OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
             OnboardConnectionState state = CurrentState(deferOutbound: true);

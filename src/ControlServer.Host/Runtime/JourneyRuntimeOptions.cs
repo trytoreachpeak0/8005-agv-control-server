@@ -199,6 +199,18 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan AreaEndAdmissionRevokedTimeout { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// How long a during-load cancellation may wait for the vehicle's answer after its authorization before the server gives up on
+    /// it: the journey is blocked under <c>LOAD_CANCELLATION_UNANSWERED</c>, the load held for recovery, and the administrator's ways
+    /// out -- a recovery session, the fault cargo handoff, the compensation -- are open (control-server#837, the user's choice of
+    /// 2026-10-27).
+    /// </summary>
+    /// <remarks>
+    /// Two minutes by default, the user's figure. Counted from the authorization on file, so a restart does not start it over.
+    /// Between 30 s and 30 minutes: shorter would cut into an ordinary clearing, longer is no backstop.
+    /// </remarks>
+    public TimeSpan LoadCancellationAnswerTimeout { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>
     /// How long a journey may stand waiting for a person in one stage before the waiting journey watch logs it, with the
     /// vehicle's battery (control-server#273). Ten minutes by default, decided by the user on 2026-09-22.
     /// </summary>
@@ -445,6 +457,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         if (options.AreaEndAdmissionRevokedTimeout <= TimeSpan.Zero)
         {
             failures.Add("AreaEndAdmissionRevokedTimeout must be positive.");
+        }
+        if (options.LoadCancellationAnswerTimeout < TimeSpan.FromSeconds(30) ||
+            options.LoadCancellationAnswerTimeout > TimeSpan.FromMinutes(30))
+        {
+            failures.Add("LoadCancellationAnswerTimeout must be between 30 s and 30 minutes.");
         }
         if (options.DepartureSafetyResultWait <= TimeSpan.Zero ||
             options.DepartureSafetyResultWait > TimeSpan.FromSeconds(10))

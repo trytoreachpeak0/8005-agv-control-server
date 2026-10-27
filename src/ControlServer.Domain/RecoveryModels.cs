@@ -18,6 +18,13 @@ public static class RecoveryWorkflowOutcomes
     /// arriving afterwards is refused whole, and the refusal names this.
     /// </summary>
     public const string AdministratorClosed = "ADMINISTRATOR_CLOSED";
+
+    /// <summary>
+    /// A during-load cancellation the vehicle never answered within <c>JourneyRuntime:LoadCancellationAnswerTimeout</c> of its
+    /// authorization (control-server#837): closed RecoveryRequired, the load it cancelled held for recovery. A result arriving
+    /// afterwards is kept as evidence and changes nothing.
+    /// </summary>
+    public const string LoadCancellationAnswerTimedOut = "LOAD_CANCELLATION_ANSWER_TIMED_OUT";
 }
 
 /// <remarks>
