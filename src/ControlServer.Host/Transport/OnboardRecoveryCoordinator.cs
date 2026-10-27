@@ -2201,6 +2201,19 @@ public sealed class OnboardRecoveryCoordinator(
                 await HandoffRecordStandsAsync(payload, workflow, cancellationToken).ConfigureAwait(false),
             _ => false
         };
+        // The authorization reached the vehicle after the load's own result was recorded COMPLETED (control-server#837, the
+        // coordinator's ruling on onboard-hmi#413 review S1): the vehicle does no slot IO for it and answers FAILED, every slot
+        // result (if any) NOT_STARTED with ACTION_NOT_ALLOWED_IN_STATE. Nothing was cancelled and the load stands, as this server
+        // already holds it Committed: the cancellation is closed and nothing else is touched. Taken as a result that did not
+        // reconcile, it marked the loaded demand RecoveryRequired and blocked the journey, and the only ways out -- compensation,
+        // handoff -- end the demand. A FAILED that does not say it did nothing (an older onboard reopened the attempt) may have
+        // opened a door over the cargo, and still goes to recovery below.
+        if (!success && messageType == "LoadCancellationResult" &&
+            await RefusedOverACommittedLoadAsync(payload, workflow, cancellationToken).ConfigureAwait(false))
+        {
+            workflow.State = RecoveryWorkflowState.Reconciled;
+            return;
+        }
         if (!success)
         {
             workflow.State = RecoveryWorkflowState.RecoveryRequired;
@@ -3021,6 +3034,25 @@ public sealed class OnboardRecoveryCoordinator(
     /// path, and it is settled only by a recovery that proves its slots (compensation, handoff, forced recovery).
     /// </para>
     /// </remarks>
+    private async Task<bool> RefusedOverACommittedLoadAsync(
+        JsonElement payload,
+        RecoveryWorkflowRow workflow,
+        CancellationToken cancellationToken)
+    {
+        if (RequiredString(payload, "overallOutcome") != "FAILED" || workflow.SlotOperationAttemptId is null ||
+            !payload.GetProperty("slotResults").EnumerateArray().All(slot =>
+                RequiredString(slot, "outcome") == "NOT_STARTED" &&
+                slot.GetProperty("reasonCodes").EnumerateArray()
+                    .Any(code => code.GetString() == ServerReasonCodes.ActionNotAllowedInState)))
+        {
+            return false;
+        }
+        return await dbContext.StationOperations.AsNoTracking().AnyAsync(
+            row => row.SlotOperationAttemptId == workflow.SlotOperationAttemptId && row.DemandId == workflow.DemandId &&
+                   row.OperationType == SlotOperationType.Load && row.Status == StationOperationStatus.Committed,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task HoldCancelledLoadForRecoveryAsync(
         RecoveryWorkflowRow workflow,
         CancellationToken cancellationToken)
