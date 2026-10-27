@@ -1434,13 +1434,9 @@ public sealed class OnboardRecoveryCoordinator(
         object? slotRefusal = null;
         if (allowedInState && !onFile)
         {
-            // While a refused safety message leaves the session's baseline untrusted (control-server#478), no reading on file is
-            // evidence: the refused SafetyStateChanged never reached the inbox, so the snapshot before it still reads as the
-            // latest with no change after it, while the vehicle holds other content (review S2 of #837). The departure verdict
-            // DistrustSafetyBaselineAsync clears is the durable mark of it, back only with the next accepted snapshot.
-            bool baselineTrusted = await dbContext.SessionRecoveries.AsNoTracking().AnyAsync(
-                row => row.AgvId == agvId && row.DepartureSafe != null, cancellationToken).ConfigureAwait(false);
-            IReadOnlyDictionary<int, RemainingBasketsSkipRule.SlotReading>? readings = operation is null || !baselineTrusted
+            // No readings while a refused safety message leaves the baseline untrusted, as well as stale or missing ones
+            // (SessionSlotReadings, review S2 of #837).
+            IReadOnlyDictionary<int, RemainingBasketsSkipRule.SlotReading>? readings = operation is null
                 ? null
                 : await SessionSlotReadings.ReadAsync(dbContext, agvId, slots, operation.CreatedAt, cancellationToken)
                     .ConfigureAwait(false);
@@ -1448,7 +1444,7 @@ public sealed class OnboardRecoveryCoordinator(
             {
                 slotRefusal = Problem(refusal.ReasonCode, refusal.FieldPath!, refusal.DisplayMessage!);
                 string readingsText = readings is null
-                    ? baselineTrusted ? "none or stale" : "baseline untrusted"
+                    ? "none, stale or baseline untrusted"
                     : string.Join(' ', slots.Select(slot => readings.TryGetValue(slot, out RemainingBasketsSkipRule.SlotReading? reading)
                         ? $"{slot}={reading.Physical}/{reading.Lock}/{reading.Output}"
                         : $"{slot}=none"));
