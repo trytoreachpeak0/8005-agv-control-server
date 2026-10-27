@@ -20,6 +20,7 @@ public sealed class LoadCancellationDuringLoadTests
 {
     private const string CancellationId = "83700000-0000-4000-8000-000000000001";
     private const string SecondCancellationId = "83700000-0000-4000-8000-000000000002";
+    private static readonly string[] LockNotClosed = ["LOCK_NOT_CLOSED"];
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
@@ -119,6 +120,68 @@ public sealed class LoadCancellationDuringLoadTests
         }
         Assert.Empty(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
         await rig.AssertLoadUntouchedAsync();
+    }
+
+    /// <summary>
+    /// 请求点名的 attempt 服务端没有对应的操作行：没有目标仓可证明为空，按 <c>SLOT_STATE_UNKNOWN</c> 拒（审查 S1）。去掉规则里「没有目标仓」那一条，
+    /// 空集合上逐仓检查全过，这条变红。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-BASKET-LOADED")]
+    public async Task AnAttemptTheServerHasNoOperationForIsRejectedAsSlotStateUnknown()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied());
+
+        AssertRejected(
+            await SendCancellationAsync(rig, CancellationId, attemptId: "83700000-0000-4000-8000-0000000000ff"),
+            "SLOT_STATE_UNKNOWN");
+
+        Assert.Empty(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
+        await rig.AssertLoadUntouchedAsync();
+    }
+
+    /// <summary>
+    /// 安全基线不可信时一律按 <c>SLOT_STATE_UNKNOWN</c> 拒（审查 S2）：车报的 <c>SafetyStateChanged</c> 修订号倒退、或同一修订号内容不同，服务端拒收、
+    /// 不进收件箱，于是此前那份全空快照在读数上仍是「最新且没有之后的变化」。车其实已经换了状态，那份快照不能当证据用；要等下一份被接受的快照。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-BASKET-LOADED")]
+    [InlineData("revision-back")]
+    [InlineData("same-revision-other-content")]
+    public async Task WhileARefusedSafetyMessageLeavesTheBaselineUntrustedTheCancellationIsRejected(string shape)
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied());
+        long current = rig.State.SafetyRevision!.Value;
+        string refused = await rig.SendAsync(rig.Envelope(Guid.NewGuid().ToString("D"), "SafetyStateChanged", new
+        {
+            safetyStateVersion = shape == "revision-back" ? current - 1 : current,
+            observedAt = rig.Fixture.Clock.GetUtcNow(),
+            safety = new
+            {
+                departureSafe = false,
+                vehicleStopped = true,
+                allTargetSlotsLocked = false,
+                allUnlockOutputsReset = true,
+                unknownPresent = false,
+                reasonCodes = LockNotClosed
+            },
+            affectedSlots = rig.TargetSlots
+        }));
+        Assert.Equal("ProtocolProblem", MessageType(refused.Split('\n')[0]));
+        Assert.True(rig.State.SafetyBaselineUntrusted);
+
+        AssertRejected(await SendCancellationAsync(rig, CancellationId), "SLOT_STATE_UNKNOWN");
+
+        Assert.Empty(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
+        await rig.AssertLoadUntouchedAsync();
+
+        // The snapshot it asks for is a whole new baseline: from there the cancellation is judged on it again.
+        await rig.SendSnapshotAsync(Occupied());
+        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
     }
 
     /// <summary>
@@ -233,6 +296,26 @@ public sealed class LoadCancellationDuringLoadTests
         Assert.Single(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
     }
 
+    /// <summary>
+    /// 授权之后读数显示目标仓有货，再收到同一个 id 的重提：仍照记录答授权（设计如此，审查 L1）。授权之后车载端不为取消做仓位 IO，车载端在等授权时也
+    /// 不开锁（onboard-hmi#392），所以授权之后出现的货说明不了授权当时不该给；这条把这个取舍钉住，改了要有意识地改。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    public async Task AResubmissionAfterTheReadingsShowABasketIsStillAnsweredFromTheRecord()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied());
+        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
+
+        await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);
+        await rig.SendSnapshotAsync(Occupied(rig.TargetSlots[0]));
+
+        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
+        Assert.Single(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
+    }
+
     /// <summary>故障判定在先：照旧 <c>ACTION_NOT_ALLOWED_IN_STATE</c>，不看读数（有货也一样）。</summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
@@ -263,12 +346,12 @@ public sealed class LoadCancellationDuringLoadTests
     }
 
     private static async Task<string> SendCancellationAsync(
-        SkipRig rig, string cancellationId, string reason = "Operator pressed cancel.") =>
+        SkipRig rig, string cancellationId, string reason = "Operator pressed cancel.", string? attemptId = null) =>
         await rig.SendAsync(rig.Envelope(Guid.NewGuid().ToString("D"), "LoadCancellationStartRequested", new
         {
             cancellationId,
             demandId = "10000000-0000-4000-8000-000000000001",
-            slotOperationAttemptId = rig.AttemptId,
+            slotOperationAttemptId = attemptId ?? rig.AttemptId,
             @operator = new { operatorId = "OP-001", verificationMethod = "BADGE", verifiedAt = Now },
             reason
         }));
