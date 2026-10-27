@@ -121,6 +121,37 @@ public sealed class LoadCancellationAnswerTimeoutTests
     }
 
     /// <summary>
+    /// 到期之后不靠重连、不靠安全变化，车载端也得知道会话待恢复：服务端只在应答入站报文时通告就绪，车停在站上不答取消时，安全变化可能很久都没有，
+    /// 恢复入口就一直不亮。到期那一轮登记这辆车，它的下一个心跳（真车载端约 2 秒一次）的应答后面跟一行 <c>SessionReadiness</c>（<c>RECOVERY_REQUIRED</c>），
+    /// 只跟一次。到期前已经不就绪的会话也照发，原因换了。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AfterTheTimeoutTheVehiclesNextHeartbeatCarriesItsReadiness(bool readyBefore)
+    {
+        await using SkipRig rig = await AuthorizedAsync();
+        rig.State.Readiness = readyBefore ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
+        Assert.Equal(["HeartbeatAck"], LineTypes(await rig.SendAsync(Heartbeat(rig))));
+
+        rig.Fixture.Clock.Advance(TimeSpan.FromMinutes(2) + TimeSpan.FromSeconds(1));
+        await rig.Fixture.Engine.ExecuteOnceAsync(Token);
+        await AssertTimedOutAsync(rig);
+
+        string[] answer = (await rig.SendAsync(Heartbeat(rig))).Split('\n');
+        Assert.Equal(["HeartbeatAck", "SessionReadiness"], answer.Select(MessageType));
+        using (JsonDocument readiness = JsonDocument.Parse(answer[1]))
+        {
+            Assert.Equal("RECOVERY_REQUIRED", readiness.RootElement.GetProperty("payload").GetProperty("readiness").GetString());
+        }
+        Assert.Equal(SessionReadiness.RecoveryRequired, rig.State.Readiness);
+
+        Assert.Equal(["HeartbeatAck"], LineTypes(await rig.SendAsync(Heartbeat(rig))));
+    }
+
+    /// <summary>
     /// 答复在到期之前落库（同时到达的另一种先后）：结果照常收口这次取消，之后过了时限，超时判定看不到等答复的取消，什么都不做，不重复处理。
     /// </summary>
     [Fact]
@@ -208,6 +239,10 @@ public sealed class LoadCancellationAnswerTimeoutTests
                 .ToArray(),
             observedAt = rig.Fixture.Clock.GetUtcNow()
         });
+
+    private static string Heartbeat(SkipRig rig) => rig.Envelope(Guid.NewGuid().ToString("D"), "Heartbeat", new { });
+
+    private static string[] LineTypes(string answer) => [.. answer.Split('\n').Select(MessageType)];
 
     private static async Task AssertTimedOutAsync(SkipRig rig)
     {
