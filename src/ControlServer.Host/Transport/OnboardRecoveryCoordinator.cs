@@ -61,6 +61,15 @@ public sealed class OnboardRecoveryCoordinator(
                 "Load cancellation {CancellationId} for demand {DemandId} refused with {ReasonCode}: attempt " +
                 "{SlotOperationAttemptId}, target slots {TargetSlots}, readings {Readings} (control-server#837).");
 
+    private static readonly Action<ILogger, string, string, string, string, string, Exception?>
+        LogCancellationResultAfterAnswerTimeout =
+            LoggerMessage.Define<string, string, string, string, string>(
+                LogLevel.Warning,
+                new EventId(8371, nameof(LogCancellationResultAfterAnswerTimeout)),
+                "Load cancellation {CancellationId} on {AgvId} (demand {DemandId}) was answered by {MessageId} ({Outcome}) after the " +
+                "server gave up waiting for it (LOAD_CANCELLATION_ANSWER_TIMED_OUT): kept as evidence, nothing changed; its load is " +
+                "left to the recovery (control-server#837).");
+
     private static readonly Action<ILogger, string, string, string, string, string, string, Exception?>
         LogRemainingBasketsSkipDecided =
             LoggerMessage.Define<string, string, string, string, string, string>(
@@ -287,6 +296,15 @@ public sealed class OnboardRecoveryCoordinator(
                 .ConfigureAwait(false);
         }
         ValidateResultIdentity(messageType, payload, workflow);
+        // A cancellation the server gave up waiting for (control-server#837, LoadCancellationAnswerTimeout): its load is in the
+        // hands of a person's recovery by now, and a late ALL_EMPTY would cancel it and end the demand under them. Kept as
+        // evidence, logged and acknowledged -- a refusal would come back in every handshake -- and nothing else is touched.
+        if (messageType == "LoadCancellationResult" &&
+            workflow.Outcome == RecoveryWorkflowOutcomes.LoadCancellationAnswerTimedOut)
+        {
+            return await RecordResultAfterAnswerTimeoutAsync(
+                messageId, agvId, sessionGeneration, workflow, payload, contentHash, cancellationToken).ConfigureAwait(false);
+        }
 
         // DEFENSIVE RESIDUE, not a live path. Since 8005-agv-control-server#77 every inbound line reaches
         // this method through OnboardMessageProcessor, and the inbox there answers a second arrival of the
@@ -410,6 +428,39 @@ public sealed class OnboardRecoveryCoordinator(
             logger ?? (ILogger)NullLogger.Instance,
             agvId, messageType, workflowId, messageId, outcome, WireContentHash.Sha256(payload.GetRawText()), null);
         return DurableAck(messageType, messageId, agvId, sessionGeneration, contentHash);
+    }
+
+    private async Task<string> RecordResultAfterAnswerTimeoutAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        RecoveryWorkflowRow workflow,
+        JsonElement payload,
+        string contentHash,
+        CancellationToken cancellationToken)
+    {
+        string outcome = ResultOutcome("LoadCancellationResult", payload);
+        if (!await dbContext.RecoveryResultEvidence.AnyAsync(row => row.MessageId == messageId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            dbContext.RecoveryResultEvidence.Add(new RecoveryResultEvidenceRow
+            {
+                MessageId = messageId,
+                WorkflowId = workflow.WorkflowId,
+                MessageType = "LoadCancellationResult",
+                ForcedRecoveryGeneration = workflow.ForcedRecoveryGeneration,
+                ContentHash = contentHash,
+                Outcome = outcome,
+                HistoricalOnly = true,
+                ObservedAt = payload.GetProperty("observedAt").GetDateTimeOffset(),
+                ReceivedAt = timeProvider.GetUtcNow()
+            });
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        LogCancellationResultAfterAnswerTimeout(
+            logger ?? (ILogger)NullLogger.Instance,
+            workflow.WorkflowId, agvId, workflow.DemandId ?? "(none)", messageId, outcome, null);
+        return DurableAck("LoadCancellationResult", messageId, agvId, sessionGeneration, contentHash);
     }
 
     public async Task ObserveOperationResultAsync(

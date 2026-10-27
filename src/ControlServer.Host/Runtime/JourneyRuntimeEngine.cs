@@ -1210,6 +1210,11 @@ public sealed partial class JourneyRuntimeEngine(
         DateTimeOffset now = timeProvider.GetUtcNow();
         // 上一轮推进落库的时刻，这一轮任何写入之前读（control-server#783 审查 S-1：长时间扣着卸货时按它判这一轮该不该再记读数）。
         DateTimeOffset previousAdvanceAt = runtime.UpdatedAt;
+        // 装货中取消等车答复超时（control-server#837）：在就绪门之前判。车载端不答时会话常常不就绪，判在门后就永远到不了；判定只读写库、不向车发任何东西。
+        // 挂起了的旅程由下面照常按 Blocked 处理。
+        await LoadCancellationAnswerTimeout
+            .TryExpireAsync(dbContext, runtime, now, runtimeOptions.LoadCancellationAnswerTimeout, logger, cancellationToken)
+            .ConfigureAwait(false);
         SessionRecoveryRow? session = await CurrentReadySessionAsync(runtime.AgvId, cancellationToken)
             .ConfigureAwait(false);
         if (session is null)
