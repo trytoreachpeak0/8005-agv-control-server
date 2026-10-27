@@ -129,6 +129,28 @@ public sealed class DispatchRoundRunner(
             "Asking whether vehicle {AgvId} may take an appended demand failed: {ExceptionType}. The round " +
             "left it under way and went on to its end.");
 
+    /// <summary>
+    /// 派车轮选中「往这趟旅程追加」之后、提交之前旅程结束了（control-server#864）。信息级：这是预期之中的竞态，车与需求都没出错，
+    /// 运维什么都不用做；记下来是为了频率看得见（生产 10-21～10-23 三天三次，此前记成 2123／2124）。
+    /// </summary>
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogAppendJourneyEnded =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Information,
+            new EventId(2146, nameof(LogAppendJourneyEnded)),
+            "Vehicle {AgvId}'s journey {JourneyId} ended before demand {DemandId} could be appended to it; the append " +
+            "was dropped for this round, and the demand stays in the backlog to be reassigned next round ({ReasonCode}).");
+
+    /// <summary>
+    /// 上一轮因要追加的旅程已结束而被放弃的需求，这一轮被接走了（control-server#864）。与 2146 按需求号配对：
+    /// 生产 10-21～10-25 五次跳过，日志里看不出后来补派没有（Coordinator12 10-25）。
+    /// </summary>
+    private static readonly Action<ILogger, string, string, string, Exception?> LogDroppedAppendReassigned =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Information,
+            new EventId(2147, nameof(LogDroppedAppendReassigned)),
+            "Demand {DemandId}, whose append was dropped in an earlier round because the journey had ended, was " +
+            "reassigned this round: vehicle {AgvId} took it into journey {JourneyId}.");
+
     private static readonly Action<ILogger, string, int, int, long, string, Exception?> LogEnteredMandatoryCharge =
         LoggerMessage.Define<string, int, int, long, string>(
             LogLevel.Warning,
@@ -251,6 +273,11 @@ public sealed class DispatchRoundRunner(
             admissionPolicyDrifted)
         {
             ClaimsIntakeRefused = claimsIntakeRefused,
+            AppendsDroppedOnEndedJourney = backlogByDemandId.Values
+                .Where(row => row.AcceptedAt is null &&
+                              string.Equals(row.ReasonCode, DispatchReasonCodes.FinalAppendJourneyEnded, StringComparison.Ordinal))
+                .Select(row => row.DemandId)
+                .ToHashSet(StringComparer.Ordinal),
             ZoneParameters = zoneParameters,
             RedispatchGenerations = redispatchGenerations,
             // REQ-0366（control-server#827）：判据、受理前重判与轮末两个汇总都按这一个值判。
@@ -850,7 +877,7 @@ public sealed class DispatchRoundRunner(
     /// 行上就是受理自己写的，那时本来也没有别人可以被挡。
     /// </remarks>
     /// <param name="winnerWroteItsOwnReason">
-    /// 胜者是不是已经写下了这条需求自己那条更具体的积压理由（受理拒绝的四种之一）。
+    /// 胜者是不是已经写下了这条需求自己那条更具体的积压理由（受理拒绝的几种之一）。
     /// <b>是的话就不要再把它盖成「已被接走」</b>（批次7-06，control-server#211）：那条需求一辆车都没接走，
     /// 而看板读的正是积压行的理由——它会指着一辆不存在的车，查的人先去找那辆车。
     ///
@@ -1064,7 +1091,9 @@ public sealed class DispatchRoundRunner(
         acceptedDemandIds.Add(demandId);
         claimedHere.Add(demandId);
         JourneyIntakeResult result = underWay
-            ? await AppendToJourneyAsync(selected, plan, intakeAt, FinalAdmissionAsync, cancellationToken)
+            ? await AppendToJourneyAsync(
+                    selected, plan, intakeAt, FinalAdmissionAsync, round.AppendsDroppedOnEndedJourney.Contains(demandId),
+                    cancellationToken)
                 .ConfigureAwait(false)
             : await intakeCoordinator.AcceptAndDispatchToPickupAsync(
                     selected.Candidate.Snapshot,
@@ -1078,7 +1107,8 @@ public sealed class DispatchRoundRunner(
         {
             if (result.IntakeOutcome is DemandIntakeOutcome.CandidateChanged
                 or DemandIntakeOutcome.FinalAdmissionRejected
-                or DemandIntakeOutcome.JourneyPlanIncomplete)
+                or DemandIntakeOutcome.JourneyPlanIncomplete
+                or DemandIntakeOutcome.JourneyEnded)
             {
                 claimsIntakeRefused.Add(demandId);
             }
@@ -1091,6 +1121,7 @@ public sealed class DispatchRoundRunner(
                     DemandIntakeOutcome.CandidateChanged => "FINAL_CATALOG_DECISION_FACT_CHANGED",
                     DemandIntakeOutcome.FinalAdmissionRejected => windowRefusalAtIntake ?? "FINAL_DYNAMIC_FACTS_NOT_READY",
                     DemandIntakeOutcome.JourneyPlanIncomplete => "FINAL_JOURNEY_PLAN_INCOMPLETE",
+                    DemandIntakeOutcome.JourneyEnded => DispatchReasonCodes.FinalAppendJourneyEnded,
                     _ => throw new InvalidOperationException($"Unsupported intake outcome '{result.IntakeOutcome}'.")
                 },
                 timeProvider.GetUtcNow(),
@@ -1128,6 +1159,11 @@ public sealed class DispatchRoundRunner(
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        if (round.AppendsDroppedOnEndedJourney.Contains(demandId))
+        {
+            LogDroppedAppendReassigned(logger, demandId, selected.Vehicle.AgvId, createdJourneyId, null);
+        }
+
         return CandidateDispatchOutcome.Taken;
     }
 
@@ -1145,7 +1181,7 @@ public sealed class DispatchRoundRunner(
 
         /// <summary>
         /// 这条任务这一轮结束，<b>而且它已经写下了自己那条更具体的积压理由</b>——最终重读发现候选没了、变了、
-        /// 车的最终事实不就绪、计划冻结不全，四种之一。落裁决时不要再把它盖成「已被接走」。
+        /// 车的最终事实不就绪、计划冻结不全、要追加的旅程已经结束（control-server#864），五种之一。落裁决时不要再把它盖成「已被接走」。
         /// </summary>
         RefusedWithItsOwnReason
     }
@@ -1156,6 +1192,7 @@ public sealed class DispatchRoundRunner(
         JourneyExecutionPlan plan,
         DateTimeOffset intakeAt,
         Func<CancellationToken, Task<bool>> finalAdmission,
+        bool reassigningADroppedAppend,
         CancellationToken cancellationToken)
     {
         EnRouteAppendPlacement placement = selected.Placement
@@ -1170,9 +1207,20 @@ public sealed class DispatchRoundRunner(
         if (runtime is null)
         {
             // 这一轮读到它在途之后，旅程已经结束了（操作员取消、收尾）：不问它追加，与 ReadEnRoutePlanAsync 读不出计划时一样。
-            // 这是正常竞态，不是这辆车出了错；原先 First() 在这里抛，记成 2123（control-server#791，10-19 agv02）。
-            // 按受理拒收处理：轮末这条需求不算接走，积压行记「最终动态事实不就绪」，下一轮按空闲车重新判。
-            return new JourneyIntakeResult(DemandIntakeOutcome.FinalAdmissionRejected, null);
+            // 这是正常竞态，不是这辆车出了错；原先 First() 在这里抛，记成 2123（control-server#791，10-19 agv02；生产包 9c8c34a5
+            // 不含那次修复，10-21、10-23 又各一次）。与写库那一侧撞上 Completed 是同一个竞态的另一个时刻，结局一致
+            // （control-server#864）：轮末这条需求不算接走，积压行记旅程已结束，下一轮重新分配。
+            // 旅程 id 只为日志：结束的那一趟已经不在上面的查询里，按这辆车最近建的那一趟找回来。
+            string? endedJourneyId = (await dbContext.JourneyRuntimes.AsNoTracking()
+                    .Where(row => row.AgvId == selected.Vehicle.AgvId)
+                    .Select(row => new { row.JourneyId, row.CreatedAt })
+                    .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+                .OrderByDescending(row => row.CreatedAt)
+                .FirstOrDefault()?.JourneyId;
+            LogAppendJourneyEnded(
+                logger, selected.Vehicle.AgvId, endedJourneyId ?? "(none)", demandId,
+                DispatchReasonCodes.FinalAppendJourneyEnded, null);
+            return new JourneyIntakeResult(DemandIntakeOutcome.JourneyEnded, null);
         }
 
         // 这里<b>不</b>判旅程还接不接得下追加，那件事在 WireToGateStore.StageAndCommitAppendAsync 的事务里判
@@ -1197,6 +1245,16 @@ public sealed class DispatchRoundRunner(
                 finalAdmission,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (outcome == DemandIntakeOutcome.JourneyEnded)
+        {
+            LogAppendJourneyEnded(
+                logger, selected.Vehicle.AgvId, runtime.JourneyId, demandId, DispatchReasonCodes.FinalAppendJourneyEnded, null);
+        }
+        else if (outcome == DemandIntakeOutcome.Accepted && reassigningADroppedAppend)
+        {
+            LogDroppedAppendReassigned(logger, demandId, selected.Vehicle.AgvId, runtime.JourneyId, null);
+        }
+
         return new JourneyIntakeResult(outcome, null);
     }
 
