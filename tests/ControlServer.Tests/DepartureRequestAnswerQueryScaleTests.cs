@@ -48,6 +48,8 @@ public sealed class DepartureRequestAnswerQueryScaleTests
         CommandLog commands = new();
         await using ScaleDatabase database = await ScaleDatabase.CreateAsync(commands);
         Dictionary<string, string[]> expected = await SeedAsync(database);
+        // 预热：首次查询要编译、建计划，不该算进每车的计时（独立审查 L1）。这辆车不在造数里，读回零行，只走收件箱那一条。
+        Assert.Empty(await CurrentStopDepartures.UnansweredAsync(database.Context, "预热车", Token));
 
         foreach (string agvId in Vehicles)
         {
@@ -62,6 +64,8 @@ public sealed class DepartureRequestAnswerQueryScaleTests
 
             Assert.Equal(expected[agvId], read.Select(request => request.DepartureRequestId));
             Assert.All(read, request => Assert.Equal(agvId, request.AgvId));
+            // 每辆车都有请求，所以恰好两条：收件箱一条、发件箱按主键一条。少一条说明有语句没被看见，多了说明多读了。
+            Assert.Equal(2, commands.Commands.Count);
             Assert.DoesNotContain(plan, detail =>
                 detail.StartsWith("SCAN ", StringComparison.Ordinal) && !detail.Contains("VIRTUAL TABLE", StringComparison.Ordinal));
             Assert.DoesNotContain(plan, detail => detail.Contains("CORRELATED", StringComparison.Ordinal));
@@ -193,14 +197,40 @@ public sealed class DepartureRequestAnswerQueryScaleTests
 
         public void Reset() => Commands.Clear();
 
+        // 同步与异步、读行与读标量都记：只记异步读行时，改成同步 ToArray() 的整读就从计划判据底下溜过去了（独立审查 M1）。
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            Record(command);
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
             DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
             CancellationToken cancellationToken = default)
         {
-            Commands.Add((command.CommandText,
-                [.. command.Parameters.Cast<DbParameter>().Select(parameter => (parameter.ParameterName, (object?)parameter.Value))]));
+            Record(command);
             return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
         }
+
+        public override InterceptionResult<object> ScalarExecuting(
+            DbCommand command, CommandEventData eventData, InterceptionResult<object> result)
+        {
+            Record(command);
+            return base.ScalarExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<object> result,
+            CancellationToken cancellationToken = default)
+        {
+            Record(command);
+            return base.ScalarExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void Record(DbCommand command) =>
+            Commands.Add((command.CommandText,
+                [.. command.Parameters.Cast<DbParameter>().Select(parameter => (parameter.ParameterName, (object?)parameter.Value))]));
     }
 
     /// <summary>
