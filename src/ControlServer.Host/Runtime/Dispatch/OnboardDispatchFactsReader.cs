@@ -444,8 +444,8 @@ public sealed class OnboardDispatchFactsReader(
         long safetyRevision,
         CancellationToken cancellationToken)
     {
-        JsonElement? latestSlots = await LatestSnapshotSlotStatesAsync(dbContext, agvId, generation, cancellationToken)
-            .ConfigureAwait(false);
+        JsonElement? latestSlots = (await LatestSnapshotPayloadAsync(dbContext, agvId, generation, cancellationToken)
+            .ConfigureAwait(false))?.GetProperty("slotStates");
         ProtocolInboxRow? summaryRow = await LatestSafetySummaryForSessionAsync(
             agvId, generation, safetyRevision, cancellationToken).ConfigureAwait(false);
         if (latestSlots is not JsonElement slots || summaryRow is null)
@@ -479,12 +479,12 @@ public sealed class OnboardDispatchFactsReader(
         string agvId,
         long generation,
         CancellationToken cancellationToken) =>
-        await LatestSnapshotSlotStatesAsync(dbContext, agvId, generation, cancellationToken).ConfigureAwait(false) is JsonElement slots &&
-        UnsecuredSlots(slots).Length > 0;
+        await LatestSnapshotPayloadAsync(dbContext, agvId, generation, cancellationToken).ConfigureAwait(false) is JsonElement payload &&
+        HasUnsecuredSlot(payload) == true;
 
     /// <summary>
     /// Whether a snapshot payload's <c>slotStates</c> show a slot the departure gate reads as not secured; null when the payload
-    /// holds no slot states this rule can read, which leaves the answer to <see cref="LatestSnapshotHasUnsecuredSlotAsync"/>.
+    /// holds no slot states this rule can read (only hand-built test snapshots do: the wire contract requires them).
     /// </summary>
     internal static bool? HasUnsecuredSlot(JsonElement snapshotPayload)
     {
@@ -513,10 +513,10 @@ public sealed class OnboardDispatchFactsReader(
         ];
 
     /// <summary>
-    /// The <c>slotStates</c> of this session generation's <c>SafetyStateSnapshot</c> with the highest <c>safetyStateVersion</c>;
-    /// null when it has none. Each slot's lock is only on a snapshot (<c>SafetyStateChanged</c> names the slots that changed).
+    /// The payload of this session generation's <c>SafetyStateSnapshot</c> with the highest <c>safetyStateVersion</c>; null
+    /// when it has none. Each slot's lock is only on a snapshot (<c>SafetyStateChanged</c> names the slots that changed).
     /// </summary>
-    private static async Task<JsonElement?> LatestSnapshotSlotStatesAsync(
+    private static async Task<JsonElement?> LatestSnapshotPayloadAsync(
         ControlServerDbContext dbContext,
         string agvId,
         long generation,
@@ -544,7 +544,7 @@ public sealed class OnboardDispatchFactsReader(
             long version = payload.GetProperty("safetyStateVersion").GetInt64();
             if (version > latestVersion)
             {
-                latest = payload.GetProperty("slotStates").Clone();
+                latest = payload.Clone();
                 latestVersion = version;
             }
         }
