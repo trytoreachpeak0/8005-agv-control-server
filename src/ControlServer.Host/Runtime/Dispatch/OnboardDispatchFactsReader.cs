@@ -480,10 +480,29 @@ public sealed class OnboardDispatchFactsReader(
         long generation,
         CancellationToken cancellationToken) =>
         await LatestSnapshotSlotStatesAsync(dbContext, agvId, generation, cancellationToken).ConfigureAwait(false) is JsonElement slots &&
-        HasUnsecuredSlot(slots);
+        UnsecuredSlots(slots).Length > 0;
 
-    /// <summary>Whether a snapshot's <c>slotStates</c> show a slot the departure gate reads as not secured.</summary>
-    internal static bool HasUnsecuredSlot(JsonElement slotStates) => UnsecuredSlots(slotStates).Length > 0;
+    /// <summary>
+    /// Whether a snapshot payload's <c>slotStates</c> show a slot the departure gate reads as not secured; null when the payload
+    /// holds no slot states this rule can read, which leaves the answer to <see cref="LatestSnapshotHasUnsecuredSlotAsync"/>.
+    /// </summary>
+    internal static bool? HasUnsecuredSlot(JsonElement snapshotPayload)
+    {
+        if (!snapshotPayload.TryGetProperty("slotStates", out JsonElement slotStates) || slotStates.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+        foreach (JsonElement slot in slotStates.EnumerateArray())
+        {
+            if (!slot.TryGetProperty("lockState", out JsonElement lockState) || lockState.ValueKind != JsonValueKind.String ||
+                !slot.TryGetProperty("unlockOutputState", out JsonElement output) || output.ValueKind != JsonValueKind.String ||
+                !slot.TryGetProperty("slotNo", out JsonElement slotNo) || slotNo.ValueKind != JsonValueKind.Number)
+            {
+                return null;
+            }
+        }
+        return UnsecuredSlots(slotStates).Length > 0;
+    }
 
     /// <summary>The slots the departure gate reads as not secured: lock not <c>LOCKED</c> or unlock output not <c>RESET</c>.</summary>
     private static int[] UnsecuredSlots(JsonElement slotStates) =>

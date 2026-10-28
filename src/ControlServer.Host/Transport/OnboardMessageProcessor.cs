@@ -602,8 +602,10 @@ public sealed partial class OnboardMessageProcessor(
                     // message left untrusted is trusted again from here (control-server#478).
                     state.SafetyBaselineUntrusted = false;
                     state.SlotLocksAwaitingSnapshot = false;
-                    state.UnsecuredSlotInLatestSnapshot = (generation,
-                        Runtime.Dispatch.OnboardDispatchFactsReader.HasUnsecuredSlot(payload.GetProperty("slotStates")));
+                    state.UnsecuredSlotInLatestSnapshot =
+                        Runtime.Dispatch.OnboardDispatchFactsReader.HasUnsecuredSlot(payload) is bool unsecuredSlot
+                            ? (generation, unsecuredSlot)
+                            : null;
                     string snapshotAck = SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
                     if (!midSession)
                     {
@@ -2042,7 +2044,8 @@ public sealed class OnboardConnectionState
 
     /// <summary>
     /// Whether the latest snapshot of a session generation showed a slot not <c>LOCKED</c>/<c>RESET</c>, set from each snapshot
-    /// this connection accepts (control-server#865, review S3); null until one is accepted or read. Keyed by generation: a
+    /// this connection accepts (control-server#865, review S3); null until one is accepted or read, and after a snapshot whose
+    /// slot states the rule cannot read (then the inbox is read, as before). Keyed by generation: a
     /// second SessionHello on the same connection starts another generation, whose own snapshot decides.
     /// </summary>
     public (long Generation, bool Unsecured)? UnsecuredSlotInLatestSnapshot { get; set; }
