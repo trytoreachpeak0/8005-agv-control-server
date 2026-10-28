@@ -103,8 +103,11 @@ public sealed class DepartureRequestAnswerQueryScaleTests
                 MessageType = "Heartbeat",
                 RequestJson = JsonSerializer.Serialize(new
                 {
-                    messageType = "Heartbeat", messageId = Id("heartbeat", index), agvId = Vehicles[index % Vehicles.Length],
-                    sessionGeneration = 1L, payload = new { }
+                    messageType = "Heartbeat",
+                    messageId = Id("heartbeat", index),
+                    agvId = Vehicles[index % Vehicles.Length],
+                    sessionGeneration = 1L,
+                    payload = new { }
                 }),
                 ContentHash = new string('0', 64),
                 FirstResponseJson = "{}",
@@ -119,8 +122,11 @@ public sealed class DepartureRequestAnswerQueryScaleTests
             string type = otherTypes[index % otherTypes.Length];
             outbox.Add((Id("outbox", index), type, JsonSerializer.Serialize(new
             {
-                messageType = type, messageId = Id("outbox", index), agvId = Vehicles[index % Vehicles.Length],
-                sessionGeneration = 1L, payload = new { revision = index, padding }
+                messageType = type,
+                messageId = Id("outbox", index),
+                agvId = Vehicles[index % Vehicles.Length],
+                sessionGeneration = 1L,
+                payload = new { revision = index, padding }
             })));
         }
         await database.SeedAsync(inbox, outbox);
