@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-door-open-at-handshake-then-locked",
+  "runId": "20261025T022525446Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "controlServerCommit": "8026644617dc7b5ae75796e5f6878b7f5d61be25",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "6.0.0",
+      "tag": "protocol-v6.0.0",
+      "commit": "98f172642937994ed01668d81fe41e69cf089e10",
+      "protocolVersion": 7,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a52876be2ddcc9b8cdd1f1e3b7b7ddbe70d31a307f1d3f017d7a1eb95ffd77b1",
+      "schemaBundleSha256": "0dab682174e2d3e4f931b3c0e87c7fa55bd2cb3395356d7845e595d8bfb1c795",
+      "vectorsSha256": "e06ca9ea1d4445cd7d70fc190b0cf606a8e33cb7760d848c0270df24e2594c91",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "unspecified",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261025T022525446Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-DOL-01",
+      "description": "前提：服务端收到的握手快照里 1 号仓是 UNLOCKED（会话在仓门开着时建立）",
+      "outcome": "PASS",
+      "expected": "<version> UNLOCKED",
+      "actual": "1 UNLOCKED"
+    },
+    {
+      "id": "L2-DOL-02",
+      "description": "电量 25（低于强制线 30）、1 号仓开着：另等二十秒，一直没有充电周期（门锁没证明仍不出发）",
+      "outcome": "PASS",
+      "expected": "0",
+      "actual": "0"
+    },
+    {
+      "id": "L2-DOL-03",
+      "description": "1 号仓锁上（SafetyStateChanged 不带逐仓状态）：服务端要来一张新快照、1 号仓 LOCKED，随后分到 211、开往 211 的单已确认",
+      "outcome": "PASS",
+      "expected": "EN_ROUTE 211 ordered | <version> LOCKED",
+      "actual": "EN_ROUTE 211 ordered | 3 LOCKED"
+    }
+  ]
+}

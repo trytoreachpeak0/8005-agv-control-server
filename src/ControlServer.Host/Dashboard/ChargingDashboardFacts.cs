@@ -317,6 +317,7 @@ internal static class ChargingDashboardDescriptions
     internal const string AlarmRosterEmpty = "CHARGER_ROSTER_EMPTY";
     internal const string AlarmRosterNeverImported = "CHARGER_ROSTER_NEVER_IMPORTED";
     internal const string AlarmManualChargingHold = "MANUAL_CHARGING_HOLD";
+    internal const string AlarmBelowMandatoryDepartureNotProven = "CHARGING_BELOW_MANDATORY_DEPARTURE_NOT_PROVEN";
 
     internal static IReadOnlyDictionary<string, string> OwnAlarmCodes { get; } =
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -324,6 +325,8 @@ internal static class ChargingDashboardDescriptions
             [AlarmRosterEmpty] = "充电桩名册为空：当前生效的名册一个桩都没有，自动充电已停，需要充电的车转为人工充电等待（规格 5.5，不静默）",
             [AlarmRosterNeverImported] = "充电桩名册从没导入过：没有任何一版名册，自动充电从没开始，需要充电的车转为人工充电等待",
             [AlarmManualChargingHold] = "这辆车在服务端持有的人工充电等待中：不分桩、不接搬运、不做空闲返回、不动车",
+            [AlarmBelowMandatoryDepartureNotProven] =
+                "电量低于强制充电线，但车此刻过不了出发前安全检查（缺哪一项见细节）：不给它分桩、它也不接搬运，电量会一直往下掉，直到缺的那一项好了",
             [JourneyRuntimeEngine.OnboardSessionLostReason] =
                 "车载端会话失联：这辆车正处在充电周期、清桩或人工充电等待中，车载端听不到了。服务端只阻断它的新业务，继续经 RIoT 观察，"
                 + "不结束、不释放、不改派（REQ-0287）",
@@ -336,6 +339,8 @@ internal static class ChargingDashboardDescriptions
             [AlarmRosterEmpty] = "给需要充电的车人工充电，充完由管理员在车上点「充电后返回服务」；要恢复自动充电，导入一版登记了桩的名册",
             [AlarmRosterNeverImported] = "给需要充电的车人工充电；要开自动充电，先按治理流程导入充电桩名册",
             [AlarmManualChargingHold] = "到车前人工充电，充完由管理员在车上点「充电后返回服务」",
+            [AlarmBelowMandatoryDepartureNotProven] =
+                "到车前看细节里点名的那一项：仓门没锁好的把门关好锁上，下一轮就会分桩；锁不上或一时处理不了的，先给车人工充电，再联系系统维护人员",
             [JourneyRuntimeEngine.OnboardSessionLostReason] = "检查车载端电脑与网络；车可能仍在桩上，不要据此认为桩已空",
             [StageCompleteAwaitingDeparture] =
                 "看车是否在桩上关了机，或一直没有活派给它；缺哪一项确认见服务端日志事件 2249。确认车已离开而桩没放时，经人工释放入口处理",
@@ -423,6 +428,7 @@ internal static class ChargingDashboardDescriptions
         AlarmRosterEmpty
             or AlarmRosterNeverImported
             or AlarmManualChargingHold
+            or AlarmBelowMandatoryDepartureNotProven
             or JourneyRuntimeEngine.OnboardSessionLostReason
             or ChargingStationHoldTriggers.UnableToChargeConfirmed
             or ChargingStationHoldTriggers.InterruptionConfirmed
@@ -448,6 +454,40 @@ internal static class ChargingDashboardDescriptions
             or VehicleFaultEvidence.OrderFailed => SeverityHigh,
         _ => SeverityMedium,
     };
+
+    /// <summary>
+    /// <see cref="AlarmBelowMandatoryDepartureNotProven"/> 的细节：电量，与出发门缺的每一项的人话，原码跟在括号里（control-server#865）。
+    /// </summary>
+    internal static string DescribeDepartureGaps(int? batteryPercent, IReadOnlyList<string> gaps)
+    {
+        string battery = batteryPercent is int percent
+            ? string.Create(CultureInfo.InvariantCulture, $"电量 {percent}%")
+            : "电量本轮读不到";
+        string missing = gaps.Count == 0
+            ? "服务端没有记下缺哪一项，见服务端日志事件 2241"
+            : string.Join("；", gaps.Select(gap => $"{DescribeDepartureGap(gap)}（{gap}）"));
+        return $"{battery}；出发前安全检查缺：{missing}";
+    }
+
+    private static string DescribeDepartureGap(string gap)
+    {
+        const string slotPrefix = "SLOT_";
+        const string slotSuffix = "_NOT_LOCKED";
+        if (gap.StartsWith(slotPrefix, StringComparison.Ordinal) && gap.EndsWith(slotSuffix, StringComparison.Ordinal) &&
+            int.TryParse(gap.AsSpan(slotPrefix.Length, gap.Length - slotPrefix.Length - slotSuffix.Length),
+                NumberStyles.None, CultureInfo.InvariantCulture, out int slotNo))
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{slotNo}号仓没锁好或开锁输出没复位");
+        }
+        return gap switch
+        {
+            "ONBOARD_SESSION_NOT_READY" => "车载端会话未就绪",
+            "SAFETY_STATE_UNREADABLE" => "读不到车载端这一代会话的安全状态",
+            "RIOT_VEHICLE_NOT_STOPPED" => "RIoT 读不到车已停稳",
+            Runtime.Dispatch.NonBusinessDepartureGate.RiotSafetyUnreadable => "读 RIoT 的车辆安全状态失败",
+            _ => "车载端或 RIoT 报的阻断原因",
+        };
+    }
 
     /// <summary>告警码的中文说明：卡片自己的码、桩阶段、暂停来源、充电旅程上的码，依次找。</summary>
     internal static string? DescribeAlarm(string code) =>

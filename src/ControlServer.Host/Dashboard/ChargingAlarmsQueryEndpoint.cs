@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.Options;
@@ -18,7 +19,9 @@ namespace ControlServer.Host.Dashboard;
 /// <item>每一次还没恢复的桩分配暂停（充不上、中断、无进展、维修）；</item>
 /// <item>未完成的充电旅程上此刻写着的码（到桩不充电、RIoT 车辆观测丢失、电量遥测丢失、清桩中旧单被恢复等）；</item>
 /// <item>充满待离桩、失败待放桩超过告警窗口的桩（与引擎事件 2249、2247 同一个窗口）；</item>
-/// <item>车载端会话失联、而服务端还为它记着充电周期、桩、清桩或人工充电等待的车（REQ-0287 的第三种失联）。</item>
+/// <item>车载端会话失联、而服务端还为它记着充电周期、桩、清桩或人工充电等待的车（REQ-0287 的第三种失联）；</item>
+/// <item>唯一不在库里的一种：低于强制充电线、又过不了出发前安全门而分不到桩的车，读最近一轮已完成的充电分配（分配板，宿主单例），
+/// 细节点名缺哪一项（control-server#865）。</item>
 /// </list>
 /// <para>
 /// <b>无合格桩</b>不单列：它是充电分配的结论，看逐车卡片的排队原因（<c>notReadable</c> 里写明）。<b>中断、无进展</b>（批次9-09）以桩的暂停与旅程码出现（<c>notReadable</c> 里写明）。
@@ -28,25 +31,32 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
 {
     private readonly VehicleRoster _roster;
     private readonly JourneyRuntimeOptions _options;
+    private readonly ChargingAllocationBoard _board;
+    private readonly TimeSpan _passLiveness;
     private readonly TimeProvider _clock;
 
     public ChargingAlarmsQueryEndpoint()
-        : this(Options.Create(new JourneyRuntimeOptions()), TimeProvider.System)
+        : this(Options.Create(new JourneyRuntimeOptions()), new ChargingAllocationBoard(), TimeProvider.System)
     {
     }
 
-    /// <summary>挂在宿主上时用这一个：名册与告警窗口都从宿主的同一份运行时配置取，不要求宿主另外注册名册。</summary>
+    /// <summary>
+    /// 挂在宿主上时用这一个：名册与告警窗口都从宿主的同一份运行时配置取，不要求宿主另外注册名册；分配板是充电分配写的那一块单例
+    /// （control-server#865：低于强制线又过不了出发门的车只在那里，不在库里）。
+    /// </summary>
     [ActivatorUtilitiesConstructor]
-    public ChargingAlarmsQueryEndpoint(IOptions<JourneyRuntimeOptions> options)
-        : this(options, TimeProvider.System)
+    public ChargingAlarmsQueryEndpoint(IOptions<JourneyRuntimeOptions> options, ChargingAllocationBoard board)
+        : this(options, board, TimeProvider.System)
     {
     }
 
-    internal ChargingAlarmsQueryEndpoint(IOptions<JourneyRuntimeOptions> options, TimeProvider clock)
+    internal ChargingAlarmsQueryEndpoint(IOptions<JourneyRuntimeOptions> options, ChargingAllocationBoard board, TimeProvider clock)
     {
         ArgumentNullException.ThrowIfNull(options);
         _roster = new VehicleRoster(options);
         _options = options.Value;
+        _board = board ?? throw new ArgumentNullException(nameof(board));
+        _passLiveness = options.Value.PollInterval * ChargingVehiclesQueryEndpoint.PassLivenessPollIntervals;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
@@ -121,6 +131,27 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
                     $"已 {ChargingDashboardDescriptions.Minutes(overdue)} 分钟没放（告警窗口 "
                     + $"{ChargingDashboardDescriptions.Minutes(_options.OwnOrderRebuildRepeatWindow)} 分钟），缺哪一项见服务端日志事件 "
                     + ChargingDashboardFacts.OverdueEventId(stage)));
+            }
+        }
+
+        // control-server#865: below the mandatory line (every vehicle the allocation weighs is) and held back by the departure
+        // gate. The gate stays shut; this says which slot or fact to go and look at while the battery falls. Read from the
+        // latest completed allocation pass, and only while the allocation is running, as the per-vehicle card reads it.
+        ChargingBoardPass? pass = _board.LatestCompletedPass;
+        if (pass is not null && pass.CompletedAt <= now && now - pass.CompletedAt <= _passLiveness)
+        {
+            foreach ((string agvId, ChargingBoardVerdict verdict) in pass.Verdicts
+                         .Where(pair => pair.Value.Reason == ChargingAllocationReasons.DepartureNotProven)
+                         .OrderBy(pair => pair.Key, StringComparer.Ordinal))
+            {
+                int? battery = pass.Observations.GetValueOrDefault(agvId)?.BatteryPercent;
+                alarms.Add(new Alarm(
+                    ChargingDashboardDescriptions.AlarmBelowMandatoryDepartureNotProven,
+                    agvId,
+                    MapId: null,
+                    StationId: null,
+                    Since: null,
+                    ChargingDashboardDescriptions.DescribeDepartureGaps(battery, ChargingDepartureGaps.Of(verdict.Detail))));
             }
         }
 

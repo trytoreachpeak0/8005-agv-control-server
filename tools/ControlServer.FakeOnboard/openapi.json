@@ -281,7 +281,11 @@
               "loadResult": { "$ref": "#/components/schemas/AnswerMode" },
               "unloadResult": { "$ref": "#/components/schemas/AnswerMode" },
               "safetyCheck": { "$ref": "#/components/schemas/AnswerMode" },
-              "slotConfigurationActivation": { "$ref": "#/components/schemas/AnswerMode" }
+              "slotConfigurationActivation": { "$ref": "#/components/schemas/AnswerMode" },
+              "answerSafetySnapshotRequests": {
+                "type": "boolean",
+                "description": "Answer SafetyStateSnapshotRequested with a snapshot at the next safetyStateVersion (control-server#865). Off by default."
+              }
             }
           }
         ]
@@ -299,7 +303,12 @@
               "allUnlockOutputsReset": { "type": "boolean" },
               "unknownPresent": { "type": "boolean" },
               "reasonCodes": { "type": "array", "items": { "type": "string" } },
-              "affectedSlots": { "type": "array", "items": { "type": "integer" } }
+              "affectedSlots": { "type": "array", "items": { "type": "integer" } },
+              "slotLocks": {
+                "type": "object",
+                "description": "Slot lock states that changed, keyed by slot number; carried by the snapshots sent after this, not by the SafetyStateChanged (control-server#865).",
+                "additionalProperties": { "type": "string", "enum": ["LOCKED", "UNLOCKED", "UNKNOWN"] }
+              }
             }
           }
         ]

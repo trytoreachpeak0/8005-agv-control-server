@@ -144,7 +144,7 @@ public sealed class OnboardPeerSession(
             safetyStateVersion = state.SafetyStateVersion,
             observedAt = DateTimeOffset.UtcNow,
             safety = SafetyBody(state.Safety),
-            slotStates = slotStateSeed.Render()
+            slotStates = slotStateSeed.Render(state.SlotLocks)
         }), cancellationToken).ConfigureAwait(false);
         await ReadRequiredAsync(reader, "SnapshotAppliedAck", cancellationToken).ConfigureAwait(false);
 
@@ -313,11 +313,34 @@ public sealed class OnboardPeerSession(
                     (payload, gen) => SafetyCheckResult(payload, gen, safe: true),
                     cancellationToken).ConfigureAwait(false);
                 return;
+            case "SafetyStateSnapshotRequested" when engine.Snapshot().State.Policy.AnswerSafetySnapshotRequests:
+                await AnswerSafetySnapshotRequestAsync(generation, cancellationToken).ConfigureAwait(false);
+                return;
             default:
                 // HeartbeatAck, DurableAck, SessionReadiness and the recovery commands carry no
                 // obligation for this peer. They are already on the wire log.
                 return;
         }
+    }
+
+    /// <summary>
+    /// Answers SafetyStateSnapshotRequested the way the real onboard does: a whole snapshot at the next safetyStateVersion
+    /// (hmi#109), slot locks as reported since the handshake (control-server#865).
+    /// </summary>
+    private async Task AnswerSafetySnapshotRequestAsync(long generation, CancellationToken cancellationToken)
+    {
+        FakeOnboardState state = engine.Mutate(current =>
+        {
+            FakeOnboardState next = current with { SafetyStateVersion = current.SafetyStateVersion + 1 };
+            return (next, next);
+        });
+        await SendLineAsync(Envelope("SafetyStateSnapshot", NewId(), null, generation, new
+        {
+            safetyStateVersion = state.SafetyStateVersion,
+            observedAt = DateTimeOffset.UtcNow,
+            safety = SafetyBody(state.Safety),
+            slotStates = slotStateSeed.Render(state.SlotLocks)
+        }), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

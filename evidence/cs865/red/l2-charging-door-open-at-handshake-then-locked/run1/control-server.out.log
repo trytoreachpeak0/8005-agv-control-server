@@ -1,0 +1,497 @@
+[10:22:46 INF] No migrations were applied. The database is already up to date.
+[10:22:46 INF] Task type station preset C:\Users\szy\AppData\Local\Temp\l2-20261025T022224113Z\task-type-stations.settings.json loaded: rule version 1 (new), Map 25 binding set version 1 (new) active.
+[10:22:46 WRN] The manual station clearance exit is not available (FIELD_OPERATOR_ROSTER_EMPTY,STATION_CLEARANCE_ENTRY_NOT_OFFERED). Until it is, a vehicle that cannot charge at its charger is left on ORDER_HANG instead of being paused for a manual clearance (control-server#406). Configure FieldOperatorRoles:Path with at least one R-11 or R-13, and VehicleFaultRecovery:enabled or FieldOperatorRoles:OnboardClearanceEntryDeclared.
+[10:22:46 INF] Onboard NDJSON listener started on 127.0.0.1:48405; transport=plaintext
+[10:22:47 INF] Now listening on: http://127.0.0.1:48407
+[10:22:47 INF] Application started. Press Ctrl+C to shut down.
+[10:22:47 INF] Hosting environment: Production
+[10:22:47 INF] Content root path: C:\work\8005-wt\rig-cs865-red\src\ControlServer.Host\bin\Release\net8.0\win-x64
+[10:22:47 INF] EFFECTIVE_CONFIGURATION allowedWorkTypes=["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_FULL_INSPECTION"] allowedDispatchZones=["MAP-25-WIRE_TO_GATE"] mesIngestBaseUrl=http://127.0.0.1:48409 fleet=[] clearanceToWaitingPointEnabled=False mapStationCatalog={"ApprovedSyncPeriod": "00:00:30", "ApprovedMaxUnconfirmed": "00:05:00"} foreignRunningOrderRelease={"Enabled": false, "CredentialPresent": false} admissionPolicyVersion=7 admissionPolicyDeploymentId=L2-20261025T022224113Z cargoHoldingTimeout=00:05:00 stationDepartureWaitTimeout=00:00:30 slotConfigurationReadinessGate=Off stagingDepartureRulesEnabled=False stagingLoadNotSettledAlarmAfter=00:05:00 idleReturnEnabled=False catalogAgeWindow=00:30:00 trialSublotCharacterPosition=0 trialSublotCharacters=
+[10:22:47 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:47 INF] End processing HTTP request after 12.769ms - 200
+[10:22:47 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:47 INF] End processing HTTP request after 4.2129ms - 200
+[10:22:47 INF] HTTP GET /health/live responded 200 in 3.8688 ms
+[10:22:47 INF] HTTP GET /version responded 200 in 1.4449 ms
+[10:22:47 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_POLICY_NOT_APPROVED. 
+[10:22:47 INF] Idle return not committed for vehicle AGV-L2-001: IDLE_RETURN_DISABLED. 
+[10:22:47 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:47 INF] End processing HTTP request after 0.9907ms - 200
+[10:22:47 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:47 INF] End processing HTTP request after 0.6258ms - 200
+[10:22:48 INF] SessionReadiness 7cc2c667-d8d4-42e0-9658-2d0929e156dc to AGV-L2-001 generation 1: READY [null], after the answer to RecoveryStateReport a7313491-e742-4ad8-9797-605b30d34b28.
+[10:22:48 INF] HTTP GET /health/ready responded 200 in 3.7758 ms
+[10:22:48 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:48 INF] End processing HTTP request after 1.0162ms - 200
+[10:22:48 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:48 INF] End processing HTTP request after 0.6822ms - 200
+[10:22:49 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:49 INF] End processing HTTP request after 1.0472ms - 200
+[10:22:49 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:49 INF] End processing HTTP request after 0.5296ms - 200
+[10:22:50 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:50 INF] End processing HTTP request after 0.9958ms - 200
+[10:22:50 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:50 INF] End processing HTTP request after 0.836ms - 200
+[10:22:51 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:51 INF] End processing HTTP request after 0.9879ms - 200
+[10:22:51 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:51 INF] End processing HTTP request after 0.4273ms - 200
+[10:22:51 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_NOT_REQUIRED. 
+[10:22:52 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:52 INF] End processing HTTP request after 1.0016ms - 200
+[10:22:52 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:52 INF] End processing HTTP request after 0.475ms - 200
+[10:22:52 WRN] Vehicle BROKERX-L2-0001 is below its mandatory charge entry threshold: battery 25% < 30% (charging policy version 1). It takes no new transport, no en-route append and no idle return until it has charged (REQ-0290, MANDATORY_CHARGE_REQUIRED); a journey it is carrying finishes as planned (REQ-0281).
+[10:22:52 INF] Charging not allocated for vehicle AGV-L2-001: CHARGING_DEPARTURE_NOT_PROVEN_AT_ALLOCATION. battery=25; departure: SLOT_1_NOT_LOCKED
+[10:22:52 WRN] Vehicle AGV-L2-001 is below its mandatory charge line and no charger can be allocated to it: CHARGING_DEPARTURE_NOT_PROVEN_AT_ALLOCATION. battery=25; departure: SLOT_1_NOT_LOCKED It stays queued, takes no transport and no idle return, and its battery goes on falling. Check on site: is the charger free and is nothing standing on it (CHARGER_RESERVED_OR_OCCUPIED, CHARGER_OCCUPIED_BY_VEHICLE, CHARGER_TARGETED_BY_RUNNING_ORDER); can RIoT read every fleet vehicle and its unfinished orders (CHARGER_OCCUPANCY_UNKNOWN names what could not be read); is the route graph engine enabled and fresh (CHARGING_ROUTE_GRAPH_UNAVAILABLE, CHARGER_UNREACHABLE); is the charger on allocation hold or renamed on the Map (CHARGER_ALLOCATION_HELD, CHARGER_NOT_ON_CURRENT_MAP); can the vehicle set off at all (CHARGING_DEPARTURE_NOT_PROVEN_AT_ALLOCATION names what the departure gate still lacks: a slot not locked, a safety reason, RIoT not reading it stopped). Said once per vehicle per conclusion.
+[10:22:53 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:53 INF] End processing HTTP request after 0.9581ms - 200
+[10:22:53 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:53 INF] End processing HTTP request after 0.5942ms - 200
+[10:22:54 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:54 INF] End processing HTTP request after 0.9759ms - 200
+[10:22:54 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:54 INF] End processing HTTP request after 0.8011ms - 200
+[10:22:55 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:55 INF] End processing HTTP request after 0.8405ms - 200
+[10:22:55 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:55 INF] End processing HTTP request after 0.8265ms - 200
+[10:22:56 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:56 INF] End processing HTTP request after 0.7332ms - 200
+[10:22:56 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:56 INF] End processing HTTP request after 0.6786ms - 200
+[10:22:57 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:57 INF] End processing HTTP request after 0.7382ms - 200
+[10:22:57 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:57 INF] End processing HTTP request after 0.4598ms - 200
+[10:22:58 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:58 INF] End processing HTTP request after 0.8088ms - 200
+[10:22:58 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:58 INF] End processing HTTP request after 0.6291ms - 200
+[10:22:59 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:22:59 INF] End processing HTTP request after 0.7175ms - 200
+[10:22:59 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:22:59 INF] End processing HTTP request after 0.6076ms - 200
+[10:23:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:00 INF] End processing HTTP request after 0.6399ms - 200
+[10:23:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:00 INF] End processing HTTP request after 0.6394ms - 200
+[10:23:01 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:01 INF] End processing HTTP request after 0.9665ms - 200
+[10:23:01 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:01 INF] End processing HTTP request after 0.5594ms - 200
+[10:23:02 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:02 INF] End processing HTTP request after 0.6997ms - 200
+[10:23:02 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:02 INF] End processing HTTP request after 0.4213ms - 200
+[10:23:03 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:03 INF] End processing HTTP request after 0.6388ms - 200
+[10:23:03 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:03 INF] End processing HTTP request after 0.5096ms - 200
+[10:23:04 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:04 INF] End processing HTTP request after 0.6923ms - 200
+[10:23:04 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:04 INF] End processing HTTP request after 6.0722ms - 200
+[10:23:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:05 INF] End processing HTTP request after 0.5947ms - 200
+[10:23:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:05 INF] End processing HTTP request after 0.4061ms - 200
+[10:23:06 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:06 INF] End processing HTTP request after 0.594ms - 200
+[10:23:06 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:06 INF] End processing HTTP request after 0.4794ms - 200
+[10:23:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:07 INF] End processing HTTP request after 0.7372ms - 200
+[10:23:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:07 INF] End processing HTTP request after 0.6331ms - 200
+[10:23:08 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:08 INF] End processing HTTP request after 0.7683ms - 200
+[10:23:08 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:08 INF] End processing HTTP request after 0.5776ms - 200
+[10:23:09 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:09 INF] End processing HTTP request after 0.6251ms - 200
+[10:23:09 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:09 INF] End processing HTTP request after 0.4389ms - 200
+[10:23:10 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:10 INF] End processing HTTP request after 0.6979ms - 200
+[10:23:10 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:10 INF] End processing HTTP request after 0.5814ms - 200
+[10:23:11 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:11 INF] End processing HTTP request after 0.8385ms - 200
+[10:23:11 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:11 INF] End processing HTTP request after 0.5739ms - 200
+[10:23:12 INF] SessionReadiness 3695f774-9561-40e1-9b9f-635e75f6aebc to AGV-L2-001 generation 1: READY [null], after the answer to SafetyStateChanged 0e6eb6f9-3759-469e-bbe8-e536ffcc9bd3.
+[10:23:12 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:12 INF] End processing HTTP request after 0.6977ms - 200
+[10:23:12 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:12 INF] End processing HTTP request after 0.5853ms - 200
+[10:23:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:13 INF] End processing HTTP request after 0.8468ms - 200
+[10:23:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:13 INF] End processing HTTP request after 0.7075ms - 200
+[10:23:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:15 INF] End processing HTTP request after 0.9213ms - 200
+[10:23:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:15 INF] End processing HTTP request after 0.6905ms - 200
+[10:23:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:15 INF] End processing HTTP request after 0.5871ms - 200
+[10:23:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:15 INF] End processing HTTP request after 0.7258ms - 200
+[10:23:16 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:16 INF] End processing HTTP request after 0.6993ms - 200
+[10:23:16 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:16 INF] End processing HTTP request after 0.4919ms - 200
+[10:23:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:17 INF] End processing HTTP request after 0.5924ms - 200
+[10:23:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:17 INF] End processing HTTP request after 0.4308ms - 200
+[10:23:18 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:18 INF] End processing HTTP request after 0.7037ms - 200
+[10:23:18 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:18 INF] End processing HTTP request after 0.6341ms - 200
+[10:23:20 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:21 INF] End processing HTTP request after 137.2322ms - 200
+[10:23:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:21 INF] End processing HTTP request after 1.5336ms - 200
+[10:23:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:21 INF] End processing HTTP request after 0.7295ms - 200
+[10:23:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:21 INF] End processing HTTP request after 0.5714ms - 200
+[10:23:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:21 INF] End processing HTTP request after 0.5295ms - 200
+[10:23:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:21 INF] End processing HTTP request after 0.4451ms - 200
+[10:23:22 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:22 INF] End processing HTTP request after 0.8727ms - 200
+[10:23:22 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:22 INF] End processing HTTP request after 0.5564ms - 200
+[10:23:23 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:23 INF] End processing HTTP request after 0.589ms - 200
+[10:23:23 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:23 INF] End processing HTTP request after 0.4891ms - 200
+[10:23:24 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:24 INF] End processing HTTP request after 0.567ms - 200
+[10:23:24 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:24 INF] End processing HTTP request after 0.5995ms - 200
+[10:23:25 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:25 INF] End processing HTTP request after 0.7505ms - 200
+[10:23:25 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:25 INF] End processing HTTP request after 0.5459ms - 200
+[10:23:26 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:26 INF] End processing HTTP request after 0.5842ms - 200
+[10:23:26 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:26 INF] End processing HTTP request after 0.47ms - 200
+[10:23:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:27 INF] End processing HTTP request after 0.6372ms - 200
+[10:23:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:27 INF] End processing HTTP request after 0.582ms - 200
+[10:23:28 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:28 INF] End processing HTTP request after 0.6476ms - 200
+[10:23:28 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:28 INF] End processing HTTP request after 0.5872ms - 200
+[10:23:29 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:29 INF] End processing HTTP request after 0.6362ms - 200
+[10:23:29 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:29 INF] End processing HTTP request after 0.4454ms - 200
+[10:23:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:31 INF] End processing HTTP request after 2.1726ms - 200
+[10:23:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:31 INF] End processing HTTP request after 0.6607ms - 200
+[10:23:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:31 INF] End processing HTTP request after 1.0742ms - 200
+[10:23:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:31 INF] End processing HTTP request after 0.6535ms - 200
+[10:23:32 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:32 INF] End processing HTTP request after 0.6514ms - 200
+[10:23:32 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:32 INF] End processing HTTP request after 0.4982ms - 200
+[10:23:33 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:33 INF] End processing HTTP request after 0.7701ms - 200
+[10:23:33 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:33 INF] End processing HTTP request after 0.5217ms - 200
+[10:23:35 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:35 INF] End processing HTTP request after 0.7003ms - 200
+[10:23:35 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:35 INF] End processing HTTP request after 0.6248ms - 200
+[10:23:36 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:36 INF] End processing HTTP request after 14.2856ms - 200
+[10:23:36 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:36 INF] End processing HTTP request after 3.2945ms - 200
+[10:23:36 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:36 INF] End processing HTTP request after 0.6464ms - 200
+[10:23:36 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:36 INF] End processing HTTP request after 0.4712ms - 200
+[10:23:37 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:37 INF] End processing HTTP request after 0.7697ms - 200
+[10:23:37 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:37 INF] End processing HTTP request after 0.6125ms - 200
+[10:23:38 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:38 INF] End processing HTTP request after 0.6389ms - 200
+[10:23:38 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:38 INF] End processing HTTP request after 0.7666ms - 200
+[10:23:39 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:39 INF] End processing HTTP request after 0.5823ms - 200
+[10:23:39 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:39 INF] End processing HTTP request after 1.9688ms - 200
+[10:23:40 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:40 INF] End processing HTTP request after 0.6381ms - 200
+[10:23:40 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:40 INF] End processing HTTP request after 0.3909ms - 200
+[10:23:41 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:41 INF] End processing HTTP request after 0.5511ms - 200
+[10:23:41 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:41 INF] End processing HTTP request after 0.3832ms - 200
+[10:23:42 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:42 INF] End processing HTTP request after 0.714ms - 200
+[10:23:42 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:42 INF] End processing HTTP request after 4.3198ms - 200
+[10:23:43 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:43 INF] End processing HTTP request after 0.8581ms - 200
+[10:23:43 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:43 INF] End processing HTTP request after 0.7308ms - 200
+[10:23:45 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:45 INF] End processing HTTP request after 0.676ms - 200
+[10:23:45 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:45 INF] End processing HTTP request after 0.4133ms - 200
+[10:23:45 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:45 INF] End processing HTTP request after 0.5044ms - 200
+[10:23:45 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:45 INF] End processing HTTP request after 0.4795ms - 200
+[10:23:46 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:46 INF] End processing HTTP request after 0.5143ms - 200
+[10:23:46 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:46 INF] End processing HTTP request after 0.3885ms - 200
+[10:23:47 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:47 INF] End processing HTTP request after 0.8029ms - 200
+[10:23:47 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:47 INF] End processing HTTP request after 0.5333ms - 200
+[10:23:48 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:48 INF] End processing HTTP request after 0.6682ms - 200
+[10:23:48 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:48 INF] End processing HTTP request after 0.4932ms - 200
+[10:23:49 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:49 INF] End processing HTTP request after 0.6233ms - 200
+[10:23:49 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:49 INF] End processing HTTP request after 0.4739ms - 200
+[10:23:50 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:50 INF] End processing HTTP request after 0.8531ms - 200
+[10:23:50 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:50 INF] End processing HTTP request after 0.8153ms - 200
+[10:23:51 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:51 INF] End processing HTTP request after 3.0438ms - 200
+[10:23:51 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:51 INF] End processing HTTP request after 1.0455ms - 200
+[10:23:52 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:52 INF] End processing HTTP request after 2.5934ms - 200
+[10:23:52 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:52 INF] End processing HTTP request after 1.9883ms - 200
+[10:23:53 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:53 INF] End processing HTTP request after 1.1338ms - 200
+[10:23:53 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:53 INF] End processing HTTP request after 0.6152ms - 200
+[10:23:54 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:54 INF] End processing HTTP request after 0.6756ms - 200
+[10:23:54 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:54 INF] End processing HTTP request after 0.6456ms - 200
+[10:23:55 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:55 INF] End processing HTTP request after 0.8326ms - 200
+[10:23:55 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:55 INF] End processing HTTP request after 0.7348ms - 200
+[10:23:56 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:56 INF] End processing HTTP request after 0.7061ms - 200
+[10:23:56 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:56 INF] End processing HTTP request after 0.6514ms - 200
+[10:23:57 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:57 INF] End processing HTTP request after 0.5649ms - 200
+[10:23:57 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:57 INF] End processing HTTP request after 0.333ms - 200
+[10:23:58 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:58 INF] End processing HTTP request after 0.5442ms - 200
+[10:23:58 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:58 INF] End processing HTTP request after 0.4264ms - 200
+[10:23:59 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:23:59 INF] End processing HTTP request after 0.5726ms - 200
+[10:23:59 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:23:59 INF] End processing HTTP request after 0.4304ms - 200
+[10:24:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:00 INF] End processing HTTP request after 0.6859ms - 200
+[10:24:00 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:00 INF] End processing HTTP request after 0.4997ms - 200
+[10:24:01 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:01 INF] End processing HTTP request after 0.6742ms - 200
+[10:24:01 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:01 INF] End processing HTTP request after 0.467ms - 200
+[10:24:02 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:02 INF] End processing HTTP request after 0.5923ms - 200
+[10:24:02 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:02 INF] End processing HTTP request after 0.6271ms - 200
+[10:24:03 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:03 INF] End processing HTTP request after 0.7215ms - 200
+[10:24:03 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:03 INF] End processing HTTP request after 0.6295ms - 200
+[10:24:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:05 INF] End processing HTTP request after 1.0015ms - 200
+[10:24:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:05 INF] End processing HTTP request after 0.8459ms - 200
+[10:24:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:05 INF] End processing HTTP request after 0.6233ms - 200
+[10:24:05 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:05 INF] End processing HTTP request after 0.5249ms - 200
+[10:24:06 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:06 INF] End processing HTTP request after 0.5692ms - 200
+[10:24:06 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:06 INF] End processing HTTP request after 0.4787ms - 200
+[10:24:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:07 INF] End processing HTTP request after 0.5949ms - 200
+[10:24:07 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:07 INF] End processing HTTP request after 0.3959ms - 200
+[10:24:08 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:08 INF] End processing HTTP request after 0.6342ms - 200
+[10:24:08 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:08 INF] End processing HTTP request after 0.6046ms - 200
+[10:24:09 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:09 INF] End processing HTTP request after 0.6808ms - 200
+[10:24:09 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:09 INF] End processing HTTP request after 1.3213ms - 200
+[10:24:10 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:10 INF] End processing HTTP request after 0.8536ms - 200
+[10:24:10 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:10 INF] End processing HTTP request after 0.7848ms - 200
+[10:24:11 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:11 INF] End processing HTTP request after 0.8308ms - 200
+[10:24:11 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:11 INF] End processing HTTP request after 0.4771ms - 200
+[10:24:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:13 INF] End processing HTTP request after 0.6661ms - 200
+[10:24:13 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:13 INF] End processing HTTP request after 0.5037ms - 200
+[10:24:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:14 INF] End processing HTTP request after 4.2736ms - 200
+[10:24:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:14 INF] End processing HTTP request after 1.8141ms - 200
+[10:24:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:14 INF] End processing HTTP request after 0.5343ms - 200
+[10:24:14 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:14 INF] End processing HTTP request after 0.3541ms - 200
+[10:24:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:15 INF] End processing HTTP request after 0.6232ms - 200
+[10:24:15 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:15 INF] End processing HTTP request after 0.4171ms - 200
+[10:24:16 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:16 INF] End processing HTTP request after 0.6068ms - 200
+[10:24:16 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:16 INF] End processing HTTP request after 0.4574ms - 200
+[10:24:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:17 INF] End processing HTTP request after 0.5525ms - 200
+[10:24:17 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:17 INF] End processing HTTP request after 0.4295ms - 200
+[10:24:18 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:18 INF] End processing HTTP request after 0.6644ms - 200
+[10:24:18 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:18 INF] End processing HTTP request after 0.5413ms - 200
+[10:24:19 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:19 INF] End processing HTTP request after 0.6613ms - 200
+[10:24:19 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:19 INF] End processing HTTP request after 0.4601ms - 200
+[10:24:20 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:20 INF] End processing HTTP request after 0.5498ms - 200
+[10:24:20 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:20 INF] End processing HTTP request after 0.408ms - 200
+[10:24:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:21 INF] End processing HTTP request after 0.5722ms - 200
+[10:24:21 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:21 INF] End processing HTTP request after 0.4474ms - 200
+[10:24:22 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:22 INF] End processing HTTP request after 0.4991ms - 200
+[10:24:22 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:22 INF] End processing HTTP request after 0.3671ms - 200
+[10:24:23 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:23 INF] End processing HTTP request after 0.7721ms - 200
+[10:24:23 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:23 INF] End processing HTTP request after 0.5619ms - 200
+[10:24:25 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:25 INF] End processing HTTP request after 0.8053ms - 200
+[10:24:25 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:25 INF] End processing HTTP request after 0.4238ms - 200
+[10:24:26 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:26 INF] End processing HTTP request after 0.8059ms - 200
+[10:24:26 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:26 INF] End processing HTTP request after 0.7446ms - 200
+[10:24:26 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:26 INF] End processing HTTP request after 0.5874ms - 200
+[10:24:26 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:26 INF] End processing HTTP request after 0.3737ms - 200
+[10:24:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:27 INF] End processing HTTP request after 0.6401ms - 200
+[10:24:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:27 INF] End processing HTTP request after 0.6906ms - 200
+[10:24:28 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:28 INF] End processing HTTP request after 0.756ms - 200
+[10:24:28 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:28 INF] End processing HTTP request after 0.6476ms - 200
+[10:24:29 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:29 INF] End processing HTTP request after 0.5605ms - 200
+[10:24:29 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:29 INF] End processing HTTP request after 0.321ms - 200
+[10:24:30 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:30 INF] End processing HTTP request after 0.6124ms - 200
+[10:24:30 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:30 INF] End processing HTTP request after 0.3698ms - 200
+[10:24:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:31 INF] End processing HTTP request after 0.5531ms - 200
+[10:24:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:31 INF] End processing HTTP request after 0.5108ms - 200
+[10:24:32 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:32 INF] End processing HTTP request after 3.5401ms - 200
+[10:24:32 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:32 INF] End processing HTTP request after 0.8425ms - 200
+[10:24:34 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:34 INF] End processing HTTP request after 0.9941ms - 200
+[10:24:34 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:34 INF] End processing HTTP request after 1.0309ms - 200
+[10:24:34 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:34 INF] End processing HTTP request after 0.6116ms - 200
+[10:24:34 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:34 INF] End processing HTTP request after 0.3918ms - 200
+[10:24:35 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:35 INF] End processing HTTP request after 0.7846ms - 200
+[10:24:35 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:35 INF] End processing HTTP request after 0.5122ms - 200
+[10:24:36 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:36 INF] End processing HTTP request after 0.5845ms - 200
+[10:24:36 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:36 INF] End processing HTTP request after 0.3656ms - 200
+[10:24:37 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:37 INF] End processing HTTP request after 0.5975ms - 200
+[10:24:37 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:37 INF] End processing HTTP request after 0.4982ms - 200
+[10:24:40 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:40 INF] End processing HTTP request after 0.6559ms - 200
+[10:24:40 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:40 INF] End processing HTTP request after 0.4864ms - 200
+[10:24:40 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:40 INF] End processing HTTP request after 0.5239ms - 200
+[10:24:40 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:40 INF] End processing HTTP request after 0.3212ms - 200
+[10:24:41 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:41 INF] End processing HTTP request after 0.6803ms - 200
+[10:24:41 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:41 INF] End processing HTTP request after 0.3726ms - 200
+[10:24:41 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[10:24:41 INF] End processing HTTP request after 0.4566ms - 200
+[10:24:41 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[10:24:41 INF] End processing HTTP request after 0.3129ms - 200
+[10:24:42 WRN] Onboard connection ended with a protocol or transport error. Vehicle AGV-L2-001 (generation 1), remote 127.0.0.1:50778.
+System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+ ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\rig-cs865-red\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 179
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\rig-cs865-red\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 299
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\rig-cs865-red\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 299
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, ConnectionLabel label, CancellationToken cancellationToken) in C:\work\8005-wt\rig-cs865-red\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 299
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in C:\work\8005-wt\rig-cs865-red\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 119
