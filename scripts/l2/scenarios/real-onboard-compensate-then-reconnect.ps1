@@ -37,7 +37,7 @@ $connection = $Context.Connection
 $proxy = $Context.ProtocolProxy
 
 if ($null -eq $proxy) { throw 'This scenario needs ProtocolFaultProxy = $true in its setup file.' }
-$laterIds = @('L2-CR-02', 'L2-CR-03', 'L2-CR-04', 'L2-CR-05', 'L2-CR-06', 'L2-CR-07', 'L2-CR-08')
+$laterIds = @('L2-CR-02', 'L2-CR-03', 'L2-CR-04', 'L2-CR-05', 'L2-CR-06', 'L2-CR-07', 'L2-CR-08', 'L2-CR-09')
 
 # 补偿会话留下的出站报文：恢复会话快照与补偿命令，按创建先后。
 function Get-RecoveryOutbox {
@@ -209,7 +209,7 @@ $assertions.Add(
     'L2-CR-03', '补偿对账之后会话回到 Ready（断开之前的前提）',
     $readyBefore, 'Ready / READY', (Format-L2RealSession $sessionBefore))
 if (-not $readyBefore) {
-    Add-L2RealNotReached $assertions @('L2-CR-04', 'L2-CR-05', 'L2-CR-06', 'L2-CR-07', 'L2-CR-08') '补偿之后会话没回到 Ready'
+    Add-L2RealNotReached $assertions @('L2-CR-04', 'L2-CR-05', 'L2-CR-06', 'L2-CR-07', 'L2-CR-08', 'L2-CR-09') '补偿之后会话没回到 Ready'
     return
 }
 
@@ -261,6 +261,17 @@ $assertions.Add(
     ($replayed.Count -eq 0), "0 of $($recoveryBefore.Count) replayed",
     "$($replayed.Count) of $($recoveryBefore.Count) replayed$(if ($replayed.Count -gt 0) { " ($(Format-Outbox $replayed))" })")
 $journal.Note("Recovery outbox after the reconnect: $(Format-Outbox (Get-RecoveryOutbox)).")
+
+# 被补偿掉的那一次装货，它的原 SlotOperationCommand（control-server#623）：车已用 UNKNOWN 结果作答，补偿又终结了需求。修之前它只在
+# Committed 与确定的失败两处结算，这里两样都不是，于是一直未确认——旅程活着时每轮补发（生产 agv01 attempt 3f01992d），收尾之后
+# 留在发件箱里，换协议身份时 ProtocolOutboxIdentityStartupCheck 拒绝启动。
+$loadCommands = @((Get-L2RealOutbound $connection 'SlotOperationCommand') | Where-Object { [string]$_.Payload.slotOperationAttemptId -eq $attemptId })
+$loadCommandReplayed = @($loadCommands | Where-Object { $sentIds -contains $_.MessageId }).Count
+$assertions.Add(
+    'L2-CR-09', '被补偿掉的装货，原 SlotOperationCommand 已结清（确认或退役），也没有被重放进新会话',
+    ($loadCommands.Count -eq 1 -and ($loadCommands[0].Acknowledged -or $loadCommands[0].Fenced) -and $loadCommandReplayed -eq 0),
+    '1 command, acknowledged or fenced, 0 replayed',
+    "$($loadCommands.Count) command(s)$(if ($loadCommands.Count -ge 1) { " ($(Format-Outbox $loadCommands))" }), $loadCommandReplayed replayed")
 
 # --- 5. 车还回来：下一条需求被受理，车在取货点收下扫码 ------------------------------------------------------------
 

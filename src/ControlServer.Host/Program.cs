@@ -276,6 +276,9 @@ await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken
 // control-server#740：所属停靠已结束、旅程已终态的录入请求与拒收（车不收、不回 ack）退役。幂等，每次启动都跑；放在身份检查之前，
 // 否则修之前留下这种行的库换协议身份起不来。身份检查本身不放宽。
 await StopScopedOutbox.FenceEndedAtStartupAsync(app.Services, CancellationToken.None);
+// control-server#623：已有结论的 SlotOperationCommand（车已以结果作答，或已被取消、补偿终结，或所属需求、旅程已结束）结算或退役。幂等，每次启动都跑；
+// 放在身份检查之前，理由同上。仍在等结果的不动，身份检查照旧挡。
+await SlotCommandOutbox.ConcludeAtStartupAsync(app.Services, CancellationToken.None);
 // control-server#750：已被更高一版盖过的旅程快照（同车同类型里号低于车确认过的最大号，或低于已收尾旅程的收尾快照）退役——车反正当回退拒收、
 // 也不再补发。幂等，每次启动都跑；放在身份检查之前，理由同上。身份检查本身不放宽。
 await SupersededSnapshotOutbox.FenceSupersededAtStartupAsync(app.Services, CancellationToken.None);
