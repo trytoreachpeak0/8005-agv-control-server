@@ -48,8 +48,8 @@ public sealed class DepartureRequestAnswerQueryScaleTests
         CommandLog commands = new();
         await using ScaleDatabase database = await ScaleDatabase.CreateAsync(commands);
         Dictionary<string, string[]> expected = await SeedAsync(database);
-        // 预热：首次查询要编译、建计划，不该算进每车的计时（独立审查 L1）。这辆车不在造数里，读回零行，只走收件箱那一条。
-        Assert.Empty(await CurrentStopDepartures.UnansweredAsync(database.Context, "预热车", Token));
+        // 预热：首次查询要编译、建计划，不该算进每车的计时（独立审查 L1）。用全答过的那辆车，收件箱与发件箱两条语句都走一遍。
+        Assert.Empty(await CurrentStopDepartures.UnansweredAsync(database.Context, Vehicles[2], Token));
 
         foreach (string agvId in Vehicles)
         {
