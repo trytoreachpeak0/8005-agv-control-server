@@ -126,6 +126,9 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         public CheckpointWaitLedger CheckpointWaits { get; } = new();
 
+        /// <summary>The host's singleton (control-server#837): a processor built over this fixture reads what the engine registers.</summary>
+        public SessionReadinessRecheck ReadinessRecheck { get; } = new();
+
         public FixedTimeProvider Clock { get; }
         public SaveChangesCounter SaveChanges { get; }
 
@@ -1252,7 +1255,8 @@ internal static class JourneyRuntimeWorkerTestKit
                 Clock,
                 EngineLog,
                 ChargingPolicy,
-                doorReadings: DoorReadings);
+                doorReadings: DoorReadings,
+                readinessRecheck: ReadinessRecheck);
         }
 
         /// <summary>What the foreign running order supervisor logged (control-server#330): its alarms are log events.</summary>

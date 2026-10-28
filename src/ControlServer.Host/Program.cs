@@ -117,6 +117,8 @@ builder.Services.AddSingleton<CheckpointWaitLedger>();
 // control-server#789: the door grace and the door fault's sub-cause outlive the per-round engine; the worker reads it to wake
 // when a grace runs out.
 builder.Services.AddSingleton<InTransitDoorReadings>();
+// control-server#837: a readiness change a background round made, announced on the vehicle's next heartbeat.
+builder.Services.AddSingleton<SessionReadinessRecheck>();
 builder.Services.AddScoped<IVehicleDispatchPolicyStore, VehicleDispatchPolicyStore>();
 builder.Services.AddScoped<VehicleDispatchPolicyAccess>();
 builder.Services.AddScoped<IPackageCapacityStore, PackageCapacityStore>();

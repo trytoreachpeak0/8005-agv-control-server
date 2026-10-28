@@ -270,6 +270,46 @@ public sealed class ChargingDashboardTests
         }
     }
 
+    /// <summary>
+    /// control-server#863：预占着桩的那趟充电，单在 RIoT 一直没派出（<c>CHARGING_ORDER_NOT_DISPATCHED</c>，写上即已过了它自己的窗口），或车在途中失联
+    /// 超过告警窗口（<c>CHARGING_VEHICLE_OBSERVATION_LOST</c>）：阶段仍是预占，但标超时，说明写清「桩被一台单没派出／失联的车占着」与处置。
+    /// 失联还在窗口里的不标。10-22 看板上 211 一直是 <c>overdue=false</c>，看不出来。
+    /// </summary>
+    [Fact]
+    public async Task AChargerReservedByAJourneyWhoseOrderIsNotDispatchedOrWhoseVehicleIsLostIsShownOverdue()
+    {
+        await using ChargingDatabase database = await ChargingDatabase.CreateAsync();
+        DateTimeOffset now = database.Now;
+        await database.SeedAsync(context =>
+        {
+            AddRoster(context, 1, now.AddDays(-1), "张三", [212, 213, 214]);
+            AddCharging(context, "K-01", 212, ChargingCyclePhases.Active, ChargingCycleWireStates.EnRoute,
+                StationExclusivityStates.Reserved, now.AddHours(-3), code: ChargingExecutionReasons.OrderNotDispatched);
+            AddCharging(context, "K-02", 213, ChargingCyclePhases.Active, ChargingCycleWireStates.EnRoute,
+                StationExclusivityStates.Reserved, now.AddMinutes(-5), code: ChargingExecutionReasons.VehicleObservationLost);
+            AddCharging(context, "K-03", 214, ChargingCyclePhases.Active, ChargingCycleWireStates.EnRoute,
+                StationExclusivityStates.Reserved, now.AddMinutes(-30), code: ChargingExecutionReasons.VehicleObservationLost);
+        });
+
+        (JsonDocument fact, string html) = await ReadAsync(database, "chargers");
+        using (fact)
+        {
+            Dictionary<int, JsonElement> chargers = fact.RootElement.GetProperty("chargers").EnumerateArray()
+                .ToDictionary(c => c.GetProperty("stationId").GetInt32());
+            Assert.All([212, 213, 214], station => Assert.Equal(ChargingDashboardDescriptions.StageReserved, Stage(chargers[station])));
+
+            Assert.True(chargers[212].GetProperty("overdue").GetBoolean());
+            string notDispatched = chargers[212].GetProperty("overdueDescription").GetString()!;
+            Assert.Contains("没有派给车", notDispatched, StringComparison.Ordinal);
+            Assert.Contains("RIoT 上取消", notDispatched, StringComparison.Ordinal);
+            Assert.False(chargers[213].GetProperty("overdue").GetBoolean());
+            Assert.True(chargers[214].GetProperty("overdue").GetBoolean());
+            Assert.Contains("失联", chargers[214].GetProperty("overdueDescription").GetString(), StringComparison.Ordinal);
+
+            Assert.Contains("没有派给车", RowWith(html, "<td>212</td>"), StringComparison.Ordinal);
+        }
+    }
+
     // ---------------- 逐车充电状态 ----------------
 
     /// <summary>
@@ -821,6 +861,17 @@ public sealed class ChargingDashboardTests
     public void EachClearanceMoveAlarmHasItsSeverity(string code, string severity)
     {
         Assert.Equal(severity, ChargingDashboardDescriptions.SeverityOf(code));
+    }
+
+    /// <summary>
+    /// 去桩这一段的两种点名（control-server#863，独立审查 S2）都是 High：唯一的桩被一趟去不了桩的充电占着，只有人能清。
+    /// </summary>
+    [Theory]
+    [InlineData(ChargingExecutionReasons.OrderNotDispatched)]
+    [InlineData(ChargingExecutionReasons.VehicleObservationLost)]
+    public void EachApproachAlarmIsHigh(string code)
+    {
+        Assert.Equal(ChargingDashboardDescriptions.SeverityHigh, ChargingDashboardDescriptions.SeverityOf(code));
     }
 
     // ---------------- 说明与共用读法 ----------------

@@ -102,6 +102,8 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("FINAL_CATALOG_CANDIDATE_GONE", DispatchReasonClass.Backlog)]
     [InlineData("FINAL_CATALOG_DECISION_FACT_CHANGED", DispatchReasonClass.Backlog)]
     [InlineData("FINAL_JOURNEY_PLAN_INCOMPLETE", DispatchReasonClass.Backlog)]
+    // control-server#864：追加前旅程结束，下一轮重新分配。
+    [InlineData("FINAL_APPEND_JOURNEY_ENDED", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_DECISION_FACT_CHANGED", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_LEFT_CATALOG", DispatchReasonClass.Backlog)]
     // 批次7-06（control-server#211）。八条都归普通积压：仓位被本车自己的货占着会随卸货腾出来；

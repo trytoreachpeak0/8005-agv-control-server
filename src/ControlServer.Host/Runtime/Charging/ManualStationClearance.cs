@@ -126,6 +126,8 @@ public sealed class ManualStationClearance(
         ChargingExecutionReasons.BatteryTelemetryLost,
         ChargingExecutionReasons.ArrivalNotProven,
         ChargingExecutionReasons.OrderNotFound,
+        // control-server#863: the order has to be ended in RIoT first (Judge refuses otherwise and says so).
+        ChargingExecutionReasons.OrderNotDispatched,
         // control-server#407: an interruption or no progress that could only be alarmed about.
         ChargingExecutionReasons.InterruptionNotIsolated,
         ChargingExecutionReasons.NoProgressNotIsolated,

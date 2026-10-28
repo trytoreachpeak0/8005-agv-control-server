@@ -171,6 +171,31 @@ public sealed class JourneyRuntimeOptionsTests
     }
 
     /// <summary>
+    /// control-server#837（用户 10-27 选方案 a）：装货中取消等车答复的时限默认 2 分钟，限在 30 秒到 30 分钟之间——太短会把正常清仓中的取消判成没答，
+    /// 太长等于没有兜底；没有「一直等」这个选项。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public void TheLoadCancellationAnswerTimeoutDefaultsToTwoMinutesAndIsBounded()
+    {
+        const string failure = "LoadCancellationAnswerTimeout must be between 30 s and 30 minutes.";
+        Assert.Equal(TimeSpan.FromMinutes(2), new JourneyRuntimeOptions().LoadCancellationAnswerTimeout);
+        JourneyRuntimeOptionsValidator validator = new(new ConfigurationBuilder().Build());
+        JourneyRuntimeOptions options = ValidEnabledOptions();
+
+        foreach (TimeSpan accepted in new[] { TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(30) })
+        {
+            options.LoadCancellationAnswerTimeout = accepted;
+            Assert.DoesNotContain(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+        }
+        foreach (TimeSpan refused in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(29), TimeSpan.FromMinutes(31) })
+        {
+            options.LoadCancellationAnswerTimeout = refused;
+            Assert.Contains(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+        }
+    }
+
+    /// <summary>
     /// 待送点规则（control-server#709）出厂关着；开着时用的仓门未闭告警时长必须为正。
     /// </summary>
     [Fact]

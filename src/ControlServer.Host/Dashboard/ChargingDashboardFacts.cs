@@ -393,6 +393,8 @@ internal static class ChargingDashboardDescriptions
             [ChargingExecutionReasons.ReservationLostAtArrival] = "到现场确认车停的位置与桩的归属",
             [ChargingExecutionReasons.ArrivalNotProven] = "到现场看车停在哪里",
             [ChargingExecutionReasons.OrderNotFound] = "在 RIoT 上查这张充电单去了哪里、车在哪里",
+            [ChargingExecutionReasons.OrderNotDispatched] =
+                "在 RIoT 上看这张充电单为什么一直没派给车；要让出充电桩，先在 RIoT 上取消这张单，再由 R-11／R-13 名单里的人确认清桩",
             [ChargingExecutionReasons.DepartureNotProven] = "检查车载端连接与仓门",
             [ChargingExecutionReasons.DepartureRouteGraphUnavailable] =
                 "通常几秒内自行恢复，不用处理；持续不恢复时查路网页面的不可用原因与服务端到 RIoT 的连接",
@@ -445,6 +447,8 @@ internal static class ChargingDashboardDescriptions
             or ChargingExecutionReasons.ClearanceMoveHeld
             or ChargingExecutionReasons.ClearanceMoveEnded
             or ChargingExecutionReasons.VehicleObservationLost
+            // control-server#863: the only charger held by a charge that cannot go, which only a person can clear.
+            or ChargingExecutionReasons.OrderNotDispatched
             or ChargingExecutionReasons.ReservationLostAtArrival
             or ChargingExecutionReasons.CycleMissing
             or VehicleFaultEvidence.OrderFailed => SeverityHigh,
@@ -701,6 +705,31 @@ internal sealed class ChargingDashboardFacts
         now - start > window
             ? now - start
             : null;
+
+    /// <summary>
+    /// 预占着桩的那趟充电去不了桩（control-server#863）：单在 RIoT 一直没派出（<c>CHARGING_ORDER_NOT_DISPATCHED</c>，引擎写上它时已经过了自己的窗口），
+    /// 或车在途中失联超过告警窗口（<c>CHARGING_VEHICLE_OBSERVATION_LOST</c>，从点名的时刻算）。是就答桩卡上的超时说明，否则答空。只读旅程行上的码与时刻。
+    /// </summary>
+    public static string? ReservedByAStuckApproach(string stage, JourneyRuntimeRow? journey, DateTimeOffset now, TimeSpan window)
+    {
+        if (stage != ChargingDashboardDescriptions.StageReserved ||
+            journey is not { BlockReasonCode: { } code, BlockReasonSince: { } since })
+        {
+            return null;
+        }
+        return code switch
+        {
+            ChargingExecutionReasons.OrderNotDispatched =>
+                $"充电桩被一趟没派出的充电预占：它的充电单 RIoT 收下了，却一直没有派给车（点名已 {ChargingDashboardDescriptions.Minutes(now - since)} 分钟，"
+                + "服务端日志事件 2284），车没去充电，别的车分不到这个桩。服务端不取消单、不放桩；要让出桩，先在 RIoT 上取消这张充电单，"
+                + "再由 R-11／R-13 名单里的人确认清桩",
+            ChargingExecutionReasons.VehicleObservationLost when now - since > window =>
+                $"充电桩被一辆去桩途中失联的车预占：RIoT 已 {ChargingDashboardDescriptions.Minutes(now - since)} 分钟读不到它（告警窗口 "
+                + $"{ChargingDashboardDescriptions.Minutes(window)} 分钟，服务端日志事件 2261）。车可能还在路上，也可能已在桩上，服务端不放桩、不动车；"
+                + "到现场找到车，在 RIoT 上取消充电单，再由 R-11／R-13 名单里的人确认清桩",
+            _ => null,
+        };
+    }
 
     /// <summary>超过窗口时引擎写的那条日志的事件号。</summary>
     public static string OverdueEventId(string stage) =>

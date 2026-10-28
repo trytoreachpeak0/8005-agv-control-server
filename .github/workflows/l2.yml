@@ -612,6 +612,10 @@ jobs:
               # the mandatory line the vehicle gets no charger while the door is open; once locked, the server asks for a fresh
               # snapshot (a SafetyStateChanged carries no slot states) and the vehicle is sent to charge.
               @{ Name = 'charging-door-open-at-handshake-then-locked'; Runs = 1; BatchId = 'program-210' }
+              # control-server#863: a charge order RIoT never dispatches holds the only charger. Past the alarm window it is
+              # named and alarmed, nothing cancelled or released; a person's cancel in RIoT and a manual clearance free the
+              # charger, and the vehicle waiting for it gets it.
+              @{ Name = 'charging-order-not-dispatched-holds-charger'; Runs = 1; BatchId = 'program-210' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Measured, not
           # remembered: scripts/l2/Get-L2LaneEstimates.ps1 reads them out of past rounds' logs, and its -AsJson

@@ -6876,6 +6876,9 @@ public sealed partial class RecoveryStateMachineG2Tests
         (await context.StationOperations.SingleAsync(TestContext.Current.CancellationToken)).Status =
             StationOperationStatus.Prepared;
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        // The vehicle's readings since the load began prove both target slots empty, locked and reset: what a cancellation
+        // once loading has started is authorized on (control-server#837).
+        await TestSlotReadings.SeedSnapshotAsync(context, AgvId, sessionGeneration: 3, receivedAt: Now);
     }
 
     private static string CancellationRequest(string cancellationId) => Envelope(

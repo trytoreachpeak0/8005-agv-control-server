@@ -553,3 +553,10 @@ public sealed class BusinessIdentityConflictException(string message) : InvalidO
 /// endpoints were taken from, so accepting it would freeze the versions and not the endpoints (control-server#198).
 /// </summary>
 public sealed class JourneyPlanFreezeIncompleteException(string message) : InvalidOperationException(message);
+
+/// <summary>
+/// The journey an append was meant for had already ended when the append came to be committed (control-server#864): the
+/// dispatch round chose it while it was running, and an operator cancellation or the last unload closed it before the write.
+/// Nothing was written. A race the round expects, not a broken invariant.
+/// </summary>
+public sealed class JourneyEndedBeforeAppendException(string message) : InvalidOperationException(message);

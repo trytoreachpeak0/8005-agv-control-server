@@ -21,6 +21,11 @@ namespace ControlServer.Host.Runtime;
 /// 消息只增不减，库里按 <c>(MessageType, ReceivedAtUtcTicks)</c> 索引先筛掉之前的行，不再整表读回来解析（审查意见）。两边都是服务端的时钟。
 /// </para>
 /// <para>
+/// <b>安全基线不可信时一律没有读数</b>（control-server#837 审查 S2）。车报的安全消息被服务端拒收（同修订号内容不同、修订号倒退，control-server#478）时，
+/// 那条消息不进收件箱，于是此前那份快照在这里仍像是最新、之后没有变化——而车手上已经是别的状态。拒收时 <c>DistrustSafetyBaselineAsync</c> 清掉会话行的
+/// 出发安全结论（<c>DepartureSafe</c>），下一份被接受的快照才写回，所以它为空就返回 null，与过期同样处理。握手完成之前它也为空，那时本来就不判。
+/// </para>
+/// <para>
 /// 与看板逾期卡片、人工判故障的审计读数（<c>SlotReadings</c>）同一个读法；那两处把快照之后的变化标出来给人看，这里要拿它做判定。
 /// </para>
 /// </remarks>
@@ -35,14 +40,15 @@ internal static class SessionSlotReadings
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(targets);
-        long? generation = await dbContext.SessionRecoveries.AsNoTracking()
+        var current = await dbContext.SessionRecoveries.AsNoTracking()
             .Where(row => row.AgvId == agvId)
-            .Select(row => (long?)row.SessionGeneration)
+            .Select(row => new { row.SessionGeneration, row.DepartureSafe })
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-        if (generation is null)
+        if (current?.DepartureSafe is null)
         {
             return null;
         }
+        long generation = current.SessionGeneration;
         long notBeforeTicks = notBefore.UtcTicks;
         string[] rows = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => (row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged") &&

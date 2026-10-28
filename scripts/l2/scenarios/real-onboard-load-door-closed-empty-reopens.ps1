@@ -23,8 +23,10 @@
   车载端界面只用来驱动：录入子批号、按「重新开门」、按「取消装货」与它的确认框；另读一次倒计时控件的 UIA 状态
   （AutomationId `StationDepartureCountdown` 的 `ItemStatus`，是档位枚举不是文案），作为「车载端自己也认定期限已过」
   的前提——期限后的提示与倒计时文案 onboard-hmi#78 改过，判据一个字都不比。
-  取消清空只判结果（需求 `Cancelled`、`CANCELLED_BY_OPERATOR`、目标仓 `EMPTY` 且锁闭、车辆释放），不判开锁方式与
-  顺序：有货仓仍是逐个开锁，ADR-cross-0046 要的批量由 onboard-hmi#104 跟进。
+  取消按 CP-0021 修订后的 `REQ-0211` 与协议 6.0.0（onboard-hmi#392、control-server#837）：装货开始后只有一篮未装、
+  门都锁闭、开锁输出复位时才能取消，服务端以空范围授权，取消不开任何门。所以操作员先把空门关上锁好、再按取消；
+  门开着时「取消装货」在原位按不动（`L2-DC-13`，读车载端 AutomationId `LoadCancellationBlocked` 的 `ItemStatus`，
+  是原因码不是文案）。取消只判结果（需求 `Cancelled`、`CANCELLED_BY_OPERATOR`、目标仓 `EMPTY` 且锁闭、车辆释放）。
   MVP 线参照 `origin/ControlServer_MVP:scripts/l2/scenarios/real-onboard-load-door-closed-empty.ps1`，判据按
   program#55 改写，没有整份拷贝。
 
@@ -49,6 +51,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Change.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealStation.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 # Only for Add-G3VehicleReleasedForNextDemand (L2-DC-12); this scenario keeps its own readers.
 . (Join-Path $PSScriptRoot 'G3RecoveryCommon.ps1')
 
@@ -174,11 +177,37 @@ $assertions.Add(
     "Accepted / AwaitingLoadResult / Prepared / 0 result / $noFailure",
     "$demandStatus / $($held.Stage) / $($operation.Status) / $($results.Count) result / $footprint")
 
-# --- 5. 操作员按取消 -------------------------------------------------------------------------------
+# --- 5. 操作员不装了：先关好空门，再按取消 ----------------------------------------------------------
 
-# 门此刻开着（最后一次重开之后），操作员决定不装了。取消执行器接手开着的门、不再打脉冲（onboard-hmi#78），
-# 所以先按取消、等服务端授权，再把空门带上；反过来先关门，车会把它当成又一次空关、锁着门等「重新开门」。
-$offered = Wait-L2Condition -Description "the onboard offers $cancelButton with the factory recovery switch off" `
+# 门此刻开着（最后一次重开之后），操作员决定不装了。协议 6.0.0 起取消不开门，只在一篮未装、门都锁闭、开锁输出复位时
+# 可按（onboard-hmi#392）：门开着时入口在原位按不动，旁边写着先关门，车载端也不发取消请求。
+function Get-CancellationRequestCount {
+    return @((Get-L2Inbound -Connection $connection -MessageType 'LoadCancellationStartRequested') |
+            Where-Object { [string]$_.Payload.demandId -eq $demandId }).Count
+}
+
+function Get-CancelEntry {
+    $blockedElement = $onboard.Element('AutomationId', 'LoadCancellationBlocked')
+    return [pscustomobject]@{
+        Pressable = [bool]$onboard.ButtonAvailable($cancelButton)
+        Blocked   = if ($blockedElement) { [string]$blockedElement.Current.ItemStatus } else { '(absent)' }
+        Requests  = Get-CancellationRequestCount
+    }
+}
+
+$whileOpen = Wait-L2ConditionOrLast -Description "the onboard shows $cancelButton disabled while slot $slotNo stands open" `
+    -Journal $journal -Criterion 'onboard-cancel-blocked-while-open' -TimeoutSeconds 30 `
+    -Probe { Get-CancelEntry } -Until { param($v) -not $v.Pressable -and $v.Blocked -eq 'LOCK_NOT_CLOSED' }
+$assertions.Add(
+    'L2-DC-13', "门开着时：「$cancelButton」按不动，屏上说先关好仓门（LoadCancellationBlocked = LOCK_NOT_CLOSED），车载端没有发出取消请求",
+    (-not $whileOpen.Pressable -and $whileOpen.Blocked -eq 'LOCK_NOT_CLOSED' -and $whileOpen.Requests -eq 0),
+    '按不动 / LOCK_NOT_CLOSED / 取消请求 0',
+    "$(if ($whileOpen.Pressable) { '按得动' } else { '按不动' }) / $($whileOpen.Blocked) / 取消请求 $($whileOpen.Requests)")
+
+# 关上之后车照常锁着门等「重新开门」（本条前面判过），这时一篮未装、门锁闭、输出复位，取消可按。
+$journal.Note("The operator shuts the empty slot $slotNo, then presses cancel.")
+$null = $simulator.Command('Post', "slots/$slotNo/close-door", @{})
+$offered = Wait-L2Condition -Description "the onboard offers $cancelButton once slot $slotNo is shut empty and locked" `
     -Journal $journal -Criterion 'onboard-cancel-offered' -TimeoutSeconds 60 `
     -Probe { [bool]$onboard.ButtonAvailable($cancelButton) } -Until { param($v) $v }
 $journal.Note('The operator presses cancel and confirms it.')
@@ -198,9 +227,6 @@ $assertions.Add(
         @($authorization.slots).Count -eq 0),
     "$attemptId / LoadCancellationAuthorization AUTHORIZED []",
     "$($request.Payload.slotOperationAttemptId) / $($request.Response) $(if ($authorization) { "$($authorization.decision) [$(@($authorization.slots) -join ',')]" })")
-
-$journal.Note("The operator shuts the empty slot $slotNo.")
-$null = $simulator.Command('Post', "slots/$slotNo/close-door", @{})
 
 # --- 6. 取消收敛：只判结果 -------------------------------------------------------------------------
 
