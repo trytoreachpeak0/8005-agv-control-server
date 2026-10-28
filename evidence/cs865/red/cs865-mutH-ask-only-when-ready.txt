@@ -1,0 +1,14 @@
+commit afdd8fccd28fb8461d358a3097349574c83a402d, 2026-10-28, review S1 mutation H: ask only when the store decides Ready
+-                    if (!state.SlotLocksAwaitingSnapshot &&
++                    if (decision.Readiness == SessionReadiness.Ready && !state.SlotLocksAwaitingSnapshot &&
+
+dotnet test tests/ControlServer.Tests --filter "FullyQualifiedName~StaleSlotLockSnapshotTests"
+[xUnit.net 00:00:04.03]     ControlServer.Tests.StaleSlotLockSnapshotTests.ASessionNotReadyWhenTheDoorIsLockedIsStillAsked [FAIL]
+  失败 ControlServer.Tests.StaleSlotLockSnapshotTests.ASessionNotReadyWhenTheDoorIsLockedIsStillAsked [81 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   0
+     at ControlServer.Tests.StaleSlotLockSnapshotTests.ASessionNotReadyWhenTheDoorIsLockedIsStillAsked() in C:\work\8005-wt\cs865-8005-agv-control-server\tests\ControlServer.Tests\StaleSlotLockSnapshotTests.cs:line 228
+   at ControlServer.Tests.StaleSlotLockSnapshotTests.ASessionNotReadyWhenTheDoorIsLockedIsStillAsked() in C:\work\8005-wt\cs865-8005-agv-control-server\tests\ControlServer.Tests\StaleSlotLockSnapshotTests.cs:line 236
+   at ControlServer.Tests.StaleSlotLockSnapshotTests.ASessionNotReadyWhenTheDoorIsLockedIsStillAsked() in C:\work\8005-wt\cs865-8005-agv-control-server\tests\ControlServer.Tests\StaleSlotLockSnapshotTests.cs:line 236
+失败!  - 失败:     1，通过:     6，已跳过:     0，总计:     7，持续时间: 1 s - ControlServer.Tests.dll (net8.0)

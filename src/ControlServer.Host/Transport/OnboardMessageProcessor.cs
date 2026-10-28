@@ -602,6 +602,8 @@ public sealed partial class OnboardMessageProcessor(
                     // message left untrusted is trusted again from here (control-server#478).
                     state.SafetyBaselineUntrusted = false;
                     state.SlotLocksAwaitingSnapshot = false;
+                    state.UnsecuredSlotInLatestSnapshot = (generation,
+                        Runtime.Dispatch.OnboardDispatchFactsReader.HasUnsecuredSlot(payload.GetProperty("slotStates")));
                     string snapshotAck = SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
                     if (!midSession)
                     {
@@ -1047,11 +1049,10 @@ public sealed partial class OnboardMessageProcessor(
                     // states. When that snapshot showed a slot unsecured, this change may be the slot being locked, which nothing
                     // would tell the departure gate until the next handshake: ask for a snapshot, spaced like the re-asks below.
                     // A slot that really is open is answered as open at the current revision, and the asking stops until the
-                    // next change.
+                    // next change. What the latest snapshot showed is kept on the connection (review S3): this runs inside the
+                    // inbox's write transaction, and reading every vehicle's snapshots on each change held the write lock for it.
                     if (!state.SlotLocksAwaitingSnapshot &&
-                        await Runtime.Dispatch.OnboardDispatchFactsReader
-                            .LatestSnapshotHasUnsecuredSlotAsync(dbContext, agvId, generation, cancellationToken)
-                            .ConfigureAwait(false))
+                        await UnsecuredSlotInLatestSnapshotAsync(agvId, generation, state, cancellationToken).ConfigureAwait(false))
                     {
                         state.SlotLocksAwaitingSnapshot = true;
                     }
@@ -1627,6 +1628,24 @@ public sealed partial class OnboardMessageProcessor(
                payload.GetProperty("problem").GetProperty("reasonCode").GetString() == ServerReasonCodes.SlotStateUnknown;
     }
 
+    /// <summary>
+    /// Whether this session generation's latest snapshot showed a slot not secured (control-server#865), from the connection when
+    /// it has accepted a snapshot of this generation; otherwise read from the inbox once and kept (a snapshot the inbox replayed
+    /// as a duplicate never reaches the processor).
+    /// </summary>
+    private async Task<bool> UnsecuredSlotInLatestSnapshotAsync(
+        string agvId, long generation, OnboardConnectionState state, CancellationToken cancellationToken)
+    {
+        if (state.UnsecuredSlotInLatestSnapshot is not (long knownGeneration, bool unsecured) || knownGeneration != generation)
+        {
+            unsecured = await Runtime.Dispatch.OnboardDispatchFactsReader
+                .LatestSnapshotHasUnsecuredSlotAsync(dbContext, agvId, generation, cancellationToken)
+                .ConfigureAwait(false);
+            state.UnsecuredSlotInLatestSnapshot = (generation, unsecured);
+        }
+        return unsecured;
+    }
+
     private async Task<bool> AffectsAnOverdueSlotAsync(
         string agvId, JsonElement payload, CancellationToken cancellationToken)
     {
@@ -2020,4 +2039,11 @@ public sealed class OnboardConnectionState
     /// says so. Asked for at <see cref="OnboardMessageProcessor.SafetySnapshotReaskInterval"/> until a snapshot arrives.
     /// </summary>
     public bool SlotLocksAwaitingSnapshot { get; set; }
+
+    /// <summary>
+    /// Whether the latest snapshot of a session generation showed a slot not <c>LOCKED</c>/<c>RESET</c>, set from each snapshot
+    /// this connection accepts (control-server#865, review S3); null until one is accepted or read. Keyed by generation: a
+    /// second SessionHello on the same connection starts another generation, whose own snapshot decides.
+    /// </summary>
+    public (long Generation, bool Unsecured)? UnsecuredSlotInLatestSnapshot { get; set; }
 }

@@ -469,13 +469,21 @@ public sealed class OnboardDispatchFactsReader(
     /// snapshot on a safety change when it does (control-server#865): a change carries no slot states, so a slot locked after the
     /// snapshot stays unsecured to the gate until a snapshot says otherwise.
     /// </summary>
+    /// <remarks>
+    /// This reads every vehicle's snapshots in the inbox. The transport reads it at most once per connection and generation,
+    /// for a connection that has not accepted a snapshot of its own (review S3); each snapshot it accepts sets the answer from
+    /// <see cref="HasUnsecuredSlot"/> instead.
+    /// </remarks>
     internal static async Task<bool> LatestSnapshotHasUnsecuredSlotAsync(
         ControlServerDbContext dbContext,
         string agvId,
         long generation,
         CancellationToken cancellationToken) =>
         await LatestSnapshotSlotStatesAsync(dbContext, agvId, generation, cancellationToken).ConfigureAwait(false) is JsonElement slots &&
-        UnsecuredSlots(slots).Length > 0;
+        HasUnsecuredSlot(slots);
+
+    /// <summary>Whether a snapshot's <c>slotStates</c> show a slot the departure gate reads as not secured.</summary>
+    internal static bool HasUnsecuredSlot(JsonElement slotStates) => UnsecuredSlots(slotStates).Length > 0;
 
     /// <summary>The slots the departure gate reads as not secured: lock not <c>LOCKED</c> or unlock output not <c>RESET</c>.</summary>
     private static int[] UnsecuredSlots(JsonElement slotStates) =>

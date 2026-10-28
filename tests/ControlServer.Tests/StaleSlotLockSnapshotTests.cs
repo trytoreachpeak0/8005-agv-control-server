@@ -236,6 +236,71 @@ public sealed class StaleSlotLockSnapshotTests
         Assert.Empty(await GapsAsync(fixture, token));
     }
 
+    /// <summary>
+    /// A safety change does not read the inbox's snapshots once the connection has accepted a snapshot of its own (review S3).
+    /// It runs inside the inbox's write transaction, and the inbox keeps every vehicle's snapshots of every generation: with
+    /// 3000 of other vehicles' on file each change took 86 ms instead of 4 ms. Proven here by a snapshot row the reader cannot
+    /// parse, put in after the connection's own snapshot: a change that read the inbox would fail on it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task ASafetyChangeReadsNoSnapshotFromTheInboxOnceTheConnectionHasOne()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = Processor(fixture, connection);
+        OnboardConnectionState state = Connected(fixture);
+        await processor.ProcessAsync(Snapshot(fixture, revision: 8, unlockedSlot: 1), state, token);
+        await AddOtherVehiclesSnapshotsAsync(fixture, count: 3000);
+        fixture.Context.ProtocolInbox.Add(new ProtocolInboxRow
+        {
+            MessageId = Guid.NewGuid().ToString("D"),
+            MessageType = "SafetyStateSnapshot",
+            RequestJson = "{}",
+            ContentHash = Guid.NewGuid().ToString("N"),
+            FirstResponseJson = "{}",
+            ReceivedAt = fixture.Clock.GetUtcNow()
+        });
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+
+        // Slot 1 open in the connection's snapshot: asked once, and the burst after asks nothing more.
+        Assert.Equal(1, Count(await processor.ProcessAsync(Change(fixture, revision: 9), state, token)));
+        Assert.Equal(0, Count(await processor.ProcessAsync(Change(fixture, revision: 10), state, token)));
+
+        // The answer shows every slot locked: the next changes ask nothing, still without reading the inbox.
+        fixture.Clock.Advance(OnboardMessageProcessor.SafetySnapshotReaskInterval);
+        await processor.ProcessAsync(Snapshot(fixture, revision: 11, unlockedSlot: null), state, token);
+        Assert.Equal(0, Count(await processor.ProcessAsync(Change(fixture, revision: 12), state, token)));
+        fixture.Clock.Advance(OnboardMessageProcessor.SafetySnapshotReaskInterval);
+        Assert.Equal(0, Count(await processor.ProcessAsync(Change(fixture, revision: 13), state, token)));
+    }
+
+    private static async Task AddOtherVehiclesSnapshotsAsync(RuntimeFixture fixture, int count)
+    {
+        ProtocolInboxRow handshake = (await fixture.Context.ProtocolInbox.AsNoTracking()
+            .Where(item => item.MessageType == "SafetyStateSnapshot")
+            .ToArrayAsync(TestContext.Current.CancellationToken))[0];
+        for (int index = 0; index < count; index++)
+        {
+            JsonObject root = JsonNode.Parse(handshake.RequestJson)!.AsObject();
+            root["agvId"] = $"OTHER-{index % 3}";
+            root["sessionGeneration"] = 1000 + index;
+            root["messageId"] = Guid.NewGuid().ToString("D");
+            fixture.Context.ProtocolInbox.Add(new ProtocolInboxRow
+            {
+                MessageId = root["messageId"]!.GetValue<string>(),
+                MessageType = "SafetyStateSnapshot",
+                RequestJson = root.ToJsonString(),
+                ContentHash = Guid.NewGuid().ToString("N"),
+                FirstResponseJson = handshake.FirstResponseJson,
+                ReceivedAt = fixture.Clock.GetUtcNow()
+            });
+        }
+    }
+
     private static OnboardMessageProcessor Processor(RuntimeFixture fixture, ControlServerDbContext connection) =>
         TestOnboardProcessorFactory.Create(
             connection, new WireToGateStore(connection), fixture.Clock, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
