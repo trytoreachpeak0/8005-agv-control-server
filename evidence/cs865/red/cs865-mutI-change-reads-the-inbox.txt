@@ -1,0 +1,9 @@
+commit 5486975a67766d3b993755c386d500c50e125a05, 2026-10-28, review S3 mutation I: every safety change reads the inbox's snapshots again (the cache is ignored)
+-        if (state.UnsecuredSlotInLatestSnapshot is not (long knownGeneration, bool unsecured) || knownGeneration != generation)
++        if (state.UnsecuredSlotInLatestSnapshot is not (long knownGeneration, bool unsecured) || knownGeneration != generation || true)
+
+dotnet test tests/ControlServer.Tests --filter "FullyQualifiedName~StaleSlotLockSnapshotTests"
+[xUnit.net 00:00:04.79]     ControlServer.Tests.StaleSlotLockSnapshotTests.ASafetyChangeReadsNoSnapshotFromTheInboxOnceTheConnectionHasOne [FAIL]
+  失败 ControlServer.Tests.StaleSlotLockSnapshotTests.ASafetyChangeReadsNoSnapshotFromTheInboxOnceTheConnectionHasOne [464 ms]
+   System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
+失败!  - 失败:     1，通过:     7，已跳过:     0，总计:     8，持续时间: 2 s - ControlServer.Tests.dll (net8.0)
