@@ -205,8 +205,9 @@ public sealed class StaleSlotLockSnapshotTests
     /// <summary>
     /// The asking does not wait for the session to be ready. Real onboard reads RecoveryRequired all the while it carries this
     /// server's own order, and agv02's generation 50 began that way: the slot was locked at 14:39:15 while the session was
-    /// still RECOVERY_REQUIRED / SESSION_RECOVERY_REQUIRED. The request goes out on such a session, and the gate opens on the
-    /// answer (here the session is decided ready again by the store itself: nothing in this fixture keeps it not ready).
+    /// still RECOVERY_REQUIRED / SESSION_RECOVERY_REQUIRED. Here the store itself keeps the session not ready (an unsettled
+    /// slot operation attempt on file), and that is checked after the change and after the answer; the request still goes
+    /// out, and once the session is ready the lock the answer showed is what the gate reads.
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
@@ -216,7 +217,8 @@ public sealed class StaleSlotLockSnapshotTests
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         await OpenSlotInHandshakeSnapshotAsync(fixture, slotNo: 1);
-        await SetReadinessAsync(fixture, SessionReadiness.RecoveryRequired, "SESSION_RECOVERY_REQUIRED");
+        await SetReadinessAsync(
+            fixture, SessionReadiness.RecoveryRequired, "SESSION_RECOVERY_REQUIRED", pendingAttemptIdsJson: "[\"held-attempt\"]");
         await using ControlServerDbContext connection = fixture.OpenConnectionContext();
         OnboardMessageProcessor processor = Processor(fixture, connection);
         OnboardConnectionState state = Connected(fixture);
@@ -224,7 +226,13 @@ public sealed class StaleSlotLockSnapshotTests
         Assert.Equal(["ONBOARD_SESSION_NOT_READY"], await GapsAsync(fixture, token));
 
         Assert.Equal(1, Count(await processor.ProcessAsync(Change(fixture, revision: 8), state, token)));
+        Assert.Equal(SessionReadiness.RecoveryRequired, await StoredReadinessAsync(fixture, token));
         await processor.ProcessAsync(Snapshot(fixture, revision: 9, unlockedSlot: null), state, token);
+        Assert.Equal(SessionReadiness.RecoveryRequired, await StoredReadinessAsync(fixture, token));
+        Assert.Equal(["ONBOARD_SESSION_NOT_READY"], await GapsAsync(fixture, token));
+
+        // The own order is settled and the session is ready: no SLOT_1 gap is left behind.
+        await SetReadinessAsync(fixture, SessionReadiness.Ready, "READY", pendingAttemptIdsJson: "[]");
         Assert.Empty(await GapsAsync(fixture, token));
     }
 
@@ -232,14 +240,23 @@ public sealed class StaleSlotLockSnapshotTests
         TestOnboardProcessorFactory.Create(
             connection, new WireToGateStore(connection), fixture.Clock, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
 
-    private static async Task SetReadinessAsync(RuntimeFixture fixture, SessionReadiness readiness, string reasonCode)
+    private static async Task SetReadinessAsync(
+        RuntimeFixture fixture, SessionReadiness readiness, string reasonCode, string pendingAttemptIdsJson)
     {
+        fixture.Context.ChangeTracker.Clear();
         SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
         session.Readiness = readiness;
         session.ReasonCode = reasonCode;
+        session.PendingAttemptIdsJson = pendingAttemptIdsJson;
         session.RecoveryReportId ??= Guid.NewGuid().ToString("D");
         await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         fixture.Context.ChangeTracker.Clear();
+    }
+
+    private static async Task<SessionReadiness> StoredReadinessAsync(RuntimeFixture fixture, CancellationToken token)
+    {
+        fixture.Context.ChangeTracker.Clear();
+        return (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(token)).Readiness;
     }
 
     private static int Count(string response) =>
