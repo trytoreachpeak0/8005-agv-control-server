@@ -269,7 +269,9 @@ public sealed class ChargingInterruptionTests
             case "disconnected":
                 fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
                 {
-                    CurrentStationId = Near.StationId, BatteryState = Charging, Connected = false,
+                    CurrentStationId = Near.StationId,
+                    BatteryState = Charging,
+                    Connected = false,
                 };
                 break;
             default:
