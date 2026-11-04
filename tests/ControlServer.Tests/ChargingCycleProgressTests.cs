@@ -844,6 +844,40 @@ public sealed class ChargingCycleProgressTests
         Assert.Empty(fleet.Riot.OrderCommands);
     }
 
+    /// <summary>
+    /// 判满不再问两次观测隔多久（control-server#876），但仍要是一个新样本：遥测恢复后的第一个读数已达阈值，下一轮读到的还是同一份快照（观测时刻没往前走）——
+    /// 不判；观测时刻往前走的下一个才判。
+    /// </summary>
+    [Fact]
+    public async Task TheSameSnapshotReadTwiceAfterATelemetryGapDoesNotCompleteTheCycle()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await ChargingAsync(fleet, battery: 60);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
+        {
+            CurrentStationId = Near.StationId,
+            BatteryState = Charging,
+            ObservedAt = seen.ObservedAt - fleet.Options.MaximumEvidenceAge - TimeSpan.FromSeconds(1),
+        };
+        await RoundAsync(fleet);
+
+        DateTimeOffset snapshot = fleet.Clock.GetUtcNowWithoutTick();
+        fleet.Riot.BatteryByVehicle[KeyA] = 100;
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
+        {
+            CurrentStationId = Near.StationId,
+            BatteryState = Charging,
+            ObservedAt = snapshot,
+        };
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingCycleWireStates.Charging, (await CycleAsync(fleet, KeyA)).WireState);
+
+        AtCharger(fleet, KeyA, 100, Charging);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet, KeyA)).WireState);
+    }
+
     // ---- 并发交错 ----------------------------------------------------------------------------------------------------------
 
     /// <summary>
