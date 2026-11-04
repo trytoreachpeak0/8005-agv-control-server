@@ -1,9 +1,0 @@
-# 51cb94645: Charging* classes + UnableToCharge* + ArchitectureTests (Release); the cs#876 tests listed, then the summary
-  已通过 ControlServer.Tests.ChargingCycleProgressTests.EverySampleOfTheCompletionJudgementIsLoggedWithItsObservedAtAndItsLinkToTheOneBefore [127 ms]
-  已通过 ControlServer.Tests.ChargingCycleProgressTests.AFreshReadingAtTheThresholdCompletesTheCycleWhenRoundsAreFurtherApartThanTheEvidenceAge(restarted: False) [124 ms]
-  已通过 ControlServer.Tests.ChargingCycleProgressTests.AFreshReadingAtTheThresholdCompletesTheCycleWhenRoundsAreFurtherApartThanTheEvidenceAge(restarted: True) [124 ms]
-  已通过 ControlServer.Tests.ChargingCycleProgressTests.TheSameSnapshotReadTwiceAfterATelemetryGapDoesNotCompleteTheCycle [185 ms]
-  已通过 ControlServer.Tests.ChargingCycleProgressTests.WhenBatteryTelemetryIsLostCompletionWaitsAndNoReadingFromBeforeTheGapIsTakenAsStillTrue [198 ms]
-  已通过 ControlServer.Tests.ChargingInterruptionTests.AVehicleThatReachedTheThresholdBetweenSlowRoundsIsCompletedNotLaterJudgedInterrupted [126 ms]
-  已通过 ControlServer.Tests.ChargingInterruptionTests.ACycleThatReachedTheThresholdIsCompletedByTheNextReadingEvenIfTheBatteryHasSinceDropped [111 ms]
-已通过! - 失败:     0，通过:   447，已跳过:     0，总计:   447，持续时间: 25 s - ControlServer.Tests.dll (net8.0)

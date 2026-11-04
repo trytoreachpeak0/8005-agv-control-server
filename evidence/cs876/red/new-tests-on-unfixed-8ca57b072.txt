@@ -24,3 +24,12 @@ Actual:   "UNABLE_TO_CHARGE"
    Assert.Equal() Failure: Values differ
 Expected: Tuple ("COMPLETE", 66)
 Actual:   Tuple ("UNABLE_TO_CHARGE", 60)
+
+# Not in the assertion excerpt above (review L6):
+# - EverySampleOfTheCompletionJudgementIsLoggedWithItsObservedAtAndItsLinkToTheOneBefore was red on 8ca57b072 in the same
+#   first run (5 failed, 0 passed): event 2285 did not exist, so Assert.Equal(2, samples.Length) read Expected 2, Actual 0.
+# - TheSameSnapshotReadTwiceAfterATelemetryGapDoesNotCompleteTheCycle (added at 51cb94645) is green on 8ca57b072: it is
+#   not a reproduction but the guard that kills mutation M4 (red/mutations.txt).
+# - The review-rework tests (532469678) AThresholdReadBeforeAGapDoesNotCompleteTheCycleAfterIt and
+#   AfterTheVehicleObservationIsLostTheFirstReadingBackOnlyStartsObservingAgain describe what 8ca57b072 already did; their
+#   red evidence is the mutations in red/mutations-review-rework.txt.
