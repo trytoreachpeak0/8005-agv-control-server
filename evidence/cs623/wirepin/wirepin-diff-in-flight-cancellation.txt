@@ -1,0 +1,11 @@
+--- tests/ControlServer.Tests/WirePins/in-flight-cancellation.txt	2026-10-25 09:53:10.554308600 +0800
++++ tests/ControlServer.Tests/WirePins/in-flight-cancellation.txt.actual	2026-10-25 10:24:08.394451500 +0800
+@@ -11,7 +11,7 @@
+    payload={"items":[],"operationSessionId":null,"stationDepartureDeadlineAt":null,"stationId":"N1-1","stopEndedReason":"LOAD_CANCELLED","worklistRevision":2}
+ 06 t=+0s type=VehicleBusinessStateSnapshot messageId=b533fd79-cb5a-a853-b04c-72dddc8a75e5 correlationId=NULL sessionGeneration=1 revision=2 acknowledged=no fenced=no payloadSha256=ac1fa8afbd1eb3e5ed56ee4b4fc088659e644e6fbc70ece60d2b533565a1ae87
+    payload={"activePurpose":null,"batteryState":"SUFFICIENT","blockingFacts":[],"chargingCycleState":"NOT_CHARGING","loadingPhase":null,"manualChargingHold":false,"observedAt":"2026-08-26T01:00:00\u002B00:00","readiness":"READY","vehicleBusinessStateRevision":2}
+-07 t=+0s type=SlotOperationCommand messageId=db1cf8be-c404-4156-962d-2318a0223306 correlationId=<volatile-1> sessionGeneration=1 revision=- acknowledged=no fenced=no payloadSha256=12658c2fa2be337efd987e72d0dafb94aaec4d88e08fb07251f53d48b01c6679
++07 t=+0s type=SlotOperationCommand messageId=db1cf8be-c404-4156-962d-2318a0223306 correlationId=<volatile-1> sessionGeneration=1 revision=- acknowledged=no fenced=yes payloadSha256=12658c2fa2be337efd987e72d0dafb94aaec4d88e08fb07251f53d48b01c6679
+    payload={"commandContentSha256":"7b8752c404a89d4731abddc26a52cff4126fe85c9bb54e5165b7b0c012a2201a","demandId":"10000000-0000-4000-8000-000000000001","expectedBasketCount":2,"expectedFinalPhysicalState":"OCCUPIED","operationSessionId":"7e7ee0e2-5b9f-0e52-a69a-df22d71c836a","operationType":"LOAD","slotOperationAttemptId":"f2044f20-4b25-c054-a4df-d358fb953162","slots":[1,2]}
+ 08 t=+0s type=UpcomingStopPlanSnapshot messageId=de17d15f-e16c-7257-8228-a387fbf2fbd2 correlationId=NULL sessionGeneration=1 revision=3 acknowledged=no fenced=no payloadSha256=88babf320b21b35d5fb4e8747a2d89051ded353f7c87e1a5bb485ce9d5ec87c6
+    payload={"legs":[],"planRevision":3}

@@ -278,6 +278,8 @@ jobs:
               @{ Name = 'session-established-while-moving'; Runs = 3; DefaultRuns = 3 }
               @{ Name = 'load-result-requires-recovery';    Runs = 1 }
               @{ Name = 'load-command-never-answered';      Runs = 1 }
+              # control-server#623: a load result taken while the session was not Ready is not followed by a replay of its command.
+              @{ Name = 'load-result-while-not-ready-not-replayed'; Runs = 1 }
               @{ Name = 'route-graph-engine';          Runs = 1 }
               @{ Name = 'create-gate';                 Runs = 1 }
               # FP-C13's negative evidence: the two REQ-0302 values unapproved, and nothing built.

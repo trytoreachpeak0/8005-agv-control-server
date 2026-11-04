@@ -1313,6 +1313,16 @@ public sealed partial class JourneyRuntimeEngine(
         {
             return;
         }
+        // 已有结论的装卸命令先结算或退役、再补发（control-server#623）：车已作答的（结果在恢复期间到、或回了 RECOVERY_REQUIRED 之后被补偿终结）
+        // 修之前在这里每轮补发一次，车载端当重复命令忽略、不回任何东西，行永不确认。仍在等结果的不动，照常补发。
+        // 这里的保存是为结论来的，不该顺带提交本轮别处刻意留到下一步的改动（与 ClearFailedAdvanceAsync 同一条规矩）：还有别的未保存改动时
+        // 这一轮不结算，代价只是车多收一次它会当重复忽略的命令，下一轮再结算。
+        if (!dbContext.ChangeTracker.Entries()
+                .Any(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted) &&
+            await SlotCommandOutbox.ConcludeAsync(dbContext, runtime.AgvId, now, cancellationToken).ConfigureAwait(false) is not (0, 0))
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
         // 车还没确认的出发答复（control-server#713）跟着这一轮补发：会话就绪才走到这里，所以不夹在握手中间。
         HashSet<string> replayable = RuntimeMessageIds(runtime, stops);
         replayable.UnionWith(await CurrentStopDepartures.PendingResultIdsAsync(dbContext, runtime.AgvId, cancellationToken)
