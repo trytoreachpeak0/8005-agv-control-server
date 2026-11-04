@@ -158,6 +158,67 @@ public sealed class ChargingInterruptionTests
     }
 
     /// <summary>
+    /// 现场 11-01 agv02 在 230 号桩（control-server#876）：派车轮比证据时效慢，充到 100% 一直判不到满；车留在桩上掉电，跌破完成阈值后读到
+    /// <c>NO_CHARGE</c> 持续一分多钟，被判成中断、两侧暂停。充到阈值的那一个新鲜读数就该判满，之后的掉电不是中断。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleThatReachedTheThresholdBetweenSlowRoundsIsCompletedNotLaterJudgedInterrupted()
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        await ChargingAsync(fleet, battery: 39);
+        TimeSpan slowRound = fleet.Options.MaximumEvidenceAge + TimeSpan.FromSeconds(10);
+        AtCharger(fleet, KeyA, 100, Charging);
+        for (int round = 0; round < 3; round++)
+        {
+            await LongRoundAsync(fleet, slowRound);
+        }
+
+        AtCharger(fleet, KeyA, 66, NotCharging);
+        for (int round = 0; round < 4; round++)
+        {
+            await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        }
+
+        Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet)).WireState);
+        Assert.Empty(await StationHoldsAsync(fleet));
+        Assert.Empty(await VehicleHoldsAsync(fleet));
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id is 2276 or 2278);
+    }
+
+    /// <summary>
+    /// 本周期已经新鲜地读到过完成阈值、只是那一个读数还不能判（遥测断过之后的第一个，<c>REQ-0287</c>），之后电量掉到阈值以下、读到不是
+    /// <c>CHARGING</c>（control-server#876）：接着它的下一个读数判满，不当作中断。
+    /// </summary>
+    [Fact]
+    public async Task ACycleThatReachedTheThresholdIsCompletedByTheNextReadingEvenIfTheBatteryHasSinceDropped()
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        await ChargingAsync(fleet, battery: 60);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
+        {
+            CurrentStationId = Near.StationId,
+            BatteryState = Charging,
+            ObservedAt = seen.ObservedAt - fleet.Options.MaximumEvidenceAge - TimeSpan.FromSeconds(1),
+        };
+        await RoundAsync(fleet);
+        AtCharger(fleet, KeyA, 100, Charging);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingCycleWireStates.Charging, (await CycleAsync(fleet)).WireState);
+
+        AtCharger(fleet, KeyA, 66, NotCharging);
+        for (int round = 0; round < 4; round++)
+        {
+            await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        }
+
+        ChargingCycleRow cycle = await CycleAsync(fleet);
+        Assert.Equal((ChargingCycleWireStates.Complete, 66), (cycle.WireState, cycle.LastSamplePercent));
+        Assert.Empty(await StationHoldsAsync(fleet));
+        Assert.Empty(await VehicleHoldsAsync(fleet));
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id is 2276 or 2278);
+    }
+
+    /// <summary>
     /// 并发读改写：中断确认与充满在同一轮——第一次读到不是 <c>CHARGING</c> 时 79%，第二次（本来正好形成中断的那一轮）电量跨到 80%。只有一种结论成立：
     /// 充满优先（周期 <c>COMPLETE</c>，没有暂停）。
     /// </summary>

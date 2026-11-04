@@ -269,6 +269,58 @@ public sealed class ChargingCycleProgressTests
     }
 
     /// <summary>
+    /// 派车轮比证据时效还慢（control-server#876：现场 30 秒时效、约 39 秒一轮）：每个读数都新鲜、都接着上一个，只是两次观测相隔超过时效。
+    /// 达到完成阈值的那一个读数就判满，与轮的快慢无关。进程重启之后第一个读数只重新开始观察（<c>REQ-0287</c>），下一个才判。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AFreshReadingAtTheThresholdCompletesTheCycleWhenRoundsAreFurtherApartThanTheEvidenceAge(bool restarted)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await ChargingAsync(fleet, battery: 60);
+        TimeSpan slowRound = fleet.Options.MaximumEvidenceAge + TimeSpan.FromSeconds(10);
+        if (restarted)
+        {
+            await fleet.RecreateEngineAsync();
+            AtCharger(fleet, KeyA, 70, Charging);
+            await SlowRoundAsync(fleet, slowRound);
+        }
+
+        AtCharger(fleet, KeyA, 100, Charging);
+        await SlowRoundAsync(fleet, slowRound);
+
+        ChargingCycleRow cycle = await CycleAsync(fleet, KeyA);
+        Assert.Equal((ChargingCycleWireStates.Complete, 100), (cycle.WireState, cycle.LastSamplePercent));
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2260);
+        Assert.Equal((KeyA, StationExclusivityStates.Occupied), await HolderAsync(fleet, Near.StationId));
+    }
+
+    /// <summary>
+    /// 每个样本都记一行（control-server#876：现场取证）：观测时刻、与上一个样本的关系（第一个、重读、连续、隔得久）和这一个判没判满。
+    /// </summary>
+    [Fact]
+    public async Task EverySampleOfTheCompletionJudgementIsLoggedWithItsObservedAtAndItsLinkToTheOneBefore()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await ChargingAsync(fleet, battery: 60);
+        AtCharger(fleet, KeyA, 70, Charging);
+        await RoundAsync(fleet);
+        AtCharger(fleet, KeyA, 100, Charging);
+        await SlowRoundAsync(fleet, fleet.Options.MaximumEvidenceAge + TimeSpan.FromSeconds(10));
+
+        string[] samples = [.. fleet.EngineLog.Entries.Where(entry => entry.EventId.Id == 2285).Select(entry => entry.Message)];
+        Assert.Equal(2, samples.Length);
+        Assert.Contains("70%", samples[0], StringComparison.Ordinal);
+        Assert.Contains("CONTINUOUS", samples[0], StringComparison.Ordinal);
+        Assert.Contains("completes False", samples[0], StringComparison.Ordinal);
+        Assert.Contains("100%", samples[1], StringComparison.Ordinal);
+        Assert.Contains("GAPPED", samples[1], StringComparison.Ordinal);
+        Assert.Contains("completes True", samples[1], StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 判充满用的是这个周期冻结的策略版本（<c>REQ-0282</c>），不是此刻生效的那一版：周期进行中激活了一版阈值不同的新策略，85% 的车按周期那一版判。
     /// </summary>
     [Theory]
@@ -1617,6 +1669,13 @@ public sealed class ChargingCycleProgressTests
             default:
                 throw new ArgumentOutOfRangeException(nameof(shape), shape, null);
         }
+    }
+
+    /// <summary>一轮，时钟走 <paramref name="step"/>（比一秒的 <see cref="ChargingAllocationTests.RoundAsync"/> 慢）；每辆车先说一句话。</summary>
+    internal static async Task SlowRoundAsync(FleetFixture fleet, TimeSpan step)
+    {
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(step);
     }
 
     internal static void AtCharger(FleetFixture fleet, string vehicleKey, int battery, string batteryState)
