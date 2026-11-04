@@ -218,6 +218,65 @@ public sealed class ChargingInterruptionTests
         Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id is 2276 or 2278);
     }
 
+    public static TheoryData<string> GapShapes => ["reading-stale", "read-fails", "disconnected"];
+
+    /// <summary>
+    /// 缺口之前读到的阈值不拿来判满（control-server#876 审查 M1，<c>REQ-0287</c>）：缺口后第一个读数 100%（还不能判），接着又断一次，恢复后电量
+    /// 只有 40%、读到不是 <c>CHARGING</c>——这是真中断，照样判中断、两侧暂停，不判满。三种缺口：读数过期、读不到车、车报离线。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(GapShapes))]
+    public async Task AThresholdReadBeforeAGapDoesNotCompleteTheCycleAfterIt(string gap)
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        await ChargingAsync(fleet, battery: 60);
+        Gap(fleet, gap);
+        await RoundAsync(fleet);
+        fleet.Riot.FailOn = null;
+        AtCharger(fleet, KeyA, 100, Charging);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingCycleWireStates.Charging, (await CycleAsync(fleet)).WireState);
+
+        Gap(fleet, gap);
+        await LongRoundAsync(fleet, TimeSpan.FromMinutes(10));
+        fleet.Riot.FailOn = null;
+        AtCharger(fleet, KeyA, 40, NotCharging);
+        for (int round = 0; round < 4; round++)
+        {
+            await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        }
+
+        Assert.Equal(ChargingCycleWireStates.UnableToCharge, (await CycleAsync(fleet)).WireState);
+        Assert.Single(await StationHoldsAsync(fleet));
+        Assert.Single(await VehicleHoldsAsync(fleet));
+    }
+
+    private static void Gap(FleetFixture fleet, string gap)
+    {
+        switch (gap)
+        {
+            case "reading-stale":
+                fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
+                {
+                    CurrentStationId = Near.StationId,
+                    BatteryState = Charging,
+                    ObservedAt = seen.ObservedAt - fleet.Options.MaximumEvidenceAge - TimeSpan.FromSeconds(1),
+                };
+                break;
+            case "read-fails":
+                fleet.Riot.FailOn = KeyA;
+                break;
+            case "disconnected":
+                fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
+                {
+                    CurrentStationId = Near.StationId, BatteryState = Charging, Connected = false,
+                };
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(gap), gap, null);
+        }
+    }
+
     /// <summary>
     /// 并发读改写：中断确认与充满在同一轮——第一次读到不是 <c>CHARGING</c> 时 79%，第二次（本来正好形成中断的那一轮）电量跨到 80%。只有一种结论成立：
     /// 充满优先（周期 <c>COMPLETE</c>，没有暂停）。

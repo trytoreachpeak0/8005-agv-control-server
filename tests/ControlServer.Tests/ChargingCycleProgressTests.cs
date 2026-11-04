@@ -845,6 +845,36 @@ public sealed class ChargingCycleProgressTests
     }
 
     /// <summary>
+    /// 车辆观测丢失（读不到、报离线）也打断样本串（control-server#876 审查 M2）：判满不再问两次观测隔多久，所以它是这条路上唯一的缺口判据。
+    /// 恢复后第一个 90% 只重新开始观察，第二个才判满。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(VehicleObservationLosses))]
+    public async Task AfterTheVehicleObservationIsLostTheFirstReadingBackOnlyStartsObservingAgain(string loss)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await ChargingAsync(fleet, battery: 60);
+        if (loss == "read-fails")
+        {
+            fleet.Riot.FailOn = KeyA;
+        }
+        else
+        {
+            fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = Near.StationId, BatteryState = Charging, Connected = false };
+        }
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingExecutionReasons.VehicleObservationLost, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        fleet.Riot.FailOn = null;
+        AtCharger(fleet, KeyA, 90, Charging);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingCycleWireStates.Charging, (await CycleAsync(fleet, KeyA)).WireState);
+
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet, KeyA)).WireState);
+    }
+
+    /// <summary>
     /// 判满不再问两次观测隔多久（control-server#876），但仍要是一个新样本：遥测恢复后的第一个读数已达阈值，下一轮读到的还是同一份快照（观测时刻没往前走）——
     /// 不判；观测时刻往前走的下一个才判。
     /// </summary>

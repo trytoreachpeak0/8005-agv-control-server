@@ -282,8 +282,9 @@ public sealed class ChargingAllocationBoard
         new(StringComparer.Ordinal);
 
     /// <summary>
-    /// 这个周期第一次新鲜地读到电量达到完成阈值（control-server#876）：记下那一个读数，之后再记不改它。遥测断开（<see cref="BreakSampleRun"/>）不清它——
-    /// 读到过就是读到过，那是已经发生的事，不是「把缺口前的读数当作仍然成立」；判满照样要等缺口之后接上的新鲜样本。进程重启后从头记。
+    /// 这个周期自上一个缺口以来第一次新鲜地读到电量达到完成阈值（control-server#876）：记下那一个读数，之后再记不改它。遥测缺口与车辆观测丢失时调用方
+    /// 连同样本串一起 <see cref="ForgetCompletionReached"/>（<c>REQ-0287</c>：恢复后以新鲜连续样本重新观察，缺口前读到的阈值不拿来判满；审查 M1）。
+    /// 进程重启后从头记。
     /// </summary>
     public void RecordCompletionReached(string cycleId, DateTimeOffset observedAt, int percent) =>
         _completionReached.TryAdd(cycleId, (observedAt, percent));
