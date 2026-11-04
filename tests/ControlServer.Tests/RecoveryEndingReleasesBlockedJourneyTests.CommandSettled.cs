@@ -42,13 +42,17 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
             Exception? first = await RunRoundAsync(fixture);
             Exception? second = await RunRoundAsync(fixture);
             Exception? third = await RunRoundAsync(fixture);
+            // 放回之后的三轮都要走通：一轮抛异常也会让补发停下，那样「没补发」就不是本票的结算证出来的。
+            Assert.Null(first);
+            Assert.Null(second);
+            Assert.Null(third);
 
             int resent = SentSince(fixture, sentBefore, command);
             string[] pending = await fixture.PendingOutboxMessageIdsAsync();
             Assert.True(
                 resent == 0 && !pending.Contains(command),
                 $"The compensated load's SlotOperationCommand {command} was replayed {resent} time(s) after the release " +
-                $"and is still pending={pending.Contains(command)}. first={first?.Message} second={second?.Message} third={third?.Message}");
+                $"and is still pending={pending.Contains(command)}.");
         });
     }
 

@@ -147,6 +147,32 @@ public sealed class SettledSlotCommandOutboxTests
         Assert.Equal((false, true), (row.AcknowledgedAt is not null, row.FencedAt is not null));
     }
 
+    /// <summary>
+    /// 结果没到，而站点操作被服务端扣作恢复（<c>RecoveryRequired</c>：取消装货的应答超时 <c>LoadCancellationAnswerTimeout</c>，
+    /// 或恢复协调器的 <c>HoldCancelledLoadForRecoveryAsync</c>，两处都只改站点操作、不记结果）：退役，不是确认——车没有作答。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnUnansweredCommandOfALoadHeldForRecoveryIsFenced()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await AdvanceToLoadResultAsync(fixture);
+        string command = await LoadCommandIdAsync(fixture);
+        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        StationOperationRow tracked = await fixture.Context.StationOperations
+            .SingleAsync(row => row.SlotOperationAttemptId == load.SlotOperationAttemptId, Token);
+        tracked.Status = StationOperationStatus.RecoveryRequired;
+        await fixture.Context.SaveChangesAsync(Token);
+        Assert.False(await fixture.Context.OperationResults.AnyAsync(row => row.SlotOperationAttemptId == load.SlotOperationAttemptId, Token));
+
+        (int answered, int withdrawn) = await SlotCommandOutbox.ConcludeAsync(fixture.Context, fixture.Options.AgvId, fixture.Clock.GetUtcNow(), Token);
+        await fixture.Context.SaveChangesAsync(Token);
+
+        ProtocolOutboxRow row = await OutboxRowAsync(fixture, command);
+        Assert.Equal((0, 1), (answered, withdrawn));
+        Assert.Equal((false, true), (row.AcknowledgedAt is not null, row.FencedAt is not null));
+    }
+
     /// <summary>旅程收尾时还挂着一条没结果的装货命令（例如人工撤下旅程）：经唯一收尾出口 <see cref="JourneyClosure"/> 退役。</summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]

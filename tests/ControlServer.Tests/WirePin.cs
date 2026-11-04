@@ -42,9 +42,11 @@ namespace ControlServer.Tests;
 /// 这几条的摘要随之变。逐行差异在 <c>evidence/cs749/wirepin-diff-*.txt</c>。同 cs#382 那段，行为本身变了，只能在本票分支上录。
 /// </para>
 /// <para>
-/// <b>control-server#623（已出结果的 SlotOperationCommand 不再补发）改了四份基线，其余逐字未动。</b><c>normal-journey</c>、
-/// <c>two-journeys-one-vehicle</c>、<c>departure-check-expired</c> 的线上一节各删掉了每条装卸命令在结果到之后的那一次补发
-/// （每个命令 id 线上从 2 次变 1 次，首发保留）；后面的行只是序号前移，载荷与摘要逐字不变。<c>in-flight-cancellation</c>
+/// <b>control-server#623（已出结果的 SlotOperationCommand 不再补发）改了八份基线，其余逐字未动。</b><c>normal-journey</c>、
+/// <c>two-journeys-one-vehicle</c>、<c>departure-check-expired</c>、<c>staging-switch-off-one-side-full</c>、
+/// <c>staging-switch-off-both-sides-full</c>、<c>staging-switch-off-cargo-holding</c>、<c>determinate-load-failure</c>
+/// 的线上一节各删掉了每条装卸命令在结果到之后的那一次补发（每个命令 id 线上从 2 次变 1 次，首发保留；后四份都只有装货命令
+/// <c>db1cf8be…</c> 这一条）；后面的行只是序号前移，载荷与摘要逐字不变。<c>in-flight-cancellation</c>
 /// 发件箱一节里被取消的那条装货命令由 <c>fenced=no</c> 变为 <c>fenced=yes</c>（站点操作已取消，退出补发）。逐行差异在
 /// <c>evidence/cs623/wirepin/wirepin-diff-*.txt</c>。行为本身变了，只能在本票分支上录。
 /// </para>
