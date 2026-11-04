@@ -1,0 +1,26 @@
+# cc2fa418b (the new tests on 8ca57b072's implementation): red for the reason the field showed -- no completion between slow rounds, and the decay isolated as UNABLE_TO_CHARGE
+  失败 ControlServer.Tests.ChargingCycleProgressTests.AFreshReadingAtTheThresholdCompletesTheCycleWhenRoundsAreFurtherApartThanTheEvidenceAge(restarted: False) [3 s]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("COMPLETE", 100)
+Actual:   Tuple ("CHARGING", 60)
+--
+  失败 ControlServer.Tests.ChargingCycleProgressTests.AFreshReadingAtTheThresholdCompletesTheCycleWhenRoundsAreFurtherApartThanTheEvidenceAge(restarted: True) [148 ms]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("COMPLETE", 100)
+Actual:   Tuple ("CHARGING", 60)
+--
+  失败 ControlServer.Tests.ChargingInterruptionTests.AVehicleThatReachedTheThresholdBetweenSlowRoundsIsCompletedNotLaterJudgedInterrupted [3 s]
+  错误消息:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "COMPLETE"
+Actual:   "UNABLE_TO_CHARGE"
+           ↑ (pos 0)
+--
+  失败 ControlServer.Tests.ChargingInterruptionTests.ACycleThatReachedTheThresholdIsCompletedByTheNextReadingEvenIfTheBatteryHasSinceDropped [152 ms]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("COMPLETE", 66)
+Actual:   Tuple ("UNABLE_TO_CHARGE", 60)
