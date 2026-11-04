@@ -55,6 +55,29 @@ public sealed record ChargingBoardPass(
     IReadOnlyDictionary<string, ChargingBoardVerdict> Verdicts,
     IReadOnlyDictionary<string, ChargingBoardObservation> Observations);
 
+/// <summary>一个新鲜样本与它那一串里上一个样本的关系（<see cref="ChargingAllocationBoard.StepSampleRun"/>）。</summary>
+public enum SampleRunLink
+{
+    /// <summary>这一串的第一个：周期的第一个、遥测断过之后的第一个、进程重启后的第一个。</summary>
+    Started,
+
+    /// <summary>观测时刻没有往前走：同一个读数读了两次，不是新样本。</summary>
+    Repeated,
+
+    /// <summary>接着上一个，相隔不超过给定的间隔。</summary>
+    Continuous,
+
+    /// <summary>接着上一个，中间没有遥测缺口，只是相隔超过给定的间隔。</summary>
+    Gapped,
+}
+
+/// <summary>一个样本的 <see cref="SampleRunLink"/> 与上一个样本的观测时刻（第一个没有上一个）。</summary>
+public readonly record struct SampleRunStep(SampleRunLink Link, DateTimeOffset? PreviousObservedAt)
+{
+    /// <summary>接着这一串里更早的一个样本、且是新的一个：判充满要的就是这个（control-server#876），不问隔了多久。</summary>
+    public bool FollowsAnEarlierSample => Link is SampleRunLink.Continuous or SampleRunLink.Gapped;
+}
+
 /// <summary>每辆车最近一次的充电分配结论，跨轮次保留（宿主里是单例）。</summary>
 /// <remarks>
 /// 一辆空闲车每一轮都判一次；结论变了才记一条日志（事件 2241），看板（批次9-10）也可以从这里读。放单例而不是静态字段或作用域实例上：
@@ -218,26 +241,34 @@ public sealed class ChargingAllocationBoard
     /// <paramref name="maxGap"/> 才算连续。记下它，答它是否连续——一个周期的第一个样本、遥测断过之后的第一个样本都不连续，只重新开始观察。
     /// 观测时刻没有往前走（同一个读数读了两次）不算新样本，什么也不改、答否。进程重启后从头计：只会让充满判得更晚。
     /// </summary>
-    public bool ContinuesSampleRun(string cycleId, DateTimeOffset observedAt, TimeSpan maxGap)
+    public bool ContinuesSampleRun(string cycleId, DateTimeOffset observedAt, TimeSpan maxGap) =>
+        StepSampleRun(cycleId, observedAt, maxGap).Link == SampleRunLink.Continuous;
+
+    /// <summary>
+    /// 同 <see cref="ContinuesSampleRun"/>，但答得更细（control-server#876）：这个样本与这一串里上一个样本是什么关系，以及上一个样本的观测时刻。
+    /// <see cref="SampleRunLink.Gapped"/> 是「接着上一个、只是隔得比 <paramref name="maxGap"/> 久」：中间没有遥测缺口（缺口由
+    /// <see cref="BreakSampleRun"/> 打断），只是这一侧隔了这么久才又看一眼。
+    /// </summary>
+    public SampleRunStep StepSampleRun(string key, DateTimeOffset observedAt, TimeSpan maxGap)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(cycleId);
-        if (_sampleRun.TryGetValue(cycleId, out DateTimeOffset previous))
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        if (_sampleRun.TryGetValue(key, out DateTimeOffset previous))
         {
             if (observedAt <= previous)
             {
-                return false;
+                return new(SampleRunLink.Repeated, previous);
             }
-            _sampleRun[cycleId] = observedAt;
-            bool continuous = observedAt - previous <= maxGap;
-            if (!continuous)
+            _sampleRun[key] = observedAt;
+            if (observedAt - previous <= maxGap)
             {
-                _sampleRunStart[cycleId] = observedAt;
+                return new(SampleRunLink.Continuous, previous);
             }
-            return continuous;
+            _sampleRunStart[key] = observedAt;
+            return new(SampleRunLink.Gapped, previous);
         }
-        _sampleRun[cycleId] = observedAt;
-        _sampleRunStart[cycleId] = observedAt;
-        return false;
+        _sampleRun[key] = observedAt;
+        _sampleRunStart[key] = observedAt;
+        return new(SampleRunLink.Started, null);
     }
 
     /// <summary>电量遥测断了（读不到、过期）或周期已不在充电：下一个新鲜样本重新开始观察。</summary>
@@ -246,6 +277,23 @@ public sealed class ChargingAllocationBoard
         _sampleRun.TryRemove(cycleId, out _);
         _sampleRunStart.TryRemove(cycleId, out _);
     }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset At, int Percent)> _completionReached =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 这个周期第一次新鲜地读到电量达到完成阈值（control-server#876）：记下那一个读数，之后再记不改它。遥测断开（<see cref="BreakSampleRun"/>）不清它——
+    /// 读到过就是读到过，那是已经发生的事，不是「把缺口前的读数当作仍然成立」；判满照样要等缺口之后接上的新鲜样本。进程重启后从头记。
+    /// </summary>
+    public void RecordCompletionReached(string cycleId, DateTimeOffset observedAt, int percent) =>
+        _completionReached.TryAdd(cycleId, (observedAt, percent));
+
+    /// <summary>这个周期第一次读到达到完成阈值的那个读数；没读到过答空。</summary>
+    public (DateTimeOffset At, int Percent)? CompletionReached(string cycleId) =>
+        _completionReached.TryGetValue(cycleId, out (DateTimeOffset At, int Percent) reached) ? reached : null;
+
+    /// <summary>周期已判满或进了清桩中：不再需要它。</summary>
+    public void ForgetCompletionReached(string cycleId) => _completionReached.TryRemove(cycleId, out _);
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _sampleRunStart =
         new(StringComparer.Ordinal);

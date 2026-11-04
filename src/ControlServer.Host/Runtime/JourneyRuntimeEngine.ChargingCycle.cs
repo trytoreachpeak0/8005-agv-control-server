@@ -1,3 +1,4 @@
+using System.Globalization;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Charging;
@@ -68,6 +69,13 @@ public sealed partial class JourneyRuntimeEngine
             "lost, and its completion is judged on its battery as for any other arrival. Nothing is created or sent; someone " +
             "may want to look at why the order went.");
 
+    private static readonly Action<ILogger, string, string, string, string, string, bool, Exception?> LogChargingSample =
+        LoggerMessage.Define<string, string, string, string, string, bool>(
+            LogLevel.Information,
+            new EventId(2285, nameof(LogChargingSample)),
+            "Charging journey {JourneyId}: vehicle {VehicleKey} battery sample observed at {ObservedAt} reads {Reading}; " +
+            "sample run {Link}; completes {Completes} (control-server#876).");
+
     /// <summary>
     /// 充电单已是终态 <c>SUCCESS</c>（充电动作已经接上，Q-033）：到桩、开始充电、充满。每一轮只走这一段里的一步，证据不足就什么也不推进。
     /// </summary>
@@ -86,6 +94,8 @@ public sealed partial class JourneyRuntimeEngine
     /// <para>
     /// <b>充满</b>（第 3 条）：新鲜、且接着上一个新鲜样本的电量读数达到<b>本周期冻结的</b>策略版本里的完成阈值（<c>REQ-0282</c>）——
     /// 周期 <c>COMPLETE</c>、放开 <c>CHARGING</c> 用途、旅程收尾，同一次保存；桩仍是占用（<c>REQ-0281</c>）。不为离桩建任何单、不发任何命令。
+    /// 「接着」只要求两者之间没有遥测缺口、观测时刻往前走，不问相隔多久（control-server#876：派车轮慢于证据时效时充满判不到，车在桩上掉电后被判成中断）；
+    /// 本周期新鲜地读到过完成阈值的，之后接着的那一个读数即使电量已经掉下去也判满。
     /// </para>
     /// <para>
     /// <b>失联三分</b>（第 6 条，<c>REQ-0287</c>）：车载端会话失效不影响这一段——这里的证据全是 RIoT 的，车载端只收快照（没连上就等重连补发）。
@@ -330,13 +340,36 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         board.Unsay(ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.BatteryTelemetryLost));
-        bool continuous = board.ContinuesSampleRun(cycle.CycleId, vehicle.ObservedAt, runtimeOptions.MaximumEvidenceAge);
+        SampleRunStep step = board.StepSampleRun(cycle.CycleId, vehicle.ObservedAt, runtimeOptions.MaximumEvidenceAge);
+        // No-progress observation still wants its samples close together (REQ-0285: CHARGING held without a break).
+        bool continuous = step.Link == SampleRunLink.Continuous;
         await ClearChargingCodeAsync(runtime, now, cancellationToken).ConfigureAwait(false);
         // REQ-0282: the cycle's own version, frozen when it was allocated -- not the one in effect now.
         ChargingPolicyVersion policy = await chargingPolicy.ReadFrozenAsync(cycle.ChargingPolicyVersion, cancellationToken)
             .ConfigureAwait(false);
         int threshold = policy.Content.ChargingCompletionThresholdPercent;
-        if (!continuous || battery < threshold)
+        if (battery >= threshold)
+        {
+            board.RecordCompletionReached(cycle.CycleId, vehicle.ObservedAt, battery);
+        }
+        (DateTimeOffset At, int Percent)? reached = board.CompletionReached(cycle.CycleId);
+        // control-server#876: completion is judged on this sample being fresh (checked above) and new, following an earlier one
+        // in a run no telemetry gap has broken (REQ-0287) -- not on how long after that one it was read, which is the dispatch
+        // round's cadence. A cycle that has read the threshold once completes on the next such sample even if the battery has
+        // since dropped: a full vehicle decaying on the charger is not one that failed to charge.
+        bool completes = step.FollowsAnEarlierSample && reached is not null;
+        LogChargingSample(
+            logger, runtime.JourneyId, runtime.VehicleKey,
+            vehicle.ObservedAt.ToString("O", CultureInfo.InvariantCulture),
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"{battery}% {vehicle.BatteryState ?? "(none)"}, completion threshold {threshold}%, reached in this cycle {(reached is { } seen ? $"at {seen.At:O} ({seen.Percent}%)" : "never")}"),
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"{step.Link.ToString().ToUpperInvariant()}{(step.PreviousObservedAt is { } previous ? $" after the sample observed at {previous:O}" : "")}"),
+            completes,
+            null);
+        if (!completes || reached is not { } full)
         {
             // Completion first (control-server#407): a reading that reaches the threshold completes the cycle whatever its
             // batteryState says; only below it can a stop be an interruption, and only while charging is progress observed.
@@ -370,7 +403,9 @@ public sealed partial class JourneyRuntimeEngine
             .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         board.BreakSampleRun(cycle.CycleId);
-        LogChargingComplete(logger, runtime.JourneyId, runtime.VehicleKey, battery, stop.StationRiotId, threshold, null);
+        board.ForgetCompletionReached(cycle.CycleId);
+        LogChargingComplete(
+            logger, runtime.JourneyId, runtime.VehicleKey, full.Percent, stop.StationRiotId, threshold, null);
         await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
     }
 
