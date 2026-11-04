@@ -67,7 +67,7 @@ public sealed class FakeOnboardSlotStateSeedTests
     [InlineData("slotNo=0", "physicalState=OCCUPIED")]
     [InlineData("slotNo=9", "physicalState=OCCUPIED")]
     [InlineData("slotNo=one", "physicalState=OCCUPIED")]
-    [InlineData("slotNo=3", "lockState=UNLOCKED")]
+    [InlineData("slotNo=3", "lockState=OPEN")]
     [InlineData("slotNo=3", "physicalState=FULL")]
     [InlineData("slotNo=3", "administrativeAvailability=disabled")]
     public void AnEntryTheProtocolCannotCarryFailsAtStartup(string slot, string field)
@@ -93,6 +93,28 @@ public sealed class FakeOnboardSlotStateSeedTests
 
     private static IConfiguration Configuration(params string[] arguments) =>
         new ConfigurationBuilder().AddCommandLine(arguments).Build();
+
+    /// <summary>
+    /// control-server#865: a session established with a door open. The seed's lock state is what the handshake snapshot
+    /// reports; a lock reported since (<see cref="FakeOnboardState.SlotLocks"/>) wins over it in every snapshot after that.
+    /// </summary>
+    [Fact]
+    public void ASeededOpenDoorIsReportedUntilALockIsReportedOverIt()
+    {
+        SlotStateSeed seed = SlotStateSeed.Read(Configuration(
+            "--FakeOnboard:Seed:slotStates:0:slotNo=1",
+            "--FakeOnboard:Seed:slotStates:0:lockState=UNLOCKED"));
+
+        JsonElement[] handshake = Render(seed);
+        Assert.Equal("UNLOCKED", handshake[0].GetProperty("lockState").GetString());
+        Assert.All(handshake[1..], slot => Assert.Equal("LOCKED", slot.GetProperty("lockState").GetString()));
+
+        JsonElement[] later = [.. JsonSerializer.SerializeToElement(seed.Render(new Dictionary<int, string> { [1] = "LOCKED", [4] = "UNKNOWN" }))
+            .EnumerateArray()];
+        Assert.Equal("LOCKED", later[0].GetProperty("lockState").GetString());
+        Assert.Equal("UNKNOWN", later[3].GetProperty("lockState").GetString());
+        Assert.Equal("LOCKED", later[1].GetProperty("lockState").GetString());
+    }
 
     private static JsonElement[] Render(SlotStateSeed seed) =>
         [.. JsonSerializer.SerializeToElement(seed.Render()).EnumerateArray()];

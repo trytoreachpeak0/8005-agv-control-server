@@ -1,0 +1,33 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\work\8005-wt\cs865-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs865-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs865-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs865-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs865-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs865-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs865-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs865-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs865-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs865-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs865-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs865-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs865-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs865-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\work\8005-wt\cs865-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:06.64]     ControlServer.Tests.ChargingDashboardRealRunTests.AStalePassRaisesNoDepartureAlarm [FAIL]
+  Failed ControlServer.Tests.ChargingDashboardRealRunTests.AStalePassRaisesNoDepartureAlarm [52 ms]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+             ↓ (pos 0)
+Collection: [{"severity":"HIGH","severityDescription":"\u9AD8\uFF1A\u81EA\u52A8\u5145\u7535\u505C\u4E86\u6216\u8F66\u88AB\u7559\u5728\u539F\u5730\uFF0C\u9700\u8981\u4EBA\u53BB\u5904\u7406","code":"CHARGING_BELOW_MANDATORY_DEPARTURE_NOT_PROVEN","codeDescription":"\u7535\u91CF\u4F4E\u4E8E\u5F3A\u5236\u5145\u7535\u7EBF\uFF0C\u4F46\u8F66\u6B64\u523B\u8FC7\u4E0D\u4E86\u51FA\u53D1\u524D\u5B89\u5168\u68C0\u67E5\uFF08\u7F3A\u54EA\u4E00\u9879\u89C1\u7EC6\u8282\uFF09\uFF1A\u4E0D\u7ED9\u5B83\u5206\u6869\u3001\u5B83\u4E5F\u4E0D\u63A5\u642C\u8FD0\uFF0C\u7535\u91CF\u4F1A\u4E00\u76F4\u5F80\u4E0B\u6389\uFF0C\u76F4\u5230\u7F3A\u7684\u90A3\u4E00\u9879\u597D\u4E86","fieldAction":"\u5230\u8F66\u524D\u770B\u7EC6\u8282\u91CC\u70B9\u540D\u7684\u90A3\u4E00\u9879\uFF1A\u4ED3\u95E8\u6CA1\u9501\u597D\u7684\u628A\u95E8\u5173\u597D\u9501\u4E0A\uFF0C\u4E0B\u4E00\u8F6E\u5C31\u4F1A\u5206\u6869\uFF1B\u9501\u4E0D\u4E0A\u6216\u4E00\u65F6\u5904\u7406\u4E0D\u4E86\u7684\uFF0C\u5148\u7ED9\u8F66\u4EBA\u5DE5\u5145\u7535\uFF0C\u518D\u8054\u7CFB\u7CFB\u7EDF\u7EF4\u62A4\u4EBA\u5458","agvId":"\u8001\u5382\u524D\u7EBF\u65B0\u591A\u4ED3\u4F4D1","mapId":null,"stationId":null,"since":null,"standingSeconds":null,"detail":"\u7535\u91CF 20%\uFF1B\u51FA\u53D1\u524D\u5B89\u5168\u68C0\u67E5\u7F3A\uFF1A3\u53F7\u4ED3\u6CA1\u9501\u597D\u6216\u5F00\u9501\u8F93\u51FA\u6CA1\u590D\u4F4D\uFF08SLOT_3_NOT_LOCKED\uFF09"}]
+  Stack Trace:
+     at ControlServer.Tests.ChargingDashboardRealRunTests.AStalePassRaisesNoDepartureAlarm() in C:\work\8005-wt\cs865-8005-agv-control-server\tests\ControlServer.Tests\ChargingDashboardRealRunTests.cs:line 345
+   at ControlServer.Tests.ChargingDashboardRealRunTests.AStalePassRaisesNoDepartureAlarm() in C:\work\8005-wt\cs865-8005-agv-control-server\tests\ControlServer.Tests\ChargingDashboardRealRunTests.cs:line 348
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:    12, Skipped:     0, Total:    13, Duration: 4 s - ControlServer.Tests.dll (net8.0)

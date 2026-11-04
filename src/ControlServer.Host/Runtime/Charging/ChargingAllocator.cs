@@ -797,7 +797,7 @@ public sealed class ChargingAllocator(
         {
             string gaps = string.Join(", ", departureGaps.Distinct(StringComparer.Ordinal));
             return Refuse(
-                vehicle, ChargingAllocationReasons.DepartureNotProven, $"{detail}; departure: {gaps}", waiting: gaps,
+                vehicle, ChargingAllocationReasons.DepartureNotProven, $"{detail}{ChargingDepartureGaps.Marker}{gaps}", waiting: gaps,
                 comparedDetail: $"{comparedDetail}; departure: {gaps}");
         }
 

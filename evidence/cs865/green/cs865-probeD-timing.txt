@@ -1,0 +1,10 @@
+Review probe D (C:/work/8005-scratch/review-cs865/ReviewCs865Probes.cs.txt, ProbeDChangeCostWithManySnapshotRows), copied into
+the test project for one run and removed again. Ten SafetyStateChanged after a first one, with N other vehicles' snapshots in
+the inbox; mean milliseconds per change on this machine.
+
+before (eec8ff77, the reviewer's run):   rows=0 perChangeMs=4.0   rows=3000 perChangeMs=86.2
+after review S3 (5486975a6, 2026-10-28): rows=0 perChangeMs=2.3   rows=3000 perChangeMs=2.7
+
+The committed criterion is not a timing: StaleSlotLockSnapshotTests.ASafetyChangeReadsNoSnapshotFromTheInboxOnceTheConnectionHasOne
+puts 3000 other vehicles' snapshots and one unparseable snapshot row in the inbox after the connection's own snapshot; a change
+that read the inbox fails on it (red/cs865-mutI-change-reads-the-inbox.txt).
