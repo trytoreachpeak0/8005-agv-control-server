@@ -15,7 +15,13 @@ public enum DemandIntakeOutcome
     /// The plan names the task type station versions but not the catalog revision its endpoints came from, so it could
     /// not be accepted without freezing the versions alone (control-server#198). Nothing was written.
     /// </summary>
-    JourneyPlanIncomplete
+    JourneyPlanIncomplete,
+
+    /// <summary>
+    /// The journey this demand was to be appended to ended before the append was committed (control-server#864). Nothing was
+    /// written; the demand is still a candidate for the next round.
+    /// </summary>
+    JourneyEnded
 }
 
 public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAcceptanceStore store)
@@ -122,6 +128,12 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
             catch (JourneyPlanFreezeIncompleteException)
             {
                 return DemandIntakeOutcome.JourneyPlanIncomplete;
+            }
+            catch (JourneyEndedBeforeAppendException)
+            {
+                // control-server#864：派车轮选中这趟旅程之后、提交之前它结束了。报成这条需求的结局而不是抛：
+                // 抛出去被每车隔离记成 2124「破坏本服务端不变量」，而这是派车轮预期之中的竞态。
+                return DemandIntakeOutcome.JourneyEnded;
             }
         }
         else if (journey is null)

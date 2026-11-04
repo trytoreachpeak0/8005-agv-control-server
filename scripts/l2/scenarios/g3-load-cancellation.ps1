@@ -11,12 +11,19 @@ G3 `FP-IS-02` 的第二条场景：装载进行中由操作员取消，全部仓
   之后再取消会被拒，L1 `FailedCompensationResultIsDurableReplayableAndNeverReleasesDemandOrVehicle` 证的就是这条。
 两道门同时开着的只有「装载命令已下、结果还没出」这一段，也就是操作员站在开着的仓门前的时候。
 
-**先按取消、等授权，再关空门（control-server#128 改）。**2026-09-18 之前这里是先把空仓门带上再点取消。onboard-hmi#72
-之后 v2 车载端读到「门关了、货没放」会自己重开，先关门就会被当成又一次空关、门又弹开（CP-0019、onboard-hmi#385 之后
-不再自己重开，改为锁着门等操作员按「重新开门」，先关门同样不是取消的起点）；onboard-hmi#78 第 5 项之后，
-取消授权到了车载端先中止原执行器（`AbortOperationAsync`），取消执行器接手开着的仓门、不再打脉冲。所以顺序反过来：
-门开着时按取消，服务端授权之后操作员再把空门带上，取消执行器据此证空。与 `real-onboard-load-door-closed-empty-reopens`
-（control-server#86）同一个顺序。
+**先关空门、锁上、开锁输出复位，再按取消（协议 6.0.0，control-server#837 改）。**修订后的 `REQ-0211`（CP-0021）与向量
+`CV-LOAD-CANCELLATION-ALL-EMPTY` 的 `AUTHORIZE_ONLY_WITH_EVERY_TARGET_SLOT_EMPTY_LOCKED_AND_RESET`：装货开始之后只有全部目标仓
+都空、门都证明锁闭、输出都复位才能取消，授权范围为空，不为取消开任何门。所以 v5 的顺序（control-server#128：门开着时按取消，
+授权之后再把空门带上，取消执行器接手开着的门证空）反过来了：v6 车载端门开着时不给「取消装货」（onboard-hmi#392 第 1 条，
+按钮可见但禁用），按得出来服务端也以 `LOCK_NOT_CLOSED` 拒绝（control-server#837）。CP-0019（onboard-hmi#385）之后空关的门
+锁着等操作员按「重新开门」，不会自己重开，先关门正是取消的起点。
+
+**门开着时取消被拒，也要判。**第一仓开着时先等一段：入口一直不可用就算被拒；车载端若给了入口，就按下去，服务端必须回
+`REJECTED`、`LOCK_NOT_CLOSED`、空 `slots`。两种都要同时满足：服务端没有给出任何 `AUTHORIZED`，需求、装货与旅程都没动。
+
+**关门之后服务端要有一份新快照才按。**服务端按自己手上的读数判取消（本会话、装货开始之后最新的 `SafetyStateSnapshot`，之后有
+目标仓变过就算过期，过期按 `SLOT_STATE_UNKNOWN` 拒）。关门那一下车报 `SafetyStateChanged`，服务端在应答之后要一份快照
+（control-server#837）。场景等这份快照到了再按，并把它记成判据：服务端没要、或车没回，操作员第一次按就会被拒。
 
 **两仓。**车载端逐仓开锁，第一仓开着时操作员决定不装，第二仓始终没开过。取消要证「全部授权仓位为空」，两仓
 才证得出没开过的那一仓也被算进去了，而且没有为了证空再去开它。
@@ -39,6 +46,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 # Only for Add-G3VehicleReleasedForNextDemand; this scenario keeps its own readers.
 . (Join-Path $PSScriptRoot 'G3RecoveryCommon.ps1')
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -196,7 +204,7 @@ $null = Wait-L2Condition -Description 'the manual submit button became enabled' 
 $onboard.Submit()
 $journal.Note('Manual submit invoked.')
 
-# --- 2. 装载开始，第一仓开着时操作员决定不装，把空仓门带上 --------------------------------------------
+# --- 2. 装载开始，第一仓开着时操作员决定不装 ------------------------------------------------------------
 
 $attemptId = Wait-L2Condition -Description 'the server issued the load command' `
     -Journal $journal -Criterion 'load-attempt' -TimeoutSeconds 180 `
@@ -216,7 +224,76 @@ if ($waiting.Active.Count -ne 1) {
 $openedSlot = [int]$waiting.Active[0]
 $journal.Note("Slot $openedSlot is open ($(Get-SlotState $openedSlot)); the operator decides not to load.")
 
-# --- 3. UIA 代替操作员点「取消装货」，授权之后把空门带上 ---------------------------------------------
+# --- 3. 门开着：取消被拒、什么都不变 ------------------------------------------------------------------
+
+function Get-AuthorizationsOf([string]$decision) {
+    return , @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object {
+        [string]$_.Payload.demandId -eq $demandId -and $_.Response -eq 'LoadCancellationAuthorization' -and
+        $null -ne $_.ResponsePayload -and [string]$_.ResponsePayload.decision -eq $decision })
+}
+
+function Get-LoadPicture {
+    return "需求 $(Get-Scalar "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'") / " +
+        "装载 $(Get-Scalar "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'") / " +
+        "旅程 $(Get-Stage) / 取消工作流 $(Get-Count "SELECT COUNT(*) AS Total FROM RecoveryWorkflows WHERE DemandId = '$demandId'")"
+}
+
+$loadInProgress = '需求 Accepted / 装载 Prepared / 旅程 AwaitingLoadResult / 取消工作流 0'
+# 等满这一段：入口在这期间任何一刻可用都会被看到。
+$offeredWhileOpen = Wait-Offered '取消装货' 'onboard-cancellation-entry-door-open' 8
+$openRefusal = $null
+if ($offeredWhileOpen) {
+    $journal.Note("The onboard offered 取消装货 with slot $openedSlot open; pressing it, the server must refuse it.")
+    $onboard.InvokeButton('取消装货')
+    $null = $onboard.Confirm('取消装货')
+    $openRefusal = Wait-L2ConditionOrLast -Description 'the server answered the cancellation pressed with the door open' `
+        -Journal $journal -Criterion 'cancellation-door-open-answered' -TimeoutSeconds 30 `
+        -Probe { @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object { [string]$_.Payload.demandId -eq $demandId -and $_.Response })[0] } `
+        -Until { param($v) $null -ne $v }
+}
+$openRefusalText = if ($null -eq $openRefusal) { '入口不可用' } elseif ($null -ne $openRefusal.ResponsePayload) {
+    "$($openRefusal.Response) $([string]$openRefusal.ResponsePayload.decision) $([string]$openRefusal.ResponsePayload.problem.reasonCode) slots=$(Format-Slots $openRefusal.ResponsePayload.slots)"
+} else { "$($openRefusal.Response) (no payload)" }
+$pictureWhileOpen = Get-LoadPicture
+$authorizedWhileOpen = (Get-AuthorizationsOf 'AUTHORIZED').Count
+$assertions.Add(
+    'G3-02-20',
+    "第 $openedSlot 仓门开着时取消被拒：车载端不给「取消装货」入口（onboard-hmi#392），或按出来服务端回 REJECTED、LOCK_NOT_CLOSED、空 slots（control-server#837）；服务端没有任何 AUTHORIZED，需求、装货与旅程都没动（REJECT_CANCELLATION_WITH_A_DOOR_NOT_PROVEN_LOCKED_OR_OUTPUT_NOT_RESET、CHANGE_NOTHING_ON_REJECTED_CANCELLATION）",
+    ((-not $offeredWhileOpen -or ($null -ne $openRefusal -and $null -ne $openRefusal.ResponsePayload -and
+        [string]$openRefusal.ResponsePayload.decision -eq 'REJECTED' -and
+        [string]$openRefusal.ResponsePayload.problem.reasonCode -eq 'LOCK_NOT_CLOSED' -and
+        @($openRefusal.ResponsePayload.slots).Count -eq 0)) -and
+        $authorizedWhileOpen -eq 0 -and $pictureWhileOpen -eq $loadInProgress),
+    "入口不可用，或 LoadCancellationAuthorization REJECTED LOCK_NOT_CLOSED slots= / AUTHORIZED 0 / $loadInProgress",
+    "$openRefusalText / AUTHORIZED $authorizedWhileOpen / $pictureWhileOpen")
+
+# --- 4. 操作员把空门带上、锁好，服务端拿到关门之后的读数 --------------------------------------------------
+
+$doorClosedAt = [DateTimeOffset]::UtcNow
+$journal.Note("The operator shuts the empty slot $openedSlot before cancelling.")
+$null = $simulator.Command('Post', "slots/$openedSlot/close-door", @{})
+$null = Wait-L2Condition -Description "slot $openedSlot reads shut, empty, locked and reset" `
+    -Journal $journal -Criterion 'opened-slot-shut' -TimeoutSeconds 30 `
+    -Probe { Get-SlotState $openedSlot } -Until { param($v) $v -eq 'CLOSED/EMPTY/1/0' }
+
+# 关门之后车报的最后一条变化，与它之后服务端收下的快照（服务端在变化的应答之后要的）。
+function Get-ReadingsAfterClose {
+    $changes = @((Get-Inbound 'SafetyStateChanged') | Where-Object { $_.At -gt $doorClosedAt })
+    $lastChange = if ($changes.Count -ge 1) { $changes[-1].At } else { $null }
+    $snapshots = @((Get-Inbound 'SafetyStateSnapshot') | Where-Object { $null -ne $lastChange -and $_.At -gt $lastChange })
+    [pscustomobject]@{ Changes = $changes.Count; Snapshots = $snapshots.Count }
+}
+$readings = Wait-L2ConditionOrLast -Description 'the server holds a snapshot taken after the last change of the door closing' `
+    -Journal $journal -Criterion 'snapshot-after-close' -TimeoutSeconds 30 `
+    -Probe { Get-ReadingsAfterClose } -Until { param($v) $v.Changes -ge 1 -and $v.Snapshots -ge 1 }
+$assertions.Add(
+    'G3-02-29',
+    '关门之后服务端手上有新读数：车为关门报了 SafetyStateChanged，服务端在应答之后要了快照、车回了，最后一条变化之后至少一份 SafetyStateSnapshot（control-server#837；否则操作员第一次按取消就以 SLOT_STATE_UNKNOWN 被拒）',
+    ($readings.Changes -ge 1 -and $readings.Snapshots -ge 1),
+    '关门后变化 ≥1 / 最后一条变化之后快照 ≥1',
+    "关门后变化 $($readings.Changes) / 最后一条变化之后快照 $($readings.Snapshots)")
+
+# --- 5. UIA 代替操作员点「取消装货」-------------------------------------------------------------------
 
 $cancellationIds = @('G3-02-22', 'G3-02-23', 'G3-02-24', 'G3-02-25', 'G3-02-26', 'G3-02-27', 'G3-02-28')
 $offered = Wait-Offered '取消装货' 'onboard-cancellation-entry' 60
@@ -237,7 +314,8 @@ $null = $onboard.Confirm('取消装货')
 $request = Wait-L2Condition -Description 'the server received LoadCancellationStartRequested, or the onboard refused it' `
     -Journal $journal -Criterion 'cancellation-requested' -TimeoutSeconds 60 `
     -Probe {
-        $received = @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object { [string]$_.Payload.demandId -eq $demandId })
+        $received = @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object {
+            [string]$_.Payload.demandId -eq $demandId -and ($null -eq $openRefusal -or $_.MessageId -ne $openRefusal.MessageId) })
         if ($received.Count -ge 1) { $received[0] }
         elseif (@($onboard.WindowTitles()) -contains '取消装货失败') { 'REFUSED_BY_ONBOARD' }
         else { $null }
@@ -249,13 +327,11 @@ if ($request -is [string]) {
 }
 $cancellationId = [string]$request.Payload.cancellationId
 
-# 授权到了再关门：之前关，车载端会把它当成又一次空关、锁着门等「重新开门」（CP-0019 之前是自己重开）。
-$null = Wait-L2Condition -Description 'the server answered the cancellation request' `
+# 门已经关好锁上：授权之后车载端只读仓位、不开门，直接报结果（onboard-hmi#392）。
+$request = Wait-L2Condition -Description 'the server answered the cancellation request' `
     -Journal $journal -Criterion 'cancellation-answered' -TimeoutSeconds 30 `
     -Probe { @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object { [string]$_.Payload.cancellationId -eq $cancellationId -and $_.Response })[0] } `
     -Until { param($v) $null -ne $v }
-$journal.Note("The operator shuts the empty slot $openedSlot.")
-$null = $simulator.Command('Post', "slots/$openedSlot/close-door", @{})
 
 $cancellationResult = Wait-L2Condition -Description 'the server received the LoadCancellationResult, or the onboard gave up' `
     -Journal $journal -Criterion 'cancellation-result' -TimeoutSeconds 90 `
@@ -295,7 +371,9 @@ $assertions.Add(
     "LoadCancellationAuthorization AUTHORIZED $(Format-Slots @())",
     $authorizationText)
 
-$requests = @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object { [string]$_.Payload.demandId -eq $demandId })
+# 门开着时按出来、被拒的那一次（如果有）不算：G3-02-20 已经判过它。
+$requests = @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object {
+    [string]$_.Payload.demandId -eq $demandId -and ($null -eq $openRefusal -or $_.MessageId -ne $openRefusal.MessageId) })
 $results = @((Get-Inbound 'LoadCancellationResult') | Where-Object { [string]$_.Payload.demandId -eq $demandId })
 $assertions.Add(
     'G3-02-23',
@@ -323,13 +401,16 @@ $slotResultText = ($slotResults | Sort-Object { [int]$_.slotNo } | ForEach-Objec
 }) -join ' '
 $expectedSlotResults = ($targetSlots | Sort-Object | ForEach-Object { "$_=COMPLETED/EMPTY/LOCKED/RESET" }) -join ' '
 $physicalAtCancellation = ($targetSlots | Sort-Object | ForEach-Object { "$_=$(Get-SlotState $_)" }) -join ' '
+# 授权范围为空（6.0.0），车载端可以报空 slotResults、由服务端自己的读数核对，也可以照旧逐仓报全部目标仓（与 onboard-hmi#392 同一口径）；
+# 两种都放行，物理状态以模拟器读数为准。
 $assertions.Add(
     'G3-02-25',
-    '车载端证明全部授权仓位为空：ALL_EMPTY，每个仓都是空、锁上、开锁输出复位；模拟器上的物理状态与之一致（PROVE_ALL_SLOTS_EMPTY）',
-    ([string]$cancellationResult.Payload.overallOutcome -eq 'ALL_EMPTY' -and $slotResultText -eq $expectedSlotResults -and
+    '车载端证明全部目标仓为空：ALL_EMPTY，slotResults 为空或逐仓都是空、锁上、开锁输出复位；模拟器上的物理状态全空、关着、锁上、输出复位（PROVE_ALL_SLOTS_EMPTY、REPORT_ALL_EMPTY_WITHOUT_SLOT_IO）',
+    ([string]$cancellationResult.Payload.overallOutcome -eq 'ALL_EMPTY' -and
+        ($slotResults.Count -eq 0 -or $slotResultText -eq $expectedSlotResults) -and
         $physicalAtCancellation -eq (($targetSlots | Sort-Object | ForEach-Object { "$_=CLOSED/EMPTY/1/0" }) -join ' ')),
-    "ALL_EMPTY $expectedSlotResults / $(($targetSlots | Sort-Object | ForEach-Object { "$_=CLOSED/EMPTY/1/0" }) -join ' ')",
-    "$([string]$cancellationResult.Payload.overallOutcome) $slotResultText / $physicalAtCancellation")
+    "ALL_EMPTY (空) 或 $expectedSlotResults / $(($targetSlots | Sort-Object | ForEach-Object { "$_=CLOSED/EMPTY/1/0" }) -join ' ')",
+    "$([string]$cancellationResult.Payload.overallOutcome) $(if ($slotResults.Count -eq 0) { '(空)' } else { $slotResultText }) / $physicalAtCancellation")
 
 function Get-Settlement {
     [pscustomobject]@{

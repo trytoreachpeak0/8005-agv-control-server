@@ -42,6 +42,8 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
             Assert.Equal(StationOperationStatus.Prepared, load.Status);
             int[] slots = System.Text.Json.JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson)!;
             const string cancellationId = "d6970000-0000-4000-8000-000000000001";
+            // Nothing loaded and every door shut since the second load began (control-server#837).
+            await TestSlotReadings.SeedProvenEmptyAsync(fixture.Context, fixture.Options.AgvId, fixture.Clock.GetUtcNow());
             await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
             {
                 OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);

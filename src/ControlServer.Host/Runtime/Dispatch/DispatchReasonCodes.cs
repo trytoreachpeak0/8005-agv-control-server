@@ -190,6 +190,12 @@ public static class DispatchReasonCodes
     public const string EnRouteAppendDemandLeftThisJourney = "EN_ROUTE_APPEND_DEMAND_LEFT_THIS_JOURNEY";
 
     /// <summary>
+    /// 派车轮选中「往这趟旅程追加」之后、提交之前，旅程结束了（操作员取消、送完；control-server#864）：这一轮放弃这次追加，
+    /// 需求留在积压里，下一轮重新分配——那时这辆车多半已经空下来，可以建新旅程接它，别的车也可以。正常竞态，不是故障。
+    /// </summary>
+    public const string FinalAppendJourneyEnded = "FINAL_APPEND_JOURNEY_ENDED";
+
+    /// <summary>
     /// 这辆在途车的装货阶段已经结束（批次7-07，control-server#212）：持货超时了，或者装满之后已经离开最后一个装货停靠，
     /// 或者本来就不适用持货、当前计划已经装完。REQ-0354 末句「持货超时或让站之后不再接受新的待装 Demand」。
     /// </summary>

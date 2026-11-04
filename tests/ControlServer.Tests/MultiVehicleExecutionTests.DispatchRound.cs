@@ -564,7 +564,8 @@ public sealed partial class MultiVehicleExecutionTests
         JourneyBacklogRow second = await fixture.Context.JourneyBacklog.AsNoTracking()
             .SingleAsync(row => row.DemandId == FleetFixture.Demand(1, "N1-2", 1).DemandId, TestContext.Current.CancellationToken);
         Assert.Null(second.AcceptedAt);
-        Assert.Equal("FINAL_DYNAMIC_FACTS_NOT_READY", second.ReasonCode);
+        // control-server#864：原先记「最终动态事实不就绪」，与写库那一侧撞上 Completed 时的结果不一致；两处统一成旅程已结束。
+        Assert.Equal(DispatchReasonCodes.FinalAppendJourneyEnded, second.ReasonCode);
     }
 
     /// <summary>

@@ -26,10 +26,15 @@ public sealed partial class OnboardMessageProcessor(
     ILogger<OnboardMessageProcessor> logger,
     Runtime.Fleet.VehicleRoster? fleet = null,
     Runtime.Charging.ManualStationClearance? stationClearance = null,
-    Runtime.Charging.UnableToChargeFieldConfirmations? fieldConfirmations = null)
+    Runtime.Charging.UnableToChargeFieldConfirmations? fieldConfirmations = null,
+    SessionReadinessRecheck? readinessRecheck = null)
 {
     // The host's one roster (a singleton); a processor built without it, as the tests build it, reads the same options.
     private readonly Runtime.Fleet.VehicleRoster _fleet = fleet ?? new Runtime.Fleet.VehicleRoster(runtimeOptions);
+
+    // The host's one register (a singleton) of readiness changes a background round made (control-server#837); a processor
+    // built without it has its own, which nothing registers in.
+    private readonly SessionReadinessRecheck _readinessRecheck = readinessRecheck ?? new SessionReadinessRecheck();
 
     // The envelope's own settings, not a second copy of them: this instance also hashes the business
     // content the peer hashes, and the two only agree while both use the same serializer settings.
@@ -362,8 +367,8 @@ public sealed partial class OnboardMessageProcessor(
         // Spaced by SafetySnapshotReaskInterval so a heartbeat every two seconds does not become a request every two seconds.
         // A remaining-baskets skip waiting on stale readings (control-server#830, review M2) is asked for the same way: the
         // snapshot requested when the skip arrived goes unanswered for the same reason, every onboard SafetyStateChanged
-        // naming slots 1..8.
-        if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings) &&
+        // naming slots 1..8. So are slot locks a safety change may have changed (control-server#865).
+        if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings || state.SlotLocksAwaitingSnapshot) &&
             timeProvider.GetUtcNow() - state.SafetySnapshotRequestedAt >= SafetySnapshotReaskInterval)
         {
             state.SafetySnapshotRequestDue = true;
@@ -494,9 +499,22 @@ public sealed partial class OnboardMessageProcessor(
         switch (messageType)
         {
             case "Heartbeat":
-                return SerializeEnvelope(
-                    "HeartbeatAck", messageId, agvId, generation,
-                    new { receivedHeartbeatMessageId = messageId, serverTime = timeProvider.GetUtcNow() });
+                {
+                    string heartbeatAck = SerializeEnvelope(
+                        "HeartbeatAck", messageId, agvId, generation,
+                        new { receivedHeartbeatMessageId = messageId, serverTime = timeProvider.GetUtcNow() });
+                    // A background round changed this vehicle's readiness with nothing to answer (control-server#837, a load
+                    // cancellation timed out into recovery): decided afresh and announced once, even if the readiness reads the
+                    // same, since its reason changed. Every other heartbeat stays one line and touches no database.
+                    if (!_readinessRecheck.TryTake(agvId))
+                    {
+                        return heartbeatAck;
+                    }
+                    SessionReadinessDecision recheckDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    return AnswerWithReadiness(
+                        heartbeatAck, recheckDecision, agvId, generation, state, messageType, messageId, announceUnchanged: true);
+                }
             case "CapabilitySnapshot":
                 {
                     long revision = payload.GetProperty("capabilityVersion").GetInt64();
@@ -583,6 +601,11 @@ public sealed partial class OnboardMessageProcessor(
                     // An accepted snapshot is a whole new safety baseline, slot states included: what a refused safety
                     // message left untrusted is trusted again from here (control-server#478).
                     state.SafetyBaselineUntrusted = false;
+                    state.SlotLocksAwaitingSnapshot = false;
+                    state.UnsecuredSlotInLatestSnapshot =
+                        Runtime.Dispatch.OnboardDispatchFactsReader.HasUnsecuredSlot(payload) is bool unsecuredSlot
+                            ? (generation, unsecuredSlot)
+                            : null;
                     string snapshotAck = SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
                     if (!midSession)
                     {
@@ -831,9 +854,21 @@ public sealed partial class OnboardMessageProcessor(
                     return AnswerWithReadiness(
                         recordResult, recordDecision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
                 }
+            case "LoadCancellationStartRequested":
+                {
+                    string authorization = await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
+                        .ConfigureAwait(false);
+                    // Refused for want of current readings (control-server#837): ask for a snapshot after this answer, so the
+                    // operator's next press is judged on readings that are fresh. The answer is answered from the inbox on a resend,
+                    // which does not reach here, so a replay never asks twice.
+                    if (RefusedForUnknownSlots(authorization))
+                    {
+                        state.SafetySnapshotRequestDue = true;
+                    }
+                    return authorization;
+                }
             case "ExceptionRecoverySessionRequested":
             case "RecoveryActionSubmitted":
-            case "LoadCancellationStartRequested":
             case "LoadCompensationRequested":
             case "LoadCorrectionRequested":
                 return await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
@@ -1007,9 +1042,21 @@ public sealed partial class OnboardMessageProcessor(
                     }
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
+                    if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false) ||
+                        await AffectsALoadInProgressAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
                     {
                         state.SafetySnapshotRequestDue = true;
+                    }
+                    // control-server#865: each slot's lock is read from the session's latest snapshot, and a change carries no slot
+                    // states. When that snapshot showed a slot unsecured, this change may be the slot being locked, which nothing
+                    // would tell the departure gate until the next handshake: ask for a snapshot, spaced like the re-asks below.
+                    // A slot that really is open is answered as open at the current revision, and the asking stops until the
+                    // next change. What the latest snapshot showed is kept on the connection (review S3): this runs inside the
+                    // inbox's write transaction, and reading every vehicle's snapshots on each change held the write lock for it.
+                    if (!state.SlotLocksAwaitingSnapshot &&
+                        await UnsecuredSlotInLatestSnapshotAsync(agvId, generation, state, cancellationToken).ConfigureAwait(false))
+                    {
+                        state.SlotLocksAwaitingSnapshot = true;
                     }
                     string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
                     return AnswerWithReadiness(ack, decision, agvId, generation, state, messageType, messageId, announceUnchanged: true);
@@ -1542,6 +1589,65 @@ public sealed partial class OnboardMessageProcessor(
                                     ?? $"{alarm.PhysicalSlotNumber}@{alarm.RaisedAt.ToUnixTimeMilliseconds()}"),
             StringComparer.Ordinal);
 
+    /// <summary>
+    /// The change names a target slot of a load this vehicle is in the middle of (control-server#837): a door opened or shut, a
+    /// basket put in. A cancellation is judged on this server's readings, and only a snapshot carries them, so one is asked for
+    /// after each such change -- the operator who has just shut an empty door and presses cancel is then judged on readings
+    /// taken after it, not refused for stale ones. One per change, as for an overdue slot: the onboard leaves a request unanswered
+    /// while it still holds an unacknowledged change, so only the request after the last change of a burst is answered.
+    /// </summary>
+    private async Task<bool> AffectsALoadInProgressAsync(
+        string agvId, JsonElement payload, CancellationToken cancellationToken)
+    {
+        if (!payload.TryGetProperty("affectedSlots", out JsonElement affected) ||
+            affected.ValueKind != JsonValueKind.Array ||
+            affected.GetArrayLength() == 0)
+        {
+            return false;
+        }
+        string[] targets = await (
+                from runtime in dbContext.JourneyRuntimes.AsNoTracking()
+                where runtime.AgvId == agvId && runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult
+                join membership in dbContext.Set<JourneyDemandRow>().AsNoTracking()
+                    on runtime.JourneyId equals membership.JourneyId
+                where membership.RemovedAt == null
+                join operation in dbContext.StationOperations.AsNoTracking()
+                    on membership.LoadSlotOperationAttemptId equals operation.SlotOperationAttemptId
+                where operation.OperationType == SlotOperationType.Load && operation.Status == StationOperationStatus.Prepared
+                select operation.TargetSlotsJson)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        HashSet<int> targetSlots = [.. targets.SelectMany(json => JsonSerializer.Deserialize<int[]>(json) ?? [])];
+        return affected.EnumerateArray()
+            .Any(slot => slot.ValueKind == JsonValueKind.Number && targetSlots.Contains(slot.GetInt32()));
+    }
+
+    private static bool RefusedForUnknownSlots(string authorization)
+    {
+        using JsonDocument document = JsonDocument.Parse(authorization);
+        JsonElement payload = document.RootElement.GetProperty("payload");
+        return payload.GetProperty("decision").GetString() == "REJECTED" &&
+               payload.GetProperty("problem").ValueKind == JsonValueKind.Object &&
+               payload.GetProperty("problem").GetProperty("reasonCode").GetString() == ServerReasonCodes.SlotStateUnknown;
+    }
+
+    /// <summary>
+    /// Whether this session generation's latest snapshot showed a slot not secured (control-server#865), from the connection when
+    /// it has accepted a snapshot of this generation; otherwise read from the inbox once and kept (a snapshot the inbox replayed
+    /// as a duplicate never reaches the processor).
+    /// </summary>
+    private async Task<bool> UnsecuredSlotInLatestSnapshotAsync(
+        string agvId, long generation, OnboardConnectionState state, CancellationToken cancellationToken)
+    {
+        if (state.UnsecuredSlotInLatestSnapshot is not (long knownGeneration, bool unsecured) || knownGeneration != generation)
+        {
+            unsecured = await Runtime.Dispatch.OnboardDispatchFactsReader
+                .LatestSnapshotHasUnsecuredSlotAsync(dbContext, agvId, generation, cancellationToken)
+                .ConfigureAwait(false);
+            state.UnsecuredSlotInLatestSnapshot = (generation, unsecured);
+        }
+        return unsecured;
+    }
+
     private async Task<bool> AffectsAnOverdueSlotAsync(
         string agvId, JsonElement payload, CancellationToken cancellationToken)
     {
@@ -1928,4 +2034,19 @@ public sealed class OnboardConnectionState
     /// at <see cref="OnboardMessageProcessor.SafetySnapshotReaskInterval"/> until a decision clears it.
     /// </summary>
     public bool RemainingBasketsSkipAwaitingReadings { get; set; }
+
+    /// <summary>
+    /// A safety change followed a snapshot of this session that showed a slot not <c>LOCKED</c>/<c>RESET</c>, and no snapshot
+    /// has been accepted on this connection since (control-server#865): the slot may have been locked since, and only a snapshot
+    /// says so. Asked for at <see cref="OnboardMessageProcessor.SafetySnapshotReaskInterval"/> until a snapshot arrives.
+    /// </summary>
+    public bool SlotLocksAwaitingSnapshot { get; set; }
+
+    /// <summary>
+    /// Whether the latest snapshot of a session generation showed a slot not <c>LOCKED</c>/<c>RESET</c>, set from each snapshot
+    /// this connection accepts (control-server#865, review S3); null until one is accepted or read, and after a snapshot whose
+    /// slot states the rule cannot read (then the inbox is read, as before). Keyed by generation: a
+    /// second SessionHello on the same connection starts another generation, whose own snapshot decides.
+    /// </summary>
+    public (long Generation, bool Unsecured)? UnsecuredSlotInLatestSnapshot { get; set; }
 }

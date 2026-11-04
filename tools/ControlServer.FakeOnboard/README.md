@@ -39,6 +39,10 @@ dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:por
 
 五类请求各自独立设：`sublot`、`loadResult`、`unloadResult`、`safetyCheck`、`slotConfigurationActivation`。
 
+`SafetyStateSnapshotRequested` 另有一个开关 `answerSafetySnapshotRequests`（默认关，control-server#865）：打开后按真车载端的样子，
+在下一个 `safetyStateVersion` 上回一份完整的 `SafetyStateSnapshot`，逐仓锁态带上 `PUT /safety` 的 `slotLocks` 报过的变化。默认关是因为
+这之前的场景都是对着一个从不应答的对端写的。握手快照里某仓的锁态可以用种子 `slotStates` 的 `lockState`（`LOCKED`／`UNLOCKED`／`UNKNOWN`）给定。
+
 ## 控制面
 
 `http://127.0.0.1:58009/control/v1`，机器契约见 `openapi.json`。
@@ -47,7 +51,7 @@ dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:por
 | --- | --- | --- |
 | `GET` | `/health`、`/snapshot`、`/openapi.json` | 读状态 |
 | `PUT` | `/policy` | 改四类请求的应答策略 |
-| `PUT` | `/safety` | 报新的安全状态（发 `SafetyStateChanged`） |
+| `PUT` | `/safety` | 报新的安全状态（发 `SafetyStateChanged`）；`slotLocks` 按仓号改锁态，只进之后的快照，不进这条变化 |
 | `PUT` | `/answer/{key}` | 应答一条挂起的请求 |
 | `PUT` | `/determinate-load-failures/{key}` | 按确定失败应答一条挂起的装货命令：首个目标仓 `FAILED`（默认 `OPERATOR_TIMEOUT`）、其余 `NOT_STARTED`，全部 `EMPTY`／`LOCKED`／`RESET`。v2 车载端不这样报，服务端只做防御性结算（control-server#81）；什么时候发由场景决定 |
 | `PUT` | `/connection` | `connected: false` 断开到服务端的会话，`true` 重开并走完整握手 |

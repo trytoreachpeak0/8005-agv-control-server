@@ -369,6 +369,10 @@ function Get-G3RunnerClaim {
                     'correctedSlotOutcomeReported',
                     'correctionCreatesNoDuplicateCommit',
                     'correctionOnlyBeforeDepartureAndHoldsTheVehicle',
+                    # Protocol 6.0.0 (control-server#837): the cancellation asked for with a door open is refused and
+                    # changes nothing; serverHoldsReadingsTakenAfterTheDoorClosed is a precondition of the authorized one.
+                    'cancellationRefusedWithADoorNotProvenLocked',
+                    'serverHoldsReadingsTakenAfterTheDoorClosed',
                     'onboardOffersLoadCancellationDuringLoad',
                     'cancellationAuthorizedExplicitly',
                     'loadCancellationSequenceMatchesVector',

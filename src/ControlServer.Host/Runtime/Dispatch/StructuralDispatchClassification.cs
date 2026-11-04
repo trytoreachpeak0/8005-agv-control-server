@@ -387,6 +387,9 @@ public static class StructuralDispatchClassification
             "control-server#198: the plan named the task type station versions but no catalog revision, and acceptance " +
             "refused it whole. Not reachable from JourneyPlanBuilder, which always carries the revision; a build defect " +
             "rather than anything about the demand or the fleet. Doubtful, so backlog."),
+        Backlog(DispatchReasonCodes.FinalAppendJourneyEnded, null,
+            "control-server#864: the journey chosen for an append ended (cancelled, unloaded) before the append was " +
+            "committed. A race the round expects; the next round reassigns the demand."),
         Backlog("DEMAND_DECISION_FACT_CHANGED", null, "A decision fact changed since the demand was first seen."),
         Backlog(DispatchReasonCodes.DemandLeftCatalog, null,
             "Not a verdict: the round writes it before the vehicle loop for an unaccepted demand the catalog no " +

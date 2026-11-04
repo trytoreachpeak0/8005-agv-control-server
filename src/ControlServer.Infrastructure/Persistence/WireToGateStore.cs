@@ -867,7 +867,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // 带跟踪的查询会被身份解析换回那个旧实例，事务再新也判的是旧阶段。这一行这里只用来判、不用来写。
         JourneyRuntimeRow journey = await dbContext.JourneyRuntimes.AsNoTracking()
             .SingleAsync(row => row.JourneyId == plan.JourneyId, cancellationToken).ConfigureAwait(false);
-        if (journey.Stage is JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed)
+        // Completed 单独一种异常（control-server#864）：旅程在这中间跑完了、被取消了，是派车轮预期之中的竞态，受理把它报成
+        // DemandIntakeOutcome.JourneyEnded，需求留到下一轮。原先与 Blocked 同抛 BusinessIdentityConflictException，被每车隔离记成
+        // Error 2124（10-23 10:50 agv01）。Blocked 不动：那是一辆等人介入的车，仍按原样报。
+        if (journey.Stage == JourneyRuntimeStage.Completed)
+        {
+            throw new JourneyEndedBeforeAppendException(
+                $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");
+        }
+
+        if (journey.Stage == JourneyRuntimeStage.Blocked)
         {
             throw new BusinessIdentityConflictException(
                 $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");

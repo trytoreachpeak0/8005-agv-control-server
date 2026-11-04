@@ -1,0 +1,11 @@
+commit 10bd9e196512f6e98002439c2cf264eb64277172, 2026-10-28, review S1 mutation H: ask only when the store decides Ready
+-                    if (!state.SlotLocksAwaitingSnapshot &&
++                    if (decision.Readiness == SessionReadiness.Ready && !state.SlotLocksAwaitingSnapshot &&
+
+dotnet test tests/ControlServer.Tests --filter "FullyQualifiedName~StaleSlotLockSnapshotTests"
+[xUnit.net 00:00:04.16]     ControlServer.Tests.StaleSlotLockSnapshotTests.ASessionNotReadyWhenTheDoorIsLockedIsStillAsked [FAIL]
+  失败 ControlServer.Tests.StaleSlotLockSnapshotTests.ASessionNotReadyWhenTheDoorIsLockedIsStillAsked [98 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   0
+失败!  - 失败:     1，通过:     7，已跳过:     0，总计:     8，持续时间: 2 s - ControlServer.Tests.dll (net8.0)

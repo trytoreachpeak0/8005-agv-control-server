@@ -151,8 +151,8 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// <c>CV-CURRENT-STOP-DEPARTURE-STALE-REVISION-ACCEPTED</c>, whose behaviour <c>#742</c> had already built; <c>#748</c>
     /// vendored it and bound it in the same ticket, so it was never pinned. The <c>6.0.0</c> candidate (protocol#26, CP-0021) added six to
     /// <c>FP-IS-02</c>, vendored by <c>#830</c>: the five remaining-baskets-skip vectors are built and bound there;
-    /// <c>CV-LOAD-CANCELLATION-BASKET-LOADED</c>, the refusal of a cancellation once a basket is loaded, is claimed by <c>#837</c>,
-    /// which builds that check, and stays pinned until it binds it.
+    /// <c>CV-LOAD-CANCELLATION-BASKET-LOADED</c>, the refusal of a cancellation once a basket is loaded, was claimed by <c>#837</c>,
+    /// which built that check and bound it, so it is pinned no more.
     /// Such a pin must name its slice and the claiming ticket in exactly the
     /// form <see cref="ClaimedPinLabel"/> gives, and
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> refuses every other
@@ -173,7 +173,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     private static readonly IReadOnlyDictionary<string, string> VectorsAwaitingTheirSlice =
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
-            ["CV-LOAD-CANCELLATION-BASKET-LOADED"] = "FP-IS-02, claimed by 8005-agv-control-server#837",
             ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",
             ["CV-WORKLIST-SELECTION-STALE-REVISION"] = "FP-IS-09, batch 11"
         };

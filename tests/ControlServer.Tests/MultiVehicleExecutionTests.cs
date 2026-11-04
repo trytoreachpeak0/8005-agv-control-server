@@ -2618,6 +2618,28 @@ public sealed partial class MultiVehicleExecutionTests
                 OrderState = RiotOrderState.Suspended,
             };
 
+        /// <summary>
+        /// Puts an order back to RIoT's QUEUEING (1) with no vehicle bound to run it yet -- <c>executeVehicleKey</c> "--", read by
+        /// the gateway as <see cref="RiotOrderObservation.ExecuteVehicleBound"/> false; the appointed vehicle stays the key
+        /// (control-server#863: 2026-10-22's charge order sat like this for three hours).
+        /// </summary>
+        public void QueueOrderUnbound(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Active,
+                OrderState = RiotOrderState.Queueing,
+                ExecuteVehicleBound = false,
+            };
+
+        /// <summary>RIoT binds the appointed vehicle to a queued order and runs it: EXECUTING (3), bound.</summary>
+        public void BindOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Active,
+                OrderState = RiotOrderState.Executing,
+                ExecuteVehicleBound = true,
+            };
+
         /// <summary>Moves an order to RIoT's HANG (9), which the gateway reads as Active (control-server#316).</summary>
         public void HangOrder(string upperId) =>
             _orders[upperId] = _orders[upperId] with

@@ -16,6 +16,7 @@ public sealed record PolicyCommand : CommandEnvelope
     public AnswerMode? SafetyCheck { get; init; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public AnswerMode? SlotConfigurationActivation { get; init; }
+    public bool? AnswerSafetySnapshotRequests { get; init; }
 }
 
 /// <summary>Drops the session to ControlServer, or opens a new one with a full handshake.</summary>
@@ -69,6 +70,12 @@ public sealed record SafetyCommand : CommandEnvelope
     public bool? UnknownPresent { get; init; }
     public string[]? ReasonCodes { get; init; }
     public int[]? AffectedSlots { get; init; }
+
+    /// <summary>
+    /// Slot lock states that changed, by slot number (<c>LOCKED</c>, <c>UNLOCKED</c>, <c>UNKNOWN</c>; control-server#865). The
+    /// SafetyStateChanged this sends does not carry them -- no SafetyStateChanged does -- only the snapshots sent after it.
+    /// </summary>
+    public Dictionary<int, string>? SlotLocks { get; init; }
 }
 
 /// <summary>Answers one request the peer is holding open.</summary>
@@ -152,7 +159,9 @@ public static class ControlPlane
                     UnloadResult = command.UnloadResult ?? state.Policy.UnloadResult,
                     SafetyCheck = command.SafetyCheck ?? state.Policy.SafetyCheck,
                     SlotConfigurationActivation =
-                        command.SlotConfigurationActivation ?? state.Policy.SlotConfigurationActivation
+                        command.SlotConfigurationActivation ?? state.Policy.SlotConfigurationActivation,
+                    AnswerSafetySnapshotRequests =
+                        command.AnswerSafetySnapshotRequests ?? state.Policy.AnswerSafetySnapshotRequests
                 };
                 return policy == state.Policy ? null : state with { Policy = policy };
             }));
@@ -178,13 +187,19 @@ public static class ControlPlane
                     ReasonCodes = command.ReasonCodes ?? state.Safety.ReasonCodes
                 };
                 long version = command.SafetyStateVersion ?? state.SafetyStateVersion + 1;
-                if (safety == state.Safety && version == state.SafetyStateVersion)
+                Dictionary<int, string> locks = new(state.SlotLocks);
+                foreach ((int slotNo, string lockState) in command.SlotLocks ?? [])
+                {
+                    locks[slotNo] = lockState;
+                }
+                bool locksChanged = !locks.OrderBy(pair => pair.Key).SequenceEqual(state.SlotLocks.OrderBy(pair => pair.Key));
+                if (safety == state.Safety && version == state.SafetyStateVersion && !locksChanged)
                 {
                     return null;
                 }
                 published = safety;
                 publishedVersion = version;
-                return state with { Safety = safety, SafetyStateVersion = version };
+                return state with { Safety = safety, SafetyStateVersion = version, SlotLocks = locks };
             });
             if (published is not null)
             {

@@ -54,6 +54,23 @@ public sealed class OnboardRecoveryCoordinator(
             "fault declaration pending or applied (control-server#384).");
 
     private static readonly Action<ILogger, string, string, string, string, string, string, Exception?>
+        LogCancellationRefusedForSlots =
+            LoggerMessage.Define<string, string, string, string, string, string>(
+                LogLevel.Warning,
+                new EventId(8370, nameof(LogCancellationRefusedForSlots)),
+                "Load cancellation {CancellationId} for demand {DemandId} refused with {ReasonCode}: attempt " +
+                "{SlotOperationAttemptId}, target slots {TargetSlots}, readings {Readings} (control-server#837).");
+
+    private static readonly Action<ILogger, string, string, string, string, string, Exception?>
+        LogCancellationResultAfterAnswerTimeout =
+            LoggerMessage.Define<string, string, string, string, string>(
+                LogLevel.Warning,
+                new EventId(8371, nameof(LogCancellationResultAfterAnswerTimeout)),
+                "Load cancellation {CancellationId} on {AgvId} (demand {DemandId}) was answered by {MessageId} ({Outcome}) after the " +
+                "server gave up waiting for it (LOAD_CANCELLATION_ANSWER_TIMED_OUT): kept as evidence, nothing changed; its load is " +
+                "left to the recovery (control-server#837).");
+
+    private static readonly Action<ILogger, string, string, string, string, string, string, Exception?>
         LogRemainingBasketsSkipDecided =
             LoggerMessage.Define<string, string, string, string, string, string>(
                 LogLevel.Information,
@@ -279,6 +296,15 @@ public sealed class OnboardRecoveryCoordinator(
                 .ConfigureAwait(false);
         }
         ValidateResultIdentity(messageType, payload, workflow);
+        // A cancellation the server gave up waiting for (control-server#837, LoadCancellationAnswerTimeout): its load is in the
+        // hands of a person's recovery by now, and a late ALL_EMPTY would cancel it and end the demand under them. Kept as
+        // evidence, logged and acknowledged -- a refusal would come back in every handshake -- and nothing else is touched.
+        if (messageType == "LoadCancellationResult" &&
+            workflow.Outcome == RecoveryWorkflowOutcomes.LoadCancellationAnswerTimedOut)
+        {
+            return await RecordResultAfterAnswerTimeoutAsync(
+                messageId, agvId, sessionGeneration, workflow, payload, contentHash, cancellationToken).ConfigureAwait(false);
+        }
 
         // DEFENSIVE RESIDUE, not a live path. Since 8005-agv-control-server#77 every inbound line reaches
         // this method through OnboardMessageProcessor, and the inbox there answers a second arrival of the
@@ -402,6 +428,39 @@ public sealed class OnboardRecoveryCoordinator(
             logger ?? (ILogger)NullLogger.Instance,
             agvId, messageType, workflowId, messageId, outcome, WireContentHash.Sha256(payload.GetRawText()), null);
         return DurableAck(messageType, messageId, agvId, sessionGeneration, contentHash);
+    }
+
+    private async Task<string> RecordResultAfterAnswerTimeoutAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        RecoveryWorkflowRow workflow,
+        JsonElement payload,
+        string contentHash,
+        CancellationToken cancellationToken)
+    {
+        string outcome = ResultOutcome("LoadCancellationResult", payload);
+        if (!await dbContext.RecoveryResultEvidence.AnyAsync(row => row.MessageId == messageId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            dbContext.RecoveryResultEvidence.Add(new RecoveryResultEvidenceRow
+            {
+                MessageId = messageId,
+                WorkflowId = workflow.WorkflowId,
+                MessageType = "LoadCancellationResult",
+                ForcedRecoveryGeneration = workflow.ForcedRecoveryGeneration,
+                ContentHash = contentHash,
+                Outcome = outcome,
+                HistoricalOnly = true,
+                ObservedAt = payload.GetProperty("observedAt").GetDateTimeOffset(),
+                ReceivedAt = timeProvider.GetUtcNow()
+            });
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        LogCancellationResultAfterAnswerTimeout(
+            logger ?? (ILogger)NullLogger.Instance,
+            workflow.WorkflowId, agvId, workflow.DemandId ?? "(none)", messageId, outcome, null);
+        return DurableAck("LoadCancellationResult", messageId, agvId, sessionGeneration, contentHash);
     }
 
     public async Task ObserveOperationResultAsync(
@@ -1402,12 +1461,50 @@ public sealed class OnboardRecoveryCoordinator(
         // account or by this server's readings, and a load with a basket in it is never cancelled (the revised REQ-0211).
         bool skipHeld = !declared && await RemainingBasketsSkips
             .HoldsCancellationAsync(dbContext, demandId, attemptId!, cancellationToken).ConfigureAwait(false);
-        bool authorized = !declared && !skipHeld &&
-                          demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&
-                          (operation is null || operation.DemandId == demandId &&
-                           operation.OperationType == SlotOperationType.Load &&
-                           operation.Status != StationOperationStatus.RecoveryRequired);
+        bool allowedInState = !declared && !skipHeld &&
+                              demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&
+                              (operation is null || operation.DemandId == demandId &&
+                               operation.OperationType == SlotOperationType.Load &&
+                               operation.Status != StationOperationStatus.RecoveryRequired);
         int[] slots = operation is null ? [] : ParseSlots(operation.TargetSlotsJson);
+        // The second line of defence of the revised REQ-0211 (control-server#837, the onboard's own being onboard-hmi#392): once
+        // loading has started, a cancellation is authorized only with every target slot EMPTY, its door proven LOCKED and its
+        // output RESET, by this server's own readings (SessionSlotReadings, the read the remaining-baskets skip uses). Until then
+        // nothing here looked at the slots, and on 2026-10-21 agv03 @160 a cancellation was authorized with a basket in slot 5;
+        // the vehicle reported UNKNOWN and the journey was blocked with no way out.
+        //
+        // A cancellation already authorized and on file is answered from the record, the readings not judged again: its
+        // authorization went astray and the vehicle resubmits it under a new messageId (real-onboard-cancellation-authorization-
+        // lost). After an authorization the vehicle does no slot IO for the cancellation, so a change since then says nothing
+        // about whether it should have been given; UpsertSimpleWorkflowAsync still refuses one whose content differs.
+        string agvId = RequiredString(root, "agvId");
+        bool onFile = allowedInState && await dbContext.RecoveryWorkflows.AsNoTracking().AnyAsync(
+            row => row.WorkflowId == cancellationId && row.AgvId == agvId && row.WorkflowType == "LOAD_CANCELLATION" &&
+                   row.SlotOperationAttemptId == attemptId,
+            cancellationToken).ConfigureAwait(false);
+        object? slotRefusal = null;
+        if (allowedInState && !onFile)
+        {
+            // No readings while a refused safety message leaves the baseline untrusted, as well as stale or missing ones
+            // (SessionSlotReadings, review S2 of #837).
+            IReadOnlyDictionary<int, RemainingBasketsSkipRule.SlotReading>? readings = operation is null
+                ? null
+                : await SessionSlotReadings.ReadAsync(dbContext, agvId, slots, operation.CreatedAt, cancellationToken)
+                    .ConfigureAwait(false);
+            if (LoadCancellationSlotRule.Refusal(slots, readings) is { } refusal)
+            {
+                slotRefusal = Problem(refusal.ReasonCode, refusal.FieldPath!, refusal.DisplayMessage!);
+                string readingsText = readings is null
+                    ? "none, stale or baseline untrusted"
+                    : string.Join(' ', slots.Select(slot => readings.TryGetValue(slot, out RemainingBasketsSkipRule.SlotReading? reading)
+                        ? $"{slot}={reading.Physical}/{reading.Lock}/{reading.Output}"
+                        : $"{slot}=none"));
+                LogCancellationRefusedForSlots(
+                    logger ?? (ILogger)NullLogger.Instance, cancellationId, demandId, refusal.ReasonCode, attemptId!,
+                    string.Join(',', slots), readingsText, null);
+            }
+        }
+        bool authorized = allowedInState && slotRefusal is null;
         if (declared)
         {
             LogCancellationRefusedForDeclaration(
@@ -1436,7 +1533,7 @@ public sealed class OnboardRecoveryCoordinator(
                 : skipHeld ? Problem(
                     ServerReasonCodes.LoadCancellationBasketLoaded, "payload.slotOperationAttemptId",
                     RemainingBasketsSkipHeldCancellationMessage)
-                : RefusedCancellationProblem(
+                : slotRefusal ?? RefusedCancellationProblem(
                     demand, "payload.demandId", "Load cancellation is not safe in the current state.")
         });
     }
@@ -2151,6 +2248,19 @@ public sealed class OnboardRecoveryCoordinator(
                 await HandoffRecordStandsAsync(payload, workflow, cancellationToken).ConfigureAwait(false),
             _ => false
         };
+        // The authorization reached the vehicle after the load's own result was recorded COMPLETED (control-server#837, the
+        // coordinator's ruling on onboard-hmi#413 review S1): the vehicle does no slot IO for it and answers FAILED, every slot
+        // result (if any) NOT_STARTED with ACTION_NOT_ALLOWED_IN_STATE. Nothing was cancelled and the load stands, as this server
+        // already holds it Committed: the cancellation is closed and nothing else is touched. Taken as a result that did not
+        // reconcile, it marked the loaded demand RecoveryRequired and blocked the journey, and the only ways out -- compensation,
+        // handoff -- end the demand. A FAILED that does not say it did nothing (an older onboard reopened the attempt) may have
+        // opened a door over the cargo, and still goes to recovery below.
+        if (!success && messageType == "LoadCancellationResult" &&
+            await RefusedOverACommittedLoadAsync(payload, workflow, cancellationToken).ConfigureAwait(false))
+        {
+            workflow.State = RecoveryWorkflowState.Reconciled;
+            return;
+        }
         if (!success)
         {
             workflow.State = RecoveryWorkflowState.RecoveryRequired;
@@ -2971,6 +3081,25 @@ public sealed class OnboardRecoveryCoordinator(
     /// path, and it is settled only by a recovery that proves its slots (compensation, handoff, forced recovery).
     /// </para>
     /// </remarks>
+    private async Task<bool> RefusedOverACommittedLoadAsync(
+        JsonElement payload,
+        RecoveryWorkflowRow workflow,
+        CancellationToken cancellationToken)
+    {
+        if (RequiredString(payload, "overallOutcome") != "FAILED" || workflow.SlotOperationAttemptId is null ||
+            !payload.GetProperty("slotResults").EnumerateArray().All(slot =>
+                RequiredString(slot, "outcome") == "NOT_STARTED" &&
+                slot.GetProperty("reasonCodes").EnumerateArray()
+                    .Any(code => code.GetString() == ServerReasonCodes.ActionNotAllowedInState)))
+        {
+            return false;
+        }
+        return await dbContext.StationOperations.AsNoTracking().AnyAsync(
+            row => row.SlotOperationAttemptId == workflow.SlotOperationAttemptId && row.DemandId == workflow.DemandId &&
+                   row.OperationType == SlotOperationType.Load && row.Status == StationOperationStatus.Committed,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task HoldCancelledLoadForRecoveryAsync(
         RecoveryWorkflowRow workflow,
         CancellationToken cancellationToken)

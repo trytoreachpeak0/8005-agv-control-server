@@ -316,9 +316,10 @@ if ($expectedStartupRefusal) {
     $areaAssignmentsSetting = $false
     $chargingPolicy = $null
 }
-# The synthetic peer's handshake slot states. Only the fields a vehicle's own state decides; lockState and
-# unlockOutputState stay what an idle vehicle reports, and slotNo is how an entry names its slot.
-$slotStateFields = @('physicalState', 'administrativeAvailability', 'operability')
+# The synthetic peer's handshake slot states. Only the fields a vehicle's own state decides, lockState among them (a
+# door open at the handshake, control-server#865); unlockOutputState stays what an idle vehicle reports, and slotNo is
+# how an entry names its slot.
+$slotStateFields = @('physicalState', 'administrativeAvailability', 'operability', 'lockState')
 function ConvertTo-SlotStateArguments {
     param([Parameter(Mandatory)][object[]]$Entries, [Parameter(Mandatory)][string]$Where)
     $arguments = @()
@@ -785,9 +786,10 @@ try {
     # within which a second ending stops it. Passed only when the setup file names them, so every other scenario keeps the
     # server's own defaults. control-server#409's clearance-to-waiting-point switch (off by default) goes the same way, and so
     # does control-server#703's limit on how often a demand goes back to the backlog at a station deadline, and
-    # control-server#827's catalog age window (REQ-0366, thirty minutes by default) for a scenario that pins old createdAt values.
+    # control-server#827's catalog age window (REQ-0366, thirty minutes by default) for a scenario that pins old createdAt values,
+    # and control-server#863's alarm window for a charge order RIoT never dispatches (five minutes by default).
     foreach ($key in 'WaitingJourneyWarningAfter', 'WaitingJourneyWarningRepeat', 'OwnOrderRebuildDelay', 'OwnOrderRebuildRepeatWindow',
-            'ClearanceToWaitingPointEnabled', 'StationTimeoutRedispatchLimit', 'CatalogAgeWindow') {
+            'ClearanceToWaitingPointEnabled', 'StationTimeoutRedispatchLimit', 'CatalogAgeWindow', 'ChargingOrderUndispatchedAlarmAfter') {
         if ($setup.ContainsKey($key)) {
             $serverEnvironment["JourneyRuntime__$key"] = [string]$setup[$key]
         }

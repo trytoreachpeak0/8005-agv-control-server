@@ -59,7 +59,8 @@ public sealed partial class JourneyRuntimeEngine
     /// （#442 审查 S3a：只隔一个轮询间隔的两次读数可能是 RIoT 的同一份快照）。
     /// 读不到电量、读数过期、读不到车、<c>batteryState</c> 为空都<b>不是</b>「不再是 <c>CHARGING</c>」——那是 <c>REQ-0287</c> 的暂停观察，打断这串读数。
     /// 本服务端从不在充满前让车停（离桩只在它取得下一用途之后，而充满前它取不得），所以不用另判「是不是我们让它停的」。
-    /// 同一轮电量已达阈值的，调用方先判了充满：充满优先，那不是中断。
+    /// 同一轮电量已达阈值的，调用方先判了充满：充满优先，那不是中断。本周期自上一个缺口以来读到过阈值、之后掉下去的，接着的那一个读数调用方也判满（control-server#876），
+    /// 走不到这里。
     /// </para>
     /// <para>
     /// <b>无进展</b>：持续 <c>CHARGING</c>。稳定期从第一次看到充电（<see cref="ChargingCycleRow.FirstChargingSeenAt"/>）算起，满了之后第一个连续的
@@ -402,6 +403,7 @@ public sealed partial class JourneyRuntimeEngine
 
         dispatchRound.Charging.Board.BreakSampleRun(cycle.CycleId);
         dispatchRound.Charging.Board.BreakSampleRun(InterruptionRunKey(cycle.CycleId));
+        dispatchRound.Charging.Board.ForgetCompletionReached(cycle.CycleId);
         LogChargingStopIsolated(logger, trigger, runtime.VehicleKey, runtime.JourneyId, stop.StationRiotId, evidence, null);
         if (staged)
         {
