@@ -514,7 +514,7 @@ public sealed class JourneyStopSequenceRaceTests
         Assert.NotNull(JourneyStopsForWrite.SequenceProblem([Row("a", 2), Row("b", 3)]));
     }
 
-    private static JourneyStopRow ExtraUnload(JourneyRuntimeRow runtime, string suffix, int sequence)
+    internal static JourneyStopRow ExtraUnload(JourneyRuntimeRow runtime, string suffix, int sequence)
     {
         string stopId = $"{runtime.JourneyId}|{suffix}";
         return new JourneyStopRow
