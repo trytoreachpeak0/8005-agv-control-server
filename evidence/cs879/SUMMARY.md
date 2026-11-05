@@ -70,3 +70,7 @@
 ## 第三轮审查 S-1
 
 几个开放停靠都挂着意图时，按停靠次序取第一个会取到一张更早、库里仍 CONFIRMED 而单在 RIoT 上已终态的意图，门没锁也不急停。`SupervisedStopAsync` 改为只认在途的意图（`CONFIRMED`、`CREATE_ATTEMPTED`、`RESULT_UNKNOWN`），多张取 `CreatedAt` 最新的那张。新用例 `ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate`：探针 ProbeD 的三格，加一格「重号站上更新却从未发出的意图」。探针 ProbeD 在新代码上三格都是 `[OrderHold,triggerEmergency]`、不记重建（`red/round3-probe-after.txt`）。变异 S1a 取最早、S1b 按停靠次序取任意意图、S1c 不按状态筛，全红（S1c 第一次存活，补了上面第四格后红）。本机定向 3404 条里一条红，是多车派车轮的预算用例（真实计时器，负载下 31 秒被截断），同一构建单独重跑通过（`green/targeted-on-round3.txt`）。
+
+## S-1 复核 S-2
+
+在途意图集合补上 `TERMINAL_RECONCILIATION_REQUIRED`（建单应答丢了、单在 RIoT 上已终态，引擎每轮仍要处理），与 `IdleReturnEvaluator`、`JourneyWithdrawal` 的「结果未定」集合对齐。新用例 `ABrokenPlanStillHandsAFailedOrderAwaitingTerminalReconciliationToTheFaultModel`（就绪、闸门后两格）：重号挪走当前位置、车那一段意图是终态对账且 FAILED，记故障并按住。去掉这一项（`red/mutations-s2.txt`）两格都红：`code=JOURNEY_STOP_SEQUENCE_BROKEN; faults=[]; commands=[]`。本机定向 135 条全过（`green/targeted-on-s2.txt`）。
