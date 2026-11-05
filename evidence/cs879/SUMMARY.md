@@ -52,3 +52,17 @@
 变异见 `red/mutations-rework.txt`：R1～R14 各红在对应用例上；R15（L4，清码前判别处暂存）存活，没有用例在清码那一轮暂存别的改动。本机定向 3390 条全过：`green/targeted-on-rework.txt`。
 
 修前红（返工新用例搬到审查时的 head `0d662b1d` 上跑）与审查探针在返工代码上的结果：`red/rework-h1-h2-s2-before-and-probes-after.txt`。H2 的新用例要用新类型，搬不回旧 head；修前的样子以审查探针在 `0d662b1d` 与 `b82899e4` 上的记录为准（追加被接受、E 的卸货挂在 REMOVED 的停靠上）。
+
+## 第二轮审查返工
+
+| 项 | 怎么改的 |
+| --- | --- |
+| H1′ 重号落在当前位置时，在途监看读的是没有单的那一站 | `NameInFlightOrderWithoutThePeerAsync` 改经 `SupervisedStopAsync` 取要监看的停靠：序位守着时仍是当前停靠（不多读库）；坏了时取开放停靠里第一个有订单意图的那个，没有才退回当前停靠。hold 与闸门两侧都走它。新用例 `ABrokenPlanStillStopsAVehicleWhenTheDuplicateTakesTheCurrentPlaceFromItsOrder`（就绪、闸门后两格）。 |
+| S-a 序位码由单的码交还时不记 2341 | 码第一次成为序位码的那一轮记一次，不论是 hold 写的，还是 `NameStalledOrderAsync` 按 `reasonOnceMovedOn` 写回的。新用例 `TheBrokenSequenceIsLoggedOnceWhenItsCodeTakesOverFromAnOrderThatHungFirst`。 |
+| L-a 「计划变了 → CandidateChanged」没有用例 | 新用例 `AnAppendRefusedBecauseItsPlanChangedIsACandidateChangedIntakeOutcome`，经真实 `DemandIntakeService` 与 `WireToGateStore`。 |
+
+第二轮审查探针原样在 `8bd0e457b` 上跑（`red/round2-probes-after.txt`）：A 三格都是 `[OrderHold,triggerEmergency]`，B 记一次 2341，C 不挂起那一格码与开始时间不变。C 挂起那一格仍红：序位码立着时单挂起，单的码（更急的那件事）接手；挂起结束序位码交回时开始时间从交回那一刻算、2341 再记一次。要保住最初的开始时间，得把「序位问题最早何时被看见」另存一列，要迁移，不在本票（剩余风险）。
+
+变异（`red/mutations-round2.txt`）：Q1 只看当前停靠、Q2 取错有单的那一站、Q3 交还时不记、Q4 受理不接「计划变了」，全红。本机定向 3400 条全过（`green/targeted-on-round2.txt`）。
+
+剩余风险（第二轮审查 L-c）：`JourneyStopRow` 没有并发令牌，`TrackedAsync` 对齐到 `SaveChanges` 之间仍可能被别的连接覆盖补版数；S4 只把这个窗口从「整轮」收窄到「对齐到保存之间」，结果只会偏大（跳号）不会回退。
