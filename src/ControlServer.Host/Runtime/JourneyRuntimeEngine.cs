@@ -1201,11 +1201,13 @@ public sealed partial class JourneyRuntimeEngine(
     /// <b>停下的是推进，不是在途单的监看</b>（审查 H1）。车可能正带着本服务端已下发的单在路上——那张单照样跑完，跑的这一路上门锁没锁、
     /// 单在 RIoT 上 FAILED 或挂起，都要照常按住、急停、写码。所以在写自己的码之前，先照闸门关着那一侧的做法跑一遍
     /// <see cref="NameInFlightOrderWithoutThePeerAsync"/>：它只读 RIoT、只向 RIoT 发命令，不向车载端发任何东西，也不依赖停靠序位
-    /// （它只看当前停靠，而当前停靠是第一个开放停靠，重号改不了它是谁）。单自己的码立着时（故障、挂起、重建），留着那个码，不盖成序位码。
+    /// （它看的停靠在序位坏了时不取当前停靠，取开放停靠里已有订单意图的那一个，见 <see cref="SupervisedStopAsync"/>：重号时当前停靠是同号里
+    /// 按 <c>StopId</c> 排前的那个，不一定是车正驶向的那一站，第二轮审查 H1′）。单自己的码立着时（故障、挂起、重建），留着那个码，不盖成序位码。
     /// Blocked 与 AREA 站等准入的旅程也不改码，与闸门那一侧同一条：它们的码说的是另一件要人做的事。
     /// </para>
     /// <para>
-    /// <b>码相同不再写、不再记</b>：每轮都判，只在写成这个码的那一轮记 Error；之后序位不变就不再记，开始时间从第一次算起（与
+    /// <b>码相同不再写、不再记</b>：每轮都判，只在这个码第一次立起来的那一轮记 Error——不论是这里写的，还是单的码结束时由
+    /// <see cref="NameStalledOrderAsync"/> 按 <c>reasonOnceMovedOn</c> 写回成它（第二轮审查 S-a）；之后序位不变就不再记，开始时间从那一刻算起（与
     /// <see cref="NameFailedAdvanceAsync"/> 同一个理由）。这个码指名在等人（<see cref="CarriesACodeThatNamesAWaitOnAPerson"/>），
     /// 推进失败不会把它盖掉；闸门关着那一侧也不把它换成 <c>ONBOARD_SESSION_NOT_READY</c>（审查 S2），重连不会让它重记、重新计时。
     /// 别的码（推进各阶段自己写、自己清的那些）照写成这个码：这一步之后的阶段这一轮都不跑，留着它们只会让看板说一件已经不是原因的事。
@@ -1243,17 +1245,19 @@ public sealed partial class JourneyRuntimeEngine(
             return true;
         }
 
-        if (await NameInFlightOrderWithoutThePeerAsync(runtime, currentMap, StopSequenceBrokenReason, cancellationToken)
-                .ConfigureAwait(false))
+        bool wasHeldForIt = string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal);
+        if (!await NameInFlightOrderWithoutThePeerAsync(runtime, currentMap, StopSequenceBrokenReason, cancellationToken)
+                .ConfigureAwait(false) &&
+            !string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
         {
-            return true;
-        }
-
-        if (!string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
-        {
-            LogStopSequenceBroken(logger, runtime.AgvId, runtime.JourneyId, problem, null);
             runtime.SetBlockReason(StopSequenceBrokenReason, now);
             runtime.UpdatedAt = now;
+        }
+
+        // 这一轮码第一次成了序位码（这里写的，或者单的码结束时写回的）就记一次 Error；之前已经是它就不记。
+        if (!wasHeldForIt && string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
+        {
+            LogStopSequenceBroken(logger, runtime.AgvId, runtime.JourneyId, problem, null);
         }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return true;
@@ -2836,15 +2840,16 @@ public sealed partial class JourneyRuntimeEngine(
         // (control-server#335 incremental review, P1g): a real onboard is not ready for the whole of a leg, so this -- not the
         // stage body -- is the path such a vehicle takes every round, and the rebuild below returns without ever reaching the
         // fault model. Unsupervised, a latched vehicle was never released and the rebuild waited on the fault for good.
-        await SuperviseDoorFaultOnEndedOrderAsync(runtime, stops.Current, cancellationToken).ConfigureAwait(false);
-        if (await OwnOrderRebuilds.ForStopAsync(dbContext, stops.Current, cancellationToken).ConfigureAwait(false) is not null)
+        JourneyStopRow supervised = await SupervisedStopAsync(stops, cancellationToken).ConfigureAwait(false);
+        await SuperviseDoorFaultOnEndedOrderAsync(runtime, supervised, cancellationToken).ConfigureAwait(false);
+        if (await OwnOrderRebuilds.ForStopAsync(dbContext, supervised, cancellationToken).ConfigureAwait(false) is not null)
         {
             return await AdvanceOwnOrderRebuildAsync(
-                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: peerReason, cancellationToken)
+                    runtime, supervised, currentMap, mayCreate: false, reasonOnceRebuilt: peerReason, cancellationToken)
                 .ConfigureAwait(false);
         }
         OrderIntentRow? intent = await dbContext.OrderIntents.SingleOrDefaultAsync(
-            row => row.MovementLegId == stops.Current.MovementLegId, cancellationToken).ConfigureAwait(false);
+            row => row.MovementLegId == supervised.MovementLegId, cancellationToken).ConfigureAwait(false);
         if (intent is null)
         {
             return false;
@@ -2869,6 +2874,38 @@ public sealed partial class JourneyRuntimeEngine(
 
         return await NameStalledOrderAsync(runtime, intent, order, cancellationToken, reasonOnceMovedOn: peerReason)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 在途单监看要看的那个停靠：序位好好的时候就是当前停靠；序位坏了时，是开放停靠里第一个已经有订单意图的那个，没有就仍是当前停靠
+    /// （control-server#879 第二轮审查 H1′）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 序位重号时，「当前停靠」是同号的几个里按 <c>StopId</c> 排在前面的那个，不一定是车正驶向的那一站：11-05 那一趟里推进认的当前停靠
+    /// 是没有单的 2715f926，车真正带着的单是 6 号 6db68fd0 的。按当前停靠找单，找不到就当没有在途单，门没锁也不急停。
+    /// 订单意图只在为一段腿下单时建（离站那一刻建下一站的那一张），所以开放停靠里有意图的那一个就是车此刻带着的单要去的那一站；
+    /// 已完成的停靠不在开放停靠里，它们的意图不会被认错。
+    /// </para>
+    /// <para>
+    /// 序位守着时不多读一次库，答案与修之前逐字相同。
+    /// </para>
+    /// </remarks>
+    private async Task<JourneyStopRow> SupervisedStopAsync(JourneyStopCursor stops, CancellationToken cancellationToken)
+    {
+        if (stops.SequenceProblem is null)
+        {
+            return stops.Current;
+        }
+
+        string[] legs = [.. stops.OpenStops.Select(stop => stop.MovementLegId)];
+        HashSet<string> withIntent = new(
+            await dbContext.OrderIntents.AsNoTracking()
+                .Where(row => legs.Contains(row.MovementLegId))
+                .Select(row => row.MovementLegId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false),
+            StringComparer.Ordinal);
+        return stops.OpenStops.FirstOrDefault(stop => withIntent.Contains(stop.MovementLegId)) ?? stops.Current;
     }
 
     /// <summary>
