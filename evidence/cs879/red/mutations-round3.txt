@@ -1,0 +1,28 @@
+# Round-3 mutations on aefe455ab, each reverting only the mutated file; filter: FullyQualifiedName~JourneyStopSequenceRaceTests
+== S1a-oldest-intent (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-            .OrderByDescending(row => row.CreatedAt)
++            .OrderBy(row => row.CreatedAt)
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate(olderOrderEnded: "CANCELLED", behindTheReadinessGate: False) [1 s]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate(olderOrderEnded: "SUCCESS", behindTheReadinessGate: False) [127 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate(olderOrderEnded: "SUCCESS", behindTheReadinessGate: True) [202 ms]
+失败!  - 失败:     3，通过:    21，已跳过:     0，总计:    24，持续时间: 5 s - ControlServer.Tests.dll (net8.0)
+== S1b-first-stop-with-any-intent (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-        return stops.OpenStops.FirstOrDefault(stop => string.Equals(stop.MovementLegId, latest, StringComparison.Ordinal))
+-            ?? stops.Current;
++        string[] any = [.. dbContext.OrderIntents.AsNoTracking().Where(row => legs.Contains(row.MovementLegId)).Select(row => row.MovementLegId)];
++        return stops.OpenStops.FirstOrDefault(stop => any.Contains(stop.MovementLegId)) ?? stops.Current;
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate(olderOrderEnded: "CANCELLED", behindTheReadinessGate: False) [1 s]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate(olderOrderEnded: "SUCCESS", behindTheReadinessGate: False) [128 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate(olderOrderEnded: "SUCCESS", behindTheReadinessGate: True) [210 ms]
+失败!  - 失败:     3，通过:    21，已跳过:     0，总计:    24，持续时间: 5 s - ControlServer.Tests.dll (net8.0)
+== S1c-any-status (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-                .Where(row => legs.Contains(row.MovementLegId) && InFlightIntentStatuses.Contains(row.Status))
++                .Where(row => legs.Contains(row.MovementLegId))
+已通过! - 失败:     0，通过:    24，已跳过:     0，总计:    24，持续时间: 5 s - ControlServer.Tests.dll (net8.0)
+# done; tree clean: 0 changes
+== S1c-any-status again on 35f8f76f1 (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-                .Where(row => legs.Contains(row.MovementLegId) && InFlightIntentStatuses.Contains(row.Status))
++                .Where(row => legs.Contains(row.MovementLegId))
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate(olderOrderEnded: "NEVER_SENT", behindTheReadinessGate: False) [134 ms]
+失败!  - 失败:     1，通过:    24，已跳过:     0，总计:    25，持续时间: 5 s - ControlServer.Tests.dll (net8.0)
+# S1c survived on aefe455ab (no cell with a newer intent that is not in flight); the NEVER_SENT cell was added and S1c rerun above: red.

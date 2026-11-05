@@ -66,3 +66,7 @@
 变异（`red/mutations-round2.txt`）：Q1 只看当前停靠、Q2 取错有单的那一站、Q3 交还时不记、Q4 受理不接「计划变了」，全红。本机定向 3400 条全过（`green/targeted-on-round2.txt`）。
 
 剩余风险（第二轮审查 L-c）：`JourneyStopRow` 没有并发令牌，`TrackedAsync` 对齐到 `SaveChanges` 之间仍可能被别的连接覆盖补版数；S4 只把这个窗口从「整轮」收窄到「对齐到保存之间」，结果只会偏大（跳号）不会回退。
+
+## 第三轮审查 S-1
+
+几个开放停靠都挂着意图时，按停靠次序取第一个会取到一张更早、库里仍 CONFIRMED 而单在 RIoT 上已终态的意图，门没锁也不急停。`SupervisedStopAsync` 改为只认在途的意图（`CONFIRMED`、`CREATE_ATTEMPTED`、`RESULT_UNKNOWN`），多张取 `CreatedAt` 最新的那张。新用例 `ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate`：探针 ProbeD 的三格，加一格「重号站上更新却从未发出的意图」。探针 ProbeD 在新代码上三格都是 `[OrderHold,triggerEmergency]`、不记重建（`red/round3-probe-after.txt`）。变异 S1a 取最早、S1b 按停靠次序取任意意图、S1c 不按状态筛，全红（S1c 第一次存活，补了上面第四格后红）。本机定向 3404 条里一条红，是多车派车轮的预算用例（真实计时器，负载下 31 秒被截断），同一构建单独重跑通过（`green/targeted-on-round3.txt`）。
