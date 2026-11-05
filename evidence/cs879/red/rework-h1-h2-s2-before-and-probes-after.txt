@@ -1,0 +1,22 @@
+# new H1/S2 tests copied onto the reviewed head 0d662b1d (detached worktree, not committed): filter Cs879BeforeReworkTests
+  失败 ControlServer.Tests.Cs879BeforeReworkTests.ASessionDropDoesNotReplaceTheBrokenSequenceCodeNorLogItAgain [2 s]
+  错误消息:
+Expected: 2026-08-26T01:00:02.0000000+00:00
+Actual:   2026-08-26T01:00:04.0000000+00:00
+  失败 ControlServer.Tests.Cs879BeforeReworkTests.ABrokenPlanStillStopsAVehicleWhoseDoorIsNotLockedOnTheWay(behindTheReadinessGate: False) [150 ms]
+  错误消息:
+Collection: []
+失败!  - 失败:     2，通过:     1，已跳过:     0，总计:     3，持续时间: 2 s - ControlServer.Tests.dll (net8.0)
+
+# review probes (C:/work/8005-scratch/review-cs879/ReviewProbe879Tests.cs, unchanged) on the reworked tree; on 0d662b1d and b82899e4 the review recorded: H2 probe -> append accepted, E unloads at REMOVED D-UNLOAD; H1 probe ready+broken -> code=JOURNEY_STOP_SEQUENCE_BROKEN; faults=[]; commands=[]
+  已通过 ControlServer.Tests.ReviewProbe879Tests.ProbeOneStaleAppendMergesIntoAStopTheRevisionJustRemoved [2 s]
+ append threw: JourneyPlanChangedBeforeAppendException: Demand 'D-8794' was to join stop 'D-UNLOAD' of journey 'journey:D-8790', which is now REMOVED; the placement was planned against an older plan.
+ after append: journey:D-8790|PICKUP=1/COMPLETED, journey:D-8790|UNLOAD=2/PENDING, B-UNLOAD=3/PENDING, C-UNLOAD=4/PENDING, D-PICKUP=5/REMOVED, D-UNLOAD=6/REMOVED
+  已通过 ControlServer.Tests.ReviewProbe879DoorTests.ProbeTwoDoorNotLockedWhileDrivingReadySession(breakSequences: True, behindGate: False) [2 s]
+ breakSequences=True behindGate=False: stage=AwaitingPickupArrival code=VEHICLE_DOOR_NOT_PROVEN_LOCKED; faults=[SuspectedBlocked/VEHICLE_DOOR_NOT_PROVEN_LOCKED]; commands=[OrderHold,triggerEmergency]
+  已通过 ControlServer.Tests.ReviewProbe879DoorTests.ProbeTwoDoorNotLockedWhileDrivingReadySession(breakSequences: False, behindGate: False) [177 ms]
+ breakSequences=False behindGate=False: stage=AwaitingPickupArrival code=VEHICLE_DOOR_NOT_PROVEN_LOCKED; faults=[SuspectedBlocked/VEHICLE_DOOR_NOT_PROVEN_LOCKED]; commands=[OrderHold,triggerEmergency]
+  已通过 ControlServer.Tests.ReviewProbe879DoorTests.ProbeTwoDoorNotLockedWhileDrivingReadySession(breakSequences: False, behindGate: True) [147 ms]
+ breakSequences=False behindGate=True: stage=AwaitingPickupArrival code=VEHICLE_DOOR_NOT_PROVEN_LOCKED; faults=[SuspectedBlocked/VEHICLE_DOOR_NOT_PROVEN_LOCKED]; commands=[OrderHold,triggerEmergency]
+  已通过 ControlServer.Tests.ReviewProbe879DoorTests.ProbeTwoDoorNotLockedWhileDrivingReadySession(breakSequences: True, behindGate: True) [132 ms]
+ breakSequences=True behindGate=True: stage=AwaitingPickupArrival code=VEHICLE_DOOR_NOT_PROVEN_LOCKED; faults=[SuspectedBlocked/VEHICLE_DOOR_NOT_PROVEN_LOCKED]; commands=[OrderHold,triggerEmergency]

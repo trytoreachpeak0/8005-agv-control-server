@@ -53,7 +53,7 @@ public static class StationYield
             return null;
         }
 
-        JourneyStopRow[] open = [.. stops.Where(IsOpen).OrderBy(stop => stop.Sequence)];
+        JourneyStopRow[] open = [.. stops.Where(IsOpen).OrderBy(stop => stop.Sequence).ThenBy(stop => stop.StopId, StringComparer.Ordinal)];
         if (open.Length == 0)
         {
             return null;
@@ -172,16 +172,8 @@ public static class StationYield
         string journeyId,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(dbContext);
-        JourneyStopRow[] stored = await dbContext.Set<JourneyStopRow>()
-            .Where(row => row.JourneyId == journeyId)
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        return
-        [
-            .. stored
-                .Concat(dbContext.Set<JourneyStopRow>().Local.Where(row => row.JourneyId == journeyId))
-                .DistinctBy(row => row.StopId, StringComparer.Ordinal)
-        ];
+        // 按库对齐（control-server#879）：这里判「下一站是哪个」，读到别的上下文已经改过的停靠的旧序位与旧状态，判的就是一份过时的计划。
+        return await JourneyStopsForWrite.LoadAsync(dbContext, journeyId, cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsOpen(JourneyStopRow stop) =>

@@ -68,6 +68,33 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
+    /// 停靠序位坏了的旅程（control-server#879 审查 M1）：释放服务不碰它——不取消它的单、不移它的需求，这一轮也不因它中断。
+    /// 修之前释放要修订计划，修订的写入判定抛 <c>JourneyStopSequenceBrokenException</c>，冒出 <c>RunOnceAsync</c>，整队的释放每轮停在它身上；
+    /// 而且抛之前取消单那一步已经发出去了。
+    /// </summary>
+    [Fact]
+    public async Task AJourneyWithBrokenStopSequencesIsLeftAloneAndDoesNotStopTheRound()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Context.Set<JourneyStopRow>().AddRange(
+            JourneyStopSequenceRaceTests.ExtraUnload(before, "EXTRA-A", 3),
+            JourneyStopSequenceRaceTests.ExtraUnload(before, "EXTRA-B", 3));
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, orderId => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Empty(outcomes);
+        Assert.Equal(0, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == FirstDemandId, Token)).RemovedAt);
+    }
+
+    /// <summary>
     /// 来路 5（control-server#323）：到站之前释放了旅程里最后一条需求，旅程收尾。车上留着的是派往取货站的那一版计划，
     /// 收尾之后要换成空计划（连同空清单与不带旅程的业务状态），而且在释放落库之后当场发出。
     /// </summary>

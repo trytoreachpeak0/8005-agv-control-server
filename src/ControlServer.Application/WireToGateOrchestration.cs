@@ -129,6 +129,12 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
             {
                 return DemandIntakeOutcome.JourneyPlanIncomplete;
             }
+            catch (JourneyPlanChangedBeforeAppendException)
+            {
+                // control-server#879 审查 H2：插位按的那份计划在提交之前被改过（取消、修订、到站）。与区域分配版本变了同一类：
+                // 判这条需求时依据的事实在受理那一刻变了，什么也没写，下一轮按新计划重算。
+                return DemandIntakeOutcome.CandidateChanged;
+            }
             catch (JourneyEndedBeforeAppendException)
             {
                 // control-server#864：派车轮选中这趟旅程之后、提交之前它结束了。报成这条需求的结局而不是抛：

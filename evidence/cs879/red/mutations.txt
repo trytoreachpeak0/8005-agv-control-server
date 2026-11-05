@@ -1,0 +1,52 @@
+# Mutations on 906260bf3, each reverting only the mutated file; filter: FullyQualifiedName~JourneyStopSequenceRaceTests|FullyQualifiedName~ReconnectModelTests|FullyQualifiedName~IntegrationSliceTraitArchitectureTests
+== M1-no-align (src/ControlServer.Infrastructure/Persistence/JourneyStopsForWrite.cs)
+-                AlignWithStore(entry, row);
++                _ = row;
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ARevisionWrittenAfterAnAppendOnAnotherConnectionLeavesContiguousSequences [2 s]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AnAppendWrittenAfterARevisionOnAnotherConnectionLeavesContiguousSequences [16 ms]
+失败!  - 失败:     2，通过:    16，已跳过:     0，总计:    18，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== M2-revision-no-check (src/ControlServer.Host/Runtime/JourneyPlanRevisionStage.cs)
+-        JourneyStopsForWrite.EnsureSequencesHold(journeyId, stops);
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ARevisionOverStopsThatAreAlreadyDuplicatedIsRefusedAndSavesNothing [28 ms]
+失败!  - 失败:     1，通过:    17，已跳过:     0，总计:    18，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== M3-append-no-check (src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+-        JourneyStopsForWrite.EnsureSequencesHold(plan.JourneyId, stored);
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AnAppendWhoseResequencingWouldDuplicateANumberIsRefusedAndSavesNothing [12 ms]
+失败!  - 失败:     1，通过:    17，已跳过:     0，总计:    18，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== M4-next-by-greater-sequence (src/ControlServer.Host/Runtime/JourneyStopCursor.cs)
+-    public JourneyStopRow? NextOpenStopAfterCurrent => OpenStops.Skip(1).FirstOrDefault();
++    public JourneyStopRow? NextOpenStopAfterCurrent => OpenStops.FirstOrDefault(stop => stop.Sequence > Current.Sequence);
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.TheNextStopALegIsBuiltForIsTheStopTheCursorMakesCurrentNextEvenWhenSequencesTie [13 ms]
+失败!  - 失败:     1，通过:    17，已跳过:     0，总计:    18，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== M5-no-hold (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-        if (await HoldOnBrokenStopSequenceAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false))
++        if (false && await HoldOnBrokenStopSequenceAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false))
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWhoseStopSequencesAreBrokenTakesNoAppendedDemand [276 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWithBrokenStopSequencesIsHeldWithItsOwnReasonOnceAndResumesWhenTheyAreRepaired [168 ms]
+失败!  - 失败:     2，通过:    16，已跳过:     0，总计:    18，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== M6-log-every-round (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
++        LogStopSequenceBroken(logger, runtime.AgvId, runtime.JourneyId, problem, null);
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWithBrokenStopSequencesIsHeldWithItsOwnReasonOnceAndResumesWhenTheyAreRepaired [166 ms]
+失败!  - 失败:     1，通过:    17，已跳过:     0，总计:    18，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== M7-no-clear-on-repair (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-            if (string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
++            if (false && string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWithBrokenStopSequencesIsHeldWithItsOwnReasonOnceAndResumesWhenTheyAreRepaired [188 ms]
+失败!  - 失败:     1，通过:    17，已跳过:     0，总计:    18，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== M8-not-a-wait-on-person (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-        string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) ||
+  失败 ControlServer.Tests.ReconnectModelTests.TheModelsWaitOnPersonCodesAreExactlyTheProductsSet [2 s]
+失败!  - 失败:     1，通过:    17，已跳过:     0，总计:    18，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== M9-append-into-broken (src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs)
+-        if (runtime is null || JourneyRuntimeEngine.IsStalledOrderReason(runtime.BlockReasonCode) ||
+-            string.Equals(runtime.BlockReasonCode, JourneyRuntimeEngine.StopSequenceBrokenReason, StringComparison.Ordinal))
++        if (runtime is null || JourneyRuntimeEngine.IsStalledOrderReason(runtime.BlockReasonCode))
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWhoseStopSequencesAreBrokenTakesNoAppendedDemand [266 ms]
+失败!  - 失败:     1，通过:    17，已跳过:     0，总计:    18，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== M10-yield-reads-stale (src/ControlServer.Infrastructure/Persistence/StationYield.cs)
+-        return await JourneyStopsForWrite.LoadAsync(dbContext, journeyId, cancellationToken).ConfigureAwait(false);
++        JourneyStopRow[] stored = await dbContext.Set<JourneyStopRow>().Where(row => row.JourneyId == journeyId).ToArrayAsync(cancellationToken).ConfigureAwait(false);
++        return [.. stored.Concat(dbContext.Set<JourneyStopRow>().Local.Where(row => row.JourneyId == journeyId)).DistinctBy(row => row.StopId, StringComparer.Ordinal)];
+已通过! - 失败:     0，通过:    18，已跳过:     0，总计:    18，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+# done; tree clean: 0 changes
+# M10 SURVIVED as expected: StationYield.StopsOfAsync is a reader; the one write it precedes (ApplyResequencingAsync) aligns the same rows itself, so the race tests stay green without it. Kept as depth: the yield and fixed-station judgements read the next stop from these rows.

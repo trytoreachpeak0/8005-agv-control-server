@@ -1,0 +1,7 @@
+# S-2 mutation on b9ec8d149, reverting only the mutated file
+== S2-no-trr (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-        ["CONFIRMED", "CREATE_ATTEMPTED", "RESULT_UNKNOWN", "TERMINAL_RECONCILIATION_REQUIRED"];
++        ["CONFIRMED", "CREATE_ATTEMPTED", "RESULT_UNKNOWN"];
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanStillHandsAFailedOrderAwaitingTerminalReconciliationToTheFaultModel(behindTheReadinessGate: False) [145 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanStillHandsAFailedOrderAwaitingTerminalReconciliationToTheFaultModel(behindTheReadinessGate: True) [136 ms]
+失败!  - 失败:     2，通过:    25，已跳过:     0，总计:    27，持续时间: 5 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,7 @@
+# third-round review probe ProbeD (C:/work/8005-scratch/review-cs879/ReviewProbe879R3Tests.cs, unchanged) on the S-1 fix; on 86676345 the review recorded faults=[] commands=[] in all three cells and ownOrderRebuilds=1 in the CANCELLED one
+  已通过 ControlServer.Tests.ReviewProbe879R2Tests.ProbeDTwoOpenStopsWithIntentsDuplicateHasAnOlderEndedOrder(ended: "CANCELLED", behindGate: False) [2 s]
+ ended=CANCELLED gate=False: code=VEHICLE_DOOR_NOT_PROVEN_LOCKED; faults=[SuspectedBlocked/VEHICLE_DOOR_NOT_PROVEN_LOCKED]; commands=[OrderHold,triggerEmergency]; ownOrderRebuilds=0
+  已通过 ControlServer.Tests.ReviewProbe879R2Tests.ProbeDTwoOpenStopsWithIntentsDuplicateHasAnOlderEndedOrder(ended: "SUCCESS", behindGate: False) [161 ms]
+ ended=SUCCESS gate=False: code=VEHICLE_DOOR_NOT_PROVEN_LOCKED; faults=[SuspectedBlocked/VEHICLE_DOOR_NOT_PROVEN_LOCKED]; commands=[OrderHold,triggerEmergency]; ownOrderRebuilds=0
+  已通过 ControlServer.Tests.ReviewProbe879R2Tests.ProbeDTwoOpenStopsWithIntentsDuplicateHasAnOlderEndedOrder(ended: "SUCCESS", behindGate: True) [175 ms]
+ ended=SUCCESS gate=True: code=VEHICLE_DOOR_NOT_PROVEN_LOCKED; faults=[SuspectedBlocked/VEHICLE_DOOR_NOT_PROVEN_LOCKED]; commands=[OrderHold,triggerEmergency]; ownOrderRebuilds=0

@@ -1,0 +1,5 @@
+# S-1 fix, local targeted (same filter as targeted-on-round2.txt)
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove [31 s]
+失败!  - 失败:     1，通过:  3403，已跳过:     0，总计:  3404，持续时间: 3 m 31 s - ControlServer.Tests.dll (net8.0)
+# the one red is the multi-vehicle round-budget test on real timers (31 s under the 3404-test load); rerun alone on the same build:
+已通过! - 失败:     0，通过:     1，已跳过:     0，总计:     1，持续时间: 3 s - ControlServer.Tests.dll (net8.0)

@@ -921,7 +921,7 @@ public sealed class OnboardRecoveryCoordinator(
                 .ConfigureAwait(false);
         }
         // 版数守恒，与出发、持货截断同一个理由：这个停靠的归属少了几条就补几版。
-        (await dbContext.Set<JourneyStopRow>().SingleAsync(row => row.StopId == stops.Current.StopId, cancellationToken)
+        (await JourneyStopsForWrite.TrackedAsync(dbContext, stops.Current.StopId, cancellationToken)
             .ConfigureAwait(false)).WorklistRefills +=
             1 + alongside.Count(row => string.Equals(row.PickupStopId, stops.Current.StopId, StringComparison.Ordinal));
         if (last)

@@ -1,0 +1,5 @@
+# UnloadStopDepartureWaitTests.AtAStationThatUnloadsThenLoadsTheWaitStartsAtTheLoadingStopNotTheUnloading, single test x20 each, local
+head 3f6120cb5 (test data wrote P1=1,U1=2,P2=3,U=5 -- a gap at 4): red 20/20; whole class 1 red of 7
+baseline b82899e40 (origin/fp/v2-impl): red 0/20; whole class 7/7
+head + test data fixed (+1 instead of +2, contiguous 1..4): red 0/20; class + ArchitectureTests + JourneyStopSequenceRaceTests: 已通过! - 失败:     0，通过:   116，已跳过:     0，总计:   116，持续时间: 26 s - ControlServer.Tests.dll (net8.0)
+CI test 42049855879 on 3f6120cb: the same single red, 6301/6302
