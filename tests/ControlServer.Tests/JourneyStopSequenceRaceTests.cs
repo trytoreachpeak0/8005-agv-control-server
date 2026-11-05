@@ -205,6 +205,44 @@ public sealed class JourneyStopSequenceRaceTests
     }
 
     /// <summary>
+    /// 序位坏了的旅程不接途中追加：同一轮里推进先把它停下、写上码，派车轮读到这个码就不为它规划插位。
+    /// </summary>
+    /// <remarks>
+    /// 不挡的后果不是多一条报错，而是静默改库：规划器按游标的次序给整条旅程重新编一遍号，写入时序位又「对」了，库里的重号被按
+    /// <c>StopId</c> 的字母序悄悄排开——哪个先送，本该由人核过车上的货之后定。判别力：
+    /// <c>MultiVehicleExecutionTests.AnInTransitVehicleTakesAnAppendedDemandIntoItsExistingJourney</c> 是同一个夹具、同样两条需求，那一条追加进来了。
+    /// </remarks>
+    [Fact]
+    public async Task AJourneyWhoseStopSequencesAreBrokenTakesNoAppendedDemand()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using MultiVehicleExecutionTests.FleetFixture fixture = await MultiVehicleExecutionTests.FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([MultiVehicleExecutionTests.FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow journey = await fixture.JourneyOfAsync(MultiVehicleExecutionTests.FleetFixture.AgvIds[0]);
+        // 卸货停靠与取货停靠同为 1 号：一个 1 重了，2 缺了。
+        (await fixture.Context.Set<JourneyStopRow>()
+            .SingleAsync(row => row.JourneyId == journey.JourneyId && row.StopRole == JourneyStopRoles.Unload, token)).Sequence = 1;
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+
+        fixture.Catalog.Set(
+        [
+            MultiVehicleExecutionTests.FleetFixture.Demand(0, "N1-1", 0),
+            MultiVehicleExecutionTests.FleetFixture.Demand(1, "N1-2", 1)
+        ]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyRuntimeRow only = Assert.Single(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(token));
+        Assert.Equal(JourneyRuntimeEngine.StopSequenceBrokenReason, only.BlockReasonCode);
+        JourneyDemandRow membership = Assert.Single(
+            await fixture.Context.Set<JourneyDemandRow>().AsNoTracking().ToArrayAsync(token));
+        Assert.Equal(MultiVehicleExecutionTests.FleetFixture.Demand(0, "N1-1", 0).DemandId, membership.DemandId);
+    }
+
+    /// <summary>
     /// 建腿取的「下一站」与推进取的「当前停靠」出自同一个列表、同一个次序：当前停靠完成之后，新的当前停靠正是刚才的「下一站」。
     /// 修之前建腿按「序位严格大于当前停靠」取，同号时跳过同号的那个，给后面一站下了单，推进却停在那个同号的停靠上（现场 6 号与第二个 5 号）。
     /// </summary>
