@@ -911,6 +911,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 $"Journey '{plan.JourneyId}' was asked to yield its station ({journey.YieldTriggeredByVehicleKey}) and cannot take an appended demand.");
         }
 
+        // 插位按的那份计划还是不是库里这一份（control-server#879 审查 H2）。与上面几道同理：轮次读计划在事务外，只有与写在同一个事务里的
+        // 判据挡得住中间的改动。在写任何东西之前判，拒绝时什么也没写。
+        await AssertPlannedAgainstTheJourneyAsItIsAsync(plan, cancellationToken).ConfigureAwait(false);
+
         if (redispatch)
         {
             await ThawForRedispatchAsync(snapshot.DemandId, cancellationToken).ConfigureAwait(false);
@@ -1086,6 +1090,70 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         }
 
         return created;
+    }
+
+    /// <summary>
+    /// 这次追加的插位是不是按库里此刻这一份计划算的；不是就抛 <see cref="JourneyPlanChangedBeforeAppendException"/>，什么也不写
+    /// （control-server#879 审查 H2）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么要判。</b>插位在派车轮开头按当时的计划算，写库在后面；中间车载端连接上的一次取消可以提交它的计划修订——删掉一条没装的需求
+    /// 留下的空停靠、把后面的停靠往前挪。按旧插位照写，新需求会并进那个刚删掉的卸货停靠：它装上车之后没有一站会卸它，开放停靠走完旅程就收尾，
+    /// 货留在车上。删掉的停靠也会被写回开放停靠之间。下面那道「当前下一站的序位没变」只看一个停靠，挡不住这件事。
+    /// </para>
+    /// <para>
+    /// <b>两道。</b>要并入的停靠必须仍是开放的——这一道不靠调用方，任何插位都要守。其次，调用方带了 <see cref="JourneyAppendPlan.PlannedAgainst"/>
+    /// （派车轮总是带）时，库里这趟旅程的停靠集合、每个停靠的序位与状态都必须与它一致；多一个、少一个、任一个变了，都说明计划被改过。
+    /// 只比序位与状态：别的列（清单补版数、离站时刻）不影响插位。
+    /// </para>
+    /// <para>
+    /// <b>拒绝是可重试的结局，不是不变量被破坏</b>：与旅程在提交前结束（<see cref="JourneyEndedBeforeAppendException"/>）同一类，
+    /// 受理把它报成 <c>CandidateChanged</c>，这条需求下一轮按新计划重算，不记 Error。
+    /// </para>
+    /// </remarks>
+    private async Task AssertPlannedAgainstTheJourneyAsItIsAsync(JourneyAppendPlan plan, CancellationToken cancellationToken)
+    {
+        Dictionary<string, (int Sequence, string Status)> stored = (await dbContext.Set<JourneyStopRow>().AsNoTracking()
+                .Where(row => row.JourneyId == plan.JourneyId)
+                .Select(row => new { row.StopId, row.Sequence, row.Status })
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .ToDictionary(row => row.StopId, row => (row.Sequence, row.Status), StringComparer.Ordinal);
+
+        foreach (string mergeTarget in new[] { plan.PickupStopId, plan.UnloadStopId })
+        {
+            if (stored.TryGetValue(mergeTarget, out (int Sequence, string Status) target) &&
+                target.Status is JourneyStopStatuses.Completed or JourneyStopStatuses.Removed)
+            {
+                throw new JourneyPlanChangedBeforeAppendException(
+                    $"Demand '{plan.DemandId}' was to join stop '{mergeTarget}' of journey '{plan.JourneyId}', which is now " +
+                    $"{target.Status}; the placement was planned against an older plan.");
+            }
+        }
+
+        if (plan.PlannedAgainst is not { } basis)
+        {
+            return;
+        }
+
+        string[] changed =
+        [
+            .. basis
+                .Where(seen => !stored.TryGetValue(seen.StopId, out (int Sequence, string Status) now) ||
+                               now.Sequence != seen.Sequence ||
+                               !string.Equals(now.Status, seen.Status, StringComparison.Ordinal))
+                .Select(seen => stored.TryGetValue(seen.StopId, out (int Sequence, string Status) now)
+                    ? $"{seen.StopId} {seen.Sequence}/{seen.Status} -> {now.Sequence}/{now.Status}"
+                    : $"{seen.StopId} gone"),
+            .. stored.Keys
+                .Except(basis.Select(seen => seen.StopId), StringComparer.Ordinal)
+                .Select(stopId => $"{stopId} new"),
+        ];
+        if (changed.Length > 0)
+        {
+            throw new JourneyPlanChangedBeforeAppendException(
+                $"Journey '{plan.JourneyId}' changed after the append of '{plan.DemandId}' was planned: {string.Join(", ", changed)}.");
+        }
     }
 
     /// <summary>把插入之后的序位写到每个停靠上；序位可变，身份是 <c>StopId</c>。</summary>

@@ -65,6 +65,43 @@ public static class JourneyStopsForWrite
     }
 
     /// <summary>
+    /// 一个停靠，被跟踪，与库对齐（见类注释）：要在它上面改一列（清单补版数、状态、离站时刻）再保存的人从这里取（审查 S4）。
+    /// 带跟踪的 <c>SingleAsync</c> 会把本上下文早先跟踪的旧实例原样交回，在旧值上做的 <c>WorklistRefills +=</c> 会盖掉别的连接刚加上的那几版。
+    /// </summary>
+    public static async Task<JourneyStopRow> TrackedAsync(
+        ControlServerDbContext dbContext,
+        string stopId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stopId);
+        return await TrackedOrDefaultAsync(dbContext, stopId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Stop '{stopId}' does not exist.");
+    }
+
+    /// <summary>同 <see cref="TrackedAsync"/>，没有这个停靠时为空。</summary>
+    public static async Task<JourneyStopRow?> TrackedOrDefaultAsync(
+        ControlServerDbContext dbContext,
+        string stopId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stopId);
+        JourneyStopRow? stored = await dbContext.Set<JourneyStopRow>().AsNoTracking()
+            .SingleOrDefaultAsync(row => row.StopId == stopId, cancellationToken).ConfigureAwait(false);
+        if (stored is not null &&
+            dbContext.ChangeTracker.Entries<JourneyStopRow>()
+                .FirstOrDefault(entry => entry.State is EntityState.Unchanged or EntityState.Modified &&
+                                         string.Equals(entry.Entity.StopId, stopId, StringComparison.Ordinal)) is { } entry)
+        {
+            AlignWithStore(entry, stored);
+        }
+
+        return await dbContext.Set<JourneyStopRow>()
+            .SingleOrDefaultAsync(row => row.StopId == stopId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 一趟旅程的停靠序位是不是「1 到停靠数、连续、不重号」（<c>JourneyPlanRevision</c> 的编号规则）；是就返回空，不是就返回一句
     /// 能直接进日志的描述：哪些号重了、哪些号缺了、每个停靠现在是几号。
     /// </summary>
@@ -111,6 +148,16 @@ public static class JourneyStopsForWrite
 
             bool staged = property.IsModified;
             object? storeValue = storeValues[property.Metadata];
+            if (staged && property.Metadata.Name == nameof(JourneyStopRow.WorklistRefills))
+            {
+                // 计数列（审查 S4）：暂存的是「在跟踪时的原值上加了几」，别的连接可能在这期间也加过。按库重放这一次的增量，
+                // 而不是拿旧原值加出来的结果盖掉别人加的那几版——那会让清单号回退、与车上已收到的号撞上。
+                long increment = (long)property.CurrentValue! - (long)property.OriginalValue!;
+                property.OriginalValue = storeValue;
+                property.CurrentValue = (long)storeValue! + increment;
+                continue;
+            }
+
             property.OriginalValue = storeValue;
             if (!staged)
             {

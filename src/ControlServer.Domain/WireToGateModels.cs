@@ -438,10 +438,18 @@ public sealed record JourneyAppendPlan(
     string DispatchZone,
     long? DispatchZoneParameterVersion,
     IReadOnlyList<JourneyStopSequenceChange> Resequenced,
-    DateTimeOffset AddedAt);
+    DateTimeOffset AddedAt,
+    IReadOnlyList<JourneyStopBasis>? PlannedAgainst = null);
 
 /// <summary>一个停靠插入之后的新序位。</summary>
 public sealed record JourneyStopSequenceChange(string StopId, int Sequence);
+
+/// <summary>
+/// 规划追加时看到的一个停靠：它当时的序位与状态（control-server#879 审查 H2）。插位是派车轮开头按库里当时的计划算的，写库在后面；
+/// 写库的事务把整趟旅程的停靠与这份逐个比，有一个不同就说明计划在中间被改过（车载端连接上的取消与它的计划修订、到站完成一个停靠），
+/// 这份插位作废、这条需求留到下一轮重算。
+/// </summary>
+public sealed record JourneyStopBasis(string StopId, int Sequence, string Status);
 
 public enum ConnectionRecoveryStatus
 {
@@ -560,3 +568,10 @@ public sealed class JourneyPlanFreezeIncompleteException(string message) : Inval
 /// Nothing was written. A race the round expects, not a broken invariant.
 /// </summary>
 public sealed class JourneyEndedBeforeAppendException(string message) : InvalidOperationException(message);
+
+/// <summary>
+/// 追加要写的插位是按一份已经过时的计划算的（control-server#879 审查 H2）：规划之后、提交之前，这趟旅程的停靠被别处改过
+/// （<see cref="JourneyAppendPlan.PlannedAgainst"/> 与库对不上），或者要并入的停靠已经完成或被删掉。什么也没写；需求留到下一轮按新计划重算。
+/// 与 <see cref="JourneyEndedBeforeAppendException"/> 一样是派车轮预期之中的竞态，不是不变量被破坏。
+/// </summary>
+public sealed class JourneyPlanChangedBeforeAppendException(string message) : InvalidOperationException(message);

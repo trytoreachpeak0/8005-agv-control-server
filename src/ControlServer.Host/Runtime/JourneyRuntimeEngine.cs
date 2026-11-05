@@ -1182,6 +1182,84 @@ public sealed partial class JourneyRuntimeEngine(
           await CurrentReadySessionAsync(current.AgvId, cancellationToken).ConfigureAwait(false) is null);
 
     /// <summary>
+    /// 这趟旅程的停靠序位违反「1 到停靠数、连续、不重号」时，写 <see cref="StopSequenceBrokenReason"/>、记一次 Error，旅程停在当前这一步等人；
+    /// 序位好好的返回 false（control-server#879）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么在推进开头判，而不是让它抛。</b>建腿、推进、清单号（<see cref="JourneyStopCursor.FirstWorklistRevisionAt"/>）与
+    /// 计划修订号都按序位算，序位一坏，往下哪一步都可能按错的停靠发报文、下单，或者像 11-05 那样每轮在同一处抛
+    /// <c>Sequence contains no elements</c>：看板上只有一个笼统的「推进失败」，日志一轮一条、353 条说的是同一件事，没有一条说出病因。
+    /// 在这里判，病因只说一次，而且说的是病因本身：哪几号重了、缺了哪几号、每个停靠现在是几号。
+    /// </para>
+    /// <para>
+    /// <b>为什么不自己修。</b>重号的两个停靠谁先谁后，服务端说不出来——那要看车上实际装着什么、上一版计划发给车的是什么、哪个停靠已经有订单。
+    /// 11-05 那一次是人核过货与车上计划之后才改的库。写坏序位的路径已经堵上（<see cref="JourneyStopsForWrite"/>，写入时也判），
+    /// 这一道是给已经坏了的库，与之后万一还有别的路径漏网时用的。
+    /// </para>
+    /// <para>
+    /// <b>停下的是推进，不是在途单的监看</b>（审查 H1）。车可能正带着本服务端已下发的单在路上——那张单照样跑完，跑的这一路上门锁没锁、
+    /// 单在 RIoT 上 FAILED 或挂起，都要照常按住、急停、写码。所以在写自己的码之前，先照闸门关着那一侧的做法跑一遍
+    /// <see cref="NameInFlightOrderWithoutThePeerAsync"/>：它只读 RIoT、只向 RIoT 发命令，不向车载端发任何东西，也不依赖停靠序位
+    /// （它只看当前停靠，而当前停靠是第一个开放停靠，重号改不了它是谁）。单自己的码立着时（故障、挂起、重建），留着那个码，不盖成序位码。
+    /// Blocked 与 AREA 站等准入的旅程也不改码，与闸门那一侧同一条：它们的码说的是另一件要人做的事。
+    /// </para>
+    /// <para>
+    /// <b>码相同不再写、不再记</b>：每轮都判，只在写成这个码的那一轮记 Error；之后序位不变就不再记，开始时间从第一次算起（与
+    /// <see cref="NameFailedAdvanceAsync"/> 同一个理由）。这个码指名在等人（<see cref="CarriesACodeThatNamesAWaitOnAPerson"/>），
+    /// 推进失败不会把它盖掉；闸门关着那一侧也不把它换成 <c>ONBOARD_SESSION_NOT_READY</c>（审查 S2），重连不会让它重记、重新计时。
+    /// 别的码（推进各阶段自己写、自己清的那些）照写成这个码：这一步之后的阶段这一轮都不跑，留着它们只会让看板说一件已经不是原因的事。
+    /// 派车轮不往这趟旅程追加，判的是停靠本身（<c>DispatchRoundRunner.ReadEnRoutePlanAsync</c>，审查 S3）。
+    /// </para>
+    /// <para>
+    /// 有人把序位改好之后，下一轮这里把码清掉、返回 false，推进照常往下走。清码的那次保存与 <see cref="ClearFailedAdvanceAsync"/> 同一条规矩
+    /// （审查 L4）：这一轮还留着别处的未保存改动时不清，下一轮再清。
+    /// </para>
+    /// </remarks>
+    private async Task<bool> HoldOnBrokenStopSequenceAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        RiotMapStationCatalogSnapshot currentMap,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (stops.SequenceProblem is not { } problem)
+        {
+            if (string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) &&
+                !dbContext.ChangeTracker.Entries()
+                    .Any(entry => !ReferenceEquals(entry.Entity, runtime) &&
+                                  entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            {
+                // 序位已经被人改好：码清掉，推进下面照常走，看板不再说这件事。
+                runtime.SetBlockReason(null, now);
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return false;
+        }
+
+        if (runtime.Stage == JourneyRuntimeStage.Blocked || IsHeldForAreaEndAdmission(runtime))
+        {
+            return true;
+        }
+
+        if (await NameInFlightOrderWithoutThePeerAsync(runtime, currentMap, StopSequenceBrokenReason, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        if (!string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
+        {
+            LogStopSequenceBroken(logger, runtime.AgvId, runtime.JourneyId, problem, null);
+            runtime.SetBlockReason(StopSequenceBrokenReason, now);
+            runtime.UpdatedAt = now;
+        }
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
     /// 推进重新走通的那一轮，把上一轮留下的 <see cref="AdvanceFailedReason"/> 清掉：它说的是「上一轮失败了」，
     /// 这一轮走通就不再成立（control-server#331）。
     /// </summary>
@@ -1198,57 +1276,6 @@ public sealed partial class JourneyRuntimeEngine(
     /// 留着不清没有代价，下一轮再试一次。
     /// </para>
     /// </remarks>
-    /// <summary>
-    /// 这趟旅程的停靠序位违反「1 到停靠数、连续、不重号」时，写 <see cref="StopSequenceBrokenReason"/>、记一次 Error，旅程停在原地等人；
-    /// 序位好好的返回 false（control-server#879）。
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>为什么在推进开头判，而不是让它抛。</b>建腿、推进、清单号（<see cref="JourneyStopCursor.FirstWorklistRevisionAt"/>）与
-    /// 计划修订号都按序位算，序位一坏，往下哪一步都可能按错的停靠发报文、下单，或者像 11-05 那样每轮在同一处抛
-    /// <c>Sequence contains no elements</c>：看板上只有一个笼统的「推进失败」，日志一轮一条、353 条说的是同一件事，没有一条说出病因。
-    /// 在这里判，病因只说一次，而且说的是病因本身：哪几号重了、缺了哪几号、每个停靠现在是几号。
-    /// </para>
-    /// <para>
-    /// <b>为什么不自己修。</b>重号的两个停靠谁先谁后，服务端说不出来——那要看车上实际装着什么、上一版计划发给车的是什么、哪个停靠已经有订单。
-    /// 11-05 那一次是人核过货与车上计划之后才改的库。写坏序位的路径已经堵上（<see cref="JourneyStopsForWrite"/>，写入时也判），
-    /// 这一道是给已经坏了的库，与之后万一还有别的路径漏网时用的。
-    /// </para>
-    /// <para>
-    /// <b>码相同不再写、不再记</b>：每轮都判，只在第一次写码、记 Error；之后序位不变就什么也不做，开始时间从第一次算起（与
-    /// <see cref="NameFailedAdvanceAsync"/> 同一个理由）。这个码指名在等人（<see cref="CarriesACodeThatNamesAWaitOnAPerson"/>），
-    /// 推进失败与会话类的码不会把它盖掉；派车轮也不往这趟旅程追加（<c>DispatchRoundRunner.ReadEnRoutePlanAsync</c>）。
-    /// 有人把序位改好之后，下一轮这里把码清掉、返回 false，推进照常往下走。
-    /// </para>
-    /// </remarks>
-    private async Task<bool> HoldOnBrokenStopSequenceAsync(
-        JourneyRuntimeRow runtime,
-        JourneyStopCursor stops,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        if (stops.SequenceProblem is not { } problem)
-        {
-            if (string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
-            {
-                // 序位已经被人改好：码清掉，推进下面照常走，看板不再说这件事。
-                runtime.SetBlockReason(null, now);
-                runtime.UpdatedAt = now;
-                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            }
-            return false;
-        }
-
-        if (!string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
-        {
-            LogStopSequenceBroken(logger, runtime.AgvId, runtime.JourneyId, problem, null);
-            runtime.SetBlockReason(StopSequenceBrokenReason, now);
-            runtime.UpdatedAt = now;
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-        return true;
-    }
-
     private async Task ClearFailedAdvanceAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
     {
         if (!string.Equals(runtime.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal))
@@ -1342,7 +1369,10 @@ public sealed partial class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
-            else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime))
+            // 序位坏了的码不换成会话码（control-server#879 审查 S2）：换掉的话每次重连都重记一次 Error 2341、开始时间重算，
+            // 而序位坏了与会话就不就绪无关，人要做的事没变。
+            else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
+                     !string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
             {
                 runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", now);
                 runtime.UpdatedAt = now;
@@ -1398,7 +1428,7 @@ public sealed partial class JourneyRuntimeEngine(
             cancellationToken).ConfigureAwait(false);
         // 停靠序位不连续或重号（control-server#879）：停在这里等人，不往下推。放在补发之后（补发只重发已经存下的行，与序位无关）、
         // 计划重发之前（按坏序位排出来的计划会把两个停靠同时标成 ACTIVE 发给车，11-05 agv02 的 8822、8824 两版就是这样）。
-        if (await HoldOnBrokenStopSequenceAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false))
+        if (await HoldOnBrokenStopSequenceAsync(runtime, stops, currentMap, now, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -3586,8 +3616,7 @@ public sealed partial class JourneyRuntimeEngine(
 
         // 只在这个上下文里改，不保存：旧的那一版由 PublishStopWorklistAsync 退役，升版的次数、退役与新的一版在入队那一次保存里
         // 一起落库。崩在那之前就什么都没落库，下一轮照样认出车上的期限是旧的、照样升版（PR #353 审查 M1）。
-        JourneyStopRow tracked = await dbContext.Set<JourneyStopRow>()
-            .SingleAsync(row => row.StopId == stop.StopId, cancellationToken).ConfigureAwait(false);
+        JourneyStopRow tracked = await JourneyStopsForWrite.TrackedAsync(dbContext, stop.StopId, cancellationToken).ConfigureAwait(false);
         tracked.WorklistRefills += 1;
         return await JourneyStopCursor.LoadIncludingUnsavedChangesAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
@@ -3706,8 +3735,7 @@ public sealed partial class JourneyRuntimeEngine(
                     stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, earlier), cancellationToken)
                 .ConfigureAwait(false);
         }
-        JourneyStopRow tracked = await dbContext.Set<JourneyStopRow>()
-            .SingleAsync(row => row.StopId == stop.StopId, cancellationToken).ConfigureAwait(false);
+        JourneyStopRow tracked = await JourneyStopsForWrite.TrackedAsync(dbContext, stop.StopId, cancellationToken).ConfigureAwait(false);
         tracked.WorklistRefills += revision - formula + 1;
         runtime.UpdatedAt = now;
 
@@ -6124,7 +6152,7 @@ public sealed partial class JourneyRuntimeEngine(
 
     /// <summary>被跟踪的那一份停靠行，用来写状态。</summary>
     private Task<JourneyStopRow> TrackedStopAsync(string stopId, CancellationToken cancellationToken) =>
-        dbContext.Set<JourneyStopRow>().SingleAsync(row => row.StopId == stopId, cancellationToken);
+        JourneyStopsForWrite.TrackedAsync(dbContext, stopId, cancellationToken);
 
     /// <summary>
     /// 这趟旅程有权补发的消息，按停靠与归属枚举出来。

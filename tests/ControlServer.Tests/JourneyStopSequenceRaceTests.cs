@@ -243,6 +243,215 @@ public sealed class JourneyStopSequenceRaceTests
     }
 
     /// <summary>
+    /// 审查 H2：插位按轮次开头的计划算，写库之前车载端连接上取消了 D、修订删掉了 D 的两个停靠。旧插位要把 E 并进刚删掉的 <c>D-UNLOAD</c>——
+    /// 照写的话 E 装上车之后没有一站会卸它。现在整笔拒绝（可重试，受理报成 <c>CandidateChanged</c>），什么也不写。
+    /// </summary>
+    /// <remarks>
+    /// 两格：派车轮的插位总带着 <see cref="JourneyAppendPlan.PlannedAgainst"/>（计划被改过就拒）；不带的（别的调用方）还有一道「并入的停靠必须仍开放」。
+    /// 修之前（PR head <c>0d662b1d</c> 与基线 <c>b82899e4</c>）审查探针 <c>ProbeOneStaleAppendMergesIntoAStopTheRevisionJustRemoved</c>
+    /// 在同一形状下：不抛，E 的卸货挂在 REMOVED 的 <c>D-UNLOAD</c> 上，两个已删停靠被写回开放停靠之间。
+    /// </remarks>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnAppendPlannedBeforeARevisionDoesNotJoinAStopTheRevisionRemoved(bool withThePlanItWasPlannedAgainst)
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await SeedAsync(fixture, leavingUnloadsAtItsOwnStop: true);
+        JourneyAppendPlan planned = await PlanAppendAsync(fixture, runtime, expectedUnloadMerge: "D-UNLOAD");
+        JourneyAppendPlan append = withThePlanItWasPlannedAgainst ? planned : planned with { PlannedAgainst = null };
+        Assert.Equal(withThePlanItWasPlannedAgainst, append.PlannedAgainst is not null);
+
+        await using (ControlServerDbContext onboard = fixture.NewContext())
+        {
+            await new PickupStopTermination(onboard)
+                .StageAsync(runtime, Leaving, "CANCELLED_BY_OPERATOR", Batch7JourneyFixture.Now, token);
+            await onboard.SaveChangesAsync(token);
+        }
+        (string StopId, int Sequence)[] before = await SequencesAsync(fixture, runtime);
+
+        await Assert.ThrowsAsync<JourneyPlanChangedBeforeAppendException>(() => new WireToGateStore(fixture.NewContext())
+            .AppendToJourneyAsync(
+                Batch7JourneyFixture.Snapshot(Appended, Batch7JourneyFixture.Now.AddMinutes(5)), append, token));
+
+        Assert.Equal(before, await SequencesAsync(fixture, runtime));
+        await using ControlServerDbContext check = fixture.NewContext();
+        Assert.False(await check.AcceptedDemands.AnyAsync(row => row.DemandId == Appended, token));
+        Assert.False(await check.Set<JourneyDemandRow>().AnyAsync(row => row.DemandId == Appended, token));
+    }
+
+    /// <summary>
+    /// 并入的停靠仍开放、只是别的停靠在中间被改过（D 取消、它的取货停靠被删，E 并进的是 B 的 250）：派车轮带着计划基线，照样拒。
+    /// 旧插位照写会把刚删掉的 <c>D-PICKUP</c> 写回开放停靠之间。
+    /// </summary>
+    [Fact]
+    public async Task AnAppendPlannedAgainstAPlanThatHasSinceChangedIsRefused()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await SeedAsync(fixture);
+        JourneyAppendPlan append = await PlanAppendAsync(fixture, runtime);
+
+        await using (ControlServerDbContext onboard = fixture.NewContext())
+        {
+            await new PickupStopTermination(onboard)
+                .StageAsync(runtime, Leaving, "CANCELLED_BY_OPERATOR", Batch7JourneyFixture.Now, token);
+            await onboard.SaveChangesAsync(token);
+        }
+        (string StopId, int Sequence)[] before = await SequencesAsync(fixture, runtime);
+
+        JourneyPlanChangedBeforeAppendException refused = await Assert.ThrowsAsync<JourneyPlanChangedBeforeAppendException>(
+            () => new WireToGateStore(fixture.NewContext()).AppendToJourneyAsync(
+                Batch7JourneyFixture.Snapshot(Appended, Batch7JourneyFixture.Now.AddMinutes(5)), append, token));
+
+        Assert.Contains("D-PICKUP 3/PENDING -> 5/REMOVED", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(before, await SequencesAsync(fixture, runtime));
+    }
+
+    /// <summary>
+    /// 审查 H1：会话就绪、序位坏了，车带着本服务端的单在路上、门锁没锁——照样按住单、急停。推进停下的是建腿下单发计划，不是在途监看。
+    /// 闸门关着（会话未就绪）那一侧本来就照常监看，两格都钉住。
+    /// </summary>
+    /// <remarks>
+    /// 修之前（PR head <c>0d662b1d</c>）就绪那一格：码是 <c>JOURNEY_STOP_SEQUENCE_BROKEN</c>、没有故障、没有任何 RIoT 命令（审查探针
+    /// <c>ReviewProbe879DoorTests</c>）；基线 <c>b82899e4</c> 与序位好好的同样条件下都是按住并急停。
+    /// </remarks>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ABrokenPlanStillStopsAVehicleWhoseDoorIsNotLockedOnTheWay(bool behindTheReadinessGate)
+    {
+        await using JourneyRuntimeWorkerTestKit.RuntimeFixture fixture = await JourneyRuntimeWorkerTestKit.RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Catalog.Set(fixture.Demand(
+            Batch7StopDrivenAdvanceDriver.FirstDemandId, Batch7StopDrivenAdvanceDriver.FirstSublot,
+            JourneyRuntimeWorkerTestKit.Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(Batch7StopDrivenAdvanceDriver.FirstSublot, 7);
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        // 后面两个停靠同为 3 号、缺 4；当前停靠（取货，1 号）与它的单不受影响。
+        fixture.Context.Set<JourneyStopRow>().AddRange(ExtraUnload(runtime, "EXTRA-A", 3), ExtraUnload(runtime, "EXTRA-B", 3));
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        if (behindTheReadinessGate)
+        {
+            await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        }
+
+        fixture.Riot.MovementState = "MT_RUNNING";
+        await HeardRoundAsync(fixture);
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await HeardRoundAsync(fixture);
+
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        RiotOrderCommandAuditRow[] commands = await reading.RiotOrderCommandAudit.AsNoTracking().ToArrayAsync(token);
+        Assert.Contains(commands, row => row.CommandType == RiotCommandTypeNames.TriggerEmergency);
+        Assert.NotEmpty(await reading.VehicleFaultStates.AsNoTracking().ToArrayAsync(token));
+        // 门锁故障的码立着，不被盖成序位码（审查 S2 的反方向）。
+        Assert.NotEqual(
+            JourneyRuntimeEngine.StopSequenceBrokenReason,
+            (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(token)).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 审查 S2：序位坏了之后会话断开、又恢复——码不被换成会话码，Error 2341 只记那一次，开始时间不重算。
+    /// </summary>
+    [Fact]
+    public async Task ASessionDropDoesNotReplaceTheBrokenSequenceCodeNorLogItAgain()
+    {
+        await using JourneyRuntimeWorkerTestKit.RuntimeFixture fixture = await JourneyRuntimeWorkerTestKit.RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Catalog.Set(fixture.Demand(
+            Batch7StopDrivenAdvanceDriver.FirstDemandId, Batch7StopDrivenAdvanceDriver.FirstSublot,
+            JourneyRuntimeWorkerTestKit.Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(Batch7StopDrivenAdvanceDriver.FirstSublot, 7);
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(Batch7StopDrivenAdvanceDriver.FirstDemandId);
+        fixture.Context.Set<JourneyStopRow>().AddRange(ExtraUnload(runtime, "EXTRA-A", 3), ExtraUnload(runtime, "EXTRA-B", 3));
+        await fixture.Context.SaveChangesAsync(token);
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        JourneyRuntimeRow held = await Batch7StopDrivenAdvanceDriver.JourneyOfAsync(fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId);
+        Assert.Equal(JourneyRuntimeEngine.StopSequenceBrokenReason, held.BlockReasonCode);
+
+        await fixture.DropOnboardSessionAsync();
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        await fixture.RestoreSessionReadyAsync();
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow after = await Batch7StopDrivenAdvanceDriver.JourneyOfAsync(fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId);
+        Assert.Equal(JourneyRuntimeEngine.StopSequenceBrokenReason, after.BlockReasonCode);
+        Assert.Equal(held.BlockReasonSince, after.BlockReasonSince);
+        Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Level == LogLevel.Error && entry.Message.Contains("control-server#879", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 审查 S4：本上下文早先跟踪着一个停靠，别的连接随后给它加了两版清单；这里再加一版——库里是三版，不是拿旧值加出来的一版。
+    /// 两格：先读后加（引擎 <c>TrackedStopAsync</c> 那种），与先加、暂存着，再被修订读一遍（<see cref="JourneyStopsForWrite.LoadAsync"/>）。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AWorklistRefillAddedOnAnOlderCopyKeepsTheRefillsAnotherConnectionAdded(bool stagedBeforeTheOtherCommit)
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await SeedAsync(fixture);
+        await using ControlServerDbContext round = fixture.NewContext();
+        await StationYield.StopsOfAsync(round, runtime.JourneyId, token);
+        if (stagedBeforeTheOtherCommit)
+        {
+            (await JourneyStopsForWrite.TrackedAsync(round, "C-UNLOAD", token)).WorklistRefills += 1;
+        }
+
+        await using (ControlServerDbContext other = fixture.NewContext())
+        {
+            (await other.Set<JourneyStopRow>().SingleAsync(row => row.StopId == "C-UNLOAD", token)).WorklistRefills += 2;
+            await other.SaveChangesAsync(token);
+        }
+
+        if (stagedBeforeTheOtherCommit)
+        {
+            await JourneyStopsForWrite.LoadAsync(round, runtime.JourneyId, token);
+        }
+        else
+        {
+            (await JourneyStopsForWrite.TrackedAsync(round, "C-UNLOAD", token)).WorklistRefills += 1;
+        }
+        await round.SaveChangesAsync(token);
+
+        await using ControlServerDbContext check = fixture.NewContext();
+        Assert.Equal(3, (await check.Set<JourneyStopRow>().AsNoTracking().SingleAsync(row => row.StopId == "C-UNLOAD", token)).WorklistRefills);
+    }
+
+    /// <summary>
+    /// 审查 L1：让站判下一站读的停靠（现场第一次把旧实例带进跟踪的那个读法）交出的是库里此刻的状态与序位，不是本上下文早先跟踪的那一份。
+    /// </summary>
+    [Fact]
+    public async Task TheStopsStationYieldReadsAreTheStopsAsTheyAreNotAsThisContextFirstSawThem()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await SeedAsync(fixture);
+        await using ControlServerDbContext round = fixture.NewContext();
+        await StationYield.StopsOfAsync(round, runtime.JourneyId, token);
+
+        await using (ControlServerDbContext onboard = fixture.NewContext())
+        {
+            await new PickupStopTermination(onboard)
+                .StageAsync(runtime, Leaving, "CANCELLED_BY_OPERATOR", Batch7JourneyFixture.Now, token);
+            await onboard.SaveChangesAsync(token);
+        }
+
+        JourneyStopRow pickup = (await StationYield.StopsOfAsync(round, runtime.JourneyId, token)).Single(stop => stop.StopId == "D-PICKUP");
+        Assert.Equal((JourneyStopStatuses.Removed, 5), (pickup.Status, pickup.Sequence));
+    }
+
+    /// <summary>
     /// 建腿取的「下一站」与推进取的「当前停靠」出自同一个列表、同一个次序：当前停靠完成之后，新的当前停靠正是刚才的「下一站」。
     /// 修之前建腿按「序位严格大于当前停靠」取，同号时跳过同号的那个，给后面一站下了单，推进却停在那个同号的停靠上（现场 6 号与第二个 5 号）。
     /// </summary>
@@ -328,6 +537,16 @@ public sealed class JourneyStopSequenceRaceTests
         };
     }
 
+    /// <summary>车载端又说了话、钟走一秒、跑一轮；前后清掉夹具上下文的跟踪（与审查探针同一个做法）。</summary>
+    private static async Task HeardRoundAsync(JourneyRuntimeWorkerTestKit.RuntimeFixture fixture)
+    {
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+    }
+
     private static void AssertContiguous((string StopId, int Sequence)[] stops) =>
         Assert.True(
             stops.Select(stop => stop.Sequence).Order().SequenceEqual(Enumerable.Range(1, stops.Length)),
@@ -347,7 +566,8 @@ public sealed class JourneyStopSequenceRaceTests
     /// 与 <c>EnRouteAppendCriterion</c> 同一个算法、同一份输入：库里此刻的游标（不带跟踪）交给 <see cref="DispatchRoundRunner.EnRoutePlanOf"/>，
     /// 再交给 <see cref="EnRouteAppendPlanner"/>；落库那一份照 <c>DispatchRoundRunner.AppendToJourneyAsync</c> 转换。
     /// </summary>
-    private static async Task<JourneyAppendPlan> PlanAppendAsync(Batch7JourneyFixture fixture, JourneyRuntimeRow runtime)
+    private static async Task<JourneyAppendPlan> PlanAppendAsync(
+        Batch7JourneyFixture fixture, JourneyRuntimeRow runtime, string expectedUnloadMerge = "B-UNLOAD")
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         DateTimeOffset at = Batch7JourneyFixture.Now.AddMinutes(5);
@@ -382,9 +602,9 @@ public sealed class JourneyStopSequenceRaceTests
             Distance);
         EnRouteAppendPlacement placement = decision.Placement
             ?? throw new InvalidOperationException($"the append was refused: {decision.RefusalReasonCode}");
-        // 前提：取货新开一个停靠、卸货并进 B 的 250——只插一个停靠，与删掉的一个抵消。
+        // 前提：取货新开一个停靠、卸货并进 250 上那个停靠——只插一个停靠，与删掉的一个抵消。
         Assert.Null(placement.MergeIntoPickupStopId);
-        Assert.Equal("B-UNLOAD", placement.MergeIntoUnloadStopId);
+        Assert.Equal(expectedUnloadMerge, placement.MergeIntoUnloadStopId);
 
         return new JourneyAppendPlan(
             runtime.JourneyId,
@@ -395,14 +615,19 @@ public sealed class JourneyStopSequenceRaceTests
             Zone,
             7,
             [.. placement.Resequenced.Select(stop => new JourneyStopSequenceChange(stop.StopId, stop.Sequence))],
-            at);
+            at,
+            placement.PlannedAgainst);
     }
 
     /// <summary>
     /// 锚需求经真实受理路径建出旅程（取货 101、卸货 202），再挂三条需求：B、C 已装车（卸货 250、210），D 没装（取货 205，卸货并在 250）。
     /// 锚的取货停靠已完成，当前下一站是 202；序位 101=1、202=2、205=3、250=4、210=5。
     /// </summary>
-    private static async Task<JourneyRuntimeRow> SeedAsync(Batch7JourneyFixture fixture)
+    /// <param name="leavingUnloadsAtItsOwnStop">
+    /// D 的卸货单独一个停靠 <c>D-UNLOAD</c>（250），B 改在 240（审查 H2 的形状）：追加 E 的卸货并进的就是 D 的那个停靠，D 一离开它就被删。
+    /// 序位 101=1、202=2、205=3、250=4、240=5、210=6。
+    /// </param>
+    private static async Task<JourneyRuntimeRow> SeedAsync(Batch7JourneyFixture fixture, bool leavingUnloadsAtItsOwnStop = false)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await Batch7JourneyFixture.AcceptAsync(fixture.Context, Anchor, Agv, VehicleKey, Batch7JourneyFixture.Now);
@@ -416,17 +641,31 @@ public sealed class JourneyStopSequenceRaceTests
             .ToArrayAsync(token);
         seeded.Single(row => row.StopRole == JourneyStopRoles.Pickup).Status = JourneyStopStatuses.Completed;
         string anchorUnload = seeded.Single(row => row.StopRole == JourneyStopRoles.Unload).StopId;
-        fixture.Context.Set<JourneyStopRow>().AddRange(
-            Stop(runtime, "D-PICKUP", JourneyStopRoles.Pickup, 205, 3),
-            Stop(runtime, "B-UNLOAD", JourneyStopRoles.Unload, 250, 4),
-            Stop(runtime, "C-UNLOAD", JourneyStopRoles.Unload, 210, 5));
+        fixture.Context.Set<JourneyStopRow>().AddRange(leavingUnloadsAtItsOwnStop
+            ?
+            [
+                Stop(runtime, "D-PICKUP", JourneyStopRoles.Pickup, 205, 3),
+                Stop(runtime, "D-UNLOAD", JourneyStopRoles.Unload, 250, 4),
+                Stop(runtime, "B-UNLOAD", JourneyStopRoles.Unload, 240, 5),
+                Stop(runtime, "C-UNLOAD", JourneyStopRoles.Unload, 210, 6),
+            ]
+            :
+            [
+                Stop(runtime, "D-PICKUP", JourneyStopRoles.Pickup, 205, 3),
+                Stop(runtime, "B-UNLOAD", JourneyStopRoles.Unload, 250, 4),
+                Stop(runtime, "C-UNLOAD", JourneyStopRoles.Unload, 210, 5),
+            ]);
 
         JourneyDemandRow[] memberships = await fixture.Context.Set<JourneyDemandRow>()
             .Where(row => row.JourneyId == runtime.JourneyId).ToArrayAsync(token);
         memberships.Single(row => row.DemandId == Anchor).Status = JourneyDemandStatuses.Loaded;
         Point(memberships.Single(row => row.DemandId == LoadedFar), anchorUnload, "B-UNLOAD", JourneyDemandStatuses.Loaded);
         Point(memberships.Single(row => row.DemandId == LoadedNear), anchorUnload, "C-UNLOAD", JourneyDemandStatuses.Loaded);
-        Point(memberships.Single(row => row.DemandId == Leaving), "D-PICKUP", "B-UNLOAD", JourneyDemandStatuses.PendingLoad);
+        Point(
+            memberships.Single(row => row.DemandId == Leaving),
+            "D-PICKUP",
+            leavingUnloadsAtItsOwnStop ? "D-UNLOAD" : "B-UNLOAD",
+            JourneyDemandStatuses.PendingLoad);
         await fixture.Context.SaveChangesAsync(token);
         fixture.Context.ChangeTracker.Clear();
         return runtime;

@@ -32,3 +32,21 @@
 
 - 现场恢复（11-05 08:37 改库）见 `C:/work/8005-scratch/agv02-seqfix-20261105/`，不在本仓库。
 - 变异结果见 `red/mutations.txt`：M1～M9 各红在对应用例上；M10（让站读停靠不对齐）存活，因为它之后的那次写入自己会再对齐一遍，它是纵深的一道。
+
+## 审查返工（第一轮审查结论：需返工）
+
+| 项 | 怎么改的 |
+| --- | --- |
+| H1 序位坏了时推进开头返回，就绪一侧的在途单监看随之停掉 | 停下之前，两个到站阶段照闸门关着那一侧跑一遍 `NameInFlightOrderWithoutThePeerAsync`（只读 RIoT、只向 RIoT 发命令，不碰车载端，也不依赖序位）；单自己的码（门锁故障、挂起、失败、重建）立着时留着它，不盖成序位码。看板文案改为「已下发的那一段照常开到并停下，路上安全监看照常」。 |
+| H2 追加按旧计划写，会并进刚被修订删掉的停靠 | `JourneyAppendPlan.PlannedAgainst`：派车轮把读计划那一刻每个停靠的序位与状态带下来，写库事务内与库逐个比，有不同就抛 `JourneyPlanChangedBeforeAppendException`（受理报成 `CandidateChanged`，可重试、不记 Error），什么也不写；另有一道不靠调用方的：要并入的停靠必须仍开放。 |
+| M1 释放服务接不住新异常 | 序位坏了的旅程在释放判断开头就跳过；循环里按旅程接住 `JourneyStopSequenceBrokenException`，丢掉暂存、记 Warning 2342，别的旅程照常。 |
+| S1 入库的计划快照是空输出 | 修好脚本后重新只读查一次，`field/plan-snapshots-20261104T2018-2053Z.txt` 现在是 21 版计划；8822、8824 两版都是 N4-1 与 N6-5 同时 ACTIVE。 |
+| S2 会话码盖掉序位码、序位码盖掉等人码 | 闸门关着那一侧不再把序位码换成 `ONBOARD_SESSION_NOT_READY`；序位码不盖单自己的码（见 H1），Blocked 与 AREA 站等准入不改码。 |
+| S3 派车轮按码挡 | 改为直接判已加载游标的 `SequenceProblem`。 |
+| S4 补版数在旧实例上加 | 对齐时把 `WorklistRefills` 当计数列：按库重放本上下文暂存的增量；写补版数的七处单停靠读改走 `JourneyStopsForWrite.TrackedAsync`（按库对齐后再交回跟踪实例）。 |
+| L1 让站读法没有测试 | 新用例 `TheStopsStationYieldReadsAreTheStopsAsTheyAreNotAsThisContextFirstSawThem`。 |
+| L2 `SetStopSequenceAsync` | 读停靠改走 `TrackedOrDefaultAsync`。 |
+| L3 等人码「每类一行」 | 没加：这个码每轮按停靠重新判，序位好好的那个夹具里它会在第一轮就被清掉，那一行的前提（码留着）不成立。码在等人码清单里由 `ReconnectModelTests` 钉住。 |
+| L4 清码那次保存 | 与 `ClearFailedAdvanceAsync` 同一条：别处还有暂存时不清。 |
+
+修前红（返工新用例搬到审查时的 head `0d662b1d` 上跑）与审查探针在返工代码上的结果：`red/rework-h1-h2-s2-before-and-probes-after.txt`。H2 的新用例要用新类型，搬不回旧 head；修前的样子以审查探针在 `0d662b1d` 与 `b82899e4` 上的记录为准（追加被接受、E 的卸货挂在 REMOVED 的停靠上）。

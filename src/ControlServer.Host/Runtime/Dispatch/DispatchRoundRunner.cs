@@ -705,17 +705,18 @@ public sealed class DispatchRoundRunner(
         // without being Blocked. Same standing as the exclusion above: the engine keeps such vehicles out of underWay, and
         // this is the query saying for itself what it will not plan into. It is filtered here rather than in the query
         // because the predicate is a code set, not a column.
-        // A journey whose stop sequences are broken (control-server#879) is held for a person too, and its plan is exactly what
-        // cannot be planned into: the write side would refuse the resequencing every round.
-        if (runtime is null || JourneyRuntimeEngine.IsStalledOrderReason(runtime.BlockReasonCode) ||
-            string.Equals(runtime.BlockReasonCode, JourneyRuntimeEngine.StopSequenceBrokenReason, StringComparison.Ordinal))
+        if (runtime is null || JourneyRuntimeEngine.IsStalledOrderReason(runtime.BlockReasonCode))
         {
             return null;
         }
 
         JourneyStopCursor stops = await JourneyStopCursor
             .LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
-        return stops.OpenStops.Count == 0
+        // A journey whose stop sequences are broken (control-server#879) is held for a person, and its plan is exactly what cannot be
+        // planned into: the planner numbers the whole journey afresh, so an append would sort the duplicates out by StopId -- an order
+        // only a person who has checked the cargo may choose. Judged on the stops themselves, not on the journey's code (review S3):
+        // the code can be overwritten (a session drop writes ONBOARD_SESSION_NOT_READY over it), the sequences cannot.
+        return stops.OpenStops.Count == 0 || stops.SequenceProblem is not null
             ? null
             : EnRoutePlanOf(stops, vehicleStation, runtime.LoadingPhaseState == LoadingPhaseStates.Closed) with
             {
@@ -761,7 +762,8 @@ public sealed class DispatchRoundRunner(
                 StringComparer.Ordinal),
             LoadingPhaseClosed: loadingPhaseClosed,
             TrailingRemovedStopIds: [.. trailingRemoved.Select(stop => stop.StopId)],
-            DemandsThatLeft: stops.DemandsThatLeft);
+            DemandsThatLeft: stops.DemandsThatLeft,
+            PlannedAgainst: [.. stops.Stops.Select(stop => new JourneyStopBasis(stop.StopId, stop.Sequence, stop.Status))]);
     }
 
     /// <summary>一辆车对一条任务的裁决：过了就成为一份出价，没过就只留下积压里的理由。</summary>
@@ -1241,7 +1243,8 @@ public sealed class DispatchRoundRunner(
             selected.Candidate.Route.DispatchZone,
             selected.DispatchZoneParameterVersion,
             [.. placement.Resequenced.Select(stop => new JourneyStopSequenceChange(stop.StopId, stop.Sequence))],
-            intakeAt);
+            intakeAt,
+            placement.PlannedAgainst);
         DemandIntakeOutcome outcome = await intakeCoordinator.AppendToJourneyAsync(
                 selected.Candidate.Snapshot,
                 append,

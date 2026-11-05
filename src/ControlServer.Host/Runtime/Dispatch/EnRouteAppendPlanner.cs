@@ -224,7 +224,10 @@ public sealed class EnRouteAppendPlanner
                             // （审查 M3；与 JourneyPlanRevision 的编号同一条规则：删掉的排在所有开放的之后）。
                             .. (plan.TrailingRemovedStopIds ?? []).Select((stopId, index) =>
                                 new EnRouteStopSequence(stopId, completed.Count + inserted.Count + index + 1))
-                        ]);
+                        ])
+                    {
+                        PlannedAgainst = plan.PlannedAgainst,
+                    };
                 }
             }
         }
@@ -511,6 +514,10 @@ public sealed record EnRouteStop(
 /// <see cref="Criteria.FixedStationSingleOccupancyCriterion"/> 据此判候选会不会让车的下一站变成一个公共站点（批次8-20，
 /// control-server#391）；规划器自己不读它。
 /// </param>
+/// <param name="PlannedAgainst">
+/// 读这份计划那一刻整趟旅程每个停靠的序位与状态（control-server#879 审查 H2）。规划器不读它，只把它原样交给插位，写库的事务拿它与库比：
+/// 插位算完到写库之间，计划可能被车载端连接上的取消与修订、或者推进改过，按旧计划写会把新需求并进一个刚删掉的停靠。
+/// </param>
 public sealed record EnRouteVehiclePlan(
     IReadOnlyList<EnRouteStop> Stops,
     int VehicleStationRiotId,
@@ -519,7 +526,8 @@ public sealed record EnRouteVehiclePlan(
     bool LoadingPhaseClosed = false,
     IReadOnlyList<string>? TrailingRemovedStopIds = null,
     IReadOnlySet<string>? DemandsThatLeft = null,
-    bool StandsAtCurrentStop = false);
+    bool StandsAtCurrentStop = false,
+    IReadOnlyList<JourneyStopBasis>? PlannedAgainst = null);
 
 /// <summary>要追加的那条需求：它会带来的两个停靠。</summary>
 public sealed record EnRouteAppendCandidate(EnRouteStop PickupStop, EnRouteStop UnloadStop, string DispatchZone);
@@ -533,7 +541,11 @@ public sealed record EnRouteAppendPlacement(
     string? MergeIntoUnloadStopId,
     int UnloadSequence,
     long MarginalCostMm,
-    IReadOnlyList<EnRouteStopSequence> Resequenced);
+    IReadOnlyList<EnRouteStopSequence> Resequenced)
+{
+    /// <summary>算这个插位时看到的停靠（control-server#879 审查 H2），原样取自 <see cref="EnRouteVehiclePlan.PlannedAgainst"/>。</summary>
+    public IReadOnlyList<JourneyStopBasis>? PlannedAgainst { get; init; }
+}
 
 /// <summary>一个停靠插入之后的新序位。</summary>
 public sealed record EnRouteStopSequence(string StopId, int Sequence);

@@ -132,7 +132,7 @@ public sealed class JourneyMembershipStore(ControlServerDbContext context) : IJo
     private async Task<JourneyStopRow> StopAsync(string stopId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stopId);
-        return await _context.Set<JourneyStopRow>().SingleOrDefaultAsync(row => row.StopId == stopId, cancellationToken)
+        return await JourneyStopsForWrite.TrackedOrDefaultAsync(_context, stopId, cancellationToken)
             ?? throw new InvalidOperationException($"Stop '{stopId}' does not exist.");
     }
 

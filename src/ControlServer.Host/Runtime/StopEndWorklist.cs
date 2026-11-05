@@ -162,8 +162,7 @@ internal static class StopEndWorklist
             .ConfigureAwait(false);
 
         string messageId = staged.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision);
-        JourneyStopRow tracked = await dbContext.Set<JourneyStopRow>()
-            .SingleAsync(row => row.StopId == stop.StopId, cancellationToken).ConfigureAwait(false);
+        JourneyStopRow tracked = await JourneyStopsForWrite.TrackedAsync(dbContext, stop.StopId, cancellationToken).ConfigureAwait(false);
         // 本停靠多占到 revision 这一版为止：之后这一站的「当前号」是 revision + 1（不存在的那一号，同「做完最后一条」），
         // 下一站首号在 revision 之上。
         tracked.WorklistRefills += revision - formula + 1;
