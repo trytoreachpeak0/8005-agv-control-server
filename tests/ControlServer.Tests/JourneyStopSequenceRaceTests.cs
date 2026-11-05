@@ -464,6 +464,42 @@ public sealed class JourneyStopSequenceRaceTests
     }
 
     /// <summary>
+    /// 第三轮复核 S-2：车那一段的意图是终态对账（<c>TERMINAL_RECONCILIATION_REQUIRED</c>：建单应答丢了、单在 RIoT 上已终态），重号又把当前位置挪给了
+    /// 没有单的一站。单 FAILED、车还在动：照样交给故障模型——记故障、按住；不能因为监看退回那个没有单的当前停靠就漏掉。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ABrokenPlanStillHandsAFailedOrderAwaitingTerminalReconciliationToTheFaultModel(bool behindTheReadinessGate)
+    {
+        await using JourneyRuntimeWorkerTestKit.RuntimeFixture fixture = await DrivingToPickupAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        await FailedOrderBeforeConfirmationTests.LeaveTerminalReconciledWithoutAFaultAsync(fixture, runtime.PickupUpperId, "PICKUP");
+        fixture.Context.Set<JourneyStopRow>().Add(ExtraUnload(runtime, sequence: 1, stopId: "0-EXTRA-" + runtime.JourneyId));
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        if (behindTheReadinessGate)
+        {
+            await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        }
+
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.FailOrder(runtime.PickupUpperId);
+        await HeardRoundAsync(fixture);
+
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        VehicleFaultStateRow[] faults = await reading.VehicleFaultStates.AsNoTracking()
+            .Where(row => row.Level != VehicleFaultLevel.None).ToArrayAsync(token);
+        RiotOrderCommandAuditRow[] commands = await reading.RiotOrderCommandAudit.AsNoTracking().ToArrayAsync(token);
+        string seen = $"code={(await reading.JourneyRuntimes.AsNoTracking().SingleAsync(token)).BlockReasonCode}; faults=[" +
+                      string.Join(",", faults.Select(f => $"{f.Level}/{f.EvidenceCode}")) + "]; commands=[" +
+                      string.Join(",", commands.Select(c => c.CommandType)) + "]";
+        Assert.True(faults.Length > 0, seen);
+        Assert.True(commands.Any(row => row.CommandType == RiotCommandTypeNames.OrderHold), seen);
+    }
+
+    /// <summary>
     /// 第二轮审查 S-a：单先在 RIoT 上挂起（码是 <c>ORDER_HANG</c>），序位问题这时才被看见；挂起结束时单的码交还给序位码——Error 2341 照样记一次。
     /// 修之前码由 <c>NameStalledOrderAsync</c> 写回成序位码，而推进这里见码相同就不记，看板叫人去查的那条日志一次也没有。
     /// </summary>

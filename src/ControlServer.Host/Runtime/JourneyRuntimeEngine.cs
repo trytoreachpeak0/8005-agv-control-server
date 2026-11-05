@@ -2914,9 +2914,11 @@ public sealed partial class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// 还在途的订单意图：已确认，或创建已经发出、结果未定（第三轮审查 S-1）。<see cref="SupervisedStopAsync"/> 只在这几种里找车此刻带着的单。
+    /// 还在途的订单意图：已确认，或创建已经发出、结果未定，或单在 RIoT 上已终态而创建一直没确认、等着对账（第三轮审查 S-1、S-2：
+    /// 后者引擎每轮仍要处理——FAILED 交故障模型，CANCELLED 记重建；与 <c>IdleReturnEvaluator</c>、<c>JourneyWithdrawal</c> 的「结果未定」集合对齐）。<see cref="SupervisedStopAsync"/> 只在这几种里找车此刻带着的单。
     /// </summary>
-    private static readonly string[] InFlightIntentStatuses = ["CONFIRMED", "CREATE_ATTEMPTED", "RESULT_UNKNOWN"];
+    private static readonly string[] InFlightIntentStatuses =
+        ["CONFIRMED", "CREATE_ATTEMPTED", "RESULT_UNKNOWN", "TERMINAL_RECONCILIATION_REQUIRED"];
 
     /// <summary>
     /// <see cref="NameInFlightOrderWithoutThePeerAsync"/> for an ordinary leg whose create has not been confirmed
