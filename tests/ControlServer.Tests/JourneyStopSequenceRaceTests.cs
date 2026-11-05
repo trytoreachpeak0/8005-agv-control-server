@@ -408,6 +408,8 @@ public sealed class JourneyStopSequenceRaceTests
     [InlineData("SUCCESS", false)]
     [InlineData("CANCELLED", false)]
     [InlineData("SUCCESS", true)]
+    // 重号那一站挂着一张更新、却从没发出去的意图（PENDING）：它不是在途的单，不认它，最新的在途意图仍是取货停靠那张。
+    [InlineData("NEVER_SENT", false)]
     public async Task ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate(string olderOrderEnded, bool behindTheReadinessGate)
     {
         await using JourneyRuntimeWorkerTestKit.RuntimeFixture fixture = await DrivingToPickupAsync();
@@ -415,7 +417,11 @@ public sealed class JourneyStopSequenceRaceTests
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         JourneyStopRow duplicate = ExtraUnload(runtime, sequence: 1, stopId: "0-EXTRA-" + runtime.JourneyId);
         fixture.Context.Set<JourneyStopRow>().Add(duplicate);
-        fixture.Riot.SetSuccessfulArrival("TO_GATE", duplicate.UpperId, duplicate.StationRiotId);
+        bool neverSent = olderOrderEnded == "NEVER_SENT";
+        if (!neverSent)
+        {
+            fixture.Riot.SetSuccessfulArrival("TO_GATE", duplicate.UpperId, duplicate.StationRiotId);
+        }
         if (olderOrderEnded == "CANCELLED")
         {
             fixture.Riot.CancelOrder(duplicate.UpperId);
@@ -432,9 +438,9 @@ public sealed class JourneyStopSequenceRaceTests
             DestinationStationId = duplicate.StationRiotId,
             AgvLifecycleGeneration = runtime.AgvLifecycleGeneration,
             DispatchGeneration = runtime.DispatchGeneration,
-            CreatedAt = runtime.CreatedAt.AddMinutes(-30),
-            Status = "CONFIRMED",
-            OrderId = fixture.Riot.OrderIdOf(duplicate.UpperId),
+            CreatedAt = runtime.CreatedAt.AddMinutes(neverSent ? 30 : -30),
+            Status = neverSent ? "PENDING" : "CONFIRMED",
+            OrderId = neverSent ? null : fixture.Riot.OrderIdOf(duplicate.UpperId),
         });
         await fixture.Context.SaveChangesAsync(token);
         fixture.Context.ChangeTracker.Clear();
