@@ -98,6 +98,63 @@ public sealed class JourneyStopSequenceRaceTests
     }
 
     /// <summary>
+    /// 库里已经重号时再修订：修订只把当前停靠及其后重新编号，当前停靠之前的已完成停靠原样保留，所以那里的重号它修不掉。
+    /// 写入时的判定挡下这一笔，什么也不存，而不是把一份坏计划再存一遍。
+    /// </summary>
+    [Fact]
+    public async Task ARevisionOverStopsThatAreAlreadyDuplicatedIsRefusedAndSavesNothing()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await SeedAsync(fixture);
+        await using (ControlServerDbContext context = fixture.NewContext())
+        {
+            // B 的卸货站算作已经走过，序位与锚的取货停靠同为 1：当前停靠 202 之前两个 1。
+            JourneyStopRow b = await context.Set<JourneyStopRow>().SingleAsync(row => row.StopId == "B-UNLOAD", token);
+            b.Status = JourneyStopStatuses.Completed;
+            b.Sequence = 1;
+            await context.SaveChangesAsync(token);
+        }
+        (string StopId, int Sequence)[] before = await SequencesAsync(fixture, runtime);
+
+        await using ControlServerDbContext onboard = fixture.NewContext();
+        JourneyStopSequenceBrokenException refused = await Assert.ThrowsAsync<JourneyStopSequenceBrokenException>(
+            () => new PickupStopTermination(onboard)
+                .StageAsync(runtime, Leaving, "CANCELLED_BY_OPERATOR", Batch7JourneyFixture.Now, token));
+
+        Assert.Equal(runtime.JourneyId, refused.JourneyId);
+        Assert.Contains("duplicated [1]", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(before, await SequencesAsync(fixture, runtime));
+    }
+
+    /// <summary>
+    /// 一份会写出重号的追加重排（覆盖了每个停靠、当前下一站也没动，只是两个停靠给了同一个号）整笔拒绝，需求、归属、停靠一个都不存。
+    /// </summary>
+    [Fact]
+    public async Task AnAppendWhoseResequencingWouldDuplicateANumberIsRefusedAndSavesNothing()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await SeedAsync(fixture);
+        JourneyAppendPlan planned = await PlanAppendAsync(fixture, runtime);
+        int last = planned.Resequenced.Max(change => change.Sequence);
+        JourneyAppendPlan duplicating = planned with
+        {
+            Resequenced = [.. planned.Resequenced.Select(change =>
+                change.Sequence == last ? change with { Sequence = last - 1 } : change)]
+        };
+        (string StopId, int Sequence)[] before = await SequencesAsync(fixture, runtime);
+
+        await Assert.ThrowsAsync<JourneyStopSequenceBrokenException>(() => new WireToGateStore(fixture.NewContext())
+            .AppendToJourneyAsync(
+                Batch7JourneyFixture.Snapshot(Appended, Batch7JourneyFixture.Now.AddMinutes(5)), duplicating, token));
+
+        Assert.Equal(before, await SequencesAsync(fixture, runtime));
+        await using ControlServerDbContext check = fixture.NewContext();
+        Assert.False(await check.AcceptedDemands.AnyAsync(row => row.DemandId == Appended, token));
+    }
+
+    /// <summary>
     /// 库里已经重号的旅程（现场 11-05 那一趟）：推进不再每轮抛同一个异常，而是第一次就写 <c>JOURNEY_STOP_SEQUENCE_BROKEN</c>、记一条 Error，
     /// 之后每轮原地等，不再重记；有人把序位改好之后，码清掉、推进照常往下走。
     /// </summary>
