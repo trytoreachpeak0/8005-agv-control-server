@@ -1201,7 +1201,7 @@ public sealed partial class JourneyRuntimeEngine(
     /// <b>停下的是推进，不是在途单的监看</b>（审查 H1）。车可能正带着本服务端已下发的单在路上——那张单照样跑完，跑的这一路上门锁没锁、
     /// 单在 RIoT 上 FAILED 或挂起，都要照常按住、急停、写码。所以在写自己的码之前，先照闸门关着那一侧的做法跑一遍
     /// <see cref="NameInFlightOrderWithoutThePeerAsync"/>：它只读 RIoT、只向 RIoT 发命令，不向车载端发任何东西，也不依赖停靠序位
-    /// （它看的停靠在序位坏了时不取当前停靠，取开放停靠里已有订单意图的那一个，见 <see cref="SupervisedStopAsync"/>：重号时当前停靠是同号里
+    /// （它看的停靠在序位坏了时不取当前停靠，取开放停靠上还在途的意图里最新建的那张所在的停靠，见 <see cref="SupervisedStopAsync"/>：重号时当前停靠是同号里
     /// 按 <c>StopId</c> 排前的那个，不一定是车正驶向的那一站，第二轮审查 H1′）。单自己的码立着时（故障、挂起、重建），留着那个码，不盖成序位码。
     /// Blocked 与 AREA 站等准入的旅程也不改码，与闸门那一侧同一条：它们的码说的是另一件要人做的事。
     /// </para>
@@ -2877,15 +2877,16 @@ public sealed partial class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// 在途单监看要看的那个停靠：序位好好的时候就是当前停靠；序位坏了时，是开放停靠里第一个已经有订单意图的那个，没有就仍是当前停靠
+    /// 在途单监看要看的那个停靠：序位好好的时候就是当前停靠；序位坏了时，是开放停靠上还在途的意图里最新建的那张所在的停靠，没有就仍是当前停靠
     /// （control-server#879 第二轮审查 H1′）。
     /// </summary>
     /// <remarks>
     /// <para>
     /// 序位重号时，「当前停靠」是同号的几个里按 <c>StopId</c> 排在前面的那个，不一定是车正驶向的那一站：11-05 那一趟里推进认的当前停靠
     /// 是没有单的 2715f926，车真正带着的单是 6 号 6db68fd0 的。按当前停靠找单，找不到就当没有在途单，门没锁也不急停。
-    /// 订单意图只在为一段腿下单时建（离站那一刻建下一站的那一张），所以开放停靠里有意图的那一个就是车此刻带着的单要去的那一站；
-    /// 已完成的停靠不在开放停靠里，它们的意图不会被认错。
+    /// 订单意图只在为一段腿下单时建（离站那一刻建下一站的那一张），所以开放停靠上还在途（已确认或创建已发出）的意图里最新建的那张，就是车此刻带着的单；
+    /// 更早的意图可能还挂在某个开放停靠上、库里仍是 CONFIRMED 而单早已跑完或被取消，按停靠次序取第一个会取到它（第三轮审查 S-1）。
+    /// 已完成的停靠不在开放停靠里，它们的意图不参与。
     /// </para>
     /// <para>
     /// 序位守着时不多读一次库，答案与修之前逐字相同。
@@ -2898,15 +2899,24 @@ public sealed partial class JourneyRuntimeEngine(
             return stops.Current;
         }
 
+        // 只认还在途的意图，多于一张取最新建的那张（第三轮审查 S-1）：开放停靠上可能挂着一张更早、早已跑完或被取消的意图
+        // （库里状态仍是 CONFIRMED，单在 RIoT 上已终态），按停靠次序取第一个有意图的会取到它，门没锁也不急停，还会给错的那站记重建。
+        // 车此刻带着的单是最后下的那一张：离站那一刻为下一站建意图，所以 CreatedAt 最新的就是它。客户端排序：SQLite 的 ORDER BY 接不了 DateTimeOffset。
         string[] legs = [.. stops.OpenStops.Select(stop => stop.MovementLegId)];
-        HashSet<string> withIntent = new(
-            await dbContext.OrderIntents.AsNoTracking()
-                .Where(row => legs.Contains(row.MovementLegId))
-                .Select(row => row.MovementLegId)
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false),
-            StringComparer.Ordinal);
-        return stops.OpenStops.FirstOrDefault(stop => withIntent.Contains(stop.MovementLegId)) ?? stops.Current;
+        string? latest = (await dbContext.OrderIntents.AsNoTracking()
+                .Where(row => legs.Contains(row.MovementLegId) && InFlightIntentStatuses.Contains(row.Status))
+                .Select(row => new { row.MovementLegId, row.CreatedAt })
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .OrderByDescending(row => row.CreatedAt)
+            .FirstOrDefault()?.MovementLegId;
+        return stops.OpenStops.FirstOrDefault(stop => string.Equals(stop.MovementLegId, latest, StringComparison.Ordinal))
+            ?? stops.Current;
     }
+
+    /// <summary>
+    /// 还在途的订单意图：已确认，或创建已经发出、结果未定（第三轮审查 S-1）。<see cref="SupervisedStopAsync"/> 只在这几种里找车此刻带着的单。
+    /// </summary>
+    private static readonly string[] InFlightIntentStatuses = ["CONFIRMED", "CREATE_ATTEMPTED", "RESULT_UNKNOWN"];
 
     /// <summary>
     /// <see cref="NameInFlightOrderWithoutThePeerAsync"/> for an ordinary leg whose create has not been confirmed

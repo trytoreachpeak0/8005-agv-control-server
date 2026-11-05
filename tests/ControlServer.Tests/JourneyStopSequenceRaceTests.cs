@@ -397,6 +397,67 @@ public sealed class JourneyStopSequenceRaceTests
     }
 
     /// <summary>
+    /// 第三轮审查 S-1：同号抢走当前位置的那一站还挂着一张更早的意图（库里 CONFIRMED，单在 RIoT 上早已 SUCCESS 或被取消）。
+    /// 车带着取货停靠那张后建的单在路上、门没锁：监看看的是最新建的那张在途意图所在的停靠，照样按住并急停，不给错的那站记重建。
+    /// </summary>
+    /// <remarks>
+    /// 修之前（<c>86676345</c>，按停靠次序取第一个有意图的）三格都是 <c>faults=[]; commands=[]</c>，取消那一格还给错的那站记了一次重建
+    /// （第三轮审查探针 <c>ProbeDTwoOpenStopsWithIntentsDuplicateHasAnOlderEndedOrder</c>）。
+    /// </remarks>
+    [Theory]
+    [InlineData("SUCCESS", false)]
+    [InlineData("CANCELLED", false)]
+    [InlineData("SUCCESS", true)]
+    public async Task ABrokenPlanSupervisesTheLatestOrderNotAnOlderOneLeftOnTheDuplicate(string olderOrderEnded, bool behindTheReadinessGate)
+    {
+        await using JourneyRuntimeWorkerTestKit.RuntimeFixture fixture = await DrivingToPickupAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        JourneyStopRow duplicate = ExtraUnload(runtime, sequence: 1, stopId: "0-EXTRA-" + runtime.JourneyId);
+        fixture.Context.Set<JourneyStopRow>().Add(duplicate);
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", duplicate.UpperId, duplicate.StationRiotId);
+        if (olderOrderEnded == "CANCELLED")
+        {
+            fixture.Riot.CancelOrder(duplicate.UpperId);
+        }
+        fixture.Context.OrderIntents.Add(new OrderIntentRow
+        {
+            MovementLegId = duplicate.MovementLegId,
+            DemandId = runtime.DemandId,
+            UpperId = duplicate.UpperId,
+            Purpose = "TO_GATE",
+            TargetStationId = duplicate.StationId,
+            VehicleKey = runtime.VehicleKey,
+            MapId = runtime.MapId,
+            DestinationStationId = duplicate.StationRiotId,
+            AgvLifecycleGeneration = runtime.AgvLifecycleGeneration,
+            DispatchGeneration = runtime.DispatchGeneration,
+            CreatedAt = runtime.CreatedAt.AddMinutes(-30),
+            Status = "CONFIRMED",
+            OrderId = fixture.Riot.OrderIdOf(duplicate.UpperId),
+        });
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        if (behindTheReadinessGate)
+        {
+            await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        }
+
+        fixture.Riot.MovementState = "MT_RUNNING";
+        await HeardRoundAsync(fixture);
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await HeardRoundAsync(fixture);
+
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        RiotOrderCommandAuditRow[] commands = await reading.RiotOrderCommandAudit.AsNoTracking().ToArrayAsync(token);
+        Assert.Contains(commands, row => row.CommandType == RiotCommandTypeNames.OrderHold);
+        Assert.Contains(commands, row => row.CommandType == RiotCommandTypeNames.TriggerEmergency);
+        Assert.NotEmpty(await reading.VehicleFaultStates.AsNoTracking().ToArrayAsync(token));
+        Assert.False(await reading.Set<OwnOrderRebuildRow>().AsNoTracking().AnyAsync(token));
+    }
+
+    /// <summary>
     /// 第二轮审查 S-a：单先在 RIoT 上挂起（码是 <c>ORDER_HANG</c>），序位问题这时才被看见；挂起结束时单的码交还给序位码——Error 2341 照样记一次。
     /// 修之前码由 <c>NameStalledOrderAsync</c> 写回成序位码，而推进这里见码相同就不记，看板叫人去查的那条日志一次也没有。
     /// </summary>
