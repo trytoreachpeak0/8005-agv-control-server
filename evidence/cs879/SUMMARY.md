@@ -49,4 +49,6 @@
 | L3 等人码「每类一行」 | 没加：这个码每轮按停靠重新判，序位好好的那个夹具里它会在第一轮就被清掉，那一行的前提（码留着）不成立。码在等人码清单里由 `ReconnectModelTests` 钉住。 |
 | L4 清码那次保存 | 与 `ClearFailedAdvanceAsync` 同一条：别处还有暂存时不清。 |
 
+变异见 `red/mutations-rework.txt`：R1～R14 各红在对应用例上；R15（L4，清码前判别处暂存）存活，没有用例在清码那一轮暂存别的改动。本机定向 3390 条全过：`green/targeted-on-rework.txt`。
+
 修前红（返工新用例搬到审查时的 head `0d662b1d` 上跑）与审查探针在返工代码上的结果：`red/rework-h1-h2-s2-before-and-probes-after.txt`。H2 的新用例要用新类型，搬不回旧 head；修前的样子以审查探针在 `0d662b1d` 与 `b82899e4` 上的记录为准（追加被接受、E 的卸货挂在 REMOVED 的停靠上）。
