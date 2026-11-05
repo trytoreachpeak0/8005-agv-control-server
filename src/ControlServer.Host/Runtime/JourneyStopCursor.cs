@@ -115,6 +115,24 @@ internal sealed class JourneyStopCursor
     /// <summary>还没完成也没被移除的停靠，按序位。</summary>
     public IReadOnlyList<JourneyStopRow> OpenStops => [.. Stops.Where(IsOpen)];
 
+    /// <summary>
+    /// 车离开 <see cref="Current"/> 之后要去的那一个：<see cref="OpenStops"/> 里紧跟在它后面的那个；它已是最后一个开放停靠时为空
+    /// （control-server#879）。
+    /// </summary>
+    /// <remarks>
+    /// <b>与 <see cref="Current"/> 取自同一个列表、同一个次序。</b>这之前离站建腿按「序位严格大于当前停靠」另取一遍：11-05 agv02 的旅程里
+    /// 两个停靠都是 5 号，建腿跳过了同号的那一个、给 6 号下了单，推进却仍把那个 5 号当成当前停靠，它没有订单意图，<c>SingleAsync</c>
+    /// 每轮抛异常。现在序位重号由推进开头的不变量判定挡下（<see cref="SequenceProblem"/>），这里保证的是：即使挡漏了，建腿去的也正是推进下一轮
+    /// 会当成当前停靠的那一个。
+    /// </remarks>
+    public JourneyStopRow? NextOpenStopAfterCurrent => OpenStops.Skip(1).FirstOrDefault();
+
+    /// <summary>
+    /// 这趟旅程的停靠序位违反「1 到停靠数、连续、不重号」时的描述，守着时为空（control-server#879，见
+    /// <see cref="JourneyStopsForWrite.SequenceProblem"/>）。
+    /// </summary>
+    public string? SequenceProblem => JourneyStopsForWrite.SequenceProblem(Stops);
+
     /// <summary>当前停靠上挂着的、还没终结的需求，按加入旅程的先后。</summary>
     public IReadOnlyList<JourneyStopDemand> CurrentStopDemands => AtStop(Current);
 
@@ -459,6 +477,8 @@ internal sealed class JourneyStopCursor
         JourneyStopRow[] stops = await stopRows
             .Where(row => row.JourneyId == runtime.JourneyId)
             .OrderBy(row => row.Sequence)
+            // 同号时按 StopId 定序（control-server#879）：序位守着不重号时这一句不起作用；万一重号，Current 与下一站至少每轮取到同样的答案。
+            .ThenBy(row => row.StopId)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         if (stops.Length == 0)
         {

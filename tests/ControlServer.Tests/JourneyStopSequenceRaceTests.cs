@@ -4,6 +4,7 @@ using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace ControlServer.Tests;
 
@@ -94,6 +95,142 @@ public sealed class JourneyStopSequenceRaceTests
         await onboard.SaveChangesAsync(token);
 
         AssertContiguous(await SequencesAsync(fixture, runtime));
+    }
+
+    /// <summary>
+    /// 库里已经重号的旅程（现场 11-05 那一趟）：推进不再每轮抛同一个异常，而是第一次就写 <c>JOURNEY_STOP_SEQUENCE_BROKEN</c>、记一条 Error，
+    /// 之后每轮原地等，不再重记；有人把序位改好之后，码清掉、推进照常往下走。
+    /// </summary>
+    /// <remarks>
+    /// 形状照现场：两个开放停靠同号、后面缺一个号（这里是两个 3、缺 4，现场是两个 5、缺 8）。重号不经产品路径写（产品路径已经写不出来），
+    /// 直接写库，模拟修之前留下的、或者以后别的路径漏网写下的坏序位。
+    /// </remarks>
+    [Fact]
+    public async Task AJourneyWithBrokenStopSequencesIsHeldWithItsOwnReasonOnceAndResumesWhenTheyAreRepaired()
+    {
+        await using JourneyRuntimeWorkerTestKit.RuntimeFixture fixture = await JourneyRuntimeWorkerTestKit.RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Catalog.Set(fixture.Demand(
+            Batch7StopDrivenAdvanceDriver.FirstDemandId, Batch7StopDrivenAdvanceDriver.FirstSublot,
+            JourneyRuntimeWorkerTestKit.Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(Batch7StopDrivenAdvanceDriver.FirstSublot, 7);
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(Batch7StopDrivenAdvanceDriver.FirstDemandId);
+        fixture.Context.Set<JourneyStopRow>().AddRange(
+            ExtraUnload(runtime, "EXTRA-A", 3),
+            ExtraUnload(runtime, "EXTRA-B", 3));
+        await fixture.Context.SaveChangesAsync(token);
+
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow held = await Batch7StopDrivenAdvanceDriver.JourneyOfAsync(fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId);
+        Assert.Equal(JourneyRuntimeEngine.StopSequenceBrokenReason, held.BlockReasonCode);
+        Assert.Equal(runtime.Stage, held.Stage);
+        string[] logged = [.. fixture.EngineLog.Entries
+            .Where(entry => entry.Level == LogLevel.Error && entry.Message.Contains("control-server#879", StringComparison.Ordinal))
+            .Select(entry => entry.Message)];
+        string only = Assert.Single(logged);
+        Assert.Contains("duplicated [3]", only, StringComparison.Ordinal);
+        Assert.Contains("missing [4]", only, StringComparison.Ordinal);
+
+        await using (ControlServerDbContext repair = new(fixture.DbOptionsForTests))
+        {
+            (await repair.Set<JourneyStopRow>().SingleAsync(row => row.StopId == $"{runtime.JourneyId}|EXTRA-B", token)).Sequence = 4;
+            await repair.SaveChangesAsync(token);
+        }
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+
+        Assert.NotEqual(
+            JourneyRuntimeEngine.StopSequenceBrokenReason,
+            (await Batch7StopDrivenAdvanceDriver.JourneyOfAsync(fixture, Batch7StopDrivenAdvanceDriver.FirstDemandId)).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 建腿取的「下一站」与推进取的「当前停靠」出自同一个列表、同一个次序：当前停靠完成之后，新的当前停靠正是刚才的「下一站」。
+    /// 修之前建腿按「序位严格大于当前停靠」取，同号时跳过同号的那个，给后面一站下了单，推进却停在那个同号的停靠上（现场 6 号与第二个 5 号）。
+    /// </summary>
+    [Fact]
+    public async Task TheNextStopALegIsBuiltForIsTheStopTheCursorMakesCurrentNextEvenWhenSequencesTie()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await SeedAsync(fixture);
+        await using (ControlServerDbContext context = fixture.NewContext())
+        {
+            // 202 号停靠（当前）之后的 205 改成与它同号：两个 2，缺 3。
+            (await context.Set<JourneyStopRow>().SingleAsync(row => row.StopId == "D-PICKUP", token)).Sequence = 2;
+            await context.SaveChangesAsync(token);
+        }
+
+        JourneyStopCursor before = await JourneyStopCursor.LoadAsync(fixture.NewContext(), runtime, token);
+        JourneyStopRow next = before.NextOpenStopAfterCurrent!;
+        Assert.Equal(before.Current.Sequence, next.Sequence);
+        Assert.NotNull(before.SequenceProblem);
+
+        await using (ControlServerDbContext context = fixture.NewContext())
+        {
+            (await context.Set<JourneyStopRow>().SingleAsync(row => row.StopId == before.Current.StopId, token)).Status =
+                JourneyStopStatuses.Completed;
+            await context.SaveChangesAsync(token);
+        }
+        JourneyStopCursor after = await JourneyStopCursor.LoadAsync(fixture.NewContext(), runtime, token);
+        Assert.Equal(next.StopId, after.Current.StopId);
+    }
+
+    [Fact]
+    public void TheSequenceRuleNamesTheDuplicatedAndTheMissingNumbersAndPassesAContiguousSet()
+    {
+        JourneyStopRow Row(string id, int sequence) => new()
+        {
+            StopId = id,
+            JourneyId = "J",
+            Sequence = sequence,
+            StopRole = JourneyStopRoles.Unload,
+            StationId = "S",
+            StationRiotId = 1,
+            DispatchZone = Zone,
+            OperationSessionId = id,
+            MovementLegId = id,
+            UpperId = id,
+            VehicleBusinessMessageId = id,
+            WorklistMessageId = id,
+            PlanMessageId = id,
+            Status = JourneyStopStatuses.Pending,
+            CreatedAt = Batch7JourneyFixture.Now
+        };
+
+        Assert.Null(JourneyStopsForWrite.SequenceProblem([Row("a", 2), Row("b", 1), Row("c", 3)]));
+        string? problem = JourneyStopsForWrite.SequenceProblem([Row("a", 1), Row("b", 2), Row("c", 2), Row("d", 4)]);
+        Assert.NotNull(problem);
+        Assert.Contains("duplicated [2]", problem, StringComparison.Ordinal);
+        Assert.Contains("missing [3]", problem, StringComparison.Ordinal);
+        // 从 0 或从 2 起数同样不守：规则是 1 到停靠数。
+        Assert.NotNull(JourneyStopsForWrite.SequenceProblem([Row("a", 2), Row("b", 3)]));
+    }
+
+    private static JourneyStopRow ExtraUnload(JourneyRuntimeRow runtime, string suffix, int sequence)
+    {
+        string stopId = $"{runtime.JourneyId}|{suffix}";
+        return new JourneyStopRow
+        {
+            StopId = stopId,
+            JourneyId = runtime.JourneyId,
+            Sequence = sequence,
+            StopRole = JourneyStopRoles.Unload,
+            StationId = runtime.GateStationId!,
+            StationRiotId = runtime.GateStationRiotId,
+            DispatchZone = runtime.DispatchZone,
+            OperationSessionId = JourneyPlanBuilder.StableGuid(stopId, "session"),
+            MovementLegId = JourneyPlanBuilder.StableGuid(stopId, "leg"),
+            UpperId = $"W2G-{stopId}",
+            VehicleBusinessMessageId = JourneyPlanBuilder.StableGuid(stopId, "vehicle-state"),
+            WorklistMessageId = JourneyPlanBuilder.StableGuid(stopId, "worklist"),
+            PlanMessageId = JourneyPlanBuilder.StableGuid(stopId, "plan"),
+            Status = JourneyStopStatuses.Pending,
+            CreatedAt = runtime.CreatedAt
+        };
     }
 
     private static void AssertContiguous((string StopId, int Sequence)[] stops) =>

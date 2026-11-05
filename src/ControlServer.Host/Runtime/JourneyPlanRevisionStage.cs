@@ -52,9 +52,10 @@ public static class JourneyPlanRevisionStage
         ArgumentException.ThrowIfNullOrWhiteSpace(journeyId);
         ArgumentNullException.ThrowIfNull(leavingDemandIds);
 
-        List<JourneyStopRow> stops = await dbContext.Set<JourneyStopRow>()
-            .Where(row => row.JourneyId == journeyId)
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        // 按库对齐之后的跟踪实例（control-server#879）：车载端连接、释放服务与派车轮各有各的上下文，本上下文早先读过的停靠可能已被
+        // 别处的修订或追加改过序位。拿旧实例算、再按旧原值判「改没改」，写下的是一半新一半旧的序位，撞号。
+        IReadOnlyList<JourneyStopRow> stops = await JourneyStopsForWrite.LoadAsync(dbContext, journeyId, cancellationToken)
+            .ConfigureAwait(false);
         List<JourneyDemandRow> memberships = await dbContext.Set<JourneyDemandRow>()
             .Where(row => row.JourneyId == journeyId && row.RemovedAt == null)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
@@ -104,6 +105,10 @@ public static class JourneyPlanRevisionStage
                 stop.Sequence = sequence;
             }
         }
+
+        // 序位连续、不重号（control-server#879）是推进、清单号与计划修订号共同的前提。修订本身只在输入守着它时守得住，所以在暂存的这一刻
+        // 再判一次：不守就整笔不存，抛一个说得出哪几号重了、缺了的异常，而不是把一份坏计划交给推进去每轮抛 Sequence contains no elements。
+        JourneyStopsForWrite.EnsureSequencesHold(journeyId, stops);
 
         return result;
     }

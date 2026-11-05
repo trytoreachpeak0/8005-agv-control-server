@@ -101,6 +101,12 @@ public sealed partial class JourneyRuntimeEngine(
         LogLevel.Warning,
         new EventId(2102, nameof(LogBoxCountFailed)),
         "SUBLOT_BOX_COUNT failed closed for demand {DemandId}.");
+    private static readonly Action<ILogger, string, string, string, Exception?> LogStopSequenceBroken =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Error,
+            new EventId(2341, nameof(LogStopSequenceBroken)),
+            "Vehicle {AgvId}'s journey {JourneyId} holds where it is: {Problem}. Nothing is advanced, ordered or published " +
+            "for it until a person puts the sequences right (control-server#879).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogDepartureAnswerNotValid =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -329,6 +335,12 @@ public sealed partial class JourneyRuntimeEngine(
     /// 而车可能在阻塞或断线期间被人开走、在别处停稳、会话恢复 Ready——10-19 agv03 一事。所以在开门的那一处再核，哪一条入口都绕不过去。
     /// </remarks>
     public const string SlotCommandVehicleNotAtStopReason = "SLOT_COMMAND_VEHICLE_NOT_AT_STOP";
+
+    /// <summary>
+    /// 这趟旅程的停靠序位不是「1 到停靠数、连续、不重号」（control-server#879）：推进停在原地等人核对、改库，不建腿、不下单、不发计划。
+    /// 11-05 agv02 的旅程有两个 5 号、缺 8 号，推进每轮抛同一个异常，车带着三处货停了近 4 小时。
+    /// </summary>
+    public const string StopSequenceBrokenReason = "JOURNEY_STOP_SEQUENCE_BROKEN";
 
     /// <summary>卸货因车不在站上扣着期间，多久再记一次当前读数（事件 2318，control-server#783 审查 S-1）。</summary>
     private static readonly TimeSpan HeldSlotCommandLogInterval = TimeSpan.FromMinutes(5);
@@ -1186,6 +1198,57 @@ public sealed partial class JourneyRuntimeEngine(
     /// 留着不清没有代价，下一轮再试一次。
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// 这趟旅程的停靠序位违反「1 到停靠数、连续、不重号」时，写 <see cref="StopSequenceBrokenReason"/>、记一次 Error，旅程停在原地等人；
+    /// 序位好好的返回 false（control-server#879）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么在推进开头判，而不是让它抛。</b>建腿、推进、清单号（<see cref="JourneyStopCursor.FirstWorklistRevisionAt"/>）与
+    /// 计划修订号都按序位算，序位一坏，往下哪一步都可能按错的停靠发报文、下单，或者像 11-05 那样每轮在同一处抛
+    /// <c>Sequence contains no elements</c>：看板上只有一个笼统的「推进失败」，日志一轮一条、353 条说的是同一件事，没有一条说出病因。
+    /// 在这里判，病因只说一次，而且说的是病因本身：哪几号重了、缺了哪几号、每个停靠现在是几号。
+    /// </para>
+    /// <para>
+    /// <b>为什么不自己修。</b>重号的两个停靠谁先谁后，服务端说不出来——那要看车上实际装着什么、上一版计划发给车的是什么、哪个停靠已经有订单。
+    /// 11-05 那一次是人核过货与车上计划之后才改的库。写坏序位的路径已经堵上（<see cref="JourneyStopsForWrite"/>，写入时也判），
+    /// 这一道是给已经坏了的库，与之后万一还有别的路径漏网时用的。
+    /// </para>
+    /// <para>
+    /// <b>码相同不再写、不再记</b>：每轮都判，只在第一次写码、记 Error；之后序位不变就什么也不做，开始时间从第一次算起（与
+    /// <see cref="NameFailedAdvanceAsync"/> 同一个理由）。这个码指名在等人（<see cref="CarriesACodeThatNamesAWaitOnAPerson"/>），
+    /// 推进失败与会话类的码不会把它盖掉；派车轮也不往这趟旅程追加（<c>DispatchRoundRunner.ReadEnRoutePlanAsync</c>）。
+    /// 有人把序位改好之后，下一轮这里把码清掉、返回 false，推进照常往下走。
+    /// </para>
+    /// </remarks>
+    private async Task<bool> HoldOnBrokenStopSequenceAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (stops.SequenceProblem is not { } problem)
+        {
+            if (string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
+            {
+                // 序位已经被人改好：码清掉，推进下面照常走，看板不再说这件事。
+                runtime.SetBlockReason(null, now);
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return false;
+        }
+
+        if (!string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
+        {
+            LogStopSequenceBroken(logger, runtime.AgvId, runtime.JourneyId, problem, null);
+            runtime.SetBlockReason(StopSequenceBrokenReason, now);
+            runtime.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        return true;
+    }
+
     private async Task ClearFailedAdvanceAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
     {
         if (!string.Equals(runtime.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal))
@@ -1333,6 +1396,12 @@ public sealed partial class JourneyRuntimeEngine(
             session.SessionGeneration,
             replayable,
             cancellationToken).ConfigureAwait(false);
+        // 停靠序位不连续或重号（control-server#879）：停在这里等人，不往下推。放在补发之后（补发只重发已经存下的行，与序位无关）、
+        // 计划重发之前（按坏序位排出来的计划会把两个停靠同时标成 ACTIVE 发给车，11-05 agv02 的 8822、8824 两版就是这样）。
+        if (await HoldOnBrokenStopSequenceAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
         // 计划整体替换下发（ADR-cross-0053）：途中追加会在序列中间插进新停靠，而车上手里那张计划是插入之前的。
         // 补发在重放之后：重放先把没确认的旧行发完，新的那一版才不会被它顶回去。
         await RefreshUpcomingStopPlanAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
@@ -5891,13 +5960,19 @@ public sealed partial class JourneyRuntimeEngine(
             "pickup-dispatch-plan");
 
     /// <summary>
-    /// 车离开当前停靠之后要去的那一个：序位上紧接着的、还开着的停靠（批次7-06，control-server#211）。
+    /// 车离开当前停靠之后要去的那一个：开放停靠里紧跟在当前停靠后面的那个（批次7-06，control-server#211）。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 取不到就是在最后一个停靠上问了「下一段腿去哪」——那一刻旅程该结束而不是再开一张订单，所以响亮地停下。
+    /// </para>
+    /// <para>
+    /// 与推进取当前停靠是同一个列表、同一个次序（<see cref="JourneyStopCursor.NextOpenStopAfterCurrent"/>，control-server#879）。这之前按
+    /// 「序位严格大于当前停靠」取，序位重号时跳过同号的那一个，建腿与推进从此各走各的。
+    /// </para>
     /// </remarks>
     private static JourneyStopRow NextStopAfterCurrent(JourneyStopCursor stops) =>
-        stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence)
+        stops.NextOpenStopAfterCurrent
         ?? throw new InvalidDataException(
             $"Stop {stops.Current.StopId} is the last one; there is no next leg to depart on.");
 
@@ -6496,6 +6571,8 @@ public sealed partial class JourneyRuntimeEngine(
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.OrderEndedStopNotProven, StringComparison.Ordinal) ||
         // control-server#447: its start is what the manual settlement's bound is counted from; a failed advance must not reset it.
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.ArrivalNotProven, StringComparison.Ordinal) ||
+        // control-server#879: its stop sequences are broken; a person has to check the cargo and the plan and put them right.
+        string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) ||
         // control-server#404: a charging journey whose cycle is gone waits for a person to look.
         string.Equals(runtime.BlockReasonCode, Charging.ChargingExecutionReasons.CycleMissing, StringComparison.Ordinal);
 
@@ -6889,7 +6966,7 @@ public sealed partial class JourneyRuntimeEngine(
         {
             return deadline;
         }
-        if (stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence) is
+        if (stops.NextOpenStopAfterCurrent is
             { StopRole: JourneyStopRoles.Pickup } next &&
             string.Equals(next.StationId, stops.Current.StationId, StringComparison.Ordinal))
         {

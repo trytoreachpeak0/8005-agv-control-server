@@ -1093,11 +1093,12 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     {
         // 本次追加新开的停靠此刻还在变更跟踪器里、没有落库，而它也要被重排覆盖，所以这里把库里的和本地新加的
         // 并在一起看。只查数据库会把新停靠判成「重排提到了一个不存在的停靠」，把正常路径打挂。
-        JourneyStopRow[] stored = [.. (await dbContext.Set<JourneyStopRow>()
-                .Where(row => row.JourneyId == plan.JourneyId)
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-            .Concat(dbContext.Set<JourneyStopRow>().Local.Where(row => row.JourneyId == plan.JourneyId))
-            .DistinctBy(row => row.StopId, StringComparer.Ordinal)];
+        //
+        // 库里的那些要按库对齐之后再写（control-server#879）。派车轮与引擎共用这个上下文，本轮早先带跟踪读过的停靠还挂着旧实例；
+        // 车载端连接上的修订在这中间提交过，旧实例的序位就是过时的。下面按 StopId 赋新序位时，新值恰好等于旧实例的原值，EF 就不写这一列，
+        // 库里留着修订写的值，与这一次写下的其余停靠撞号——11-05 agv02 的两个 5、缺 8。
+        IReadOnlyList<JourneyStopRow> stored = await JourneyStopsForWrite.LoadAsync(dbContext, plan.JourneyId, cancellationToken)
+            .ConfigureAwait(false);
 
         // 重排必须覆盖这趟旅程的每一个既有停靠（批次7-06，control-server#211）。
         //
@@ -1147,6 +1148,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                     $"Resequencing names stop '{change.StopId}', which journey '{plan.JourneyId}' does not have.");
             row.Sequence = change.Sequence;
         }
+
+        // 写完再判一次整条旅程（control-server#879）：重排覆盖了每个停靠、当前下一站没动，序位也必须是 1 到停靠数、不重号。
+        // 不守就整笔回滚，需求留到下一轮重算，不把一份推进走不下去的计划存进库。
+        JourneyStopsForWrite.EnsureSequencesHold(plan.JourneyId, stored);
     }
 
     /// <summary>同一条追加重放：写下的东西必须与这一次要写的一样，否则是两次不同的追加用了同一个需求 id。</summary>

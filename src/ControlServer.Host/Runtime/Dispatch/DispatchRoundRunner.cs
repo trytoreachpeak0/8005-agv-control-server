@@ -182,7 +182,7 @@ public sealed class DispatchRoundRunner(
     /// is not.
     /// </remarks>
     private static bool IsInvariantBreach(Exception error) =>
-        error is BusinessIdentityConflictException or JourneyPlanFreezeIncompleteException;
+        error is BusinessIdentityConflictException or JourneyPlanFreezeIncompleteException or JourneyStopSequenceBrokenException;
 
     /// <summary>
     /// 一轮派车：<b>先定任务，再只为那条任务比车</b>（REQ-0200；批次7-06，control-server#211）。
@@ -705,7 +705,10 @@ public sealed class DispatchRoundRunner(
         // without being Blocked. Same standing as the exclusion above: the engine keeps such vehicles out of underWay, and
         // this is the query saying for itself what it will not plan into. It is filtered here rather than in the query
         // because the predicate is a code set, not a column.
-        if (runtime is null || JourneyRuntimeEngine.IsStalledOrderReason(runtime.BlockReasonCode))
+        // A journey whose stop sequences are broken (control-server#879) is held for a person too, and its plan is exactly what
+        // cannot be planned into: the write side would refuse the resequencing every round.
+        if (runtime is null || JourneyRuntimeEngine.IsStalledOrderReason(runtime.BlockReasonCode) ||
+            string.Equals(runtime.BlockReasonCode, JourneyRuntimeEngine.StopSequenceBrokenReason, StringComparison.Ordinal))
         {
             return null;
         }
