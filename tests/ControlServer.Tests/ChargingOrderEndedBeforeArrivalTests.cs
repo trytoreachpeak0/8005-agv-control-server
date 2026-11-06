@@ -88,6 +88,13 @@ public sealed class ChargingOrderEndedBeforeArrivalTests
         Assert.Empty(fleet.Riot.OrderCommands);
         Assert.Empty(fleet.Riot.EmergencyCommands);
         Assert.Single(fleet.Riot.Creates, create => create.VehicleKey == KeyA);
+        // Review S3: the ending is said once, naming the order, the vehicle, the charger and the cycle.
+        var said = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2286);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, said.Level);
+        Assert.Contains(journey.PickupUpperId, said.Message, StringComparison.Ordinal);
+        Assert.Contains(KeyA, said.Message, StringComparison.Ordinal);
+        Assert.Contains(Near.StationId.ToString(System.Globalization.CultureInfo.InvariantCulture), said.Message, StringComparison.Ordinal);
+        Assert.Contains(before.CycleId, said.Message, StringComparison.Ordinal);
 
         // agv02 below the mandatory line: the charger is its to take (the six idle hours let the design-state route graph expire).
         await fleet.ReplaceRouteGraphAsync(Edges(), Stations());

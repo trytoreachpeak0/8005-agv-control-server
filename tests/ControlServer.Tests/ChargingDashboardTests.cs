@@ -342,6 +342,16 @@ public sealed class ChargingDashboardTests
             Assert.False(chargers[212].GetProperty("overdue").GetBoolean());
             Assert.Contains("已被取消或删除", RowWith(html, "<td>211</td>"), StringComparison.Ordinal);
         }
+
+        // Review S3: on the alarm card the held charger reads High, like the other charges that cannot go.
+        (JsonDocument alarmsFact, _) = await ReadAsync(database, "charging-alarms");
+        using (alarmsFact)
+        {
+            JsonElement[] ended = [.. alarmsFact.RootElement.GetProperty("alarms").EnumerateArray()
+                .Where(a => a.GetProperty("code").GetString() == JourneyRuntimeEngine.OrderEndedWithoutArrivalReason)];
+            Assert.NotEmpty(ended);
+            Assert.All(ended, a => Assert.Equal(ChargingDashboardDescriptions.SeverityHigh, a.GetProperty("severity").GetString()));
+        }
     }
 
     // ---------------- 逐车充电状态 ----------------
