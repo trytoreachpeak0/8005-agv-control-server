@@ -734,6 +734,36 @@ public sealed class ChargingExecutionTests
         }
     }
 
+    /// <summary>
+    /// 承诺了 211、被出发门挡着的车，等的这段时间里 RIoT 把它放到了两站之间（<c>currentPosition</c> 0，control-server#528）：出发前复核照旧撤回承诺、
+    /// 不建单，但撤回的原因是位置未知（<c>CHARGING_VEHICLE_POSITION_UNKNOWN</c>），不是从站 0 出发到不了 211（<c>CHARGER_UNREACHABLE</c>）。
+    /// </summary>
+    [Fact]
+    public async Task ACommitmentWhoseVehicleRiotPlacesAtNoStationIsWithdrawnAsPositionUnknown()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await RoundAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingExecutionReasons.DepartureNotProven, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = RiotVehicleObservation.NoStation };
+        await fleet.ReplaceSafetySnapshotAsync(AgvA);
+        await RoundAsync(fleet);
+
+        Assert.DoesNotContain(fleet.Riot.Creates, create => create.VehicleKey == KeyA);
+        JourneyRuntimeRow withdrawn = await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == before.JourneyId, Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, ChargingExecutionReasons.WithdrawnChargerNoLongerEligible),
+            (withdrawn.Stage, withdrawn.BlockReasonCode));
+        var line = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2254);
+        Assert.Contains(ChargingAllocationReasons.VehiclePositionUnknown, line.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ChargingAllocationReasons.ChargerUnreachable, line.Message, StringComparison.Ordinal);
+    }
+
     // ---- 出发前复核遇到路网暂时不可用（control-server#744）------------------------------------------------------------
 
     /// <summary>

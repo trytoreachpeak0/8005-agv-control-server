@@ -333,7 +333,11 @@ public sealed record RiotVehicleObservation(
     double? Speed,
     DateTimeOffset ObservedAt,
     int? LockStatus = null,
-    string? OrderTaskId = null);
+    string? OrderTaskId = null)
+{
+    /// <summary>RIoT's <c>currentPosition</c> for a vehicle it places at no station (control-server#772, #528).</summary>
+    public const int NoStation = 0;
+}
 
 public enum RiotVehicleMotionState
 {

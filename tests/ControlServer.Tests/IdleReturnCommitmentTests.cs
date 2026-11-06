@@ -98,6 +98,7 @@ public sealed partial class IdleReturnCommitmentTests
         "charging",
         "facts-stale",
         "position-unknown",
+        "position-zero",
         "route-graph-disabled",
     ];
 
@@ -180,6 +181,11 @@ public sealed partial class IdleReturnCommitmentTests
                 break;
             case "position-unknown":
                 candidate = harness.Candidate(VehicleA, station: null);
+                expected = IdleReturnReasons.VehiclePositionUnknown;
+                break;
+            case "position-zero":
+                // control-server#528: RIoT's currentPosition 0 places the vehicle at no station -- no origin to route from.
+                candidate = harness.Candidate(VehicleA, station: RiotVehicleObservation.NoStation);
                 expected = IdleReturnReasons.VehiclePositionUnknown;
                 break;
             case "route-graph-disabled":
