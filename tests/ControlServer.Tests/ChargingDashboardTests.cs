@@ -310,6 +310,40 @@ public sealed class ChargingDashboardTests
         }
     }
 
+    /// <summary>
+    /// control-server#882：预占着桩的那趟充电，单在 RIoT 已被取消或删除（<c>ORDER_ENDED_WITHOUT_ARRIVAL</c>），车一直证明不了停稳：超过告警窗口
+    /// （<c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>）标超时，说明写清「桩被一趟已经结束的充电单占着」与处置；窗口之内不标。11-06 看板上 211
+    /// 五个多小时都是 <c>overdue=false</c>。
+    /// </summary>
+    [Fact]
+    public async Task AChargerReservedByAJourneyWhoseOrderEndedInRiotIsShownOverduePastTheWindow()
+    {
+        await using ChargingDatabase database = await ChargingDatabase.CreateAsync();
+        DateTimeOffset now = database.Now;
+        await database.SeedAsync(context =>
+        {
+            AddRoster(context, 1, now.AddDays(-1), "张三", [211, 212]);
+            AddCharging(context, "K-01", 211, ChargingCyclePhases.Active, ChargingCycleWireStates.EnRoute,
+                StationExclusivityStates.Reserved, now.AddHours(-2), code: JourneyRuntimeEngine.OrderEndedWithoutArrivalReason);
+            AddCharging(context, "K-02", 212, ChargingCyclePhases.Active, ChargingCycleWireStates.EnRoute,
+                StationExclusivityStates.Reserved, now.AddMinutes(-5), code: JourneyRuntimeEngine.OrderEndedWithoutArrivalReason);
+        });
+
+        (JsonDocument fact, string html) = await ReadAsync(database, "chargers");
+        using (fact)
+        {
+            Dictionary<int, JsonElement> chargers = fact.RootElement.GetProperty("chargers").EnumerateArray()
+                .ToDictionary(c => c.GetProperty("stationId").GetInt32());
+            Assert.True(chargers[211].GetProperty("overdue").GetBoolean());
+            string ended = chargers[211].GetProperty("overdueDescription").GetString()!;
+            Assert.Contains("已被取消或删除", ended, StringComparison.Ordinal);
+            Assert.Contains("确认清桩", ended, StringComparison.Ordinal);
+            Assert.DoesNotContain("调度", ended, StringComparison.Ordinal);
+            Assert.False(chargers[212].GetProperty("overdue").GetBoolean());
+            Assert.Contains("已被取消或删除", RowWith(html, "<td>211</td>"), StringComparison.Ordinal);
+        }
+    }
+
     // ---------------- 逐车充电状态 ----------------
 
     /// <summary>
