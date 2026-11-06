@@ -567,6 +567,9 @@ public sealed class ChargingAllocationTests
         { "riot-order-on-it", "RIOT_VEHICLE_ORDER_OCCUPIED" },
         { "charging-eligibility-held", ChargingAllocationReasons.VehicleEligibilityHeld },
         { "position-unknown", ChargingAllocationReasons.VehiclePositionUnknown },
+        // control-server#528: currentPosition 0 is RIoT placing the vehicle at no station, not a station to route from (11-06 agv02,
+        // 230=CHARGER_UNREACHABLE every round while it ran flat).
+        { "position-zero", ChargingAllocationReasons.VehiclePositionUnknown },
     };
 
     /// <summary>
@@ -628,6 +631,9 @@ public sealed class ChargingAllocationTests
             case "position-unknown":
                 fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = null };
                 break;
+            case "position-zero":
+                fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = RiotVehicleObservation.NoStation };
+                break;
         }
         fleet.Context.ChangeTracker.Clear();
 
@@ -639,6 +645,46 @@ public sealed class ChargingAllocationTests
         Assert.Null(await StationAsync(fleet, Near.StationId));
         Assert.Empty(await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().ToArrayAsync(Token));
         Assert.Empty(fleet.Riot.Creates);
+    }
+
+    /// <summary>
+    /// 低于强制充电线、RIoT 把它放在两站之间（<c>currentPosition</c> 0）的车（control-server#528，11-06 agv02 车载机掉电重启后定位丢失，
+    /// 排队三个小时、每轮报 <c>230=CHARGER_UNREACHABLE</c>，直到断电）：结论是位置未知，不是桩到不了；点名这辆车告警一次（事件 2246，
+    /// 让现场在 RIoT 里给车重新定位），之后每一轮不再重复。不拿别的位置去分桩：一个桩也不预占、一张单也不建。重新定位后照常分到桩。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleBelowTheLineAtNoStationIsWarnedOnceToBeRelocatedAndChargedOnceItIs()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 12;
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = RiotVehicleObservation.NoStation };
+
+        for (int round = 0; round < 4; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        (string reason, string detail) = fleet.ChargingBoard.Verdicts[AgvA];
+        Assert.Equal(ChargingAllocationReasons.VehiclePositionUnknown, reason);
+        Assert.DoesNotContain(ChargingAllocationReasons.ChargerUnreachable, detail, StringComparison.Ordinal);
+        var warning = Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2246);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, warning.Level);
+        Assert.Contains(AgvA, warning.Message, StringComparison.Ordinal);
+        // The template itself names CHARGING_VEHICLE_POSITION_UNKNOWN and "relocate" in its hints (review S2): only the
+        // {Reason} slot right after "allocated to it: " says this 2246 is the position-unknown one.
+        Assert.Contains(
+            "allocated to it: " + ChargingAllocationReasons.VehiclePositionUnknown + ".", warning.Message, StringComparison.Ordinal);
+        await AssertNothingOfACommitmentAsync(fleet, KeyA);
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        Assert.Empty(fleet.Riot.Creates);
+
+        // Relocated on site: RIoT places it at a station again, and the ordinary chain allocates it.
+        fleet.Riot.VehicleOverrides.Remove(KeyA);
+        await RoundAsync(fleet);
+
+        Assert.Equal(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        Assert.Equal(KeyA, (await StationAsync(fleet, Near.StationId))?.VehicleKey);
+        Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2246);
     }
 
     /// <summary>

@@ -20,8 +20,8 @@ namespace ControlServer.Host.Dashboard;
 /// <item>未完成的充电旅程上此刻写着的码（到桩不充电、RIoT 车辆观测丢失、电量遥测丢失、清桩中旧单被恢复等）；</item>
 /// <item>充满待离桩、失败待放桩超过告警窗口的桩（与引擎事件 2249、2247 同一个窗口）；</item>
 /// <item>车载端会话失联、而服务端还为它记着充电周期、桩、清桩或人工充电等待的车（REQ-0287 的第三种失联）；</item>
-/// <item>唯一不在库里的一种：低于强制充电线、又过不了出发前安全门而分不到桩的车，读最近一轮已完成的充电分配（分配板，宿主单例），
-/// 细节点名缺哪一项（control-server#865）。</item>
+/// <item>唯一不在库里的一类：低于强制充电线、又过不了出发前安全门而分不到桩的车（细节点名缺哪一项，control-server#865），与低于强制充电线、
+/// RIoT 却没把它定位在任何站上的车（control-server#528），都读最近一轮已完成的充电分配（分配板，宿主单例）。</item>
 /// </list>
 /// <para>
 /// <b>无合格桩</b>不单列：它是充电分配的结论，看逐车卡片的排队原因（<c>notReadable</c> 里写明）。<b>中断、无进展</b>（批次9-09）以桩的暂停与旅程码出现（<c>notReadable</c> 里写明）。
@@ -152,6 +152,23 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
                     StationId: null,
                     Since: null,
                     ChargingDashboardDescriptions.DescribeDepartureGaps(battery, ChargingDepartureGaps.Of(verdict.Detail))));
+            }
+
+            // control-server#528: below the mandatory line too (the allocation answers position unknown only past that check), and
+            // RIoT places it at no station (11-06 agv02 after its onboard PC lost power). No charger is allocated from a guessed
+            // position, so the only way out is a person relocating it in RIoT.
+            foreach (string agvId in pass.Verdicts
+                         .Where(pair => pair.Value.Reason == ChargingAllocationReasons.VehiclePositionUnknown)
+                         .Select(pair => pair.Key)
+                         .OrderBy(agvId => agvId, StringComparer.Ordinal))
+            {
+                alarms.Add(new Alarm(
+                    ChargingDashboardDescriptions.AlarmBelowMandatoryPositionUnknown,
+                    agvId,
+                    MapId: null,
+                    StationId: null,
+                    Since: null,
+                    ChargingDashboardDescriptions.DescribePositionUnknown(pass.Observations.GetValueOrDefault(agvId)?.BatteryPercent)));
             }
         }
 

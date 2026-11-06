@@ -56,10 +56,13 @@ public sealed class RouteGraphReachabilityCriterion(RouteGraphAccess routeGraph)
             return availability.StaleReason ?? RouteGraphStaleReasons.NeverRefreshed;
         }
 
-        int? origin = evaluation.Vehicle.Vehicle.CurrentStationId;
+        int? origin = evaluation.Vehicle.Vehicle.KnownStationId;
         if (origin is null)
         {
-            // Not knowing where the vehicle is, is not the same as it being anywhere. Fail closed.
+            // Not knowing where the vehicle is, is not the same as it being anywhere. Fail closed -- as backlog, not as the
+            // pickup being unreachable. RIoT's currentPosition 0 (at no station: between two stations, localisation lost) is
+            // this case too (control-server#528): routed from 0 it reached nothing, and every vehicle reading 0 turned the
+            // demand into a structural block telling the site to carry it by hand.
             return "ROUTE_GRAPH_VEHICLE_POSITION_UNKNOWN";
         }
 

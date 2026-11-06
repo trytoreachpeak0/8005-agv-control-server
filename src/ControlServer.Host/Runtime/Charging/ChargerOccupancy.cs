@@ -103,7 +103,7 @@ public sealed class ChargerOccupancyReader(
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
 
     /// <summary>RIoT 车辆卡片的 <c>currentPosition</c> 在车不在任何站上时报的值（行驶中、被推离站点后）：不是一个站号（control-server#772）。</summary>
-    public const int NoStation = 0;
+    public const int NoStation = RiotVehicleObservation.NoStation;
 
     /// <summary>
     /// 按 <c>upperId</c> 读一张单的状态与每一段任务（<c>detailByUpperId</c>）的那一个读者：引擎判「已确认充不上」时读充电动作的结果码

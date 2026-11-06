@@ -130,6 +130,40 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Equal([first.JourneyId, first.JourneyId], memberships.Select(row => row.JourneyId));
     }
 
+    /// <summary>
+    /// 真 RIoT 在车行驶时报 <c>currentPosition</c> 0（不在任何站上）：在途车读不出起点，算不出插位计划，这一轮整辆车不参加派车
+    /// （control-server#528 审查 S1）——不出逐车判定、不追加，原有那一单照常。车载端仍报离站安全（上一条用例里这样会被受理）也一样：
+    /// 挡住它的是读 0，不是车载端。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleUnderWayThatRiotReadsAtNoStationSitsOutTheRoundAndTakesNoAppend()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using FleetFixture fixture = await DriveFirstDemandAsync();
+        JourneyRuntimeRow first = await fixture.JourneyOfAsync(FleetFixture.AgvIds[0]);
+        int ordersCreated = fixture.Riot.Creates.Count;
+
+        ReportRiotDriving(fixture, first.VehicleKey, moving: true);
+        Func<RiotVehicleObservation, RiotVehicleObservation> driving = fixture.Riot.VehicleOverrides[first.VehicleKey];
+        fixture.Riot.VehicleOverrides[first.VehicleKey] =
+            observation => driving(observation) with { CurrentStationId = RiotVehicleObservation.NoStation };
+        SessionReadinessDecision decision = await ReportOnboardSafetyAsync(fixture, FleetFixture.AgvIds[0], SyntheticSummary);
+        Assert.Equal(SessionReadiness.Ready, decision.Readiness);
+        fixture.RoundOutcomes.Outcomes.Clear();
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Empty(Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles);
+        JourneyDemandRow membership = Assert.Single(
+            await fixture.Context.Set<JourneyDemandRow>().AsNoTracking().ToArrayAsync(token));
+        Assert.Equal(FleetFixture.Demand(0, "N1-1", 0).DemandId, membership.DemandId);
+        JourneyRuntimeRow only = Assert.Single(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(token));
+        Assert.Equal(first.JourneyId, only.JourneyId);
+        Assert.NotEqual(JourneyRuntimeStage.Blocked, only.Stage);
+        Assert.Equal(ordersCreated, fixture.Riot.Creates.Count);
+    }
+
     /// <summary>车载端安全摘要里本用例关心的几项；仓位一律锁好、开锁输出复位，与车在两站之间时一样。</summary>
     private sealed record OnboardSafetySummary(bool DepartureSafe, bool VehicleStopped, bool UnknownPresent, string[] ReasonCodes);
 

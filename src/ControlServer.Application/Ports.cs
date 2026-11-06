@@ -333,7 +333,34 @@ public sealed record RiotVehicleObservation(
     double? Speed,
     DateTimeOffset ObservedAt,
     int? LockStatus = null,
-    string? OrderTaskId = null);
+    string? OrderTaskId = null)
+{
+    /// <summary>
+    /// RIoT's <c>currentPosition</c> for a vehicle it places at no station: driving, pushed off a point, or with its
+    /// localisation lost (control-server#772, #801, #528). It is not a station number.
+    /// </summary>
+    public const int NoStation = 0;
+
+    /// <summary>
+    /// The station this vehicle can be routed from: <see cref="CurrentStationId"/> when RIoT places it at a station, null when
+    /// RIoT reports no position or places it at no station (<see cref="NoStation"/>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// control-server#528: a route starts at a station, so for every "how far / can it get there from here" question 0 is the
+    /// same as no reading -- position unknown. Before this, 0 went into the route graph as an origin, reached nothing, and was
+    /// reported as the target being unreachable (dispatch's structural block 2114, charging's <c>CHARGER_UNREACHABLE</c>).
+    /// </para>
+    /// <para>
+    /// <see cref="CurrentStationId"/> itself is left as RIoT said it, deliberately not mapped to null at the gateway: where a
+    /// vehicle stands is a different question, and there 0 is a known answer -- on no charger, no waiting point, no fixed
+    /// station -- that a missing reading is not. Charger occupancy (#772) would read every vehicle on the move as unknown and
+    /// stop the whole fleet charging; the release sweeps (#801) need "at no station" to keep a vehicle just off its point from
+    /// counting as gone.
+    /// </para>
+    /// </remarks>
+    public int? KnownStationId => CurrentStationId is > NoStation ? CurrentStationId : null;
+}
 
 public enum RiotVehicleMotionState
 {

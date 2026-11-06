@@ -86,6 +86,26 @@ public sealed class RouteGraphDispatchTests
         Assert.Equal("ROUTE_GRAPH_VEHICLE_POSITION_UNKNOWN", reason);
     }
 
+    /// <summary>
+    /// control-server#528: RIoT reports <c>currentPosition</c> 0 for a vehicle it places at no station (10-09 agv02, stopped
+    /// between two stations). 0 is not a station on the graph, so a traversal from it reaches nothing, and before the fix the
+    /// vehicle was told the pickup is unreachable -- a code that becomes a structural block (alarm 2114, "carry it by hand")
+    /// once every vehicle returns it. Not knowing which station the vehicle is at is the backlog code, as for no reading.
+    /// </summary>
+    [Fact]
+    public async Task AVehicleRiotPlacesAtNoStationIsPositionUnknownNotUnreachable()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync(seeded: true);
+        DispatchCandidateEvaluation evaluation = Evaluation(vehicleAtStation: 0, pickupStation: 12);
+
+        string reason = await new RouteGraphReachabilityCriterion(fixture.Access)
+            .EvaluateAsync(evaluation, TestContext.Current.CancellationToken);
+
+        Assert.Equal("ROUTE_GRAPH_VEHICLE_POSITION_UNKNOWN", reason);
+        Assert.Equal(DispatchReasonClass.Backlog, StructuralDispatchClassification.ClassOf(reason));
+        Assert.Null(evaluation.GraphTraversalCostMm);
+    }
+
     [Fact]
     public async Task AStaleSnapshotBlocksWithTheEnginesOwnReason()
     {

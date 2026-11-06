@@ -551,7 +551,10 @@ public sealed class DispatchRoundRunner(
                 : null;
             if (underWay && plan is null)
             {
-                // 在途却读不出计划：这一轮不问它追加，别的车照常。旅程正在被推进段改写时会短暂落进这里。
+                // 在途却读不出计划：这一轮整辆车不参加（不出逐车判定、不问它追加），别的车照常。两种情形：旅程正在被推进段改写时
+                // 短暂落进这里；RIoT 读不到它的位置或报它不在任何站上（currentPosition 0，真 RIoT 上车一开动就是这样，
+                // control-server#528 审查 S1）。后者让行驶中的车整段不参加派车轮：全车不可达的结构阻断要等它停到站上才立得起来，
+                // 积压看板的逐车判定里也没有它。
                 return null;
             }
 
@@ -669,9 +672,11 @@ public sealed class DispatchRoundRunner(
         RiotVehicleObservation observation,
         CancellationToken cancellationToken)
     {
-        if (observation.CurrentStationId is not { } vehicleStation)
+        if (observation.KnownStationId is not { } vehicleStation)
         {
             // 不知道车在哪，就算不出任何一段代价，也就谈不上追加。fail closed，与可达性判据同一条道理。
+            // currentPosition 0（不在任何站上）同样没有起点（control-server#528）。这一处不只是口径：以前从 0 算代价、到不了，
+            // 车仍作为参加者出一份「不追加」的判定；现在答空，调用方让整辆车不参加这一轮（见 TryAdmitToRoundAsync 那一处）。
             return null;
         }
 

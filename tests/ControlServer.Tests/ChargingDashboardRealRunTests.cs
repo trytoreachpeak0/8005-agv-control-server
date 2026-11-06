@@ -348,6 +348,72 @@ public sealed class ChargingDashboardRealRunTests
         }
     }
 
+    /// <summary>
+    /// 低于强制充电线、RIoT 把它放在两站之间（<c>currentPosition</c> 0）的车（control-server#528，11-06 agv02 排队到断电）：位置未知就分不到桩，
+    /// 告警卡片有一条 <see cref="ChargingDashboardDescriptions.AlarmBelowMandatoryPositionUnknown"/>，点名这辆车、写电量，现场该做的是在 RIoT 里
+    /// 给车重新定位。重新定位、分到桩之后告警消失。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleBelowTheMandatoryLineAtNoStationIsAlarmedToBeRelocated()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = RiotVehicleObservation.NoStation };
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        Assert.Equal(ChargingAllocationReasons.VehiclePositionUnknown, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        (JsonDocument alarms, string html) = await ReadAsync(fleet, "charging-alarms");
+        using (alarms)
+        {
+            JsonElement alarm = Assert.Single(
+                alarms.RootElement.GetProperty("alarms").EnumerateArray(),
+                a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryPositionUnknown);
+            Assert.Equal(AgvA, alarm.GetProperty("agvId").GetString());
+            Assert.Equal(ChargingDashboardDescriptions.SeverityHigh, alarm.GetProperty("severity").GetString());
+            Assert.Contains("电量 20%", alarm.GetProperty("detail").GetString()!, StringComparison.Ordinal);
+            Assert.Contains("重新定位", html, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "调度",
+                ChargingDashboardDescriptions.FieldActions[ChargingDashboardDescriptions.AlarmBelowMandatoryPositionUnknown],
+                StringComparison.Ordinal);
+        }
+        Assert.Empty(await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().ToArrayAsync(Token));
+
+        fleet.Riot.VehicleOverrides.Remove(KeyA);
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        Assert.Single(await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().ToArrayAsync(Token));
+        (JsonDocument after, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (after)
+        {
+            Assert.DoesNotContain(
+                after.RootElement.GetProperty("alarms").EnumerateArray(),
+                a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryPositionUnknown);
+        }
+    }
+
+    /// <summary>高于强制充电线的车在两站之间：它本来就不需要充电，不告警（control-server#528）。</summary>
+    [Fact]
+    public async Task AVehicleAboveTheMandatoryLineAtNoStationIsNotAlarmed()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 90;
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = RiotVehicleObservation.NoStation };
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        Assert.Equal(ChargingAllocationReasons.NotRequired, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        (JsonDocument alarms, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (alarms)
+        {
+            Assert.DoesNotContain(
+                alarms.RootElement.GetProperty("alarms").EnumerateArray(),
+                a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryPositionUnknown);
+        }
+    }
+
     /// <summary>高于强制充电线的车仓门没锁：它本来就不需要充电，不告警（control-server#865）。</summary>
     [Fact]
     public async Task AVehicleAboveTheMandatoryLineWithAnUnlockedSlotIsNotAlarmed()
