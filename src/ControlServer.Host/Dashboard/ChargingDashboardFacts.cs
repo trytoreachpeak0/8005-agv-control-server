@@ -350,7 +350,7 @@ internal static class ChargingDashboardDescriptions
             [AlarmBelowMandatoryPositionUnknown] =
                 "到车前确认车停在哪里，在 RIoT 里给车重新定位（车不在站点上的，先由现场人员把车挪到最近的站点上）；定位到站上之后下一轮就会分桩。"
                 + "一时定位不了的，先给车人工充电，再联系系统维护人员",
-            [JourneyRuntimeEngine.OnboardSessionLostReason] ="检查车载端电脑与网络；车可能仍在桩上，不要据此认为桩已空",
+            [JourneyRuntimeEngine.OnboardSessionLostReason] = "检查车载端电脑与网络；车可能仍在桩上，不要据此认为桩已空",
             [StageCompleteAwaitingDeparture] =
                 "看车是否在桩上关了机，或一直没有活派给它；缺哪一项确认见服务端日志事件 2249。确认车已离开而桩没放时，经人工释放入口处理",
             [StageFailedCycleAwaitingRelease] =
