@@ -12,13 +12,14 @@
 **第二个事实**：窗口过后，主车那趟充电写上 CHARGING_ORDER_NOT_DISPATCHED，服务端日志出现事件 2284 那一行；211 仍是主车的预占，RIoT 上那张单仍是
 1，命令审计里一条订单命令也没有（不取消、不放桩，REQ-0165、REQ-0169）。等的是「码写上」这第二个事实，不读一次就断言。
 
-**现场处置**（票面第 2 条）：主车在 RIoT 上掉线（status 0，10-22 18:27 之后就是这样），人在 RIoT 上取消这张单（orderState 2）。服务端照取消走：
-ORDER_ENDED_WITHOUT_ARRIVAL、不重建；车证明不了停稳，211 照旧预占。L2-R11 经主车的车载端确认清桩：CONFIRMED、stationReleased=true，
-之后第二台取得 211 的预占与 CHARGING 用途。主车的充电单始终只建过一张。
+**现场处置**（票面第 2 条）：主车在 RIoT 上掉线（status 0，10-22 18:27 之后就是这样），人在 RIoT 上取消这张单（orderState 2，executeVehicleKey
+仍是 "--"）。control-server#882 起：RIoT 从没把这张单派给车，服务端读到取消的那一轮就按已确认失败收尾——旅程 CHARGING_ORDER_ENDED_UNDISPATCHED、
+211 同一次保存里放掉、主车的 CHARGING 用途放掉、服务端日志事件 2286 一次，不等车证明停稳（掉线的车本来证明不了），不需要人工清桩，不重建、
+不发任何订单命令。之后第二台取得 211 的预占与 CHARGING 用途。主车的充电单始终只建过一张。
 
-**红证据（缺陷版本）**：fp/v2-impl 3e62d65b9（本票之前）上，窗口过后旅程上没有任何码、日志里没有 2284，L2-COND-01 变红。
-L2-COND-00 与 L2-COND-02 在缺陷版本上照样通过：取消之后旅程是 ORDER_ENDED_WITHOUT_ARRIVAL，人工清桩本来就接得住（10-22 现场查实的处置路径），
-L2-COND-02 守的是这条现场处置不回退，不是红点（独立审查 L1）。
+**红证据（缺陷版本）**：fp/v2-impl 3e62d65b9（cs#863 之前）上，窗口过后旅程上没有任何码、日志里没有 2284，L2-COND-01 变红。
+cs#882 之前（cs#863 到 c82f2ce1a），取消之后旅程停在 ORDER_ENDED_WITHOUT_ARRIVAL、211 一直预占，要 L2-R11 人工清桩才放（当时的 L2-COND-02）；
+cs#882 让桩当场放开，L2-COND-02 改守新行为：在 cs#882 之前的版本上它红在「211 仍是主车的预占、旅程码是 ORDER_ENDED_WITHOUT_ARRIVAL」。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -34,7 +35,6 @@ $journal = $Context.Journal
 $assertions = $Context.Assertions
 $connection = $Context.Connection
 $riot = $Context.Riot
-$onboard = $Context.Onboard
 
 $charger = 211
 $chargerName = '充电点1'
@@ -89,6 +89,10 @@ function Get-RiotOrderState([string]$upperId) {
 
 $undispatchedLine = 'CHARGING_ORDER_NOT_DISPATCHED: charge order'
 function Get-UndispatchedLines { ([regex]::Matches((Read-SharedText $serverLog), [regex]::Escape($undispatchedLine))).Count }
+
+# control-server#882: event 2286, the charge order ended in RIoT before RIoT bound a vehicle to it.
+$endedUndispatchedLine = 'CHARGING_ORDER_ENDED_UNDISPATCHED: charge order'
+function Get-EndedUndispatchedLines { ([regex]::Matches((Read-SharedText $serverLog), [regex]::Escape($endedUndispatchedLine))).Count }
 
 # --- 0. 前置：两台车在关卡、电量在线之上；桩登记到假 RIoT 与名册；路网起来 --------------------------------------
 
@@ -166,27 +170,22 @@ $assertions.Add(
     $expectedNamed,
     $named)
 
-# --- 3. 现场处置：车掉线，人在 RIoT 取消单，人工清桩确认，桩给第二台 ---------------------------------------------------
+# --- 3. 现场处置：车掉线，人在 RIoT 取消单；没派过车，桩当场放，给第二台 ---------------------------------------------
 
 Set-Vehicle $main.VehicleKey 8 0
 $null = $riot.Command('Put', "orders/$upperId", @{ orderState = 2 })
-$ended = Wait-L2ConditionOrLast -Description 'the cancelled charge order was taken as ended without arrival' `
-    -Journal $journal -Criterion 'order-ended-without-arrival' -TimeoutSeconds 30 `
-    -Probe { "$(Get-JourneyCode $journeyId) | $(Get-ChargerHeld)" } `
-    -Until { param($v) $v.StartsWith('ORDER_ENDED_WITHOUT_ARRIVAL |') }
-
-$clearanceId = [guid]::NewGuid().ToString('D')
-$sent = $onboard.Command('Put', "station-clearances/$clearanceId", @{ stationId = $chargerName; operatorId = 'L2-R11' })
-$journal.Observe('station-clearance-sent', $clearanceId, @{ answer = $sent.body })
-$decided = Wait-L2Condition -Description 'the server decided the clearance confirmation' `
-    -Journal $journal -Criterion 'clearance-decided' -TimeoutSeconds 30 `
+# The journey code, the 2286 line, the main vehicle's claim and the order commands, read together once the code is written: the
+# code, the release and the claim go in one save, and the line is logged right after it.
+$ended = Wait-L2ConditionOrLast -Description 'the cancelled undispatched charge order ended the cycle and freed the charger' `
+    -Journal $journal -Criterion 'order-ended-undispatched' -TimeoutSeconds 30 `
     -Probe {
-        $row = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT Outcome, StationReleased FROM ManualStationClearanceConfirmations WHERE ConfirmationRequestId = '$clearanceId'")
-        if ($null -eq $row) { return $null }
-        "$($row.Outcome) released=$($row.StationReleased)"
+        $held = Get-ChargerHeld
+        $heldBy = if ($held -eq '(none)') { '(none)' } else { $held.Split(' ')[1] }
+        "$(Get-JourneyCode $journeyId) | $(Get-EndedUndispatchedLines) endings | 211 not $($main.VehicleKey): " +
+            "$($heldBy -ne $main.VehicleKey) | main $(Get-Claim $main.VehicleKey) | " +
+            "$(Get-Count 'SELECT COUNT(*) AS N FROM RiotOrderCommandAudit') order commands"
     } `
-    -Until { param($v) $null -ne $v }
+    -Until { param($v) $v.StartsWith('CHARGING_ORDER_ENDED_UNDISPATCHED | 1 endings |') }
 
 $handedOver = Wait-L2ConditionOrLast -Description 'the second vehicle was committed to the freed charger' `
     -Journal $journal -Criterion 'second-vehicle-committed' -TimeoutSeconds 60 `
@@ -197,14 +196,16 @@ $handedOver = Wait-L2ConditionOrLast -Description 'the second vehicle was commit
     -Until { param($v) $v -eq "RESERVED $($second.VehicleKey) | CHARGING" }
 $mainCreates = Get-Count "SELECT COUNT(*) AS N FROM OrderIntents WHERE VehicleKey = '$($main.VehicleKey)' AND Purpose = 'TO_CHARGER'"
 $rebuilds = Get-Count 'SELECT COUNT(*) AS N FROM OwnOrderRebuilds'
-$expectedHandover = "ORDER_ENDED_WITHOUT_ARRIVAL | $heldByMain / CONFIRMED released=1 / RESERVED $($second.VehicleKey) | CHARGING / 1 main intents, 0 rebuilds"
-$actualHandover = "$ended / $decided / $handedOver / $mainCreates main intents, $rebuilds rebuilds"
+$expectedEnded = "CHARGING_ORDER_ENDED_UNDISPATCHED | 1 endings | 211 not $($main.VehicleKey): True | main (none) | 0 order commands"
+$expectedHandover = "$expectedEnded / RESERVED $($second.VehicleKey) | CHARGING / 1 main intents, 0 rebuilds"
+$actualHandover = "$ended / $handedOver / $mainCreates main intents, $rebuilds rebuilds"
 $assertions.Add(
     'L2-COND-02',
-    '主车在 RIoT 掉线、人在 RIoT 取消那张单：服务端照取消走（ORDER_ENDED_WITHOUT_ARRIVAL、不重建），车证明不了停稳，211 仍预占；' +
-        'L2-R11 确认清桩：CONFIRMED、stationReleased=true；之后第二台取得 211 的预占与 CHARGING 用途。主车的充电单只建过一张',
+    '主车在 RIoT 掉线、人在 RIoT 取消那张从没派给车的单（executeVehicleKey --）：服务端读到取消的那一轮就收尾（CHARGING_ORDER_ENDED_UNDISPATCHED，' +
+        '事件 2286 一次），211 不再是主车的、主车的 CHARGING 用途放掉，不等车证明停稳、不要人工清桩，不重建、没有任何订单命令；' +
+        '之后第二台取得 211 的预占与 CHARGING 用途。主车的充电单只建过一张（control-server#882）',
     ($actualHandover -eq $expectedHandover),
     $expectedHandover,
     $actualHandover)
 
-$journal.Note('充电单一直不派车：窗口过后点名告警，不取消、不放桩；人在 RIoT 取消并确认清桩之后，桩给了等着的低电车。')
+$journal.Note('充电单一直不派车：窗口过后点名告警，不取消、不放桩；人在 RIoT 取消之后，服务端当场收尾放桩，桩给了等着的低电车。')
