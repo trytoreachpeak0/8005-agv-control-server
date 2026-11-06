@@ -89,7 +89,8 @@ public sealed class ChargingOrderEndedBeforeArrivalTests
         Assert.Empty(fleet.Riot.EmergencyCommands);
         Assert.Single(fleet.Riot.Creates, create => create.VehicleKey == KeyA);
 
-        // agv02 below the mandatory line: the charger is its to take.
+        // agv02 below the mandatory line: the charger is its to take (the six idle hours let the design-state route graph expire).
+        await fleet.ReplaceRouteGraphAsync(Edges(), Stations());
         fleet.Riot.BatteryByVehicle[KeyB] = 30;
         await RoundAsync(fleet);
         await RoundAsync(fleet);
@@ -163,5 +164,47 @@ public sealed class ChargingOrderEndedBeforeArrivalTests
             (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
         Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
         Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+    }
+
+    /// <summary>
+    /// 没派给车就结束仍是已确认失败：车还低于强制充电线时，冷却期（<c>JourneyRuntime:OwnOrderRebuildDelay</c>）内一个桩都不分给它；冷却过后按正常链重新分配，
+    /// 是新的周期与单号（不是重建原单）。10 分钟内再这样失败一次，就改为人工充电等待（两次即停）。
+    /// </summary>
+    [Fact]
+    public async Task AnUndispatchedEndingCountsAsAConfirmedFailureCoolsTheVehicleDownAndTwiceStopsAutomaticCharging()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 15;
+        JourneyRuntimeRow first = await ChargingExecutionTests.CommittedAndSentAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        fleet.Riot.QueueOrderUnbound(first.PickupUpperId);
+        fleet.Riot.CancelOrder(first.PickupUpperId);
+        await RoundAsync(fleet);
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+
+        await RoundAsync(fleet);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Equal(ChargingAllocationReasons.CooldownAfterFailedCycle, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        await RoundAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) again = await CommitmentOfAsync(fleet, KeyA);
+        Assert.NotEqual(before.CycleId, again.CycleId);
+        Assert.NotEqual(before.UpperId, again.UpperId);
+        Assert.Empty(await fleet.Context.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+
+        await RoundAsync(fleet);
+        fleet.Riot.QueueOrderUnbound(again.UpperId);
+        fleet.Riot.CancelOrder(again.UpperId);
+        await RoundAsync(fleet);
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        await RoundAsync(fleet);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Equal(
+            ManualChargingHoldReasons.ChargingRepeatedlyFailed,
+            (await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().SingleAsync(row => row.VehicleKey == KeyA, Token)).Reason);
     }
 }

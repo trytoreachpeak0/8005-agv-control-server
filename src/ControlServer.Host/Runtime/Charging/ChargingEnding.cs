@@ -16,9 +16,10 @@ namespace ControlServer.Host.Runtime.Charging;
 /// <para>
 /// <b>桩预占不在这里放</b>（<c>REQ-0173</c>）：预占只在充电已停、原车离开、桩位可确认空闲三项都确认之后释放。收尾这一刻车可能就停在桩上，
 /// 所以由充电分配每轮开头的清扫凭那三项证据放（<c>ChargingAllocator</c>）。在那之前这辆车自己还占着桩，不会再被分配充电。
+/// 唯一的例外是 RIoT 从没把单派给车（<see cref="ChargingExecutionReasons.OrderEndedUndispatched"/>，control-server#882）：调用方自己在同一次保存里放桩。
 /// </para>
 /// <para>
-/// 两个调用方：引擎的充电分支（充电单被取消或删除、车已证明停稳），与人工清除故障（<c>VehicleFaultRecoveryService</c>，FAILED 的单由人清除后）。
+/// 调用方：引擎的充电分支（充电单被取消或删除、车已证明停稳；或单从没派给车），与人工清除故障（<c>VehicleFaultRecoveryService</c>，FAILED 的单由人清除后）。
 /// 到桩之后的正常收尾（充满、离桩）是批次9-07 的，不经这里。
 /// </para>
 /// </remarks>

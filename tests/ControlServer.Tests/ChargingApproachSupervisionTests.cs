@@ -191,11 +191,11 @@ public sealed class ChargingApproachSupervisionTests
     }
 
     /// <summary>
-    /// 现场处置（票面第 2 条）：点名之后人工清桩先拒收（旧单还在排队，请先在 RIoT 结束它）；人在 RIoT 上取消这张单，服务端照取消走——
-    /// <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>、不重建、不建第二张单；车离线证明不了停稳，预占照旧；这时人工清桩确认，桩当场放开。
+    /// 现场处置（票面第 2 条）：点名之后人工清桩先拒收（旧单还在排队，请先在 RIoT 结束它）；人在 RIoT 上取消这张单，服务端照取消走——不重建、不建第二张单。
+    /// control-server#882 起，这张单 RIoT 从没派给车，所以读到取消的那一轮周期就结束、桩当场放开：车离线证明不了停稳也一样，不再要人工清桩。
     /// </summary>
     [Fact]
-    public async Task OnceAPersonCancelsTheUndispatchedOrderInRiotTheChargerIsFreedByAManualClearanceAndNothingIsRebuilt()
+    public async Task OnceAPersonCancelsTheUndispatchedOrderInRiotTheChargerIsFreedAtOnceAndNothingIsRebuilt()
     {
         await using FleetFixture fleet = await FleetAsync();
         fleet.Riot.BatteryByVehicle[KeyA] = 20;
@@ -219,17 +219,13 @@ public sealed class ChargingApproachSupervisionTests
 
         fleet.Riot.CancelOrder(journey.PickupUpperId);
         await RoundAsync(fleet);
-        await RoundAsync(fleet);
+        JourneyRuntimeRow ended = (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!;
         Assert.Equal(
-            JourneyRuntimeEngine.OrderEndedWithoutArrivalReason,
-            (await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
-        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
-        Assert.Empty(await fleet.Context.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
-
-        ManualStationClearanceConfirmation cleared =
-            await ManualClearance(fleet).DecideAsync(Request("00000000-0000-4000-8000-0000000c8632"), Token);
-        Assert.Equal((FieldConfirmationDecision.Confirmed, true), (cleared.Decision.Outcome, cleared.StationReleased));
+            (JourneyRuntimeStage.Completed, ChargingExecutionReasons.OrderEndedUndispatched),
+            (ended.Stage, ended.BlockReasonCode));
         Assert.Null(await StationAsync(fleet, Near.StationId));
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Empty(await fleet.Context.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
         await RoundAsync(fleet);
         await RoundAsync(fleet);
         Assert.Single(fleet.Riot.Creates);
