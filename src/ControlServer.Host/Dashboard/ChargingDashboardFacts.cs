@@ -171,7 +171,7 @@ internal static class ChargingDashboardDescriptions
             [ChargingAllocationReasons.VehicleStillHoldsCharger] =
                 "这辆车自己还占着一个充电桩（上一次充电结束了、桩还没按三项确认放掉）：不再给它分桩，免得向原桩再发一次充电动作",
             [ChargingAllocationReasons.VehiclePositionUnknown] =
-                "不知道车停在哪个站（RIoT 没报位置，或报它不在任何站上：两站之间、定位丢失）：算不出到各个桩的路程，不分桩；车低于强制充电线时另见充电告警",
+                "不知道车停在哪个站（RIoT 没报位置，或报它不在任何站上：两站之间、定位丢失）：算不出到各个桩的路程，不分桩",
             [ChargingAllocationReasons.RouteGraphUnavailable] = "路网没开或这张图的路网不可用：最近优先无从计算，不猜",
             [ChargingAllocationReasons.RosterEmptyManualHold] = "名册里没有这辆车能用的桩：转为人工充电等待并告警",
             [ChargingAllocationReasons.RepeatedlyFailedManualHold] = "这辆车的充电单短时间内第二次被取消、删除或失败：转为人工充电等待并告警",

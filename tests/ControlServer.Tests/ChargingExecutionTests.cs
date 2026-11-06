@@ -762,6 +762,18 @@ public sealed class ChargingExecutionTests
         var line = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2254);
         Assert.Contains(ChargingAllocationReasons.VehiclePositionUnknown, line.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(ChargingAllocationReasons.ChargerUnreachable, line.Message, StringComparison.Ordinal);
+        // Review S3: the withdrawal frees the charger, the CHARGING purpose and the cycle in that save.
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Empty(await fleet.Context.Set<ChargingCycleRow>().AsNoTracking()
+            .Where(row => row.VehicleKey == KeyA && row.Phase != ChargingCyclePhases.Ended).ToArrayAsync(Token));
+
+        // And nothing is reserved again while RIoT goes on reading it at no station.
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(ChargingAllocationReasons.VehiclePositionUnknown, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        Assert.DoesNotContain(fleet.Riot.Creates, create => create.VehicleKey == KeyA);
     }
 
     // ---- 出发前复核遇到路网暂时不可用（control-server#744）------------------------------------------------------------

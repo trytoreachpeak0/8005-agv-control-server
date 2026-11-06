@@ -670,8 +670,10 @@ public sealed class ChargingAllocationTests
         var warning = Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2246);
         Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, warning.Level);
         Assert.Contains(AgvA, warning.Message, StringComparison.Ordinal);
-        Assert.Contains(ChargingAllocationReasons.VehiclePositionUnknown, warning.Message, StringComparison.Ordinal);
-        Assert.Contains("relocate", warning.Message, StringComparison.Ordinal);
+        // The template itself names CHARGING_VEHICLE_POSITION_UNKNOWN and "relocate" in its hints (review S2): only the
+        // {Reason} slot right after "allocated to it: " says this 2246 is the position-unknown one.
+        Assert.Contains(
+            "allocated to it: " + ChargingAllocationReasons.VehiclePositionUnknown + ".", warning.Message, StringComparison.Ordinal);
         await AssertNothingOfACommitmentAsync(fleet, KeyA);
         Assert.Null(await StationAsync(fleet, Near.StationId));
         Assert.Empty(fleet.Riot.Creates);
