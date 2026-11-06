@@ -296,7 +296,8 @@ public sealed record RiotOrderObservation(
 {
     // ExecuteVehicleBound: whether RIoT has bound a vehicle to run the order -- false while executeVehicleKey still reads
     // empty or RIoT's "--" placeholder (BC-ORDER-013), true once it names one; null when the reading did not say (an
-    // unread or absent order, or a double that does not model it). VehicleKey cannot tell the two apart: before binding it
+    // unread or absent order, an executeVehicleKey missing, JSON null or not a string -- control-server#882 review M1 --
+    // or a double that does not model it). VehicleKey cannot tell the two apart: before binding it
     // carries the appointed vehicle (control-server#863).
     /// <summary>
     /// The exact absent-at-observation read of <paramref name="expectedUpperId"/>: a RECONCILE that RIoT answered HTTP 200 /

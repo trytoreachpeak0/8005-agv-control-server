@@ -970,8 +970,17 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             movement.MapId,
             destination,
             receipt,
-            ExecuteVehicleBound: IsAssignedVehicleKey(order.ExecuteVehicleKey));
+            ExecuteVehicleBound: ExecuteVehicleBound(order.ExecuteVehicleKey));
     }
+
+    /// <summary>
+    /// Whether the read says RIoT has bound a vehicle: true for a key, false for an empty one or the "--" placeholder,
+    /// null when executeVehicleKey is missing, JSON null or not a string (the SDK hands all three over as null). A
+    /// read that says nothing is not "unbound" (control-server#882 review M1): a cancelled charge order read as
+    /// unbound frees its charger without the vehicle being proven stopped.
+    /// </summary>
+    private static bool? ExecuteVehicleBound(string? executeVehicleKey) =>
+        executeVehicleKey is null ? null : IsAssignedVehicleKey(executeVehicleKey);
 
     /// <summary>
     /// Whether RIoT has actually bound a vehicle to the order. BC-ORDER-012 and BC-ORDER-013
