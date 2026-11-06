@@ -326,6 +326,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [ChargingExecutionReasons.OrderEnded] =
                 "充电单在 RIoT 被取消或删除，车已停稳：这趟充电结束，不重建。充电桩要等确认充电已停、车不在桩上、桩位空闲之后才释放；"
                 + "30 秒内不给这辆车安排任何充电桩，10 分钟内它的充电再失败一次，就改为人工充电等待",
+            [ChargingExecutionReasons.OrderEndedUndispatched] =
+                "充电单在 RIoT 一直没派给车就被取消或删除：车没有因为这张单动过，这趟充电当场按失败结束，充电桩同时释放、可以分给下一辆车，不重建。"
+                + "30 秒内不给这辆车安排任何充电桩，10 分钟内它的充电再失败一次，就改为人工充电等待",
             [ChargingExecutionReasons.OrderNeverAppeared] =
                 "开往充电桩的单发出后 RIoT 一直查无此单，车停稳、名下没有未完成的单：服务端放弃这张单，这趟充电按失败结束，不重建。"
                 + "充电桩的释放、冷却与再次失败后改为人工充电等待的规则同单被取消。这张单事后若在车上跑起来，服务端会取消它并告警",

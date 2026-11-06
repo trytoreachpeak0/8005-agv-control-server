@@ -2325,16 +2325,23 @@ public sealed partial class MultiVehicleExecutionTests
         public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            string[] reasons = SafetyReasonsByVehicle.GetValueOrDefault(vehicleKey) ?? SafetyReasons;
             return Task.FromResult(new RiotVehicleSafetyObservation(
                 vehicleKey,
-                SafetyReasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
+                reasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
                 clock.GetUtcNow(),
                 "L1",
-                SafetyReasons));
+                reasons));
         }
 
         /// <summary>What the safety read names for every vehicle; empty means stopped with nothing in the way.</summary>
         public string[] SafetyReasons { get; set; } = [];
+
+        /// <summary>
+        /// What the safety read names for one vehicle, in place of <see cref="SafetyReasons"/> (control-server#882: 11-06 agv01
+        /// read motion MT_NA with sys and location ERROR while the other vehicles read stopped).
+        /// </summary>
+        public Dictionary<string, string[]> SafetyReasonsByVehicle { get; } = new(StringComparer.Ordinal);
 
         /// <summary>The vehicle key whose reads do not come back, or null.</summary>
         /// <remarks>

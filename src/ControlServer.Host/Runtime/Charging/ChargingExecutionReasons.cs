@@ -21,6 +21,7 @@ namespace ControlServer.Host.Runtime.Charging;
 /// </para>
 /// <para>
 /// <b>已确认失败的收尾类</b>：<see cref="OrderEnded"/>、<see cref="OrderFailed"/>、<see cref="OrderNeverAppeared"/>。预占按三项确认释放，
+/// 只有 <see cref="OrderEndedUndispatched"/>（单没派给车就结束，control-server#882）同一次保存里放；都
 /// 计入「两次即停」，之后有冷却。
 /// </para>
 /// </remarks>
@@ -71,6 +72,14 @@ public static class ChargingExecutionReasons
     /// 桩预占按 <c>REQ-0173</c> 三项确认后才释放。<b>不重建</b>（票面第 10 条；<c>REQ-0360</c> 的重建承载需求，充电单没有需求）。
     /// </summary>
     public const string OrderEnded = "CHARGING_ORDER_ENDED";
+
+    /// <summary>
+    /// 充电单在 RIoT 被取消或删除（不是本服务端取消的），而 RIoT 从没把它派给车（那一次读数里 <c>executeVehicleKey</c> 仍是空或 <c>--</c>，
+    /// control-server#882）：已确认失败，周期结束、用途占有与桩预占<b>同一次保存里</b>释放，不等车证明停稳、不等三项确认。理由与撤回相同：那几项是为
+    /// 「车可能还在动、可能停在桩上」设的，而没有车跑过这张单，车没有因为它动过、也没有被它带到桩上。行为实验室 rounds 9、10、16 看到的是：
+    /// 执行中被取消的单 <c>executeVehicleKey</c> 保留执行车，只有排队中被取消的单读 <c>--</c>。计入「两次即停」，之后有冷却。<b>不重建</b>，同上。
+    /// </summary>
+    public const string OrderEndedUndispatched = "CHARGING_ORDER_ENDED_UNDISPATCHED";
 
     /// <summary>充电单在 RIoT 上 FAILED、故障已由人工清除：已确认失败，同上。</summary>
     public const string OrderFailed = "CHARGING_ORDER_FAILED";
@@ -294,7 +303,7 @@ public static class ChargingExecutionReasons
 
     /// <summary>已确认失败的收尾码：这辆车之后进冷却（冷却期内一个桩都不分）、计入「两次即停」的那几种。</summary>
     public static IReadOnlySet<string> ConfirmedFailures { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { OrderEnded, OrderFailed, OrderNeverAppeared };
+        new HashSet<string>(StringComparer.Ordinal) { OrderEnded, OrderEndedUndispatched, OrderFailed, OrderNeverAppeared };
 
     /// <summary>建单没有确认时写在旅程上的码：<c>CHARGER_{Outcome}</c>。引擎与看板说明都经这里拼。</summary>
     public static string LegOutcomeCode(MovementDispatchOutcome outcome) => $"{LegName}_{outcome}";

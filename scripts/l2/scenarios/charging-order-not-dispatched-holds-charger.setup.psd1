@@ -6,7 +6,8 @@
 # ChargingOrderUndispatchedAlarmAfter 30 秒（默认 5 分钟）：编排器把它透传成 JourneyRuntime__ChargingOrderUndispatchedAlarmAfter。
 # 假 RIoT 建出的单一直是 1 QUEUEING、executeVehicleKey "--"，场景不推它，正是 10-22 那张单的样子。
 #
-# FieldOperatorRoles 是服务端的 R-11／R-13 名单：合成车载端以 L2-R11 的身份发人工清桩确认。
+# 不再登记 R-11／R-13 名单：control-server#882 起，人在 RIoT 取消这张从没派给车的单之后桩当场放，不需要人工清桩。
+#
 @{
     Fleet = @(
         @{ AgvId = 'AGV-L2-002'; VehicleKey = 'BROKERX-L2-0002' }
@@ -20,8 +21,5 @@
         RuntimeRefreshPeriod = '00:00:10'
         RuntimeStateMaxAge   = '00:00:45'
     }
-    FieldOperatorRoles = @(
-        @{ OperatorId = 'L2-R11'; Roles = @('R-11') }
-    )
     ChargingOrderUndispatchedAlarmAfter = '00:00:30'
 }

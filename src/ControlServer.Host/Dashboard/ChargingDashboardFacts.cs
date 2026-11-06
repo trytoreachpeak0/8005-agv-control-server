@@ -111,8 +111,9 @@ internal static class ChargingDashboardDescriptions
                 "充电单在 RIoT 上处于未识别的状态（SUSPENDED 8）：服务端按仍在执行处理，车、桩预占与充电用途都保持，不做任何自动动作，"
                 + "请人工到 RIoT 核实",
             [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] =
-                "充电单在 RIoT 被取消或删除，服务端还没证明车已停稳、名下没有单：车、桩预占与充电用途都保持，也不会另建一张充电单。车证明停稳之后这次充电按失败结束，"
-                + "桩要等充电已停、车不在桩上、桩位空闲三项确认之后才放。持续不消失请到现场看车是否还在动",
+                "充电单在 RIoT 被取消或删除（RIoT 已把它派给过车），服务端还没证明车已停稳、名下没有单：车、桩预占与充电用途都保持，也不会另建一张充电单。"
+                + "车证明停稳之后这次充电按失败结束，桩要等充电已停、车不在桩上、桩位空闲三项确认之后才放。持续 10 分钟以上充电桩卡片标超时；"
+                + "请到现场看车是否还在动，车已停住且不在桩上时由 R-11／R-13 名单里的人确认清桩",
             [VehicleFaultEvidence.OrderFailed] =
                 "充电单在 RIoT 上失败（FAILED），服务端已把车判为疑似故障：不派新单，车、桩预占与充电用途都保持。请到现场排除原因；若急停已锁住，"
                 + "先按急停人工解除；然后由现场人员经故障清除入口确认。故障清除后这次充电按失败结束，不会另建一张充电单；30 秒内不给这辆车安排任何充电桩，"
@@ -404,7 +405,8 @@ internal static class ChargingDashboardDescriptions
             [ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.UnsupportedOrderShape)] = "查服务端日志并报开发",
             [JourneyRuntimeEngine.OrderHangReason] = "到现场确认原因，在 RIoT 里继续这张单",
             [JourneyRuntimeEngine.OrderStateUnrecognizedReason] = "到 RIoT 核实这张单的状态",
-            [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] = "到现场看车是否还在动",
+            [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] =
+                "到现场看车是否还在动；车已停住、不在充电桩上而桩一直没放时，由 R-11／R-13 名单里的人确认清桩",
             [VehicleFaultEvidence.OrderFailed] = "到现场排除原因，必要时先人工解除急停，再经故障清除入口确认",
             // control-server#788：门锁类急停不自动解除，急停锁着时续行会被拒（FAULT_RECOVERY_EMERGENCY_LATCHED）：先由人解除，再续行。
             // control-server#789（CP-0017）：只因读不到的，读数恢复满 10 秒后服务端自己解除，单仍停着，仍要人续行。
@@ -449,6 +451,8 @@ internal static class ChargingDashboardDescriptions
             or ChargingExecutionReasons.VehicleObservationLost
             // control-server#863: the only charger held by a charge that cannot go, which only a person can clear.
             or ChargingExecutionReasons.OrderNotDispatched
+            // control-server#882: the charger stays held by an order that is already over until the vehicle is proven stopped.
+            or JourneyRuntimeEngine.OrderEndedWithoutArrivalReason
             or ChargingExecutionReasons.ReservationLostAtArrival
             or ChargingExecutionReasons.CycleMissing
             or VehicleFaultEvidence.OrderFailed => SeverityHigh,
@@ -708,7 +712,8 @@ internal sealed class ChargingDashboardFacts
 
     /// <summary>
     /// 预占着桩的那趟充电去不了桩（control-server#863）：单在 RIoT 一直没派出（<c>CHARGING_ORDER_NOT_DISPATCHED</c>，引擎写上它时已经过了自己的窗口），
-    /// 或车在途中失联超过告警窗口（<c>CHARGING_VEHICLE_OBSERVATION_LOST</c>，从点名的时刻算）。是就答桩卡上的超时说明，否则答空。只读旅程行上的码与时刻。
+    /// 或车在途中失联超过告警窗口（<c>CHARGING_VEHICLE_OBSERVATION_LOST</c>，从点名的时刻算），或单已在 RIoT 被取消或删除而车一直没证明停稳、超过告警窗口
+    /// （<c>ORDER_ENDED_WITHOUT_ARRIVAL</c>，control-server#882）。是就答桩卡上的超时说明，否则答空。只读旅程行上的码与时刻。
     /// </summary>
     public static string? ReservedByAStuckApproach(string stage, JourneyRuntimeRow? journey, DateTimeOffset now, TimeSpan window)
     {
@@ -727,6 +732,12 @@ internal sealed class ChargingDashboardFacts
                 $"充电桩被一辆去桩途中失联的车预占：RIoT 已 {ChargingDashboardDescriptions.Minutes(now - since)} 分钟读不到它（告警窗口 "
                 + $"{ChargingDashboardDescriptions.Minutes(window)} 分钟，服务端日志事件 2261）。车可能还在路上，也可能已在桩上，服务端不放桩、不动车；"
                 + "到现场找到车，在 RIoT 上取消充电单，再由 R-11／R-13 名单里的人确认清桩",
+            // control-server#882: the order is over, but the vehicle RIoT had bound to it is not proven stopped, so nothing is
+            // released (an order RIoT never bound ends the cycle and frees the charger in the round that reads the end).
+            JourneyRuntimeEngine.OrderEndedWithoutArrivalReason when now - since > window =>
+                $"充电桩被一趟已经结束的充电预占：它的充电单在 RIoT 已被取消或删除 {ChargingDashboardDescriptions.Minutes(now - since)} 分钟（告警窗口 "
+                + $"{ChargingDashboardDescriptions.Minutes(window)} 分钟，服务端日志事件 2256），服务端一直读不到车已停稳（车离线、读不到或读着在动），"
+                + "不放桩、不动车，别的车分不到这个桩。到现场找到车，确认它已停住、不在桩上，再由 R-11／R-13 名单里的人确认清桩",
             _ => null,
         };
     }
