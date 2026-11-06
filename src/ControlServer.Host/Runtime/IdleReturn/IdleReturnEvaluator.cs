@@ -338,7 +338,8 @@ public sealed class IdleReturnEvaluator(
             return readiness;
         }
 
-        return observed.CurrentStationId is null ? IdleReturnReasons.VehiclePositionUnknown : null;
+        // control-server#528: currentPosition 0 (at no station) gives no origin to route to a waiting point from, as no reading.
+        return observed.KnownStationId is null ? IdleReturnReasons.VehiclePositionUnknown : null;
     }
 
     private async Task<RoundReads> ReadRoundAsync(CancellationToken cancellationToken)
@@ -388,7 +389,7 @@ public sealed class IdleReturnEvaluator(
         CancellationToken cancellationToken)
     {
         FleetVehicle vehicle = candidate.Vehicle;
-        int origin = candidate.Facts.Vehicle.CurrentStationId!.Value;
+        int origin = candidate.Facts.Vehicle.KnownStationId!.Value;
         if (HeldAtStagingOrigin(vehicle, origin, reads.StagingOrigin))
         {
             return Refuse(vehicle, IdleReturnReasons.HeldAtStagingOrigin, FormattableString.Invariant($"Station {origin}."));

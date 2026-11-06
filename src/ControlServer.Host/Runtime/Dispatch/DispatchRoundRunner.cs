@@ -669,9 +669,10 @@ public sealed class DispatchRoundRunner(
         RiotVehicleObservation observation,
         CancellationToken cancellationToken)
     {
-        if (observation.CurrentStationId is not { } vehicleStation)
+        if (observation.KnownStationId is not { } vehicleStation)
         {
             // 不知道车在哪，就算不出任何一段代价，也就谈不上追加。fail closed，与可达性判据同一条道理。
+            // currentPosition 0（不在任何站上）同样没有起点（control-server#528）。
             return null;
         }
 

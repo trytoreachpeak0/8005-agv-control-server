@@ -84,7 +84,8 @@ internal static class IdleReturnCodeDescriptions
             [IdleReturnReasons.OwnOrderResultUnknown] = "本服务端给这辆车的某张单建单结果未知，还没对账出结论：不空闲返回，等对账",
             [IdleReturnReasons.BatteryUnknownOrCharging] = "电量读不到，或车正在充电（本周期还没充满）：不空闲返回",
             [IdleReturnReasons.BelowMandatoryChargeLine] = "电量低于这辆车充电策略的强制充电线：先去充电，不空闲返回",
-            [IdleReturnReasons.VehiclePositionUnknown] = "读不到车在哪个站：没有起点，算不出去等待点的路线，不空闲返回",
+            [IdleReturnReasons.VehiclePositionUnknown] =
+                "读不到车在哪个站（RIoT 没报位置，或报它不在任何站上：两站之间、定位丢失）：没有起点，算不出去等待点的路线，不空闲返回",
             [IdleReturnReasons.RouteGraphUnavailable] = "路网没开或这张图的路网不可用：到不到得了等待点核不了，不猜，不空闲返回",
             [IdleReturnReasons.HeldAtStagingOrigin] =
                 "车停在派工待送点上，而它只做待送任务（STAGING_TO_WIRE）：留在原地等下一条待送需求，不去等待点。"

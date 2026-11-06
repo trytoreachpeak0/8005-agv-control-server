@@ -170,7 +170,8 @@ internal static class ChargingDashboardDescriptions
             [ChargingAllocationReasons.VehicleEligibilityHeld] = "这辆车的充电资格暂停着：恢复之前不分桩",
             [ChargingAllocationReasons.VehicleStillHoldsCharger] =
                 "这辆车自己还占着一个充电桩（上一次充电结束了、桩还没按三项确认放掉）：不再给它分桩，免得向原桩再发一次充电动作",
-            [ChargingAllocationReasons.VehiclePositionUnknown] = "不知道车停在哪个站：算不出到各个桩的路程，不分桩",
+            [ChargingAllocationReasons.VehiclePositionUnknown] =
+                "不知道车停在哪个站（RIoT 没报位置，或报它不在任何站上：两站之间、定位丢失）：算不出到各个桩的路程，不分桩；车低于强制充电线时另见充电告警",
             [ChargingAllocationReasons.RouteGraphUnavailable] = "路网没开或这张图的路网不可用：最近优先无从计算，不猜",
             [ChargingAllocationReasons.RosterEmptyManualHold] = "名册里没有这辆车能用的桩：转为人工充电等待并告警",
             [ChargingAllocationReasons.RepeatedlyFailedManualHold] = "这辆车的充电单短时间内第二次被取消、删除或失败：转为人工充电等待并告警",
@@ -329,6 +330,9 @@ internal static class ChargingDashboardDescriptions
             [AlarmManualChargingHold] = "这辆车在服务端持有的人工充电等待中：不分桩、不接搬运、不做空闲返回、不动车",
             [AlarmBelowMandatoryDepartureNotProven] =
                 "电量低于强制充电线，但车此刻过不了出发前安全检查（缺哪一项见细节）：不给它分桩、它也不接搬运，电量会一直往下掉，直到缺的那一项好了",
+            [AlarmBelowMandatoryPositionUnknown] =
+                "电量低于强制充电线，但 RIoT 没把这辆车定位在任何一个站上（停在两站之间，或车载电脑断电重启后定位丢失）：算不出它到各个桩的路，"
+                + "不给它分桩、它也不接搬运，电量会一直往下掉，直到它重新被定位到某个站上",
             [JourneyRuntimeEngine.OnboardSessionLostReason] =
                 "车载端会话失联：这辆车正处在充电周期、清桩或人工充电等待中，车载端听不到了。服务端只阻断它的新业务，继续经 RIoT 观察，"
                 + "不结束、不释放、不改派（REQ-0287）",
@@ -343,7 +347,10 @@ internal static class ChargingDashboardDescriptions
             [AlarmManualChargingHold] = "到车前人工充电，充完由管理员在车上点「充电后返回服务」",
             [AlarmBelowMandatoryDepartureNotProven] =
                 "到车前看细节里点名的那一项：仓门没锁好的把门关好锁上，下一轮就会分桩；锁不上或一时处理不了的，先给车人工充电，再联系系统维护人员",
-            [JourneyRuntimeEngine.OnboardSessionLostReason] = "检查车载端电脑与网络；车可能仍在桩上，不要据此认为桩已空",
+            [AlarmBelowMandatoryPositionUnknown] =
+                "到车前确认车停在哪里，在 RIoT 里给车重新定位（车不在站点上的，先由现场人员把车挪到最近的站点上）；定位到站上之后下一轮就会分桩。"
+                + "一时定位不了的，先给车人工充电，再联系系统维护人员",
+            [JourneyRuntimeEngine.OnboardSessionLostReason] ="检查车载端电脑与网络；车可能仍在桩上，不要据此认为桩已空",
             [StageCompleteAwaitingDeparture] =
                 "看车是否在桩上关了机，或一直没有活派给它；缺哪一项确认见服务端日志事件 2249。确认车已离开而桩没放时，经人工释放入口处理",
             [StageFailedCycleAwaitingRelease] =
@@ -432,6 +439,7 @@ internal static class ChargingDashboardDescriptions
             or AlarmRosterNeverImported
             or AlarmManualChargingHold
             or AlarmBelowMandatoryDepartureNotProven
+            or AlarmBelowMandatoryPositionUnknown
             or JourneyRuntimeEngine.OnboardSessionLostReason
             or ChargingStationHoldTriggers.UnableToChargeConfirmed
             or ChargingStationHoldTriggers.InterruptionConfirmed
@@ -460,14 +468,23 @@ internal static class ChargingDashboardDescriptions
         _ => SeverityMedium,
     };
 
+    private static string DescribeBattery(int? batteryPercent) =>
+        batteryPercent is int percent
+            ? string.Create(CultureInfo.InvariantCulture, $"电量 {percent}%")
+            : "电量本轮读不到";
+
+    /// <summary>
+    /// <see cref="AlarmBelowMandatoryPositionUnknown"/> 的细节：电量，与 RIoT 没把它定位在站上这件事（control-server#528）。
+    /// </summary>
+    internal static string DescribePositionUnknown(int? batteryPercent) =>
+        $"{DescribeBattery(batteryPercent)}；RIoT 报它不在任何站上（currentPosition 0）或没报位置，分配不拿猜的位置去分桩";
+
     /// <summary>
     /// <see cref="AlarmBelowMandatoryDepartureNotProven"/> 的细节：电量，与出发门缺的每一项的人话，原码跟在括号里（control-server#865）。
     /// </summary>
     internal static string DescribeDepartureGaps(int? batteryPercent, IReadOnlyList<string> gaps)
     {
-        string battery = batteryPercent is int percent
-            ? string.Create(CultureInfo.InvariantCulture, $"电量 {percent}%")
-            : "电量本轮读不到";
+        string battery = DescribeBattery(batteryPercent);
         string missing = gaps.Count == 0
             ? "服务端没有记下缺哪一项，见服务端日志事件 2241"
             : string.Join("；", gaps.Select(gap => $"{DescribeDepartureGap(gap)}（{gap}）"));

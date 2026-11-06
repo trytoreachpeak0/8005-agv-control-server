@@ -549,8 +549,10 @@ public sealed class ChargingAllocator(
             "(CHARGER_OCCUPANCY_UNKNOWN names what could not be read); is the route graph engine enabled and fresh " +
             "(CHARGING_ROUTE_GRAPH_UNAVAILABLE, CHARGER_UNREACHABLE); is the charger on allocation hold or renamed on the Map " +
             "(CHARGER_ALLOCATION_HELD, CHARGER_NOT_ON_CURRENT_MAP); can the vehicle set off at all (CHARGING_DEPARTURE_NOT_PROVEN_AT_ALLOCATION " +
-            "names what the departure gate still lacks: a slot not locked, a safety reason, RIoT not reading it stopped). Said " +
-            "once per vehicle per conclusion.");
+            "names what the departure gate still lacks: a slot not locked, a safety reason, RIoT not reading it stopped); does RIoT " +
+            "place the vehicle at a station at all (CHARGING_VEHICLE_POSITION_UNKNOWN: no position, or currentPosition 0 -- between " +
+            "two stations or with its localisation lost, as after the onboard PC lost power; relocate the vehicle in RIoT, nothing " +
+            "is allocated from a guessed position). Said once per vehicle per conclusion.");
 
     private static readonly Action<ILogger, int, int, string, DateTimeOffset, string, Exception?> LogReservationStuck =
         LoggerMessage.Define<int, int, string, DateTimeOffset, string>(
@@ -646,10 +648,15 @@ public sealed class ChargingAllocator(
                 else
                 {
                     // REQ-0286: a vehicle whose charging eligibility is paused, still below its line, queues and is warned
-                    // about -- it is not tried at another charger.
+                    // about -- it is not tried at another charger. control-server#528: so is one RIoT does not place at a station
+                    // (only a vehicle below its mandatory line gets this far): no charger is allocated to it until it is
+                    // relocated, and its battery goes on falling, so it is said once, by name.
                     verdicts[candidate.Vehicle.AgvId] = Refuse(
                         candidate.Vehicle, refusal, "",
-                        waiting: refusal == ChargingAllocationReasons.VehicleEligibilityHeld ? refusal : null);
+                        waiting: refusal is ChargingAllocationReasons.VehicleEligibilityHeld
+                            or ChargingAllocationReasons.VehiclePositionUnknown
+                            ? refusal
+                            : null);
                 }
             }
             catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -737,7 +744,9 @@ public sealed class ChargingAllocator(
             return ChargingAllocationReasons.VehicleStillHoldsCharger;
         }
 
-        return candidate.Facts.Vehicle.CurrentStationId is null ? ChargingAllocationReasons.VehiclePositionUnknown : null;
+        // control-server#528: RIoT's currentPosition 0 places it at no station -- no origin to measure the way to a charger from,
+        // the same as no reading. Routed from 0 every charger was CHARGER_UNREACHABLE (11-06 agv02, queued until it ran flat).
+        return candidate.Facts.Vehicle.KnownStationId is null ? ChargingAllocationReasons.VehiclePositionUnknown : null;
     }
 
     private async Task<ChargingAllocationVerdict> SelectAndCommitAsync(
@@ -792,7 +801,7 @@ public sealed class ChargingAllocator(
         }
 
         reads.Occupancy ??= await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
-        int origin = candidate.Facts.Vehicle.CurrentStationId!.Value;
+        int origin = candidate.Facts.Vehicle.KnownStationId!.Value;
         List<string> excluded = [];
         List<(ChargerRosterEntry Charger, long CostMm)> eligible = [];
         foreach (ChargerRosterEntry charger in usable)
@@ -1005,9 +1014,16 @@ public sealed class ChargingAllocator(
 
         reads.Occupancy = await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
         if (!reads.Occupancy.Vehicles.TryGetValue(vehicleKey, out RiotVehicleObservation? seen) ||
-            seen.CurrentStationId is not int origin)
+            seen.CurrentStationId is null)
         {
             return ChargingAllocationReasons.ChargerOccupancyUnknown;
+        }
+
+        // control-server#528: read at no station (currentPosition 0), there is no origin to route to the charger from -- the
+        // commitment does not stand for want of a position, not because the charger has become unreachable.
+        if (seen.KnownStationId is not int origin)
+        {
+            return ChargingAllocationReasons.VehiclePositionUnknown;
         }
 
         return await ExcludeAsync(charger, vehicleKey, origin, currentMap, reads, ownReservation: true, cancellationToken)
