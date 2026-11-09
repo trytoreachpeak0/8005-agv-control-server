@@ -37,7 +37,7 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `98f172642937994ed01668d81fe41e69cf089e10`（protocol PR #27 为 protocol#26 合入 `fp/v2-candidate` 的合并提交，内容提交 `13f52e67`；tag `protocol-v6.0.0` 尚不存在，用户 10-21 定两端与真装置跑通后再发布） |
+| 来源提交 | `98f172642937994ed01668d81fe41e69cf089e10`（protocol PR #27 为 protocol#26 合入 `fp/v2-candidate` 的合并提交，内容提交 `13f52e67`；tag `protocol-v6.0.0`） |
 | 取用日期 | 2026-10-21 |
 
 | 来源路径 | 内容 |
@@ -52,6 +52,7 @@ protocol#26 按 CP-0021 加了 `RemainingBasketsSkipRequested`／`RemainingBaske
 的 `AUTHORIZED` 只能带空 `slots`；闭合面变了，所以升大版本 6.0.0、`protocolVersion 7`。三份文件用 `git archive` 从合并提交的对象导出，
 逐个与 manifest 文件表 SHA-256 核对（75 个 schema 与 `index.json`，76 项全部命中）后整份拷入，manifest SHA-256 为 `a52876be…`。
 tag `protocol-v6.0.0` 尚不存在，身份是 `SUPERSEDING_CANDIDATE`，在它上面跑出的证据一律是 `UNRELEASED_CANDIDATE`；**合入须等 protocol-v6.0.0 发布后改绑 tag**。
+2026-11-09 用注释 tag `protocol-v6.0.0`（tag 对象 `3d865618`，解引用到 `98f17264`）发布**同一个提交**——manifest 与候选逐字节相同，批准只以外置 attestation（`release-approval.json`，SHA-256 `482b5ea2…`）给出；发布后服务端没有重新 vendor，只在部署分支 `release/interim-20261107` 上把批准状态翻成 `APPROVED_RELEASE`（`8005-agv-program#210`）。它还是候选时在它上面跑出的 G2／L2 证据一律是 `UNRELEASED_CANDIDATE`。
 
 再早一份是 `18d4fb34`。2026-10-18 由 `8005-agv-control-server#767` 刷新到 `18d4fb34`（protocol#25 的合并提交，内容提交 `ede2060f`；与车载端同包）：v5 出口前的第三次修订，只改协议仓的 `docs/wire-notes.md`
 （剩余计划的规则对所有计划成立，唯一例外是清桩途中保留已完成的充电桩腿；出发口径 (4) 允许服务端从严；补出处 CP-0015 / REQ-0196），wire-notes 不在副本里，

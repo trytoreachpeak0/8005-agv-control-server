@@ -6,8 +6,13 @@ namespace ControlServer.Domain;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This names the unreleased <c>6.0.0</c> candidate.</b> Every value below is read off
-/// <c>8005-agv-protocol</c> commit <c>98f172642937994ed01668d81fe41e69cf089e10</c>, the merge of protocol PR #27
+/// <b>This names <c>protocol-v6.0.0</c>, an approved release.</b> Every value below is read off
+/// <c>8005-agv-protocol</c> commit <c>98f172642937994ed01668d81fe41e69cf089e10</c>, the commit the annotated tag
+/// <c>protocol-v6.0.0</c> (object <c>3d865618</c>) points at. It was released unchanged on 2026-11-09 for the interim
+/// deployment tracked by <c>8005-agv-program#210</c> (the released manifest is byte-identical to the candidate's), with
+/// one approval in the external attestation (<c>release-approval.json</c>, SHA-256
+/// <c>482b5ea27e97aa098cc8afeebfaa69897391bf398a0e8d381b464b2a80e0a976</c>) given by an AI agent the product owner
+/// authorized for that release. As a candidate it was the merge of protocol PR #27
 /// (protocol#26, content commit <c>13f52e67</c>) into <c>fp/v2-candidate</c> on 2026-10-21; it is pinned rather than
 /// the pull request's head, as <c>protocol-v4.0.0</c> and <c>protocol-v5.0.0</c> pinned their merges. Its content is
 /// CP-0021 (<c>8005-agv-program#213</c>): <c>RemainingBasketsSkipRequested</c>/<c>RemainingBasketsSkipResult</c>
@@ -17,18 +22,20 @@ namespace ControlServer.Domain;
 /// cancelled (<c>LOAD_CANCELLATION_BASKET_LOADED</c>), and an <c>AUTHORIZED</c> <c>LoadCancellationAuthorization</c>
 /// always carries empty <c>slots</c>. Release <c>6.0.0</c>, protocol version 7, schema <c>$id</c> segment
 /// <c>agv-full-product/v7</c>, base release <c>protocol-v5.0.0</c> (<c>18d4fb34</c>, released 2026-10-18).
-/// <see cref="Tag"/> names <c>protocol-v6.0.0</c>, which does not exist yet: the user decided on 2026-10-21 to release
-/// it only after both ends (<c>8005-agv-control-server#830</c>, <c>8005-agv-onboard-hmi#388</c>) and the real rig have
-/// passed on it. <see cref="ApprovalStatus"/> therefore says <c>SUPERSEDING_CANDIDATE</c>, so that the pair tells the
-/// truth. The manifest's own <c>status</c> is <c>CONTENT_SNAPSHOT</c>, which is what every manifest says, released or
+/// The user decided on 2026-10-21 to release it only after both ends (<c>8005-agv-control-server#830</c>,
+/// <c>8005-agv-onboard-hmi#388</c>) and the real rig had passed on it. <see cref="ApprovalStatus"/> is the field to
+/// read before treating this identity as releasable, and the class keeps the name it had while this was a candidate.
+/// The manifest's own <c>status</c> is <c>CONTENT_SNAPSHOT</c>, which is what every manifest says, released or
 /// not; approval lives only in an external attestation.
 /// </para>
 /// <para>
 /// <b>Bound by <c>8005-agv-control-server#830</c>, to ship in one package with <c>8005-agv-onboard-hmi#388</c>.</b>
 /// Neither end may reach the integration branch alone: there is no negotiation, so a server on this identity and a
 /// vehicle on <c>protocol-v5.0.0</c> refuse each other. Both outboxes are drained before the two are replaced together.
-/// Evidence produced on this identity is <c>UNRELEASED_CANDIDATE</c> and does not count towards a release; evidence
-/// bound to <c>protocol-v5.0.0</c> stops being current when this candidate is bound.
+/// Evidence produced while this identity was still a candidate is <c>UNRELEASED_CANDIDATE</c> and does not count
+/// towards a release; evidence bound to <c>protocol-v5.0.0</c> stopped being current when the candidate was bound.
+/// Flipped to <c>APPROVED_RELEASE</c> on the deployment branch <c>release/interim-20261107</c> after the release
+/// (<c>8005-agv-program#210</c>), as <c>8005-agv-control-server#767</c> did for <c>protocol-v5.0.0</c>.
 /// </para>
 /// <para>
 /// <b><see cref="ProtocolVersion"/> is 7, and still monotonic only within one
@@ -37,14 +44,16 @@ namespace ControlServer.Domain;
 /// release identity, and logs and evidence always write the pair <c>(profileId, protocolVersion)</c>.
 /// </para>
 /// <para>
-/// <b><see cref="Tag"/> names a tag that does not exist yet.</b> The staged G3 runner reads the pair: it
-/// refuses to run when the tag resolves anywhere but <see cref="RepositoryCommit"/>, and when this status
-/// claims a release whose tag is absent.
+/// <b><see cref="Tag"/> names a tag that exists.</b> Until 2026-11-09 it named one that did not, and
+/// <see cref="ApprovalStatus"/> said <c>SUPERSEDING_CANDIDATE</c> so that the pair told the truth.
+/// The staged G3 runner reads the pair: it refuses to run when the tag resolves anywhere but
+/// <see cref="RepositoryCommit"/>, and when this status claims a release whose tag is absent.
 /// </para>
 /// <para>
 /// <b>What follows from the status.</b> <c>scripts/New-WireToGateReleaseCandidate.ps1</c> refuses to
-/// package a release candidate unless <c>approvalStatus</c> is <c>APPROVED_RELEASE</c>. Until
-/// <c>protocol-v6.0.0</c> is released and this identity is rebound to it, the packager refuses.
+/// package a release candidate unless <c>approvalStatus</c> is <c>APPROVED_RELEASE</c>. The release
+/// is approved and tagged, the status says <c>APPROVED_RELEASE</c>, and the packager therefore
+/// accepts packaging again.
 /// </para>
 /// <para>
 /// <c>src/ControlServer.Host/appsettings.json</c> carries the same nine values under
@@ -63,5 +72,5 @@ public static class ProtocolCandidateIdentity
     public const string ManifestSha256 = "a52876be2ddcc9b8cdd1f1e3b7b7ddbe70d31a307f1d3f017d7a1eb95ffd77b1";
     public const string SchemaBundleSha256 = "0dab682174e2d3e4f931b3c0e87c7fa55bd2cb3395356d7845e595d8bfb1c795";
     public const string VectorsSha256 = "e06ca9ea1d4445cd7d70fc190b0cf606a8e33cb7760d848c0270df24e2594c91";
-    public const string ApprovalStatus = "SUPERSEDING_CANDIDATE";
+    public const string ApprovalStatus = "APPROVED_RELEASE";
 }
