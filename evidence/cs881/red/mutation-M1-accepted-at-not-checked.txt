@@ -1,0 +1,20 @@
+== M1-accepted-at-not-checked
+-            row.AcceptedAt == null &&
++            true &&
+    0 个错误
+[xUnit.net 00:00:04.20]       Expected: 2
+[xUnit.net 00:00:04.20]       Actual:   3
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRetentionDefaultsToThreeDaysAndMayNotBeShorterThanAnHour [16 ms]
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.ThePurgeDeletesOnlyRowsThatMeetEveryCondition [1 s]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   3
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.ADemandThatJustLeftTheCatalogIsStillMarked [345 ms]
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.ARoundMaterialisesNoBacklogRowOfADemandThatLeftTheCatalog [1 s]
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheMigrationAddsTheIndexAndDropsTheFieldTemporaryOne [1 s]
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRoundSweepsAtMostOncePerInterval [111 ms]
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.EveryRedispatchReadOfARoundSearchesJourneyDemandsByIndex [321 ms]
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheHostRegistersTheRetentionAsASingleton [2 ms]
+     通过数: 7
+     失败数: 1

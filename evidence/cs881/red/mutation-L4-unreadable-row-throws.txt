@@ -1,0 +1,9 @@
+== L4-unreadable-row-throws
+-                    unreadable.Add(row.DemandId);
++                    throw new FormatException(row.LastSeenAt);
+    0 个错误
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.ARowWhoseLastSeenAtCannotBeReadIsSkippedAndReported [141 ms]
+  错误消息:
+   System.FormatException : not a time
+     通过数: 12
+     失败数: 1

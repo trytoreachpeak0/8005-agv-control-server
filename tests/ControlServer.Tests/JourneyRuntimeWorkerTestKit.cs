@@ -192,7 +192,7 @@ internal static class JourneyRuntimeWorkerTestKit
         public static async Task<RuntimeFixture> CreateAsync(
             bool catalogApproved = true,
             bool bindSlotModel = true,
-            DbCommandInterceptor? commands = null,
+            IInterceptor? commands = null,
             bool migrate = false)
         {
             SqliteConnection connection = new("Data Source=:memory:");

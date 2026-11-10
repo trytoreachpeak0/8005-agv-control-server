@@ -16,8 +16,10 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// </para>
 /// <para>
 /// <b>告警的载体是积压行上的 <c>StarvationEscalatedAt</c> 与 <c>StarvationEscalationParameterVersion</c></b>
-/// （批次7-01，control-server#206 留的两列）。积压行按需求一行，需求离开目录只改原因码、不删行，所以同一条需求
-/// 重启之后、离开目录再回来之后都看得到自己已经告过警。标记与所用版本在同一次保存里落库；日志在提交之后才写，
+/// （批次7-01，control-server#206 留的两列）。积压行按需求一行，需求离开目录只改原因码、不立刻删行，所以同一条需求
+/// 重启之后、离开目录再回来之后都看得到自己已经告过警。<b>例外</b>（control-server#881）：离开目录超过保留期
+/// （<c>JourneyRuntimeOptions.BacklogRetention</c>，缺省 3 天）、又没有受理与归属的行会被 <c>JourneyBacklogRetention</c> 删掉；
+/// 这样的需求再回到目录时是新行，超时了会再告警一次。标记与所用版本在同一次保存里落库；日志在提交之后才写，
 /// 所以崩在保存上时库里没有标记、日志里也没有告警，下一轮补发一次。反过来「提交了、日志还没写就崩」会丢一条日志行，
 /// 但告警本身在库里（看板读的是这两列，批次7-12），不会重发。
 /// </para>

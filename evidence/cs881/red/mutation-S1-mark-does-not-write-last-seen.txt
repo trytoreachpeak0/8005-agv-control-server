@@ -1,0 +1,12 @@
+== S1-mark-does-not-write-last-seen
+-                row.LastSeenAt = now;
+    0 个错误
+[xUnit.net 00:00:24.25]       Expected: 2026-08-26T01:00:00.0000000+00:00
+[xUnit.net 00:00:24.25]       Actual:   2026-08-16T01:00:00.0000000+00:00
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.ARowLeftLongUnjudgedIsKeptForTheWholeRetentionAfterItLeaves [205 ms]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:00.0000000+00:00
+Actual:   2026-08-16T01:00:00.0000000+00:00
+     通过数: 12
+     失败数: 1

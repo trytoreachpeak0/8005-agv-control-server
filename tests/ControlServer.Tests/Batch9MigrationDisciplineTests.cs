@@ -49,6 +49,8 @@ public sealed class Batch9MigrationDisciplineTests
         "20261013041134_ProtocolInboxTypeNewestFirstIndex",
         // control-server#725：机台取货装完后的出发按停靠落库——JourneyStops 加可空列 OperatorDepartedAt；纯 ADD COLUMN，既有行只多一列空值，Down 只删这一列。调度 Coordinator 11 于 2026-10-15 给了迁移通道。自己的断言在 JourneyStopOperatorDepartedAtMigrationTests。
         "20261015144738_JourneyStopOperatorDepartedAt",
+        // control-server#881：派车轮待改派查询走索引——JourneyDemands 加 (DemandId, DispatchGeneration) 一个普通复合索引，并 DROP INDEX IF EXISTS 现场 11-05 手工建的同列临时索引 IX_tmp_redispatch_JourneyDemands_DemandId_Generation；不动列、不动行，Down 只删正式索引。调度 Coordinator14 于 2026-11-10 给了迁移通道。自己的断言在 DispatchRoundBacklogScaleTests。
+        "20261110075917_JourneyDemandsRedispatchIndex",
     ];
 
     private static readonly string[] NewTables =
