@@ -82,6 +82,40 @@ public sealed class DispatchRoundBacklogScaleTests
         }
     }
 
+    /// <summary>
+    /// 有一条已释放待改派的需求时，改派代次那条读（按 <c>json_each</c> 里的需求 id 读 <c>JourneyDemands</c> 取最大代次）也走索引
+    /// （审查 S5）。上一条用例的轮次里没有待改派的需求，那条读提前返回、不发语句。
+    /// </summary>
+    [Fact]
+    public async Task TheRedispatchGenerationReadSearchesJourneyDemandsByIndex()
+    {
+        CommandLog commands = new();
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: commands);
+        fixture.Catalog.Set(fixture.Demand(Demand, Sublot, fixture.Clock.GetUtcNow().AddMinutes(-5)));
+        fixture.BoxCounts.Set(Sublot, 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await ReleaseForRedispatchAsync(fixture);
+        commands.Reset();
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        (string Text, (string Name, object? Value)[] Parameters)[] generationReads = [.. commands.Commands.Where(command =>
+            command.Text.Contains("FROM \"JourneyDemands\" AS", StringComparison.Ordinal) &&
+            command.Text.Contains("json_each", StringComparison.Ordinal) &&
+            command.Text.Contains("MAX(", StringComparison.Ordinal) &&
+            command.Text.Contains("GROUP BY", StringComparison.Ordinal))];
+        (string text, (string Name, object? Value)[] parameters) = Assert.Single(generationReads);
+        string[] aliases = [.. Regex.Matches(text, "FROM \"JourneyDemands\" AS \"(?<alias>\\w+)\"")
+            .Select(match => match.Groups["alias"].Value)];
+        Assert.NotEmpty(aliases);
+        string[] plan = await ExplainAsync(fixture.Context, text, parameters);
+        TestContext.Current.TestOutputHelper?.WriteLine($"plan=[{string.Join(" | ", plan)}]");
+        Assert.DoesNotContain(plan, detail => aliases.Any(alias =>
+            detail.Equals($"SCAN {alias}", StringComparison.Ordinal) ||
+            detail.StartsWith($"SCAN {alias} ", StringComparison.Ordinal)));
+        Assert.Contains(plan, detail => detail.Contains(OfficialIndex, StringComparison.Ordinal));
+    }
+
     // ---- (b) 积压表不整表加载 -------------------------------------------------------------------------------
 
     /// <summary>
@@ -171,10 +205,11 @@ public sealed class DispatchRoundBacklogScaleTests
         await context.SaveChangesAsync(Token);
         context.ChangeTracker.Clear();
 
-        int purged = await JourneyBacklogRetention.PurgeAsync(
+        JourneyBacklogPurge purge = await JourneyBacklogRetention.PurgeAsync(
             context, new HashSet<string>(["keep-listed-in-catalog"], StringComparer.Ordinal), now, Retention, Token);
 
-        Assert.Equal(2, purged);
+        Assert.Equal(2, purge.Deleted);
+        Assert.Empty(purge.Unreadable);
         Assert.Equal(
             ["keep-accepted-at", "keep-accepted-demand-row", "keep-exactly-at-retention", "keep-listed-in-catalog",
              "keep-other-reason", "keep-removed-membership", "keep-within-retention"],
@@ -207,6 +242,105 @@ public sealed class DispatchRoundBacklogScaleTests
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.Engine.ExecuteOnceAsync(Token);
         Assert.Empty(await fixture.Context.JourneyBacklog.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 保留期从离开目录那一刻算（审查 S1）：一条在目录里多日没被哪辆车判过的需求，<c>LastSeenAt</c> 停在多日前；离开目录时标记写下
+    /// 标记时刻，此后各轮不再刷新；满保留期（不含）之前不删，过了保留期、下一次清扫时才删。
+    /// 取红：标记时不写 <c>LastSeenAt</c>，离开目录后的下一次清扫就把这行删了，远没到保留期。
+    /// </summary>
+    [Fact]
+    public async Task ARowLeftLongUnjudgedIsKeptForTheWholeRetentionAfterItLeaves()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        DateTimeOffset left = fixture.Clock.GetUtcNow();
+        JourneyBacklogRow row = Backlog("unjudged", left - TimeSpan.FromDays(10));
+        row.ReasonCode = "VEHICLE_TASK_TYPE_NOT_ADMITTED";
+        fixture.Context.JourneyBacklog.Add(row);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        JourneyBacklogRow marked = await fixture.BacklogAsync("unjudged");
+        Assert.Equal(DispatchReasonCodes.DemandLeftCatalog, marked.ReasonCode);
+        Assert.Equal(left, marked.LastSeenAt);
+
+        fixture.Clock.Advance(Retention);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(left, (await fixture.BacklogAsync("unjudged")).LastSeenAt);
+
+        fixture.Clock.Advance(JourneyBacklogRetention.SweepInterval);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Empty(await fixture.Context.JourneyBacklog.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 本轮目录里列着的需求，积压行即使是 <c>DEMAND_LEFT_CATALOG</c> 加过期的 <c>LastSeenAt</c>，整轮跑完仍是原来那一行（审查 S3）。
+    /// 看 <c>FirstSeenAt</c>：行被删掉再由本轮写回时它会变成本轮时刻。取红：传给清扫的目录集合换成空集合。
+    /// </summary>
+    [Fact]
+    public async Task TheRoundNeverPurgesARowOfADemandItsCatalogLists()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        DateTimeOffset now = fixture.Clock.GetUtcNow();
+        JourneyBacklogRow row = Backlog(Demand, now - Retention - TimeSpan.FromDays(1));
+        row.FirstSeenAt = now - TimeSpan.FromDays(5);
+        fixture.Context.JourneyBacklog.Add(row);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Catalog.Set(fixture.Demand(Demand, Sublot, now.AddMinutes(-5)));
+        fixture.BoxCounts.Set(Sublot, 4);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(now - TimeSpan.FromDays(5), (await fixture.BacklogAsync(Demand)).FirstSeenAt);
+    }
+
+    /// <summary>
+    /// 清扫的删除语句抛异常时，这一轮照常受理目录里的需求，并记一条清扫失败的 Warning（2882，审查 S4）；死行留着。
+    /// </summary>
+    [Fact]
+    public async Task ASweepThatThrowsIsLoggedAndTheRoundGoesOn()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: new FailingBacklogDelete());
+        DateTimeOffset now = fixture.Clock.GetUtcNow();
+        fixture.Context.JourneyBacklog.Add(Backlog("dead", now - Retention - TimeSpan.FromDays(1)));
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Catalog.Set(fixture.Demand(Demand, Sublot, now.AddMinutes(-5)));
+        fixture.BoxCounts.Set(Sublot, 4);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal([Demand], await fixture.Context.AcceptedDemands.AsNoTracking().Select(row => row.DemandId).ToArrayAsync(Token));
+        Assert.Contains(fixture.EngineLog.Entries, entry =>
+            entry.Level == Microsoft.Extensions.Logging.LogLevel.Warning &&
+            entry.Message.StartsWith("Sweeping the backlog of demands that left the catalog failed", StringComparison.Ordinal));
+        Assert.NotNull(await fixture.Context.JourneyBacklog.AsNoTracking().SingleOrDefaultAsync(row => row.DemandId == "dead", Token));
+    }
+
+    /// <summary>
+    /// 一行 <c>LastSeenAt</c> 读不出来时，清扫跳过它、把它报回去，别的过期行照删，不让整次清扫失败（审查 L4）。
+    /// </summary>
+    [Fact]
+    public async Task ARowWhoseLastSeenAtCannotBeReadIsSkippedAndReported()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        DateTimeOffset now = fixture.Clock.GetUtcNow();
+        ControlServerDbContext context = fixture.Context;
+        context.JourneyBacklog.Add(Backlog("expired", now - Retention - TimeSpan.FromDays(1)));
+        context.JourneyBacklog.Add(Backlog("garbled", now - Retention - TimeSpan.FromDays(1)));
+        await context.SaveChangesAsync(Token);
+        context.ChangeTracker.Clear();
+        await context.Database.ExecuteSqlRawAsync(
+            "UPDATE \"JourneyBacklog\" SET \"LastSeenAt\" = 'not a time' WHERE \"DemandId\" = 'garbled'", Token);
+
+        JourneyBacklogPurge purge = await JourneyBacklogRetention.PurgeAsync(
+            context, new HashSet<string>(StringComparer.Ordinal), now, Retention, Token);
+
+        Assert.Equal(1, purge.Deleted);
+        Assert.Equal(["garbled"], purge.Unreadable);
+        Assert.Equal(["garbled"], await context.JourneyBacklog.AsNoTracking().Select(row => row.DemandId).ToArrayAsync(Token));
     }
 
     /// <summary>保留期缺省三天；短于一小时（一次清扫间隔）拒绝启动，免得一条短暂离开目录的需求丢掉它的首次看到时刻与防饥饿升级记录。</summary>
@@ -411,6 +545,44 @@ public sealed class DispatchRoundBacklogScaleTests
         private void Record(DbCommand command) =>
             Commands.Add((command.CommandText,
                 [.. command.Parameters.Cast<DbParameter>().Select(parameter => (parameter.ParameterName, (object?)parameter.Value))]));
+    }
+
+    /// <summary>
+    /// 释放的落库形状，同 <c>CatalogAgeWindowTests.ReleaseForRedispatchAsync</c>：归属标 RELEASED_FOR_REDISPATCH，旅程按释放服务同一条路
+    /// 关闭，积压行清掉受理时刻。
+    /// </summary>
+    private static async Task ReleaseForRedispatchAsync(RuntimeFixture fixture)
+    {
+        JourneyRuntimeRow journey = await fixture.Context.JourneyRuntimes.SingleAsync(Token);
+        JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>().SingleAsync(Token);
+        membership.RemovedAt = fixture.Clock.GetUtcNow();
+        membership.RemovalReason = DemandJourneyLookup.ReleasedForRedispatchReason;
+        await new PickupStopTermination(fixture.Context)
+            .StageJourneyClosureAsync(journey, DemandJourneyLookup.ReleasedForRedispatchReason, fixture.Clock.GetUtcNow(), Token);
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.SingleAsync(row => row.DemandId == Demand, Token);
+        backlog.AcceptedAt = null;
+        backlog.ReasonCode = DemandJourneyLookup.ReleasedForRedispatchReason;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AnyAsync(row => row.DemandId == Demand, Token));
+    }
+
+    /// <summary>积压表的 DELETE 一律抛异常，别的语句照常。</summary>
+    private sealed class FailingBacklogDelete : DbCommandInterceptor
+    {
+        public override InterceptionResult<int> NonQueryExecuting(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result) =>
+            IsBacklogDelete(command) ? throw new InvalidOperationException("cs881 test: backlog delete refused") : result;
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result,
+            CancellationToken cancellationToken = default) =>
+            IsBacklogDelete(command)
+                ? throw new InvalidOperationException("cs881 test: backlog delete refused")
+                : ValueTask.FromResult(result);
+
+        private static bool IsBacklogDelete(DbCommand command) =>
+            command.CommandText.TrimStart().StartsWith("DELETE FROM \"JourneyBacklog\"", StringComparison.Ordinal);
     }
 
     /// <summary>记下物化出来的每一行积压行的 DemandId（带不带跟踪都算：读进来就是读进来了）。</summary>

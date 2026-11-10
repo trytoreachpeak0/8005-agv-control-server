@@ -756,6 +756,8 @@ public sealed class JourneyBacklogRow
     /// When the starvation escalation for this demand was raised (control-server#214), so that it is raised once per
     /// demand: this row is keyed on the demand and survives the demand leaving the catalogue, which only changes its
     /// reason code. Null until then; batch 7's schema ticket (control-server#206) adds it and writes nothing.
+    /// Since control-server#881 a row whose demand stayed out of the catalogue longer than the backlog retention, and that
+    /// nothing else refers to, is deleted; if that demand comes back, its new row starts null and it may be escalated again.
     /// </summary>
     public DateTimeOffset? StarvationEscalatedAt { get; set; }
 

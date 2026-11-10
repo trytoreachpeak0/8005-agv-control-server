@@ -181,6 +181,13 @@ public sealed class DispatchRoundRunner(
             "Sweeping the backlog of demands that left the catalog failed (control-server#881); the round went on, and the next " +
             "sweep tries again.");
 
+    private static readonly Action<ILogger, int, string, Exception?> LogBacklogPurgeSkippedUnreadable =
+        LoggerMessage.Define<int, string>(
+            LogLevel.Warning,
+            new EventId(2883, nameof(LogBacklogPurgeSkippedUnreadable)),
+            "The backlog sweep skipped {Count} dead row(s) whose LastSeenAt it could not read, and kept them " +
+            "(control-server#881); first ones: {DemandIds}.");
+
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     // control-server#881: the host registers one for the process; a runner built without it keeps its own.
@@ -258,7 +265,7 @@ public sealed class DispatchRoundRunner(
         await SweepBacklogAsync(listed, now, cancellationToken).ConfigureAwait(false);
         Dictionary<string, JourneyBacklogRow> backlogByDemandId = await LoadBacklogAsync(listed, cancellationToken)
             .ConfigureAwait(false);
-        await MarkBacklogLeftCatalogAsync(backlogByDemandId, snapshot, cancellationToken).ConfigureAwait(false);
+        await MarkBacklogLeftCatalogAsync(backlogByDemandId, snapshot, now, cancellationToken).ConfigureAwait(false);
         // The MesIngest catalog is MES's own list of open transport demands, and a journey of ours
         // reaching Completed does not take the demand out of it. A demand this server has accepted is
         // bound to its one journey permanently; it is never a candidate again, whatever stage that
@@ -1466,12 +1473,17 @@ public sealed class DispatchRoundRunner(
     {
         try
         {
-            int? purged = await _backlogRetention
+            JourneyBacklogPurge? purge = await _backlogRetention
                 .SweepIfDueAsync(dbContext, listed, now, runtimeOptions.BacklogRetention, cancellationToken)
                 .ConfigureAwait(false);
-            if (purged > 0)
+            if (purge?.Deleted > 0)
             {
-                LogBacklogPurged(logger, purged.Value, runtimeOptions.BacklogRetention, null);
+                LogBacklogPurged(logger, purge.Deleted, runtimeOptions.BacklogRetention, null);
+            }
+            if (purge?.Unreadable.Count > 0)
+            {
+                LogBacklogPurgeSkippedUnreadable(
+                    logger, purge.Unreadable.Count, string.Join(", ", purge.Unreadable.Take(5)), null);
             }
         }
         catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -1564,8 +1576,10 @@ public sealed class DispatchRoundRunner(
     /// <remarks>
     /// Rows are only ever written for demands in the catalog, so without this a demand MES closed before this
     /// server took it kept its last reason forever. Saved here, ahead of the vehicle loop, because a vehicle that
-    /// runs out its budget clears the change tracker. <c>LastSeenAt</c> is left alone: it stays the last time the
-    /// demand was in the catalog. See <see cref="DispatchReasonCodes.DemandLeftCatalog"/>.
+    /// runs out its budget clears the change tracker. <c>LastSeenAt</c> is set to the moment of marking, once: from then on it
+    /// is when the demand left the catalog, which is what <see cref="JourneyBacklogRetention"/> counts its retention from
+    /// (control-server#881 review S1). Before the mark it was the last time a vehicle judged the demand, which can be days
+    /// before it left when no vehicle was free. See <see cref="DispatchReasonCodes.DemandLeftCatalog"/>.
     /// </remarks>
     /// <summary>
     /// 每条已释放、等着改派的需求，这一次再受理时的代次（批次7-10，control-server#215）。
@@ -1603,6 +1617,7 @@ public sealed class DispatchRoundRunner(
     private async Task MarkBacklogLeftCatalogAsync(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         DemandCatalogSnapshot snapshot,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         HashSet<string> listed = snapshot.Items.Select(item => item.DemandId).ToHashSet(StringComparer.Ordinal);
@@ -1614,6 +1629,7 @@ public sealed class DispatchRoundRunner(
                 !string.Equals(row.ReasonCode, DispatchReasonCodes.DemandLeftCatalog, StringComparison.Ordinal))
             {
                 row.ReasonCode = DispatchReasonCodes.DemandLeftCatalog;
+                row.LastSeenAt = now;
                 marked = true;
             }
         }

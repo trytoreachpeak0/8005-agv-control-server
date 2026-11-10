@@ -63,9 +63,10 @@ public static class DispatchReasonCodes
     /// <para>
     /// Written by the dispatch round, not by an admission criterion, and only from a catalog that was read
     /// successfully -- the MesIngest catalog is the complete list of open demands, so absence from it is a
-    /// fact, whereas a failed read says nothing. The row is kept rather than deleted, and its
-    /// <c>LastSeenAt</c> keeps the last time the demand was actually in the catalog. A demand that comes back
-    /// is judged again like any other and keeps its <c>FirstSeenAt</c>.
+    /// fact, whereas a failed read says nothing. The row is kept, and its <c>LastSeenAt</c> is set once, to when the
+    /// mark was written: when the demand left the catalog. A demand that comes back is judged again like any other and
+    /// keeps its <c>FirstSeenAt</c> -- unless it stayed away longer than <c>JourneyRuntimeOptions.BacklogRetention</c>,
+    /// in which case <c>JourneyBacklogRetention</c> may have deleted the row and it starts afresh (control-server#881).
     /// </para>
     /// <para>
     /// Anything that lists waiting backlog (the dashboard, control-server#70) leaves these rows out; REQ-0210's
