@@ -174,6 +174,13 @@ public static class ChargingStationEndpoints
             "force. Recovering the charger does not lift it (REQ-0286): until it is recovered with POST {Route} no charger is " +
             "allocated to that vehicle.");
 
+    private static readonly Action<ILogger, string, Exception?> LogOtherSideUnreadable =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(2346, nameof(LogOtherSideUnreadable)),
+            "The recovery of {ObjectId} is done, but the holds the same interruption left on the other side could not be read to " +
+            "say which are left; the recovery stands. Check the other side on the charging dashboard.");
+
     private static readonly Action<ILogger, string, string, string, Exception?> LogStationHoldsLeft =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -397,11 +404,21 @@ public static class ChargingStationEndpoints
 
         // control-server#877 (added by the coordinator 11-10): the same interruption paused the vehicle's charging eligibility
         // too, and recovering the charger does not lift it (REQ-0286); say which one is left and where it is lifted.
+        // Review L3: the recovery is committed; a failed read says so and still answers success.
+        IReadOnlyList<VehicleChargingEligibilityHold>? vehicleRead = null;
+        try
+        {
+            vehicleRead = await holds.ListActiveVehicleHoldsOfCyclesAsync(
+                    [.. active.Select(hold => hold.CycleId).OfType<string>()], cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            LogOtherSideUnreadable(logger, objectId, error);
+        }
         ChargingHoldLeft[] vehiclesLeft =
         [
-            .. (await holds.ListActiveVehicleHoldsOfCyclesAsync(
-                        [.. active.Select(hold => hold.CycleId).OfType<string>()], cancellationToken)
-                    .ConfigureAwait(false))
+            .. (vehicleRead ?? [])
                 .Select(hold => ChargingHoldsLeft.Of(hold, fleet.ByVehicleKey(hold.VehicleKey)?.AgvId ?? hold.VehicleKey)),
         ];
         if (vehiclesLeft.Length > 0)
@@ -414,7 +431,9 @@ public static class ChargingStationEndpoints
         }
         return TypedResults.Ok(new ChargingStationHoldResponse(
             request.MapId, request.StationId, "RECOVERED", recovered, [], vehiclesLeft,
-            ChargingHoldsLeft.VehicleNoticeAfterChargerRecovery(vehiclesLeft)));
+            vehicleRead is null
+                ? ChargingHoldsLeft.OtherSideUnreadableNotice
+                : ChargingHoldsLeft.VehicleNoticeAfterChargerRecovery(vehiclesLeft)));
     }
 
     // ---- 车辆充电资格恢复（放宽，批次9-09）------------------------------------------------------------------------------------
@@ -523,13 +542,19 @@ public static class ChargingStationEndpoints
 
         // control-server#877: the other way round -- the same interruption paused the charger too, and recovering the vehicle
         // does not return the charger (REQ-0286). 11-04 only the vehicle was recovered and 230 stayed paused until 11-05.
-        ChargingHoldLeft[] stationsLeft =
-        [
-            .. (await holds.ListActiveStationHoldsOfCyclesAsync(
-                        [.. active.Select(hold => hold.CycleId).OfType<string>()], cancellationToken)
-                    .ConfigureAwait(false))
-                .Select(ChargingHoldsLeft.Of),
-        ];
+        // Review L3: the recovery is committed; a failed read says so and still answers success.
+        IReadOnlyList<ChargingStationAllocationHold>? stationRead = null;
+        try
+        {
+            stationRead = await holds.ListActiveStationHoldsOfCyclesAsync(
+                    [.. active.Select(hold => hold.CycleId).OfType<string>()], cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            LogOtherSideUnreadable(logger, objectId, error);
+        }
+        ChargingHoldLeft[] stationsLeft = [.. (stationRead ?? []).Select(ChargingHoldsLeft.Of)];
         if (stationsLeft.Length > 0)
         {
             LogStationHoldsLeft(
@@ -542,7 +567,7 @@ public static class ChargingStationEndpoints
         return TypedResults.Ok(
             new VehicleChargingEligibilityRecoveryResponse(
                 vehicle.AgvId, vehicle.VehicleKey, "RECOVERED", recovered, [], stationsLeft,
-                ChargingHoldsLeft.StationNotice(stationsLeft)));
+                stationRead is null ? ChargingHoldsLeft.OtherSideUnreadableNotice : ChargingHoldsLeft.StationNotice(stationsLeft)));
     }
 
     // ---- 人工清桩（放宽）--------------------------------------------------------------------------------------------------
@@ -649,12 +674,15 @@ public static class ChargingStationEndpoints
         {
             // control-server#877: the clearance does not lift the vehicle's charging eligibility hold (REQ-0286); say which one
             // is left and where it is lifted, read now (a replayed confirmation reads what is left now, too).
-            ChargingHoldLeft[] left =
-            [
-                .. (await clearance.VehicleHoldsLeftAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false))
-                    .Select(hold => ChargingHoldsLeft.Of(hold, vehicle.AgvId)),
-            ];
-            return TypedResults.Ok(body with { VehicleHoldsLeft = left, Notice = ChargingHoldsLeft.VehicleNotice(vehicle.AgvId, left) });
+            // Review L3: the decision is committed; a failed read says so and still answers the decision.
+            IReadOnlyList<VehicleChargingEligibilityHold>? read = await clearance
+                .TryReadVehicleHoldsLeftAsync(vehicle.AgvId, vehicle.VehicleKey, cancellationToken).ConfigureAwait(false);
+            ChargingHoldLeft[] left = [.. (read ?? []).Select(hold => ChargingHoldsLeft.Of(hold, vehicle.AgvId))];
+            return TypedResults.Ok(body with
+            {
+                VehicleHoldsLeft = left,
+                Notice = read is null ? ChargingHoldsLeft.OtherSideUnreadableNotice : ChargingHoldsLeft.VehicleNotice(vehicle.AgvId, left),
+            });
         }
         return TypedResults.Problem(
             statusCode: StatusCodes.Status409Conflict,

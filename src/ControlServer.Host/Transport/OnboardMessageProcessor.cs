@@ -205,6 +205,12 @@ public sealed partial class OnboardMessageProcessor(
                     messageType == "RecoveryStateReport" ? RestoreSnapshotVersions : null,
                     reprocessedInTheNewSession ? null : RebindAck)
                     .ConfigureAwait(false);
+                // control-server#877 review L3: the inbox transaction is committed now; a clearance confirmed in it says which
+                // charging eligibility holds the vehicle still carries (2343) only from here. It never throws.
+                if (stationClearance is not null)
+                {
+                    await stationClearance.AnnounceHoldsLeftAsync(cancellationToken).ConfigureAwait(false);
+                }
                 break;
             }
             catch (Exception fault) when (!processingBegan &&
