@@ -63,12 +63,19 @@ public sealed record ChargingStationClearanceHttpRequest(
     string? AgvId, string? StationId, string? OperatorId, string? ClearedCondition);
 
 /// <summary>一次暂停或恢复的结果。</summary>
+/// <param name="VehicleHoldsLeft">
+/// 恢复时：恢复了的那几次中断在车一侧留下、此刻仍未恢复的充电资格暂停（control-server#877）：恢复桩不解车（<c>REQ-0286</c>），车要另走车辆充电资格恢复。
+/// 暂停（维修）时为空。
+/// </param>
+/// <param name="Notice">有 <paramref name="VehicleHoldsLeft"/> 时给人看的一句话，否则为空。</param>
 public sealed record ChargingStationHoldResponse(
     int MapId,
     int StationId,
     string Outcome,
     IReadOnlyList<string> HoldIds,
-    IReadOnlyList<string> Codes);
+    IReadOnlyList<string> Codes,
+    IReadOnlyList<ChargingHoldLeft>? VehicleHoldsLeft = null,
+    string? Notice = null);
 
 /// <summary>一次 Host 人工清桩确认的结果，与线上 <c>ManualStationClearanceConfirmationResult</c> 同义。</summary>
 /// <param name="VehicleHoldsLeft">
@@ -311,6 +318,7 @@ public static class ChargingStationEndpoints
         HttpContext context,
         ChargingStationRecoveryHttpRequest request,
         IChargingHoldStore holds,
+        VehicleRoster fleet,
         IGovernanceAuditWriter audit,
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
         TimeProvider timeProvider,

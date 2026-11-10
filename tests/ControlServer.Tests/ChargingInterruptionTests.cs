@@ -540,7 +540,8 @@ public sealed class ChargingInterruptionTests
 
             var charger = await ChargingStationEndpoints.RecoverAsync(
                 HttpContextFor("cs407-secret"), new ChargingStationRecoveryHttpRequest(Map, Near.StationId, "op-r11", "桩检查 C-1", null),
-                holds, Audit(fleet), options, fleet.Clock, NullLogger<ChargingStationRecoveryHttpRequest>.Instance, Token);
+                holds, new ControlServer.Host.Runtime.Fleet.VehicleRoster(Options.Create(fleet.Options)), Audit(fleet), options, fleet.Clock,
+                NullLogger<ChargingStationRecoveryHttpRequest>.Instance, Token);
             Assert.Equal(StatusCodes.Status200OK, ((IStatusCodeHttpResult)charger.Result).StatusCode);
             Assert.Single(await holds.ListActiveVehicleHoldsAsync(KeyA, Token));
             for (int round = 0; round < 3; round++)
@@ -824,7 +825,8 @@ public sealed class ChargingInterruptionTests
             ChargingHoldStore secondHolds = new(second.Context);
             var charger = await ChargingStationEndpoints.RecoverAsync(
                 HttpContextFor("cs877-secret"), new ChargingStationRecoveryHttpRequest(Map, Near.StationId, "op-r11", "桩检查 C-1", null),
-                secondHolds, Audit(second), options, second.Clock, NullLogger<ChargingStationRecoveryHttpRequest>.Instance, Token);
+                secondHolds, new ControlServer.Host.Runtime.Fleet.VehicleRoster(Options.Create(second.Options)), Audit(second), options,
+                second.Clock, NullLogger<ChargingStationRecoveryHttpRequest>.Instance, Token);
             Assert.Equal(StatusCodes.Status200OK, ((IStatusCodeHttpResult)charger.Result).StatusCode);
             EventRecordingLogger<VehicleChargingEligibilityRecoveryHttpRequest> secondLog = new();
             var clean = await ChargingStationEndpoints.RecoverVehicleAsync(
@@ -836,6 +838,70 @@ public sealed class ChargingInterruptionTests
             Assert.Empty(cleanBody.StationHoldsLeft!);
             Assert.Null(cleanBody.Notice);
             Assert.DoesNotContain(secondLog.Entries, entry => entry.EventId.Id == 2344);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+    }
+
+    /// <summary>
+    /// 桩一侧（调度 11-10 并入）：中断、清桩之后先做桩的恢复确认。照旧不碰车的资格暂停（<c>REQ-0286</c>），但结果点名同一次中断给这辆车留下、仍未恢复的
+    /// 资格暂停（id、原因、写入时刻）并给出车辆充电资格恢复入口；服务端日志事件 2345 恰好一次。车先恢复了的，恢复桩时什么也不提。
+    /// </summary>
+    [Fact]
+    public async Task RecoveringTheChargerNamesTheVehicleHoldOfTheSameInterruptionStillInForce()
+    {
+        const string variable = "CONTROL_SERVER_TEST_CS877_CHARGER_CREDENTIAL";
+        Environment.SetEnvironmentVariable(variable, "cs877-secret");
+        try
+        {
+            IOptions<VehicleFaultRecoveryOptions> options = Options.Create(new VehicleFaultRecoveryOptions { CredentialEnvironmentVariable = variable });
+            ChargingStationRecoveryHttpRequest good = new(Map, Near.StationId, "op-r11", "桩检查 C-1", null);
+
+            await using FleetFixture fleet = await IsolatingFleetAsync(Near, Far);
+            await InterruptedAndClearedAsync(fleet);
+            VehicleChargingEligibilityHoldRow vehicle = Assert.Single(await VehicleHoldsAsync(fleet));
+            ChargingHoldStore holds = new(fleet.Context);
+            EventRecordingLogger<ChargingStationRecoveryHttpRequest> log = new();
+
+            var recovered = await ChargingStationEndpoints.RecoverAsync(
+                HttpContextFor("cs877-secret"), good, holds, new ControlServer.Host.Runtime.Fleet.VehicleRoster(Options.Create(fleet.Options)),
+                Audit(fleet), options, fleet.Clock, log, Token);
+
+            ChargingStationHoldResponse body = Assert.IsType<Ok<ChargingStationHoldResponse>>(recovered.Result).Value!;
+            Assert.Equal("RECOVERED", body.Outcome);
+            ChargingHoldLeft left = Assert.Single(body.VehicleHoldsLeft!);
+            Assert.Equal(
+                (vehicle.HoldId, VehicleChargingEligibilityHoldReasons.InterruptionConfirmed, vehicle.HeldAt, vehicle.CycleId, AgvA,
+                    ChargingStationEndpoints.VehicleRecoveryRoute),
+                (left.HoldId, left.Reason, left.HeldAt, left.CycleId, left.AgvId, left.RecoveryRoute));
+            Assert.Equal(((int?)null, (int?)null), (left.MapId, left.StationId));
+            Assert.Contains($"车 {AgvA} 还挂着充电资格保持 {vehicle.HoldId}", body.Notice!, StringComparison.Ordinal);
+            Assert.Contains("需单独解除", body.Notice!, StringComparison.Ordinal);
+            Assert.Contains(ChargingStationEndpoints.VehicleRecoveryRoute, body.Notice!, StringComparison.Ordinal);
+            Assert.Single(await holds.ListActiveVehicleHoldsAsync(KeyA, Token));
+            EventRecordingLogger<ChargingStationRecoveryHttpRequest>.Entry warned = Assert.Single(log.Entries, entry => entry.EventId.Id == 2345);
+            Assert.Contains(vehicle.HoldId, warned.Message, StringComparison.Ordinal);
+            Assert.Contains(ChargingStationEndpoints.VehicleRecoveryRoute, warned.Message, StringComparison.Ordinal);
+
+            // The vehicle recovered first: nothing is left to name.
+            await using FleetFixture second = await IsolatingFleetAsync(Near, Far);
+            await InterruptedAndClearedAsync(second);
+            ChargingHoldStore secondHolds = new(second.Context);
+            ControlServer.Host.Runtime.Fleet.VehicleRoster secondRoster = new(Options.Create(second.Options));
+            var first = await ChargingStationEndpoints.RecoverVehicleAsync(
+                HttpContextFor("cs877-secret"), new VehicleChargingEligibilityRecoveryHttpRequest(AgvA, "op-r11", "电池检查 B-1", null),
+                secondHolds, secondRoster, Audit(second), options, second.Clock,
+                NullLogger<VehicleChargingEligibilityRecoveryHttpRequest>.Instance, TestRecoveryGrants.NotRequired(second.Context), Token);
+            Assert.Equal(StatusCodes.Status200OK, ((IStatusCodeHttpResult)first.Result).StatusCode);
+            EventRecordingLogger<ChargingStationRecoveryHttpRequest> secondLog = new();
+            var clean = await ChargingStationEndpoints.RecoverAsync(
+                HttpContextFor("cs877-secret"), good, secondHolds, secondRoster, Audit(second), options, second.Clock, secondLog, Token);
+            ChargingStationHoldResponse cleanBody = Assert.IsType<Ok<ChargingStationHoldResponse>>(clean.Result).Value!;
+            Assert.Empty(cleanBody.VehicleHoldsLeft!);
+            Assert.Null(cleanBody.Notice);
+            Assert.DoesNotContain(secondLog.Entries, entry => entry.EventId.Id == 2345);
         }
         finally
         {
