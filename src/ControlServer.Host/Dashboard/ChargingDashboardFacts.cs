@@ -321,6 +321,7 @@ internal static class ChargingDashboardDescriptions
     internal const string AlarmManualChargingHold = "MANUAL_CHARGING_HOLD";
     internal const string AlarmBelowMandatoryDepartureNotProven = "CHARGING_BELOW_MANDATORY_DEPARTURE_NOT_PROVEN";
     internal const string AlarmBelowMandatoryPositionUnknown = "CHARGING_BELOW_MANDATORY_POSITION_UNKNOWN";
+    internal const string AlarmBelowMandatoryEligibilityHeld = "CHARGING_BELOW_MANDATORY_ELIGIBILITY_HELD";
 
     internal static IReadOnlyDictionary<string, string> OwnAlarmCodes { get; } =
         new Dictionary<string, string>(StringComparer.Ordinal)

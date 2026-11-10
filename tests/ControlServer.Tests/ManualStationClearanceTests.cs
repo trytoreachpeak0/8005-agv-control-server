@@ -1294,6 +1294,9 @@ public sealed class ManualStationClearanceTests : IDisposable
 
             Ok<ChargingStationClearanceResponse> ok = Assert.IsType<Ok<ChargingStationClearanceResponse>>(confirmed.Result);
             Assert.Equal((FieldConfirmationDecision.Confirmed, true), (ok.Value!.Outcome, ok.Value.StationReleased));
+            // control-server#877: a vehicle with no charging eligibility hold has nothing left to name.
+            Assert.Empty(ok.Value.VehicleHoldsLeft!);
+            Assert.Null(ok.Value.Notice);
             Assert.Null(await HolderAsync(fleet, Near.StationId));
             Assert.Single(await fleet.Context.Set<AdministratorAuditRecordRow>().AsNoTracking()
                 .Where(row => row.Action == ManualStationClearance.AuditAction).ToArrayAsync(Token));

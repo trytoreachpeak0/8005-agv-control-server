@@ -31,12 +31,32 @@ public sealed record VehicleChargingEligibilityRecoveryHttpRequest(
     string? AgvId, string? OperatorId, string? Basis, string? ClaimedRole);
 
 /// <summary>一次车辆充电资格恢复的结果。</summary>
+/// <param name="StationHoldsLeft">
+/// 恢复了的那几次中断在桩一侧留下、此刻仍未恢复的分配暂停（control-server#877）：解车不放桩（<c>REQ-0286</c>），桩要另走桩的恢复确认。
+/// </param>
+/// <param name="Notice">有 <paramref name="StationHoldsLeft"/> 时给人看的一句话，否则为空。</param>
 public sealed record VehicleChargingEligibilityRecoveryResponse(
     string AgvId,
     string VehicleKey,
     string Outcome,
     IReadOnlyList<string> HoldIds,
-    IReadOnlyList<string> Codes);
+    IReadOnlyList<string> Codes,
+    IReadOnlyList<ChargingHoldLeft>? StationHoldsLeft = null,
+    string? Notice = null);
+
+/// <summary>
+/// 一侧恢复之后另一侧还挂着的一条暂停（control-server#877）：哪一条、为什么、何时写下、从哪个入口解除。车的资格暂停 <see cref="MapId"/> 与
+/// <see cref="StationId"/> 为空；桩的分配暂停 <see cref="AgvId"/> 为空。
+/// </summary>
+public sealed record ChargingHoldLeft(
+    string HoldId,
+    string Reason,
+    DateTimeOffset HeldAt,
+    string? CycleId,
+    string? AgvId,
+    int? MapId,
+    int? StationId,
+    string RecoveryRoute);
 
 /// <summary>人工清桩确认的请求（Host 入口，放宽）。<c>clearedCondition</c> 取协议的三个值之一，缺省 <c>STATION_EMPTY</c>。</summary>
 public sealed record ChargingStationClearanceHttpRequest(
@@ -51,13 +71,19 @@ public sealed record ChargingStationHoldResponse(
     IReadOnlyList<string> Codes);
 
 /// <summary>一次 Host 人工清桩确认的结果，与线上 <c>ManualStationClearanceConfirmationResult</c> 同义。</summary>
+/// <param name="VehicleHoldsLeft">
+/// 确认之后这辆车仍挂着的充电资格暂停（control-server#877）：清桩不解车（<c>REQ-0286</c>），车要另走车辆充电资格恢复。
+/// </param>
+/// <param name="Notice">有 <paramref name="VehicleHoldsLeft"/> 时给人看的一句话，否则为空。</param>
 public sealed record ChargingStationClearanceResponse(
     string AgvId,
     string ConfirmationRequestId,
     string Outcome,
     string? ReasonCode,
     string? DisplayMessage,
-    bool StationReleased);
+    bool StationReleased,
+    IReadOnlyList<ChargingHoldLeft>? VehicleHoldsLeft = null,
+    string? Notice = null);
 
 /// <summary>
 /// 充电桩的三个 Host 入口（批次9-08，control-server#406；票面第 8 条）：维修暂停、恢复确认、人工清桩。看板不加表单。
