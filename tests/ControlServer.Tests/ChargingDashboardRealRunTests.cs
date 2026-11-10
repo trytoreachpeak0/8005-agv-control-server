@@ -458,6 +458,14 @@ public sealed class ChargingDashboardRealRunTests
         await holds.RecoverVehicleHoldAsync(
             new ChargingHoldRecovery(Guid.NewGuid().ToString("D"), holdId, "op-r11", "UNSTATED", fleet.Clock.GetUtcNow(), "电池检查"),
             Token);
+        // Recovered after the pass that refused it: the card reads the hold closed and does not alarm on the stale verdict.
+        (JsonDocument between, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (between)
+        {
+            Assert.DoesNotContain(
+                between.RootElement.GetProperty("alarms").EnumerateArray(),
+                a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryEligibilityHeld);
+        }
         await RoundAsync(fleet);
         await fleet.HearFromEveryVehicleAsync();
 
