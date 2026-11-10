@@ -1,0 +1,132 @@
+# Mutations (review L6: hits, files changed, build/test exit codes)
+
+Each: the implementation committed first; one file changed by one replacement; build; the three ticket test classes; git checkout of that one file. Part A ran on 89f1e793d (137 tests in the three classes), part B on fc1185bb0 (139).
+Where the replaced text occurs twice in the file (the two by-cycle queries), the occurrence mutated is named.
+
+# A. The review's surviving mutations P1, P2, P3, P5 (after 89f1e793d)
+## P2 station holds by cycle: drop the cycle filter (ChargingStores.cs:664)
+file: src/ControlServer.Infrastructure/Persistence/ChargingStores.cs
+replacement hits in file: 2 (mutating occurrence #1)
+files changed: 1 ['src/ControlServer.Infrastructure/Persistence/ChargingStores.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingInterruptionTests.EachSideNamesOnlyTheHoldsOfTheSameCycle [60 ms]
+失败!  - 失败:     1，通过:   136，已跳过:     0，总计:   137，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+## P1 vehicle holds by cycle: drop the cycle filter (ChargingStores.cs:750)
+file: src/ControlServer.Infrastructure/Persistence/ChargingStores.cs
+replacement hits in file: 2 (mutating occurrence #2)
+files changed: 1 ['src/ControlServer.Infrastructure/Persistence/ChargingStores.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingInterruptionTests.EachSideNamesOnlyTheHoldsOfTheSameCycle [71 ms]
+失败!  - 失败:     1，通过:   136，已跳过:     0，总计:   137，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+## P3 alarm: drop the vehicleKey filter (ChargingAlarmsQueryEndpoint.cs:190)
+file: src/ControlServer.Host/Dashboard/ChargingAlarmsQueryEndpoint.cs
+replacement hits in file: 1
+files changed: 1 ['src/ControlServer.Host/Dashboard/ChargingAlarmsQueryEndpoint.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingDashboardRealRunTests.TwoVehiclesWithTheirEligibilityHeldAreEachAlarmedWithTheirOwnHold [72 ms]
+失败!  - 失败:     1，通过:   136，已跳过:     0，总计:   137，持续时间: 19 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+## P5 alarm: drop the allocation pass freshness (ChargingAlarmsQueryEndpoint.cs:180)
+file: src/ControlServer.Host/Dashboard/ChargingAlarmsQueryEndpoint.cs
+replacement hits in file: 1
+files changed: 1 ['src/ControlServer.Host/Dashboard/ChargingAlarmsQueryEndpoint.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingDashboardRealRunTests.AStalePassRaisesNoEligibilityHeldAlarm [87 ms]
+失败!  - 失败:     1，通过:   136，已跳过:     0，总计:   137，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+
+# B. Author mutations (M1-M4 rerun on fc1185bb0, and L3)
+## M1 station holds by cycle: drop the recovered filter
+file: src/ControlServer.Infrastructure/Persistence/ChargingStores.cs
+replacement hits in file: 2 (mutating occurrence #1)
+files changed: 1 ['src/ControlServer.Infrastructure/Persistence/ChargingStores.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingInterruptionTests.EachSideNamesOnlyTheHoldsOfTheSameCycle [49 ms]
+  失败 ControlServer.Tests.ChargingInterruptionTests.RecoveringTheVehicleNamesTheChargerHoldOfTheSameInterruptionStillInForce [92 ms]
+失败!  - 失败:     2，通过:   137，已跳过:     0，总计:   139，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+## M4 vehicle holds by cycle: drop the recovered filter
+file: src/ControlServer.Infrastructure/Persistence/ChargingStores.cs
+replacement hits in file: 2 (mutating occurrence #2)
+files changed: 1 ['src/ControlServer.Infrastructure/Persistence/ChargingStores.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingInterruptionTests.RecoveringTheChargerNamesTheVehicleHoldOfTheSameInterruptionStillInForce [228 ms]
+失败!  - 失败:     1，通过:   138，已跳过:     0，总计:   139，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+## M2 alarm: no skip when no hold is open any more
+file: src/ControlServer.Host/Dashboard/ChargingAlarmsQueryEndpoint.cs
+replacement hits in file: 1
+files changed: 1 ['src/ControlServer.Host/Dashboard/ChargingAlarmsQueryEndpoint.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingDashboardRealRunTests.AVehicleBelowTheMandatoryLineWithItsChargingEligibilityHeldIsAlarmed [63 ms]
+  失败 ControlServer.Tests.ChargingDashboardRealRunTests.TwoVehiclesWithTheirEligibilityHeldAreEachAlarmedWithTheirOwnHold [61 ms]
+失败!  - 失败:     2，通过:   137，已跳过:     0，总计:   139，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+## M3 clearance: 2343 never said
+file: src/ControlServer.Host/Runtime/Charging/ManualStationClearance.cs
+replacement hits in file: 1
+files changed: 1 ['src/ControlServer.Host/Runtime/Charging/ManualStationClearance.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingInterruptionTests.AHostClearanceAfterAnInterruptionNamesTheVehicleHoldStillInForce [107 ms]
+  失败 ControlServer.Tests.ChargingInterruptionTests.AnOnboardClearanceAfterAnInterruptionLogsTheVehicleHoldStillInForce [47 ms]
+  失败 ControlServer.Tests.ChargingInterruptionTests.InsideTheInboxTransactionTheHoldsLeftAreLoggedOnlyAfterItCommits [46 ms]
+失败!  - 失败:     3，通过:   136，已跳过:     0，总计:   139，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+## L3-a vehicle recovery: the read after the recovery is not guarded
+file: src/ControlServer.Host/Runtime/ChargingStationEndpoints.cs
+replacement hits in file: 1
+files changed: 1 ['src/ControlServer.Host/Runtime/ChargingStationEndpoints.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingInterruptionTests.AFailedReadOfTheOtherSideAfterTheRecoveryStillAnswersSuccess [61 ms]
+失败!  - 失败:     1，通过:   138，已跳过:     0，总计:   139，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+## L3-b charger recovery: the read after the recovery is not guarded
+file: src/ControlServer.Host/Runtime/ChargingStationEndpoints.cs
+replacement hits in file: 1
+files changed: 1 ['src/ControlServer.Host/Runtime/ChargingStationEndpoints.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingInterruptionTests.AFailedReadOfTheOtherSideAfterTheRecoveryStillAnswersSuccess [147 ms]
+失败!  - 失败:     1，通过:   138，已跳过:     0，总计:   139，持续时间: 19 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+## L3-c Host clearance: the read after the decision is not guarded
+file: src/ControlServer.Host/Runtime/Charging/ManualStationClearance.cs
+replacement hits in file: 1
+files changed: 1 ['src/ControlServer.Host/Runtime/Charging/ManualStationClearance.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingInterruptionTests.AFailedReadOfTheOtherSideAfterTheRecoveryStillAnswersSuccess [207 ms]
+失败!  - 失败:     1，通过:   138，已跳过:     0，总计:   139，持续时间: 19 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+
+Note: a first attempt at L3-d (if (true)) and L3-e (if (false)) did not build (exit 1, constant-condition warnings as errors) and its test run used the previous mutation's binaries; discarded and rerun with non-constant equivalents:
+
+## L3-d inside the inbox transaction 2343 is said before the caller commits
+file: src/ControlServer.Host/Runtime/Charging/ManualStationClearance.cs
+replacement hits in file: 1
+files changed: 1 ['src/ControlServer.Host/Runtime/Charging/ManualStationClearance.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingInterruptionTests.InsideTheInboxTransactionTheHoldsLeftAreLoggedOnlyAfterItCommits [46 ms]
+失败!  - 失败:     1，通过:   138，已跳过:     0，总计:   139，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
+## L3-e announce does not check the confirmation was committed
+file: src/ControlServer.Host/Runtime/Charging/ManualStationClearance.cs
+replacement hits in file: 1
+files changed: 1 ['src/ControlServer.Host/Runtime/Charging/ManualStationClearance.cs']
+build exit: 0
+test exit: 1
+  失败 ControlServer.Tests.ChargingInterruptionTests.InsideTheInboxTransactionTheHoldsLeftAreLoggedOnlyAfterItCommits [46 ms]
+失败!  - 失败:     1，通过:   138，已跳过:     0，总计:   139，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+restored; git status: clean
