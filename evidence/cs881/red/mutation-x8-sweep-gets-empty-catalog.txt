@@ -1,0 +1,13 @@
+== x8-sweep-gets-empty-catalog
+-                .SweepIfDueAsync(dbContext, listed, now, runtimeOptions.BacklogRetention, cancellationToken)
++                .SweepIfDueAsync(dbContext, new HashSet<string>(), now, runtimeOptions.BacklogRetention, cancellationToken)
+    0 个错误
+[xUnit.net 00:00:12.26]       Expected: 2026-08-21T01:00:00.0000000+00:00
+[xUnit.net 00:00:12.26]       Actual:   2026-08-26T01:00:00.0000000+00:00
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRoundNeverPurgesARowOfADemandItsCatalogLists [339 ms]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-21T01:00:00.0000000+00:00
+Actual:   2026-08-26T01:00:00.0000000+00:00
+     通过数: 12
+     失败数: 1

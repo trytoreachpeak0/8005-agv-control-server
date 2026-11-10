@@ -131,20 +131,21 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = null };
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-        DateTimeOffset lastInCatalog = (await fixture.BacklogAsync(leaving.DemandId)).LastSeenAt;
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(10));
         fixture.Catalog.Set(staying);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        DateTimeOffset markedAt = fixture.Clock.GetUtcNow();
         fixture.Clock.Advance(TimeSpan.FromSeconds(10));
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         JourneyBacklogRow gone = await fixture.BacklogAsync(leaving.DemandId);
         Assert.Equal(DispatchReasonCodes.DemandLeftCatalog, gone.ReasonCode);
         Assert.Null(gone.AcceptedAt);
-        // Last seen means last seen in the catalog: a later round that only confirms the absence
-        // does not make the row look freshly evaluated.
-        Assert.Equal(lastInCatalog, gone.LastSeenAt);
+        // Since control-server#881 (review S1) a marked row's LastSeenAt is when it was marked, i.e. when the demand left the
+        // catalog: the backlog retention counts from there. Written once: a later round that only confirms the absence does not
+        // make the row look freshly evaluated.
+        Assert.Equal(markedAt, gone.LastSeenAt);
         JourneyBacklogRow waiting = await fixture.BacklogAsync(staying.DemandId);
         Assert.Equal("BATTERY_FACT_UNKNOWN", waiting.ReasonCode);
         Assert.Equal(fixture.Clock.GetUtcNow(), waiting.LastSeenAt);
