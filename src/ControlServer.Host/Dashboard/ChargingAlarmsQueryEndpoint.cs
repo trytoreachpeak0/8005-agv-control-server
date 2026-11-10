@@ -21,7 +21,8 @@ namespace ControlServer.Host.Dashboard;
 /// <item>充满待离桩、失败待放桩超过告警窗口的桩（与引擎事件 2249、2247 同一个窗口）；</item>
 /// <item>车载端会话失联、而服务端还为它记着充电周期、桩、清桩或人工充电等待的车（REQ-0287 的第三种失联）；</item>
 /// <item>唯一不在库里的一类：低于强制充电线、又过不了出发前安全门而分不到桩的车（细节点名缺哪一项，control-server#865），与低于强制充电线、
-/// RIoT 却没把它定位在任何站上的车（control-server#528），都读最近一轮已完成的充电分配（分配板，宿主单例）。</item>
+/// RIoT 却没把它定位在任何站上的车（control-server#528），与低于强制充电线、充电资格暂停着的车（control-server#877，暂停本身读库），
+/// 都读最近一轮已完成的充电分配（分配板，宿主单例）。</item>
 /// </list>
 /// <para>
 /// <b>无合格桩</b>不单列：它是充电分配的结论，看逐车卡片的排队原因（<c>notReadable</c> 里写明）。<b>中断、无进展</b>（批次9-09）以桩的暂停与旅程码出现（<c>notReadable</c> 里写明）。
@@ -169,6 +170,36 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
                     StationId: null,
                     Since: null,
                     ChargingDashboardDescriptions.DescribePositionUnknown(pass.Observations.GetValueOrDefault(agvId)?.BatteryPercent)));
+            }
+        }
+
+        // control-server#877: below the mandatory line too (the allocation answers eligibility held only past that check), and
+        // the vehicle's charging eligibility is paused (11-04 agv02 ran flat on one an earlier interruption left). No charger is
+        // allocated until a person recovers it; this says which hold, and the field action where it is lifted. Only while the
+        // hold is still open now: one recovered since the pass is not alarmed about.
+        if (pass is not null && pass.CompletedAt <= now && now - pass.CompletedAt <= _passLiveness)
+        {
+            foreach (string agvId in pass.Verdicts
+                         .Where(pair => pair.Value.Reason == ChargingAllocationReasons.VehicleEligibilityHeld)
+                         .Select(pair => pair.Key)
+                         .OrderBy(agvId => agvId, StringComparer.Ordinal))
+            {
+                string? vehicleKey = _roster.ByAgvId(agvId)?.VehicleKey;
+                VehicleChargingEligibilityHoldRow[] open =
+                [
+                    .. facts.OpenEligibilityHolds.Where(hold => vehicleKey is not null && hold.VehicleKey == vehicleKey),
+                ];
+                if (open.Length == 0)
+                {
+                    continue;
+                }
+                alarms.Add(new Alarm(
+                    ChargingDashboardDescriptions.AlarmBelowMandatoryEligibilityHeld,
+                    agvId,
+                    MapId: null,
+                    StationId: null,
+                    Since: open[0].HeldAt,
+                    ChargingDashboardDescriptions.DescribeEligibilityHeld(pass.Observations.GetValueOrDefault(agvId)?.BatteryPercent, open)));
             }
         }
 

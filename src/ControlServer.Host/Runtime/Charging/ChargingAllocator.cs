@@ -640,7 +640,7 @@ public sealed class ChargingAllocator(
         {
             try
             {
-                string? refusal = await QualifyAsync(candidate, cancellationToken).ConfigureAwait(false);
+                (string? refusal, string refusalDetail) = await QualifyAsync(candidate, cancellationToken).ConfigureAwait(false);
                 if (refusal is null)
                 {
                     queue.Add(candidate);
@@ -651,8 +651,10 @@ public sealed class ChargingAllocator(
                     // about -- it is not tried at another charger. control-server#528: so is one RIoT does not place at a station
                     // (only a vehicle below its mandatory line gets this far): no charger is allocated to it until it is
                     // relocated, and its battery goes on falling, so it is said once, by name.
+                    // control-server#877: the eligibility hold is named in the detail (id, reason, when written), and so in 2241
+                    // and 2246 -- on 11-04 the detail was empty and nothing said which hold or how to lift it.
                     verdicts[candidate.Vehicle.AgvId] = Refuse(
-                        candidate.Vehicle, refusal, "",
+                        candidate.Vehicle, refusal, refusalDetail,
                         waiting: refusal is ChargingAllocationReasons.VehicleEligibilityHeld
                             or ChargingAllocationReasons.VehiclePositionUnknown
                             ? refusal
@@ -686,9 +688,9 @@ public sealed class ChargingAllocator(
     }
 
     /// <summary>
-    /// 这辆车进不进待充电集合：进答空，否则答挡住它的那一条的码。人工充电等待的告警与给车的快照也在这里对齐（每一轮，幂等）。
+    /// 这辆车进不进待充电集合：进答空，否则答挡住它的那一条的码与细节。人工充电等待的告警与给车的快照也在这里对齐（每一轮，幂等）。
     /// </summary>
-    private async Task<string?> QualifyAsync(ChargingCandidate candidate, CancellationToken cancellationToken)
+    private async Task<Qualification> QualifyAsync(ChargingCandidate candidate, CancellationToken cancellationToken)
     {
         FleetVehicle vehicle = candidate.Vehicle;
         if (await SettleManualChargingHoldAsync(candidate, cancellationToken).ConfigureAwait(false))
@@ -724,9 +726,12 @@ public sealed class ChargingAllocator(
             return readiness;
         }
 
-        if ((await holds.ListActiveVehicleHoldsAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false)).Count > 0)
+        IReadOnlyList<VehicleChargingEligibilityHold> eligibilityHolds =
+            await holds.ListActiveVehicleHoldsAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false);
+        if (eligibilityHolds.Count > 0)
         {
-            return ChargingAllocationReasons.VehicleEligibilityHeld;
+            return new Qualification(
+                ChargingAllocationReasons.VehicleEligibilityHeld, ChargingHoldsLeft.DescribeEligibilityHeld(eligibilityHolds));
         }
 
         // A charger this vehicle still holds from a cycle that ended: until the three confirmations release it (the sweep at
@@ -747,6 +752,12 @@ public sealed class ChargingAllocator(
         // control-server#528: RIoT's currentPosition 0 places it at no station -- no origin to measure the way to a charger from,
         // the same as no reading. Routed from 0 every charger was CHARGER_UNREACHABLE (11-06 agv02, queued until it ran flat).
         return candidate.Facts.Vehicle.KnownStationId is null ? ChargingAllocationReasons.VehiclePositionUnknown : null;
+    }
+
+    /// <summary><see cref="QualifyAsync"/> 的答案：挡住它的码（进集合为空）与细节（多数码没有细节，为空串）。</summary>
+    private readonly record struct Qualification(string? Refusal, string Detail)
+    {
+        public static implicit operator Qualification(string? refusal) => new(refusal, "");
     }
 
     private async Task<ChargingAllocationVerdict> SelectAndCommitAsync(

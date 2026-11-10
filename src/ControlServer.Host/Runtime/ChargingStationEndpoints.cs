@@ -159,6 +159,13 @@ public static class ChargingStationEndpoints
             "Vehicle {VehicleKey}'s charging eligibility is back: {OperatorId} confirmed its recovery, closing {Count} hold(s). " +
             "No charger's allocation hold is touched (REQ-0286: the vehicle and the charger recover each on its own evidence).");
 
+    private static readonly Action<ILogger, string, string, string, Exception?> LogStationHoldsLeft =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(2344, nameof(LogStationHoldsLeft)),
+            "Vehicle {VehicleKey}'s charging eligibility is back, but the same interruption left {Holds} still in force. Recovering " +
+            "the vehicle does not return the charger (REQ-0286): until it is recovered with POST {Route} no vehicle is given it.");
+
     /// <summary>
     /// 映射三个入口：维修暂停总是映射；恢复确认与人工清桩只在 <see cref="VehicleFaultRecoveryEndpoints.EnabledKey"/> 打开时映射。答后两者有没有映射。
     /// </summary>
@@ -476,8 +483,29 @@ public static class ChargingStationEndpoints
             new { vehicle.AgvId, vehicle.VehicleKey, operatorId, basis, claimedRole, recovered, result = "RECOVERED" },
             cancellationToken, GovernedObjectKind.AgvLifecycle).ConfigureAwait(false);
         LogVehicleRecovered(logger, vehicle.VehicleKey, operatorId!, recovered.Count, null);
+
+        // control-server#877: the other way round -- the same interruption paused the charger too, and recovering the vehicle
+        // does not return the charger (REQ-0286). 11-04 only the vehicle was recovered and 230 stayed paused until 11-05.
+        ChargingHoldLeft[] stationsLeft =
+        [
+            .. (await holds.ListActiveStationHoldsOfCyclesAsync(
+                        [.. active.Select(hold => hold.CycleId).OfType<string>()], cancellationToken)
+                    .ConfigureAwait(false))
+                .Select(ChargingHoldsLeft.Of),
+        ];
+        if (stationsLeft.Length > 0)
+        {
+            LogStationHoldsLeft(
+                logger, vehicle.VehicleKey,
+                string.Join("; ", stationsLeft.Select(hold => string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"charger {hold.MapId}/{hold.StationId} {ChargingHoldsLeft.Describe(hold.HoldId, hold.Reason, hold.HeldAt)}"))),
+                RecoveryRoute, null);
+        }
         return TypedResults.Ok(
-            new VehicleChargingEligibilityRecoveryResponse(vehicle.AgvId, vehicle.VehicleKey, "RECOVERED", recovered, []));
+            new VehicleChargingEligibilityRecoveryResponse(
+                vehicle.AgvId, vehicle.VehicleKey, "RECOVERED", recovered, [], stationsLeft,
+                ChargingHoldsLeft.StationNotice(stationsLeft)));
     }
 
     // ---- 人工清桩（放宽）--------------------------------------------------------------------------------------------------
@@ -582,7 +610,14 @@ public static class ChargingStationEndpoints
             decision.Decision.ProblemDisplayMessage, decision.StationReleased);
         if (decision.Decision.Outcome == FieldConfirmationDecision.Confirmed)
         {
-            return TypedResults.Ok(body);
+            // control-server#877: the clearance does not lift the vehicle's charging eligibility hold (REQ-0286); say which one
+            // is left and where it is lifted, read now (a replayed confirmation reads what is left now, too).
+            ChargingHoldLeft[] left =
+            [
+                .. (await clearance.VehicleHoldsLeftAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false))
+                    .Select(hold => ChargingHoldsLeft.Of(hold, vehicle.AgvId)),
+            ];
+            return TypedResults.Ok(body with { VehicleHoldsLeft = left, Notice = ChargingHoldsLeft.VehicleNotice(vehicle.AgvId, left) });
         }
         return TypedResults.Problem(
             statusCode: StatusCodes.Status409Conflict,

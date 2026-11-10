@@ -650,6 +650,23 @@ public sealed class ChargingHoldStore(ControlServerDbContext context) : IChargin
         return [.. rows.OrderBy(row => row.HeldAt).ThenBy(row => row.HoldId, StringComparer.Ordinal).Select(ToModel)];
     }
 
+    public async Task<IReadOnlyList<ChargingStationAllocationHold>> ListActiveStationHoldsOfCyclesAsync(
+        IReadOnlyCollection<string> cycleIds, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(cycleIds);
+        if (cycleIds.Count == 0)
+        {
+            return [];
+        }
+        string[] cycles = [.. cycleIds.Distinct(StringComparer.Ordinal)];
+        IQueryable<string> recovered = _context.Set<ChargingStationRecoveryRow>().Select(row => row.HoldId);
+        ChargingStationAllocationHoldRow[] rows = await _context.Set<ChargingStationAllocationHoldRow>().AsNoTracking()
+            .Where(row => row.CycleId != null && cycles.Contains(row.CycleId) && !recovered.Contains(row.HoldId))
+            .ToArrayAsync(cancellationToken);
+        // Ordered in memory: SQLite cannot order by a DateTimeOffset column.
+        return [.. rows.OrderBy(row => row.HeldAt).ThenBy(row => row.HoldId, StringComparer.Ordinal).Select(ToModel)];
+    }
+
     public async Task<ChargingStationAllocationHold?> ReadStationHoldAsync(
         string holdId, CancellationToken cancellationToken)
     {

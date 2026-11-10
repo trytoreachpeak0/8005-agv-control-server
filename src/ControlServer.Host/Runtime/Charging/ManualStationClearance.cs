@@ -141,6 +141,14 @@ public sealed class ManualStationClearance(
             "Manual station clearance {ConfirmationRequestId} for vehicle {AgvId} at charger {StationId}: {Outcome}, station " +
             "released {Released} ({Detail}). The charger's allocation hold, if any, stays until a ChargingStationRecoveryConfirmation.");
 
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogVehicleHoldsLeft =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Warning,
+            new EventId(2343, nameof(LogVehicleHoldsLeft)),
+            "Charger {StationId} is cleared for vehicle {AgvId}, but the vehicle still carries charging eligibility {Holds}. The " +
+            "clearance does not lift it (REQ-0286): until it is recovered with POST {Route} no charger is allocated to the vehicle, " +
+            "and below its mandatory charge line its battery goes on falling.");
+
     private static readonly JsonSerializerOptions DetailOptions = new()
     {
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
@@ -377,9 +385,29 @@ public sealed class ManualStationClearance(
             LogDecided(
                 logger, request.ConfirmationRequestId, request.AgvId, request.StationId, stored.Decision.Outcome,
                 stored.StationReleased, code ?? disposition, null);
+            if (code is null && request.VehicleKey is not null)
+            {
+                // control-server#877: said once per decision, from either entry -- the onboard result's shape is the protocol's
+                // and has no place for it; the Host entry also returns it (VehicleHoldsLeftAsync).
+                IReadOnlyList<VehicleChargingEligibilityHold> left =
+                    await VehicleHoldsLeftAsync(request.VehicleKey, cancellationToken).ConfigureAwait(false);
+                if (left.Count > 0)
+                {
+                    LogVehicleHoldsLeft(
+                        logger, request.StationId, request.AgvId,
+                        string.Join("; ", left.Select(hold => ChargingHoldsLeft.Describe(hold.HoldId, hold.Reason, hold.HeldAt))),
+                        ChargingStationEndpoints.VehicleRecoveryRoute, null);
+                }
+            }
             return stored;
         }
     }
+
+    /// <summary>
+    /// 这辆车此刻仍挂着的充电资格暂停（control-server#877）。清桩不解除它们（<c>REQ-0286</c>）；Host 入口把它们放进结果，判定本身记一条日志（2343）。
+    /// </summary>
+    public Task<IReadOnlyList<VehicleChargingEligibilityHold>> VehicleHoldsLeftAsync(string vehicleKey, CancellationToken cancellationToken) =>
+        new ChargingHoldStore(dbContext).ListActiveVehicleHoldsAsync(vehicleKey, cancellationToken);
 
     /// <summary>
     /// 清桩中：只记下人工确认（确认人、角色、时刻、车辆最终位置、此刻的旧单处置、<c>clearedCondition</c>、确认号），<b>不写</b>

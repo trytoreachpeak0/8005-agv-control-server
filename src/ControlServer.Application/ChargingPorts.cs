@@ -487,6 +487,12 @@ public interface IChargingHoldStore
 
     Task<IReadOnlyList<VehicleChargingEligibilityHold>> ListActiveVehicleHoldsAsync(
         string vehicleKey, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 这几个充电周期在桩一侧留下、当前暂停着的全部（未恢复的），按暂停时刻排（control-server#877：解车时点名同一次中断还暂停着的桩）。
+    /// </summary>
+    Task<IReadOnlyList<ChargingStationAllocationHold>> ListActiveStationHoldsOfCyclesAsync(
+        IReadOnlyCollection<string> cycleIds, CancellationToken cancellationToken);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
