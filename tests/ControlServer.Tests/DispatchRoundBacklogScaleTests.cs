@@ -66,7 +66,7 @@ public sealed class DispatchRoundBacklogScaleTests
         Assert.Equal([Demand], await fixture.Context.AcceptedDemands.AsNoTracking().Select(row => row.DemandId).ToArrayAsync(Token));
         (string Text, (string Name, object? Value)[] Parameters)[] redispatchReads =
             [.. commands.Commands.Where(command => command.Text.Contains(DemandJourneyLookup.ReleasedForRedispatchReason, StringComparison.Ordinal))];
-        // 至少受理集合与改派代次两条（派车轮开头），孤儿检查另有。少于两条说明有语句没被看见。
+        // 派车轮开头读一次待改派集合（受理集合与改派代次共用），引擎的孤儿检查另有一条。少于两条说明有语句没被看见。
         Assert.True(redispatchReads.Length >= 2, $"only {redispatchReads.Length} redispatch read(s) seen");
         foreach ((string text, (string Name, object? Value)[] parameters) in redispatchReads)
         {

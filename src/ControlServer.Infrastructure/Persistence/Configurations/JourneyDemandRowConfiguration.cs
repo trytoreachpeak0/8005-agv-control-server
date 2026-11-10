@@ -14,5 +14,9 @@ public sealed class JourneyDemandRowConfiguration : IEntityTypeConfiguration<Jou
         builder.HasIndex(row => row.DemandId)
             .IsUnique()
             .HasFilter("RemovedAt IS NULL");
+        // Every membership of a demand, removed ones included, by generation (control-server#881): what
+        // DemandJourneyLookup.ReleasedForRedispatch asks of the removed memberships and of "a later generation". The partial
+        // index above cannot answer either, and without this one both were full scans, twice or more every dispatch round.
+        builder.HasIndex(row => new { row.DemandId, row.DispatchGeneration });
     }
 }

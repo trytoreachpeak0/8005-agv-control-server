@@ -56,7 +56,8 @@ public sealed class DispatchRoundRunner(
     IChargingPolicyResolver chargingPolicy,
     ChargingAllocator chargingAllocation,
     TrialSublotFilterLog trialSublotLog,
-    MandatoryChargeBoard? mandatoryCharge = null)
+    MandatoryChargeBoard? mandatoryCharge = null,
+    JourneyBacklogRetention? backlogRetention = null)
 {
     // The backlog's decision fingerprint is a hash over this serialisation, so it is the engine's setting exactly: a
     // different one would read every backlog row written before the move as a changed demand.
@@ -166,7 +167,24 @@ public sealed class DispatchRoundRunner(
             "Vehicle {VehicleKey} is no longer below its mandatory charge entry threshold (or its battery or policy can no " +
             "longer be read, which blocks it for that reason instead).");
 
+    private static readonly Action<ILogger, int, TimeSpan, Exception?> LogBacklogPurged =
+        LoggerMessage.Define<int, TimeSpan>(
+            LogLevel.Information,
+            new EventId(2881, nameof(LogBacklogPurged)),
+            "Deleted {Count} backlog row(s) of demands that left the MesIngest catalog more than {Retention} ago and that nothing " +
+            "refers to (control-server#881).");
+
+    private static readonly Action<ILogger, Exception?> LogBacklogPurgeFailed =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(2882, nameof(LogBacklogPurgeFailed)),
+            "Sweeping the backlog of demands that left the catalog failed (control-server#881); the round went on, and the next " +
+            "sweep tries again.");
+
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
+
+    // control-server#881: the host registers one for the process; a runner built without it keeps its own.
+    private readonly JourneyBacklogRetention _backlogRetention = backlogRetention ?? new JourneyBacklogRetention();
 
     // control-server#403: the host registers one for the process; a runner built without it keeps its own.
     private readonly MandatoryChargeBoard _mandatoryCharge = mandatoryCharge ?? new MandatoryChargeBoard();
@@ -236,8 +254,9 @@ public sealed class DispatchRoundRunner(
             return;
         }
 
-        Dictionary<string, JourneyBacklogRow> backlogByDemandId = await dbContext.JourneyBacklog
-            .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
+        HashSet<string> listed = snapshot.Items.Select(item => item.DemandId).ToHashSet(StringComparer.Ordinal);
+        await SweepBacklogAsync(listed, now, cancellationToken).ConfigureAwait(false);
+        Dictionary<string, JourneyBacklogRow> backlogByDemandId = await LoadBacklogAsync(listed, cancellationToken)
             .ConfigureAwait(false);
         await MarkBacklogLeftCatalogAsync(backlogByDemandId, snapshot, cancellationToken).ConfigureAwait(false);
         // The MesIngest catalog is MES's own list of open transport demands, and a journey of ours
@@ -249,13 +268,19 @@ public sealed class DispatchRoundRunner(
         // 批次7-10（control-server#215）起有一个例外：已释放、等着改派的需求（REQ-0328）不算「已受理」，它要能再被派一次。
         // 判据只有 DemandJourneyLookup.ReleasedForRedispatch 一处定义，孤儿检查排除的是同一批——两处各写一份会分叉成
         // 「放过去了却被当成孤儿抛」或者反过来。它的受理行照旧复用，见 WireToGateStore.IsReleasedForRedispatchAsync。
-        IQueryable<AcceptedDemandRow> releasedForRedispatch = DemandJourneyLookup.ReleasedForRedispatch(dbContext);
-        HashSet<string> acceptedDemandIds = (await dbContext.AcceptedDemands
-                .Where(row => !releasedForRedispatch.Any(released => released.DemandId == row.DemandId))
+        //
+        // control-server#881：待改派的那批只读一次，受理集合与改派代次都用它。原来两条语句各把它当相关子查询嵌一遍：受理集合对每条受理行、
+        // 改派代次对 JourneyDemands 每一行各跑一次，生产库上一轮开头这两处各约 1 s。
+        string[] releasedForRedispatch = await DemandJourneyLookup.ReleasedForRedispatch(dbContext).AsNoTracking()
+            .Select(row => row.DemandId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        HashSet<string> acceptedDemandIds = (await dbContext.AcceptedDemands.AsNoTracking()
                 .Select(row => row.DemandId)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .ToHashSet(StringComparer.Ordinal);
-        Dictionary<string, long> redispatchGenerations = await RedispatchGenerationsAsync(cancellationToken)
+        acceptedDemandIds.ExceptWith(releasedForRedispatch);
+        Dictionary<string, long> redispatchGenerations = await RedispatchGenerationsAsync(
+                releasedForRedispatch, cancellationToken)
             .ConfigureAwait(false);
 
         VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken)
@@ -1397,11 +1422,61 @@ public sealed class DispatchRoundRunner(
             }
         }
 
+        // Back are the rows the round held, as committed (control-server#881): reading the whole table here would undo the
+        // narrowed load in RunAsync every time a vehicle's segment ends early. A row the segment created and never saved is not
+        // in the store and is written afresh if the round comes back to it, as before.
+        string[] held = [.. backlogByDemandId.Keys];
         backlogByDemandId.Clear();
         foreach (JourneyBacklogRow row in await dbContext.JourneyBacklog
+                     .Where(row => held.Contains(row.DemandId))
                      .ToArrayAsync(cancellationToken).ConfigureAwait(false))
         {
             backlogByDemandId[row.DemandId] = row;
+        }
+    }
+
+    /// <summary>
+    /// The backlog rows this round can touch, tracked: every row of a demand the catalog lists, and every row not yet accepted
+    /// and not yet marked as gone from the catalog -- the ones <see cref="MarkBacklogLeftCatalogAsync"/> may have to mark.
+    /// </summary>
+    /// <remarks>
+    /// Until control-server#881 this read the whole table, tracked, and the field table was four-fifths rows of demands MES had
+    /// closed long before (50,615 rows on 2026-11-05, 43,400 of them <see cref="DispatchReasonCodes.DemandLeftCatalog"/>): every
+    /// save of the round ran its pre-save hooks over all of them, 166 ms a save against 29 ms without. Every reader of the
+    /// dictionary looks a row up by a catalog demand's id, and the two scans over its values -- the left-catalog mark and the
+    /// dropped-append set -- only ever act on unaccepted rows that are not marked yet, so what is left out was never acted on.
+    /// </remarks>
+    private async Task<Dictionary<string, JourneyBacklogRow>> LoadBacklogAsync(
+        IReadOnlySet<string> listed,
+        CancellationToken cancellationToken)
+    {
+        string[] listedIds = [.. listed];
+        return await dbContext.JourneyBacklog
+            .Where(row => listedIds.Contains(row.DemandId) ||
+                          (row.AcceptedAt == null && row.ReasonCode != DispatchReasonCodes.DemandLeftCatalog))
+            .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Deletes the dead backlog rows past their retention, at most once per <see cref="JourneyBacklogRetention.SweepInterval"/>
+    /// (control-server#881). A failure is logged and the round goes on: dispatching does not depend on it.
+    /// </summary>
+    private async Task SweepBacklogAsync(IReadOnlySet<string> listed, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        try
+        {
+            int? purged = await _backlogRetention
+                .SweepIfDueAsync(dbContext, listed, now, runtimeOptions.BacklogRetention, cancellationToken)
+                .ConfigureAwait(false);
+            if (purged > 0)
+            {
+                LogBacklogPurged(logger, purged.Value, runtimeOptions.BacklogRetention, null);
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            LogBacklogPurgeFailed(logger, error);
         }
     }
 
@@ -1506,11 +1581,16 @@ public sealed class DispatchRoundRunner(
     /// 插位判据算停靠 id 用的也是它——各算各的就会在「新停靠叫什么」上不一致。
     /// </para>
     /// </remarks>
-    private async Task<Dictionary<string, long>> RedispatchGenerationsAsync(CancellationToken cancellationToken)
+    private async Task<Dictionary<string, long>> RedispatchGenerationsAsync(
+        string[] releasedForRedispatch,
+        CancellationToken cancellationToken)
     {
-        IQueryable<AcceptedDemandRow> released = DemandJourneyLookup.ReleasedForRedispatch(dbContext);
+        if (releasedForRedispatch.Length == 0)
+        {
+            return new Dictionary<string, long>(StringComparer.Ordinal);
+        }
         var highest = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
-            .Where(row => released.Any(demand => demand.DemandId == row.DemandId))
+            .Where(row => releasedForRedispatch.Contains(row.DemandId))
             .GroupBy(row => row.DemandId)
             .Select(group => new { DemandId = group.Key, Generation = group.Max(row => row.DispatchGeneration) })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);

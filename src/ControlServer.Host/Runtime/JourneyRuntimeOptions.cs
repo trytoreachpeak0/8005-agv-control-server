@@ -99,8 +99,12 @@ public sealed class JourneyRuntimeOptions
 
     /// <summary>
     /// How long a backlog row of a demand that left the MesIngest catalog is kept, counted from the last time the catalog listed it
-    /// (control-server#881).
+    /// (control-server#881). Past it, a row nothing else refers to is deleted by the dispatch round (<c>JourneyBacklogRetention</c>).
     /// </summary>
+    /// <remarks>
+    /// At least one hour: a demand that leaves the catalog briefly and comes back would otherwise lose its first-seen time and its
+    /// starvation escalation record. The field deletion of 2026-11-05 used one day.
+    /// </remarks>
     public TimeSpan BacklogRetention { get; set; } = DefaultBacklogRetention;
 
     /// <summary>
@@ -496,6 +500,10 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         if (options.CatalogAgeWindow <= TimeSpan.Zero || options.CatalogAgeWindow > TimeSpan.FromHours(24))
         {
             failures.Add("CatalogAgeWindow must be positive and at most 24 hours.");
+        }
+        if (options.BacklogRetention < TimeSpan.FromHours(1))
+        {
+            failures.Add("BacklogRetention must be at least 1 hour.");
         }
         // control-server#828: half a trial sublot rule looks configured and filters nothing (TrialSublotRule.IsOn), so it is refused.
         if (options.TrialSublotCharacterPosition < 0 ||
