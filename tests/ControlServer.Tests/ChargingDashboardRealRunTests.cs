@@ -503,6 +503,95 @@ public sealed class ChargingDashboardRealRunTests
         }
     }
 
+    /// <summary>
+    /// 两辆车都低于强制充电线、各挂着一条资格暂停（cs#877 审查 S2）：各自一条告警，只写自己那一条暂停的 id。分配那一轮之后 A 的暂停解除了，
+    /// A 不再告警，B 的照旧、仍只写 B 的那一条。
+    /// </summary>
+    [Fact]
+    public async Task TwoVehiclesWithTheirEligibilityHeldAreEachAlarmedWithTheirOwnHold()
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
+        string agvB = FleetFixture.AgvIds[1];
+        string keyB = FleetFixture.VehicleKeys[1];
+        ChargingHoldStore holds = new(fleet.Context);
+        DateTimeOffset heldAt = fleet.Clock.GetUtcNow();
+        await holds.RecordVehicleHoldAsync(
+            new VehicleChargingEligibilityHold(
+                "cs877-hold-a", "cs877-hold-a", KeyA, null, VehicleChargingEligibilityHoldReasons.InterruptionConfirmed, heldAt, null),
+            Token);
+        await holds.RecordVehicleHoldAsync(
+            new VehicleChargingEligibilityHold(
+                "cs877-hold-b", "cs877-hold-b", keyB, null, VehicleChargingEligibilityHoldReasons.NoProgressConfirmed, heldAt, null),
+            Token);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.BatteryByVehicle[keyB] = 20;
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        Assert.Equal(ChargingAllocationReasons.VehicleEligibilityHeld, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        Assert.Equal(ChargingAllocationReasons.VehicleEligibilityHeld, fleet.ChargingBoard.Verdicts[agvB].Reason);
+        (JsonDocument both, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (both)
+        {
+            JsonElement[] held =
+            [
+                .. both.RootElement.GetProperty("alarms").EnumerateArray()
+                    .Where(a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryEligibilityHeld),
+            ];
+            string detailA = Assert.Single(held, a => a.GetProperty("agvId").GetString() == AgvA).GetProperty("detail").GetString()!;
+            string detailB = Assert.Single(held, a => a.GetProperty("agvId").GetString() == agvB).GetProperty("detail").GetString()!;
+            Assert.Contains("cs877-hold-a", detailA, StringComparison.Ordinal);
+            Assert.DoesNotContain("cs877-hold-b", detailA, StringComparison.Ordinal);
+            Assert.Contains("cs877-hold-b", detailB, StringComparison.Ordinal);
+            Assert.DoesNotContain("cs877-hold-a", detailB, StringComparison.Ordinal);
+        }
+
+        await holds.RecoverVehicleHoldAsync(
+            new ChargingHoldRecovery(Guid.NewGuid().ToString("D"), "cs877-hold-a", "op-r11", "UNSTATED", fleet.Clock.GetUtcNow(), "电池检查"),
+            Token);
+        (JsonDocument after, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (after)
+        {
+            JsonElement[] held =
+            [
+                .. after.RootElement.GetProperty("alarms").EnumerateArray()
+                    .Where(a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryEligibilityHeld),
+            ];
+            JsonElement only = Assert.Single(held);
+            Assert.Equal(agvB, only.GetProperty("agvId").GetString());
+            Assert.DoesNotContain("cs877-hold-a", only.GetProperty("detail").GetString()!, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// 充电分配停跑（最近一轮已完成的分配超过三个轮询间隔）时，暂停还挂着也不拿那一轮的结论告警（cs#877 审查 S2；同 control-server#865 的窗口）。
+    /// </summary>
+    [Fact]
+    public async Task AStalePassRaisesNoEligibilityHeldAlarm()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await new ChargingHoldStore(fleet.Context).RecordVehicleHoldAsync(
+            new VehicleChargingEligibilityHold(
+                "cs877-stale", "cs877-stale", KeyA, null, VehicleChargingEligibilityHoldReasons.InterruptionConfirmed,
+                fleet.Clock.GetUtcNow(), null),
+            Token);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await fleet.HearFromEveryVehicleAsync();
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingAllocationReasons.VehicleEligibilityHeld, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+
+        fleet.Clock.Advance(fleet.Options.PollInterval * ChargingVehiclesQueryEndpoint.PassLivenessPollIntervals + TimeSpan.FromSeconds(1));
+        await fleet.HearFromEveryVehicleAsync();
+
+        (JsonDocument alarms, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (alarms)
+        {
+            Assert.DoesNotContain(
+                alarms.RootElement.GetProperty("alarms").EnumerateArray(),
+                a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.AlarmBelowMandatoryEligibilityHeld);
+        }
+    }
+
     /// <summary>高于强制充电线的车仓门没锁：它本来就不需要充电，不告警（control-server#865）。</summary>
     [Fact]
     public async Task AVehicleAboveTheMandatoryLineWithAnUnlockedSlotIsNotAlarmed()
