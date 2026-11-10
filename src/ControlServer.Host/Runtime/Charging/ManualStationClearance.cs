@@ -403,6 +403,9 @@ public sealed class ManualStationClearance(
         }
     }
 
+    /// <summary>入站处理器的收件箱事务提交之后调（cs#877 审查 L3）。</summary>
+    public Task AnnounceHoldsLeftAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     /// <summary>
     /// 这辆车此刻仍挂着的充电资格暂停（control-server#877）。清桩不解除它们（<c>REQ-0286</c>）；Host 入口把它们放进结果，判定本身记一条日志（2343）。
     /// </summary>

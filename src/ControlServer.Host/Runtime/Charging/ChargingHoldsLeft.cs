@@ -10,6 +10,9 @@ namespace ControlServer.Host.Runtime.Charging;
 /// </summary>
 public static class ChargingHoldsLeft
 {
+    /// <summary>恢复或判定已经生效、读另一侧失败时的那一句（cs#877 审查 L3）。</summary>
+    public const string OtherSideUnreadableNotice = "未能读取另一侧暂停，请到看板核对。";
+
     /// <summary>车的一条资格暂停，作为接口结果里的一项。</summary>
     public static ChargingHoldLeft Of(VehicleChargingEligibilityHold hold, string agvId)
     {

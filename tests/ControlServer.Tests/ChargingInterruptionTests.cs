@@ -963,6 +963,177 @@ public sealed class ChargingInterruptionTests
         }
     }
 
+    /// <summary>
+    /// 恢复或判定已经提交之后，读另一侧失败（cs#877 审查 L3）：接口照旧答成功，恢复照旧生效，列表为空，<c>notice</c> 说没能读到、请到看板核对，
+    /// 记事件 2346；不答 500。解车、恢复桩、Host 清桩三处都这样。
+    /// </summary>
+    [Fact]
+    public async Task AFailedReadOfTheOtherSideAfterTheRecoveryStillAnswersSuccess()
+    {
+        const string variable = "CONTROL_SERVER_TEST_CS877_UNREADABLE_CREDENTIAL";
+        Environment.SetEnvironmentVariable(variable, "cs877-secret");
+        try
+        {
+            IOptions<VehicleFaultRecoveryOptions> options = Options.Create(new VehicleFaultRecoveryOptions { CredentialEnvironmentVariable = variable });
+
+            await using FleetFixture fleet = await IsolatingFleetAsync(Near, Far);
+            await InterruptedAndClearedAsync(fleet);
+            UnreadableOtherSide holds = new(new ChargingHoldStore(fleet.Context));
+            ControlServer.Host.Runtime.Fleet.VehicleRoster roster = new(Options.Create(fleet.Options));
+            EventRecordingLogger<VehicleChargingEligibilityRecoveryHttpRequest> vehicleLog = new();
+            var vehicle = await ChargingStationEndpoints.RecoverVehicleAsync(
+                HttpContextFor("cs877-secret"), new VehicleChargingEligibilityRecoveryHttpRequest(AgvA, "op-r11", "电池检查 B-1", null),
+                holds, roster, Audit(fleet), options, fleet.Clock, vehicleLog, TestRecoveryGrants.NotRequired(fleet.Context), Token);
+            VehicleChargingEligibilityRecoveryResponse vehicleBody =
+                Assert.IsType<Ok<VehicleChargingEligibilityRecoveryResponse>>(vehicle.Result).Value!;
+            Assert.Equal("RECOVERED", vehicleBody.Outcome);
+            Assert.Empty(vehicleBody.StationHoldsLeft!);
+            Assert.Equal(ChargingHoldsLeft.OtherSideUnreadableNotice, vehicleBody.Notice);
+            Assert.Empty(await new ChargingHoldStore(fleet.Context).ListActiveVehicleHoldsAsync(KeyA, Token));
+            Assert.Single(vehicleLog.Entries, entry => entry.EventId.Id == 2346);
+
+            await using FleetFixture second = await IsolatingFleetAsync(Near, Far);
+            await InterruptedAndClearedAsync(second);
+            EventRecordingLogger<ChargingStationRecoveryHttpRequest> chargerLog = new();
+            var charger = await ChargingStationEndpoints.RecoverAsync(
+                HttpContextFor("cs877-secret"), new ChargingStationRecoveryHttpRequest(Map, Near.StationId, "op-r11", "桩检查 C-1", null),
+                new UnreadableOtherSide(new ChargingHoldStore(second.Context)),
+                new ControlServer.Host.Runtime.Fleet.VehicleRoster(Options.Create(second.Options)), Audit(second), options, second.Clock,
+                chargerLog, Token);
+            ChargingStationHoldResponse chargerBody = Assert.IsType<Ok<ChargingStationHoldResponse>>(charger.Result).Value!;
+            Assert.Equal("RECOVERED", chargerBody.Outcome);
+            Assert.Empty(chargerBody.VehicleHoldsLeft!);
+            Assert.Equal(ChargingHoldsLeft.OtherSideUnreadableNotice, chargerBody.Notice);
+            Assert.Empty(await new ChargingHoldStore(second.Context).ListActiveStationHoldsAsync(Map, Near.StationId, Token));
+            Assert.Single(chargerLog.Entries, entry => entry.EventId.Id == 2346);
+
+            FailVehicleHoldReads failing = new();
+            await using FleetFixture third = await IsolatingFleetAsync(null, failing);
+            await ChargingAsync(third, battery: 50);
+            await StopChargingAsync(third, 50);
+            MovedOff(third);
+            EventRecordingLogger<ManualStationClearance> clearanceLog = new();
+            failing.Armed = true;
+            var cleared = await ChargingStationEndpoints.ClearAsync(
+                HttpContextFor("cs877-secret"), new ChargingStationClearanceHttpRequest(AgvA, Near.StationName, "fleet-r11", null),
+                ClearanceFor(third, clearanceLog), new ControlServer.Host.Runtime.Fleet.VehicleRoster(Options.Create(third.Options)), options,
+                third.Clock, Audit(third), TestRecoveryGrants.NotRequired(third.Context), Token);
+            failing.Armed = false;
+            Assert.True(failing.Fired);
+            ChargingStationClearanceResponse clearBody = Assert.IsType<Ok<ChargingStationClearanceResponse>>(cleared.Result).Value!;
+            Assert.Equal((FieldConfirmationDecision.Confirmed, true), (clearBody.Outcome, clearBody.StationReleased));
+            Assert.Empty(clearBody.VehicleHoldsLeft!);
+            Assert.Equal(ChargingHoldsLeft.OtherSideUnreadableNotice, clearBody.Notice);
+            Assert.Contains(clearanceLog.Entries, entry => entry.EventId.Id == 2346);
+            Assert.DoesNotContain(clearanceLog.Entries, entry => entry.EventId.Id == 2343);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+    }
+
+    /// <summary>
+    /// 车载端那条路：判定在入站处理器的收件箱事务里（保存点），事务提交之前不记 2343（cs#877 审查 L3）。提交之后
+    /// <see cref="ManualStationClearance.AnnounceHoldsLeftAsync"/> 记一次；事务回滚了的，什么也不记。
+    /// </summary>
+    [Fact]
+    public async Task InsideTheInboxTransactionTheHoldsLeftAreLoggedOnlyAfterItCommits()
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        await ChargingAsync(fleet, battery: 50);
+        await StopChargingAsync(fleet, 50);
+        VehicleChargingEligibilityHoldRow hold = Assert.Single(await VehicleHoldsAsync(fleet));
+        MovedOff(fleet);
+        EventRecordingLogger<ManualStationClearance> log = new();
+        ManualStationClearance clearance = ClearanceFor(fleet, log);
+
+        // Rolled back: nothing is said.
+        ManualStationClearanceRequest first = ClearanceRequest("00000000-0000-4000-8000-000000000877");
+        ManualStationClearance.Observation observedFirst = await clearance.ObserveAsync(first, Token);
+        await using (Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction inbox =
+                     await fleet.Context.Database.BeginTransactionAsync(Token))
+        {
+            Assert.NotNull(await clearance.DecideObservedAsync(first, observedFirst, Token));
+            await inbox.RollbackAsync(Token);
+        }
+        fleet.Context.ChangeTracker.Clear();
+        await clearance.AnnounceHoldsLeftAsync(Token);
+        Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id == 2343);
+
+        // Committed: said once, after the commit.
+        ManualStationClearanceRequest second = ClearanceRequest("00000000-0000-4000-8000-000000000878");
+        ManualStationClearance.Observation observedSecond = await clearance.ObserveAsync(second, Token);
+        await using (Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction inbox =
+                     await fleet.Context.Database.BeginTransactionAsync(Token))
+        {
+            ManualStationClearanceConfirmation decided = (await clearance.DecideObservedAsync(second, observedSecond, Token))!;
+            Assert.Equal(FieldConfirmationDecision.Confirmed, decided.Decision.Outcome);
+            Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id == 2343);
+            await inbox.CommitAsync(Token);
+        }
+        await clearance.AnnounceHoldsLeftAsync(Token);
+        EventRecordingLogger<ManualStationClearance>.Entry warned = Assert.Single(log.Entries, entry => entry.EventId.Id == 2343);
+        Assert.Contains(hold.HoldId, warned.Message, StringComparison.Ordinal);
+        await clearance.AnnounceHoldsLeftAsync(Token);
+        Assert.Single(log.Entries, entry => entry.EventId.Id == 2343);
+    }
+
+    /// <summary>读另一侧的那两个查询抛，其余照常（cs#877 审查 L3）。</summary>
+    private sealed class UnreadableOtherSide(IChargingHoldStore inner) : IChargingHoldStore
+    {
+        public Task<HoldWriteResult<ChargingStationAllocationHold>> RecordStationHoldAsync(
+            ChargingStationAllocationHold hold, CancellationToken cancellationToken) => inner.RecordStationHoldAsync(hold, cancellationToken);
+
+        public Task<ChargingHoldRecovery> RecoverStationHoldAsync(ChargingHoldRecovery recovery, CancellationToken cancellationToken) =>
+            inner.RecoverStationHoldAsync(recovery, cancellationToken);
+
+        public Task<IReadOnlyList<ChargingStationAllocationHold>> ListActiveStationHoldsAsync(
+            int mapId, int stationId, CancellationToken cancellationToken) => inner.ListActiveStationHoldsAsync(mapId, stationId, cancellationToken);
+
+        public Task<ChargingStationAllocationHold?> ReadStationHoldAsync(string holdId, CancellationToken cancellationToken) =>
+            inner.ReadStationHoldAsync(holdId, cancellationToken);
+
+        public Task<HoldWriteResult<VehicleChargingEligibilityHold>> RecordVehicleHoldAsync(
+            VehicleChargingEligibilityHold hold, CancellationToken cancellationToken) => inner.RecordVehicleHoldAsync(hold, cancellationToken);
+
+        public Task<ChargingHoldRecovery> RecoverVehicleHoldAsync(ChargingHoldRecovery recovery, CancellationToken cancellationToken) =>
+            inner.RecoverVehicleHoldAsync(recovery, cancellationToken);
+
+        public Task<IReadOnlyList<VehicleChargingEligibilityHold>> ListActiveVehicleHoldsAsync(
+            string vehicleKey, CancellationToken cancellationToken) => inner.ListActiveVehicleHoldsAsync(vehicleKey, cancellationToken);
+
+        public Task<IReadOnlyList<ChargingStationAllocationHold>> ListActiveStationHoldsOfCyclesAsync(
+            IReadOnlyCollection<string> cycleIds, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("cs877: injected read failure");
+
+        public Task<IReadOnlyList<VehicleChargingEligibilityHold>> ListActiveVehicleHoldsOfCyclesAsync(
+            IReadOnlyCollection<string> cycleIds, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("cs877: injected read failure");
+    }
+
+    /// <summary>上膛时，读车辆资格暂停表的每一条命令都抛（cs#877 审查 L3：Host 清桩判定提交之后的那一次读）。</summary>
+    private sealed class FailVehicleHoldReads : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public bool Armed { get; set; }
+
+        public bool Fired { get; private set; }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command,
+            Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Armed && command.CommandText.Contains("\"VehicleChargingEligibilityHolds\"", StringComparison.Ordinal))
+            {
+                Fired = true;
+                throw new InvalidOperationException("cs877: injected read failure");
+            }
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+
     // ---- 结果未知、出口不可用 --------------------------------------------------------------------------------------------
 
     /// <summary>
