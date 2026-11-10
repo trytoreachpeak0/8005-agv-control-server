@@ -1,0 +1,128 @@
+C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)的测试运行
+VSTest 版本 17.11.1 (x64)
+总共 1 个测试文件与指定模式相匹配。
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.32)
+[xUnit.net 00:00:02.09]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:03.55]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:03.74]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:03.85]     ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRetentionDefaultsToThreeDaysAndMayNotBeShorterThanAnHour [FAIL]
+[xUnit.net 00:00:03.85]       Assert.Contains() Failure: Item not found in collection
+[xUnit.net 00:00:03.85]       Collection: ["MesIngest:sharedSecretEnvironmentVariable must nam"···, "RIoT:callApiKeyEnvironmentVariable must name a pop"···, "OnboardTransport:credentialEnvironmentVariable mus"···]
+[xUnit.net 00:00:03.85]       Not found:  "BacklogRetention must be at least 1 hour."
+[xUnit.net 00:00:03.85]       Stack Trace:
+[xUnit.net 00:00:03.85]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(228,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRetentionDefaultsToThreeDaysAndMayNotBeShorterThanAnHour()
+[xUnit.net 00:00:03.85]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:03.85]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRetentionDefaultsToThreeDaysAndMayNotBeShorterThanAnHour [100 ms]
+  错误消息:
+   Assert.Contains() Failure: Item not found in collection
+Collection: ["MesIngest:sharedSecretEnvironmentVariable must nam"···, "RIoT:callApiKeyEnvironmentVariable must name a pop"···, "OnboardTransport:credentialEnvironmentVariable mus"···]
+Not found:  "BacklogRetention must be at least 1 hour."
+  堆栈跟踪:
+[xUnit.net 00:00:05.36]     ControlServer.Tests.DispatchRoundBacklogScaleTests.ThePurgeDeletesOnlyRowsThatMeetEveryCondition [FAIL]
+[xUnit.net 00:00:05.36]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:05.36]       Expected: 2
+[xUnit.net 00:00:05.36]       Actual:   0
+[xUnit.net 00:00:05.36]       Stack Trace:
+[xUnit.net 00:00:05.36]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(177,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.ThePurgeDeletesOnlyRowsThatMeetEveryCondition()
+[xUnit.net 00:00:05.36]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(178,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.ThePurgeDeletesOnlyRowsThatMeetEveryCondition()
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.ThePurgeDeletesOnlyRowsThatMeetEveryCondition [1 s]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   0
+  堆栈跟踪:
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.ADemandThatJustLeftTheCatalogIsStillMarked [355 ms]
+[xUnit.net 00:00:07.58]     ControlServer.Tests.DispatchRoundBacklogScaleTests.ARoundMaterialisesNoBacklogRowOfADemandThatLeftTheCatalog [FAIL]
+[xUnit.net 00:00:07.58]       300 backlog row(s) of demands that left the catalog were read by the rounds
+[xUnit.net 00:00:07.58]       Stack Trace:
+[xUnit.net 00:00:07.58]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(116,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.ARoundMaterialisesNoBacklogRowOfADemandThatLeftTheCatalog()
+[xUnit.net 00:00:07.58]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(119,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.ARoundMaterialisesNoBacklogRowOfADemandThatLeftTheCatalog()
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.ARoundMaterialisesNoBacklogRowOfADemandThatLeftTheCatalog [1 s]
+  错误消息:
+   300 backlog row(s) of demands that left the catalog were read by the rounds
+  堆栈跟踪:
+[xUnit.net 00:00:08.94]     ControlServer.Tests.DispatchRoundBacklogScaleTests.TheMigrationAddsTheIndexAndDropsTheFieldTemporaryOne [FAIL]
+[xUnit.net 00:00:08.94]       Assert.Contains() Failure: Item not found in collection
+[xUnit.net 00:00:08.94]       Collection: ["IX_AcceptedDemands_TransportDemandKey|CREATE UNIQU"···, "IX_ActiveSlotConfigurations_Fingerprint|CREATE IND"···, "IX_AdministratorAuditRecords_ObjectKind_ObjectId|C"···, "IX_AdministratorAuditRecords_RecordedAtUtcTicks|CR"···, "IX_AgvRestorationAttempts_AgvId_StartedAt|CREATE I"···, ···]
+[xUnit.net 00:00:08.94]       Not found:  "IX_JourneyDemands_DemandId_DispatchGeneration|CREA"···
+[xUnit.net 00:00:08.94]       Stack Trace:
+[xUnit.net 00:00:08.94]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(264,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.TheMigrationAddsTheIndexAndDropsTheFieldTemporaryOne()
+[xUnit.net 00:00:08.94]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(278,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.TheMigrationAddsTheIndexAndDropsTheFieldTemporaryOne()
+[xUnit.net 00:00:09.04]     ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRoundSweepsAtMostOncePerInterval [FAIL]
+[xUnit.net 00:00:09.04]       Assert.Empty() Failure: Collection was not empty
+[xUnit.net 00:00:09.04]       Collection: [JourneyBacklogRow { AcceptedAt = null, DecisionFingerprint = "fingerprint", DemandCreatedAt = 2026-08-22T21:59:00.0000000+00:00, DemandId = "first", FirstSeenAt = 2026-08-22T22:59:00.0000000+00:00, ··· }]
+[xUnit.net 00:00:09.04]       Stack Trace:
+[xUnit.net 00:00:09.04]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(198,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRoundSweepsAtMostOncePerInterval()
+[xUnit.net 00:00:09.04]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(209,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRoundSweepsAtMostOncePerInterval()
+[xUnit.net 00:00:09.37]     ControlServer.Tests.DispatchRoundBacklogScaleTests.EveryRedispatchReadOfARoundSearchesJourneyDemandsByIndex [FAIL]
+[xUnit.net 00:00:09.37]       JourneyDemands is scanned: [SCAN a | CORRELATED SCALAR SUBQUERY 4 | SEARCH a0 USING INDEX sqlite_autoindex_AcceptedDemands_1 (DemandId=?) | CORRELATED SCALAR SUBQUERY 1 | SEARCH j USING INDEX IX_JourneyDemands_DemandId (DemandId=?) | SCAN j0 EXISTS | CORRELATED SCALAR SUBQUERY 2 | SCAN j1] in SELECT "a"."DemandId"
+[xUnit.net 00:00:09.37]       FROM "AcceptedDemands" AS "a"
+[xUnit.net 00:00:09.37]       WHERE "a"."Status" NOT IN ('Succeeded', 'Cancelled') AND NOT EXISTS (
+[xUnit.net 00:00:09.37]           SELECT 1
+[xUnit.net 00:00:09.37]           FROM "AcceptedDemands" AS "a0"
+[xUnit.net 00:00:09.37]           WHERE "a0"."Status" NOT IN ('Succeeded', 'Cancelled') AND NOT EXISTS (
+[xUnit.net 00:00:09.37]               SELECT 1
+[xUnit.net 00:00:09.37]               FROM "JourneyDemands" AS "j"
+[xUnit.net 00:00:09.37]               WHERE "j"."DemandId" = "a0"."DemandId" AND "j"."RemovedAt" IS NULL) AND EXISTS (
+[xUnit.net 00:00:09.37]               SELECT 1
+[xUnit.net 00:00:09.37]               FROM "JourneyDemands" AS "j0"
+[xUnit.net 00:00:09.37]               WHERE "j0"."DemandId" = "a0"."DemandId" AND "j0"."RemovedAt" IS NOT NULL AND "j0"."RemovalReason" IN ('RELEASED_FOR_REDISPATCH', 'RELEASED_AT_STATION_DEADLINE') AND NOT EXISTS (
+[xUnit.net 00:00:09.37]                   SELECT 1
+[xUnit.net 00:00:09.37]                   FROM "JourneyDemands" AS "j1"
+[xUnit.net 00:00:09.37]                   WHERE "j1"."DemandId" = "a0"."DemandId" AND "j1"."DispatchGeneration" > "j0"."DispatchGeneration")) AND "a0"."DemandId" = "a"."DemandId")
+[xUnit.net 00:00:09.37]       Stack Trace:
+[xUnit.net 00:00:09.37]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(78,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.EveryRedispatchReadOfARoundSearchesJourneyDemandsByIndex()
+[xUnit.net 00:00:09.37]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(71,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.EveryRedispatchReadOfARoundSearchesJourneyDemandsByIndex()
+[xUnit.net 00:00:09.37]       Output:
+[xUnit.net 00:00:09.37]         aliases=[j,j0,j1] plan=[SCAN a | CORRELATED SCALAR SUBQUERY 4 | SEARCH a0 USING INDEX sqlite_autoindex_AcceptedDemands_1 (DemandId=?) | CORRELATED SCALAR SUBQUERY 1 | SEARCH j USING INDEX IX_JourneyDemands_DemandId (DemandId=?) | SCAN j0 EXISTS | CORRELATED SCALAR SUBQUERY 2 | SCAN j1]
+[xUnit.net 00:00:09.38]     ControlServer.Tests.DispatchRoundBacklogScaleTests.TheHostRegistersTheRetentionAsASingleton [FAIL]
+[xUnit.net 00:00:09.38]       Assert.Single() Failure: The collection did not contain any matching items
+[xUnit.net 00:00:09.38]       Expected:   (predicate expression)
+[xUnit.net 00:00:09.38]       Collection: [ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.AlreadyAcceptedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.TransportDemandKeySuppressedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.TransportDemandKeyAlreadyAcceptedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.TrialSublotCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.CatalogAgeWindowCriterion, ···]
+[xUnit.net 00:00:09.38]       Stack Trace:
+[xUnit.net 00:00:09.38]         C:\work\8005-wt\cs881-8005-agv-control-server\tests\ControlServer.Tests\DispatchRoundBacklogScaleTests.cs(239,0): at ControlServer.Tests.DispatchRoundBacklogScaleTests.TheHostRegistersTheRetentionAsASingleton()
+[xUnit.net 00:00:09.38]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:09.38]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheMigrationAddsTheIndexAndDropsTheFieldTemporaryOne [1 s]
+  错误消息:
+   Assert.Contains() Failure: Item not found in collection
+Collection: ["IX_AcceptedDemands_TransportDemandKey|CREATE UNIQU"···, "IX_ActiveSlotConfigurations_Fingerprint|CREATE IND"···, "IX_AdministratorAuditRecords_ObjectKind_ObjectId|C"···, "IX_AdministratorAuditRecords_RecordedAtUtcTicks|CR"···, "IX_AgvRestorationAttempts_AgvId_StartedAt|CREATE I"···, ···]
+Not found:  "IX_JourneyDemands_DemandId_DispatchGeneration|CREA"···
+  堆栈跟踪:
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRoundSweepsAtMostOncePerInterval [101 ms]
+  错误消息:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [JourneyBacklogRow { AcceptedAt = null, DecisionFingerprint = "fingerprint", DemandCreatedAt = 2026-08-22T21:59:00.0000000+00:00, DemandId = "first", FirstSeenAt = 2026-08-22T22:59:00.0000000+00:00, ··· }]
+  堆栈跟踪:
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.EveryRedispatchReadOfARoundSearchesJourneyDemandsByIndex [329 ms]
+  错误消息:
+   JourneyDemands is scanned: [SCAN a | CORRELATED SCALAR SUBQUERY 4 | SEARCH a0 USING INDEX sqlite_autoindex_AcceptedDemands_1 (DemandId=?) | CORRELATED SCALAR SUBQUERY 1 | SEARCH j USING INDEX IX_JourneyDemands_DemandId (DemandId=?) | SCAN j0 EXISTS | CORRELATED SCALAR SUBQUERY 2 | SCAN j1] in SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+WHERE "a"."Status" NOT IN ('Succeeded', 'Cancelled') AND NOT EXISTS (
+    SELECT 1
+    FROM "AcceptedDemands" AS "a0"
+    WHERE "a0"."Status" NOT IN ('Succeeded', 'Cancelled') AND NOT EXISTS (
+        SELECT 1
+        FROM "JourneyDemands" AS "j"
+        WHERE "j"."DemandId" = "a0"."DemandId" AND "j"."RemovedAt" IS NULL) AND EXISTS (
+        SELECT 1
+        FROM "JourneyDemands" AS "j0"
+        WHERE "j0"."DemandId" = "a0"."DemandId" AND "j0"."RemovedAt" IS NOT NULL AND "j0"."RemovalReason" IN ('RELEASED_FOR_REDISPATCH', 'RELEASED_AT_STATION_DEADLINE') AND NOT EXISTS (
+            SELECT 1
+            FROM "JourneyDemands" AS "j1"
+            WHERE "j1"."DemandId" = "a0"."DemandId" AND "j1"."DispatchGeneration" > "j0"."DispatchGeneration")) AND "a0"."DemandId" = "a"."DemandId")
+  堆栈跟踪:
+  标准输出消息:
+ aliases=[j,j0,j1] plan=[SCAN a | CORRELATED SCALAR SUBQUERY 4 | SEARCH a0 USING INDEX sqlite_autoindex_AcceptedDemands_1 (DemandId=?) | CORRELATED SCALAR SUBQUERY 1 | SEARCH j USING INDEX IX_JourneyDemands_DemandId (DemandId=?) | SCAN j0 EXISTS | CORRELATED SCALAR SUBQUERY 2 | SCAN j1]
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheHostRegistersTheRetentionAsASingleton [1 ms]
+  错误消息:
+   Assert.Single() Failure: The collection did not contain any matching items
+Expected:   (predicate expression)
+Collection: [ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.AlreadyAcceptedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.TransportDemandKeySuppressedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.TransportDemandKeyAlreadyAcceptedCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.TrialSublotCriterion, ServiceType: ControlServer.Host.Runtime.Dispatch.IDispatchAdmissionCriterion Lifetime: Scoped ImplementationType: ControlServer.Host.Runtime.Dispatch.Criteria.CatalogAgeWindowCriterion, ···]
+  堆栈跟踪:
+[xUnit.net 00:00:14.27]   Finished:    ControlServer.Tests (ID = '820ddfecbf2b3aaf22e4d6ece4ee95be139ddfde82c703ce643fcafd8a4c959c')
+测试总数: 8
+     通过数: 1
+     失败数: 7
+总时间: 15.0551 秒

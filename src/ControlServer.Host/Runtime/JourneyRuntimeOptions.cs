@@ -94,6 +94,15 @@ public sealed class JourneyRuntimeOptions
     /// </remarks>
     public TimeSpan CatalogAgeWindow { get; set; } = DefaultCatalogAgeWindow;
 
+    /// <summary>The default of <see cref="BacklogRetention"/>: three days.</summary>
+    public static readonly TimeSpan DefaultBacklogRetention = TimeSpan.FromDays(3);
+
+    /// <summary>
+    /// How long a backlog row of a demand that left the MesIngest catalog is kept, counted from the last time the catalog listed it
+    /// (control-server#881).
+    /// </summary>
+    public TimeSpan BacklogRetention { get; set; } = DefaultBacklogRetention;
+
     /// <summary>
     /// The trial sublot rule's character position (REQ-0368, CP-0023, control-server#828): counted from 1, the leading
     /// <c>Q</c> of a SUBLOT being character 1. Zero, the default, turns the rule off.
