@@ -43,7 +43,23 @@ public static class ChargingHoldsLeft
     }
 
     /// <summary>清桩之后车还挂着资格暂停时给人看的一句话；没有就为空。</summary>
-    public static string? VehicleNotice(string agvId, IReadOnlyList<ChargingHoldLeft> left)
+    public static string? VehicleNotice(string agvId, IReadOnlyList<ChargingHoldLeft> left) => VehicleNotice(agvId, left, "清桩");
+
+    /// <summary>
+    /// 恢复桩之后，同一次中断给车留下的资格暂停还在时给人看的话，每辆车一句；没有就为空（control-server#877，调度 11-10 并入）。
+    /// </summary>
+    public static string? VehicleNoticeAfterChargerRecovery(IReadOnlyList<ChargingHoldLeft> left)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        string[] notices =
+        [
+            .. left.GroupBy(hold => hold.AgvId ?? "", StringComparer.Ordinal)
+                .Select(vehicle => VehicleNotice(vehicle.Key, [.. vehicle], "充电桩的恢复确认")!),
+        ];
+        return notices.Length == 0 ? null : string.Join(" ", notices);
+    }
+
+    private static string? VehicleNotice(string agvId, IReadOnlyList<ChargingHoldLeft> left, string action)
     {
         ArgumentNullException.ThrowIfNull(left);
         if (left.Count == 0)
@@ -52,7 +68,7 @@ public static class ChargingHoldsLeft
         }
         string holds = string.Join("、", left.Select(hold => string.Create(
             CultureInfo.InvariantCulture, $"{hold.HoldId}（原因 {hold.Reason}，写入于 {hold.HeldAt:O}）")));
-        return $"车 {agvId} 还挂着充电资格保持 {holds}。清桩不会解除它，需单独解除：查明原因后经车辆充电资格恢复入口 " +
+        return $"车 {agvId} 还挂着充电资格保持 {holds}。{action}不会解除它，需单独解除：查明原因后经车辆充电资格恢复入口 " +
                $"POST {ChargingStationEndpoints.VehicleRecoveryRoute}；不解除的话，这辆车电量低于强制充电线时分不到任何充电桩。";
     }
 

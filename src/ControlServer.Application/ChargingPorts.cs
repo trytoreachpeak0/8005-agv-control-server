@@ -493,6 +493,10 @@ public interface IChargingHoldStore
     /// </summary>
     Task<IReadOnlyList<ChargingStationAllocationHold>> ListActiveStationHoldsOfCyclesAsync(
         IReadOnlyCollection<string> cycleIds, CancellationToken cancellationToken);
+
+    /// <summary>同 <see cref="ListActiveStationHoldsOfCyclesAsync"/>，车辆一侧（control-server#877：恢复桩时点名同一次中断还暂停着的车）。</summary>
+    Task<IReadOnlyList<VehicleChargingEligibilityHold>> ListActiveVehicleHoldsOfCyclesAsync(
+        IReadOnlyCollection<string> cycleIds, CancellationToken cancellationToken);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

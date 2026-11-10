@@ -166,6 +166,14 @@ public static class ChargingStationEndpoints
             "Vehicle {VehicleKey}'s charging eligibility is back: {OperatorId} confirmed its recovery, closing {Count} hold(s). " +
             "No charger's allocation hold is touched (REQ-0286: the vehicle and the charger recover each on its own evidence).");
 
+    private static readonly Action<ILogger, int, int, string, string, Exception?> LogVehicleHoldsLeftAfterChargerRecovery =
+        LoggerMessage.Define<int, int, string, string>(
+            LogLevel.Warning,
+            new EventId(2345, nameof(LogVehicleHoldsLeftAfterChargerRecovery)),
+            "Charger {MapId}/{StationId} is back in allocation, but the same interruption left charging eligibility {Holds} still in " +
+            "force. Recovering the charger does not lift it (REQ-0286): until it is recovered with POST {Route} no charger is " +
+            "allocated to that vehicle.");
+
     private static readonly Action<ILogger, string, string, string, Exception?> LogStationHoldsLeft =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -327,6 +335,7 @@ public static class ChargingStationEndpoints
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(holds);
+        ArgumentNullException.ThrowIfNull(fleet);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(recoveryOptions);
         ArgumentNullException.ThrowIfNull(timeProvider);
@@ -385,7 +394,27 @@ public static class ChargingStationEndpoints
             new { request.MapId, request.StationId, operatorId, basis, claimedRole, recovered, result = "RECOVERED" },
             cancellationToken).ConfigureAwait(false);
         LogRecovered(logger, request.MapId, request.StationId, operatorId!, recovered.Count, null);
-        return TypedResults.Ok(new ChargingStationHoldResponse(request.MapId, request.StationId, "RECOVERED", recovered, []));
+
+        // control-server#877 (added by the coordinator 11-10): the same interruption paused the vehicle's charging eligibility
+        // too, and recovering the charger does not lift it (REQ-0286); say which one is left and where it is lifted.
+        ChargingHoldLeft[] vehiclesLeft =
+        [
+            .. (await holds.ListActiveVehicleHoldsOfCyclesAsync(
+                        [.. active.Select(hold => hold.CycleId).OfType<string>()], cancellationToken)
+                    .ConfigureAwait(false))
+                .Select(hold => ChargingHoldsLeft.Of(hold, fleet.ByVehicleKey(hold.VehicleKey)?.AgvId ?? hold.VehicleKey)),
+        ];
+        if (vehiclesLeft.Length > 0)
+        {
+            LogVehicleHoldsLeftAfterChargerRecovery(
+                logger, request.MapId, request.StationId,
+                string.Join("; ", vehiclesLeft.Select(hold =>
+                    $"vehicle {hold.AgvId} {ChargingHoldsLeft.Describe(hold.HoldId, hold.Reason, hold.HeldAt)}")),
+                VehicleRecoveryRoute, null);
+        }
+        return TypedResults.Ok(new ChargingStationHoldResponse(
+            request.MapId, request.StationId, "RECOVERED", recovered, [], vehiclesLeft,
+            ChargingHoldsLeft.VehicleNoticeAfterChargerRecovery(vehiclesLeft)));
     }
 
     // ---- 车辆充电资格恢复（放宽，批次9-09）------------------------------------------------------------------------------------
