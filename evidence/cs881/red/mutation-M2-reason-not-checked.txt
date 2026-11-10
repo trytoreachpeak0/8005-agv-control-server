@@ -1,0 +1,20 @@
+== M2-reason-not-checked
+-            row.ReasonCode == DispatchReasonCodes.DemandLeftCatalog &&
++            true &&
+    0 个错误
+[xUnit.net 00:00:03.48]       Expected: 2
+[xUnit.net 00:00:03.48]       Actual:   3
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRetentionDefaultsToThreeDaysAndMayNotBeShorterThanAnHour [15 ms]
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.ThePurgeDeletesOnlyRowsThatMeetEveryCondition [1 s]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   3
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.ADemandThatJustLeftTheCatalogIsStillMarked [324 ms]
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.ARoundMaterialisesNoBacklogRowOfADemandThatLeftTheCatalog [1 s]
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheMigrationAddsTheIndexAndDropsTheFieldTemporaryOne [1 s]
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRoundSweepsAtMostOncePerInterval [107 ms]
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.EveryRedispatchReadOfARoundSearchesJourneyDemandsByIndex [322 ms]
+  已通过 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheHostRegistersTheRetentionAsASingleton [1 ms]
+     通过数: 7
+     失败数: 1

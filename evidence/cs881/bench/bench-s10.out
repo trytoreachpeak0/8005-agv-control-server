@@ -1,0 +1,70 @@
+migrated in 1008 ms
+migrated in 1072 ms
+purged 6698 rows in 963 ms
+### pass=1 db=B0
+mode=old listed=390 reps=30 saves=10
+tracked backlog rows=23808 touchable=390
+load         p50=    88.7 ms  p90=   119.6 ms  max=   180.7 ms
+redispatch   p50=  3795.9 ms  p90=  3834.4 ms  max=  3855.7 ms
+orphan       p50=  1700.9 ms  p90=  1728.7 ms  max=  1737.3 ms
+saves(10)    p50=   805.2 ms  p90=   876.9 ms  max=   892.2 ms
+total        p50=  6404.7 ms  p90=  6507.1 ms  max=  6572.4 ms
+### pass=1 db=B1
+mode=old listed=390 reps=30 saves=10
+tracked backlog rows=23808 touchable=390
+load         p50=    87.4 ms  p90=    97.4 ms  max=   262.5 ms
+redispatch   p50=    57.0 ms  p90=    68.8 ms  max=    77.5 ms
+orphan       p50=     8.9 ms  p90=    12.2 ms  max=    13.5 ms
+saves(10)    p50=   811.0 ms  p90=   975.6 ms  max=  1012.7 ms
+total        p50=   972.5 ms  p90=  1139.1 ms  max=  1211.7 ms
+### pass=1 db=A0
+mode=new listed=390 reps=30 saves=10
+tracked backlog rows=390 touchable=390
+load         p50=    16.0 ms  p90=    22.6 ms  max=    36.2 ms
+redispatch   p50=    18.7 ms  p90=    22.2 ms  max=    35.2 ms
+orphan       p50=     8.8 ms  p90=    10.4 ms  max=    13.5 ms
+saves(10)    p50=   114.5 ms  p90=   122.4 ms  max=   187.4 ms
+total        p50=   156.2 ms  p90=   177.1 ms  max=   251.6 ms
+### pass=1 db=A
+mode=new listed=390 reps=30 saves=10
+tracked backlog rows=390 touchable=390
+load         p50=    12.7 ms  p90=    16.7 ms  max=    34.1 ms
+redispatch   p50=    18.0 ms  p90=    21.0 ms  max=    36.0 ms
+orphan       p50=     9.0 ms  p90=    10.7 ms  max=    13.8 ms
+saves(10)    p50=   113.7 ms  p90=   127.9 ms  max=   337.8 ms
+total        p50=   154.9 ms  p90=   172.5 ms  max=   377.1 ms
+migrated in 615 ms
+migrated in 806 ms
+purged 6698 rows in 968 ms
+### pass=2 db=B0
+mode=old listed=390 reps=30 saves=10
+tracked backlog rows=23808 touchable=390
+load         p50=    87.7 ms  p90=   114.2 ms  max=   188.4 ms
+redispatch   p50=  3758.4 ms  p90=  3772.2 ms  max=  3832.5 ms
+orphan       p50=  1685.7 ms  p90=  1713.2 ms  max=  1762.0 ms
+saves(10)    p50=   830.2 ms  p90=   882.9 ms  max=   910.2 ms
+total        p50=  6364.1 ms  p90=  6447.4 ms  max=  6537.6 ms
+### pass=2 db=B1
+mode=old listed=390 reps=30 saves=10
+tracked backlog rows=23808 touchable=390
+load         p50=    88.2 ms  p90=   119.3 ms  max=   269.0 ms
+redispatch   p50=    57.5 ms  p90=    70.2 ms  max=    77.3 ms
+orphan       p50=     9.2 ms  p90=    12.3 ms  max=    13.2 ms
+saves(10)    p50=   802.2 ms  p90=   854.3 ms  max=   948.8 ms
+total        p50=   958.9 ms  p90=  1044.8 ms  max=  1202.5 ms
+### pass=2 db=A0
+mode=new listed=390 reps=30 saves=10
+tracked backlog rows=390 touchable=390
+load         p50=    15.5 ms  p90=    22.1 ms  max=    37.4 ms
+redispatch   p50=    18.0 ms  p90=    21.8 ms  max=    28.5 ms
+orphan       p50=     8.8 ms  p90=    11.1 ms  max=    13.2 ms
+saves(10)    p50=   114.1 ms  p90=   125.1 ms  max=   303.3 ms
+total        p50=   158.6 ms  p90=   176.3 ms  max=   359.5 ms
+### pass=2 db=A
+mode=new listed=390 reps=30 saves=10
+tracked backlog rows=390 touchable=390
+load         p50=    13.2 ms  p90=    18.1 ms  max=    33.7 ms
+redispatch   p50=    18.8 ms  p90=    22.5 ms  max=    27.8 ms
+orphan       p50=     8.8 ms  p90=     9.3 ms  max=    13.7 ms
+saves(10)    p50=   114.5 ms  p90=   128.4 ms  max=   187.9 ms
+total        p50=   154.2 ms  p90=   179.2 ms  max=   249.4 ms
