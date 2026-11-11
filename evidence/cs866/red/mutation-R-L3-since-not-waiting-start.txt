@@ -1,0 +1,13 @@
+mutation: R-L3-since-not-waiting-start
+file: src/ControlServer.Host/Dashboard/ChargingAlarmsQueryEndpoint.cs
+diff:
+-                ? journey.WaitingSince
++                ? (journey.AgvId.Length > 0 ? null : journey.WaitingSince)
+filter: FullyQualifiedName~ThePickupPlanReachesTheVehicleHeldAtACheckpoint|FullyQualifiedName~ATransportFailureAtACheckpoint|FullyQualifiedName~TwoVehiclesBehindTheReadinessGate|FullyQualifiedName~ALoadedVehicleBelowTheLineIsAlarmedWhileDriving|FullyQualifiedName~ALoadedVehicleWhoseBatteryCannotBeRead|FullyQualifiedName~OneFailedCheckpointReadDoesNotRestartTheWait|FullyQualifiedName~ACheckpointSamplePastItsBudget|FullyQualifiedName~ATransportBelowTheLineThatCannotBeRead|FullyQualifiedName~ACheckpointHoldOnALegWithTheSessionNotReady|FullyQualifiedName~BehindTheReadinessGateACheckpoint|FullyQualifiedName~ALoadedVehicleWaitingAtItsUnload|FullyQualifiedName~OnlyAWaitingJourneyThatCarriesDemands
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ALoadedVehicleWaitingAtItsUnloadBelowTheMandatoryLineIsAlarmedOnTheDashboardUntilItsBatteryIsBackAboveIt [4 s]
+  错误消息:
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ALoadedVehicleWhoseBatteryCannotBeReadStaysAlarmedWithItsLastReadingBelowTheLine [2 s]
+  错误消息:
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ALoadedVehicleBelowTheLineIsAlarmedWhileDrivingFromTheFirstReadingBelowIt [2 s]
+  错误消息:
+失败!  - 失败:     3，通过:    10，已跳过:     0，总计:    13，持续时间: 19 s - ControlServer.Tests.dll (net8.0)

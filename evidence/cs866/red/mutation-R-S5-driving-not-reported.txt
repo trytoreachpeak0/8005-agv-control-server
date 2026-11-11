@@ -1,0 +1,10 @@
+mutation: R-S5-driving-not-reported
+file: src/ControlServer.Host/Dashboard/ChargingAlarmsQueryEndpoint.cs
+diff:
+-        if (_board.Batteries.Latest(journey.AgvId) is not { } latest)
++        if ((!waiting && journey.AgvId.Length > 0) || _board.Batteries.Latest(journey.AgvId) is not { } latest)
+filter: FullyQualifiedName~ThePickupPlanReachesTheVehicleHeldAtACheckpoint|FullyQualifiedName~ATransportFailureAtACheckpoint|FullyQualifiedName~TwoVehiclesBehindTheReadinessGate|FullyQualifiedName~ALoadedVehicleBelowTheLineIsAlarmedWhileDriving|FullyQualifiedName~ALoadedVehicleWhoseBatteryCannotBeRead|FullyQualifiedName~OneFailedCheckpointReadDoesNotRestartTheWait|FullyQualifiedName~ACheckpointSamplePastItsBudget|FullyQualifiedName~ATransportBelowTheLineThatCannotBeRead|FullyQualifiedName~ACheckpointHoldOnALegWithTheSessionNotReady|FullyQualifiedName~BehindTheReadinessGateACheckpoint|FullyQualifiedName~ALoadedVehicleWaitingAtItsUnload|FullyQualifiedName~OnlyAWaitingJourneyThatCarriesDemands
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ALoadedVehicleBelowTheLineIsAlarmedWhileDrivingFromTheFirstReadingBelowIt [2 s]
+  错误消息:
+   Assert.Single() Failure: The collection was empty
+失败!  - 失败:     1，通过:    12，已跳过:     0，总计:    13，持续时间: 19 s - ControlServer.Tests.dll (net8.0)

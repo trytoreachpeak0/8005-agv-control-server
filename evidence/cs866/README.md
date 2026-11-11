@@ -57,3 +57,20 @@ Filter: the five new tests.
 - Battery source for the driving alarm (S5): the dispatch round's `ReadVehicleAsync` for every admitted vehicle, which
   already ran before the en-route plan check; recorded in memory on `ChargingAllocationBoard.Batteries`. No RIoT request
   and no database write were added to either round.
+
+### Rework mutations (on `61e22987c`, one file each, runtime condition, restored after; filter: every cs#866 test)
+
+| Mutation | Review item | Result |
+| --- | --- | --- |
+| R-M1 | checkpoint code not taken as explained by the own order | 2 red (pickup plan test; S3 test, whose cut is then never reached) |
+| R-M2 | an unread sample taken as "not waiting" | 2 red (`OneFailedCheckpointReadDoesNotRestartTheWait`, both sides of the gate) |
+| R-M3 | no fallback to the last reading when the watch reads nothing | 2 red (engine M3 test, D-UNREAD) |
+| R-S1 | gate ration keyed for the whole fleet | 1 red (two-vehicle test) |
+| R-S2 | no sample budget | 1 red (round took 20 s) |
+| R-S3 | transport failure guard ignores checkpoint codes | 1 red (`JOURNEY_ADVANCE_FAILED`) |
+| R-S4 | endpoint not isolated | 1 red |
+| R-S5 | driving journeys not reported | 1 red |
+| R-S5b | dispatch round does not record its reading | 1 red |
+| R-L3 | since not the waiting start | 3 red |
+
+`green/targeted-review-rework.txt`: 1591 targeted green on the committed head after a no-incremental build.
