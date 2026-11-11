@@ -1,0 +1,22 @@
+mutation: M1-gate-never-asks-checkpoint
+file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+diff:
+-        if (!WaitsOnAnArrivalTheVehicleReports(runtime.Stage))
++        if (!WaitsOnAnArrivalTheVehicleReports(runtime.Stage) || runtime.VehicleKey.Length > 0)
+filter: FullyQualifiedName~ACheckpointHoldOnALegWithTheSessionNotReady|FullyQualifiedName~BehindTheReadinessGateACheckpoint|FullyQualifiedName~ALoadedVehicleWaitingAtItsUnload|FullyQualifiedName~ALoadedVehicleDrivingBelowTheLine|FullyQualifiedName~OnlyAWaitingJourneyThatCarriesDemands
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ALoadedVehicleDrivingBelowTheLineIsNotAlarmedUntilItIsHeldAtACheckpoint [2 s]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: 35
+Actual:   80
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ACheckpointHoldOnALegWithTheSessionNotReadyOnItsOwnOrderIsAWaitThatIsWarnedAbout [2 s]
+  错误消息:
+   Assert.Equal() Failure: Strings differ
+Expected: "VEHICLE_WAITING_AT_CHECKPOINT"
+Actual:   "ONBOARD_SESSION_NOT_READY"
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.BehindTheReadinessGateACheckpointIsAskedAboutAtMostOnceEveryHalfMinutePerVehicle [1 s]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   0
+失败!  - 失败:     3，通过:     2，已跳过:     0，总计:     5，持续时间: 11 s - ControlServer.Tests.dll (net8.0)
