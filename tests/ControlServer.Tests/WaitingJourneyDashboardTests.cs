@@ -226,7 +226,7 @@ public sealed class WaitingJourneyDashboardTests
 
     /// <summary>
     /// 「充电告警」卡片上带单车低于强制充电线的那一条（control-server#866）报给谁、不报给谁：只报<b>带单</b>、<b>停着等</b>（与等人卡片同一个判法）、
-    /// 监看落库的读数<b>低于</b>这辆车强制充电线的旅程。空闲返回与充电旅程没有单，照旧走充电队列，不报；正常在路上的不报；等于线不报；
+    /// 监看落库的读数<b>低于</b>这辆车强制充电线的旅程。空闲返回与充电旅程没有单，照旧走充电队列，不报；在路上的不拿库里等人时留下的旧读数报（行驶中的读数取派车轮那一次，这里没有）；等于线不报；
     /// 没有已批准策略的车判不了强制线，只在救命线下报。读不到停靠的旅程照样报，位置写读不到。
     /// </summary>
     [Fact]
@@ -260,6 +260,31 @@ public sealed class WaitingJourneyDashboardTests
         JsonElement rescue = Assert.Single(await TransportBelowLineAlarmsAsync(database, TestChargingPolicies.None));
         Assert.Equal("AGV-D-RESCUE", rescue.GetProperty("agvId").GetString());
         Assert.Contains("救命线 15%", rescue.GetProperty("detail").GetString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 审查 S4：这一类告警读不出来（这里是充电策略解析抛异常）不能让整张充电告警卡片空掉或报错：其余告警照出，这一类出一行「读不到」。
+    /// </summary>
+    [Fact]
+    public async Task ATransportBelowTheLineThatCannotBeReadSaysSoAndLeavesTheRestOfTheCardStanding()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        await database.AddAsync("D-LOW", JourneyRuntimeStage.AwaitingUnloadResult, stageStart: Now.AddMinutes(-40),
+            battery: 29, readAt: Now.AddSeconds(-2));
+
+        JsonElement alarm = Assert.Single(await TransportBelowLineAlarmsAsync(database, new ThrowingChargingPolicy()));
+        Assert.Equal(JsonValueKind.Null, alarm.GetProperty("agvId").ValueKind);
+        Assert.Contains("读不到", alarm.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        Assert.Contains(nameof(InvalidDataException), alarm.GetProperty("detail").GetString(), StringComparison.Ordinal);
+    }
+
+    private sealed class ThrowingChargingPolicy : IChargingPolicyResolver
+    {
+        public Task<VehicleChargingPolicyDecision> ResolveForNewDecisionAsync(string vehicleKey, CancellationToken cancellationToken) =>
+            throw new InvalidDataException("The charging policy store could not be read.");
+
+        public Task<ChargingPolicyVersion> ReadFrozenAsync(long version, CancellationToken cancellationToken) =>
+            throw new InvalidDataException("The charging policy store could not be read.");
     }
 
     private static async Task<JsonElement[]> TransportBelowLineAlarmsAsync(DashboardDatabase database, IChargingPolicyResolver chargingPolicy)

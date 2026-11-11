@@ -2024,18 +2024,36 @@ internal static class JourneyRuntimeWorkerTestKit
 
         private int _motionSampleCount;
 
-        public Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
+        /// <summary>
+        /// How many of the next motion samples come back the way the product gateway answers an SDK failure: no movement state,
+        /// motion Unknown (control-server#866 review M2).
+        /// </summary>
+        public int FailNextMotionSamples { get; set; }
+
+        /// <summary>Awaited inside every motion sample, with the caller's token: a RIoT that answers late (control-server#866 review S2).</summary>
+        public Func<CancellationToken, Task>? MotionSampleDelay { get; set; }
+
+        public async Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
             Interlocked.Increment(ref _motionSampleCount);
-            return Task.FromResult(new VehicleMotionSample(
+            if (MotionSampleDelay is { } delay)
+            {
+                await delay(cancellationToken);
+            }
+            if (FailNextMotionSamples > 0)
+            {
+                FailNextMotionSamples--;
+                return new VehicleMotionSample(
+                    deviceKey, VehicleMotionReading.Unknown, null, null, null, null, _clock.GetUtcNow());
+            }
+            return new VehicleMotionSample(
                 deviceKey,
                 HttpRiotMovementGateway.ReadMotion(MovementState, Vehicle.Speed),
                 MovementState,
                 Vehicle.Speed,
                 Vehicle.CurrentMap,
                 Vehicle.CurrentStationId,
-                _clock.GetUtcNow() - MotionObservedAtLag));
+                _clock.GetUtcNow() - MotionObservedAtLag);
         }
 
         /// <summary>

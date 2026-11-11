@@ -659,6 +659,8 @@ public sealed class WaitingJourneyBatteryWatchTests
         Assert.Equal("HIGH", alarm.GetProperty("severity").GetString());
         Assert.Equal(runtime.MapId, alarm.GetProperty("mapId").GetInt32());
         Assert.Equal(TaskTypeStationRuntimeSeed.GateStationRiotId, alarm.GetProperty("stationId").GetInt32());
+        // Review L3: standing since the vehicle began to wait there.
+        Assert.Equal(arrived, alarm.GetProperty("since").GetDateTimeOffset());
         string detail = alarm.GetProperty("detail").GetString()!;
         Assert.Contains("电量 39%", detail, StringComparison.Ordinal);
         Assert.Contains(read.ToString("O", System.Globalization.CultureInfo.InvariantCulture), detail, StringComparison.Ordinal);
@@ -679,33 +681,152 @@ public sealed class WaitingJourneyBatteryWatchTests
     }
 
     /// <summary>
-    /// 路上：会话因本服务端自己的在途单而未就绪、车正常在开，电量已在线下也不报（它没卡住，到站或卡住时才算）；在检查点卡住了就报，
-    /// 位置写「开往 闸口站 途中」。放行后告警消失。
+    /// 行驶中也报（control-server#866 审查 S5，调度定）：11-08 那辆车 23:16 已在 39%，23:30 才到站。路上会话因本服务端自己的在途单而未就绪、
+    /// 车正常在开，读数取自派车轮本来就为在途车读的那一次（不多一个 RIoT 请求），位置写「开往 闸口 途中」，<c>since</c> 是首次读到低于线的时刻；
+    /// 在检查点卡住后转为停着等，<c>since</c> 换成开始等的时刻（审查 L3）；电量回到线上，告警消失。
     /// </summary>
     [Fact]
-    public async Task ALoadedVehicleDrivingBelowTheLineIsNotAlarmedUntilItIsHeldAtACheckpoint()
+    public async Task ALoadedVehicleBelowTheLineIsAlarmedWhileDrivingFromTheFirstReadingBelowIt()
     {
         await using RuntimeFixture fixture = await DrivingWithTheSessionNotReadyAsync();
         DateTimeOffset left = fixture.Clock.GetUtcNow();
-        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 35 };
-        await RoundAtAsync(fixture, left + TimeSpan.FromSeconds(40));
-        Assert.Equal(JourneyWaitClassification.SessionNotReadyReason, (await ReloadAsync(fixture)).BlockReasonCode);
         Assert.Empty(await TransportBelowLineAlarmsAsync(fixture));
 
-        fixture.Riot.MovementState = RiotMovementStates.WaitForCheckpoint;
-        await RoundAtAsync(fixture, left + TimeSpan.FromSeconds(80));
-        JourneyRuntimeRow runtime = await ReloadAsync(fixture);
-        Assert.Equal(35, runtime.WaitingBatteryPercent);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 35 };
+        DateTimeOffset firstBelow = left + TimeSpan.FromSeconds(40);
+        await RoundAtAsync(fixture, firstBelow);
+        JourneyRuntimeRow driving = await ReloadAsync(fixture);
+        Assert.Equal(JourneyWaitClassification.SessionNotReadyReason, driving.BlockReasonCode);
+        Assert.Null(driving.WaitingSince);
         JsonElement alarm = Assert.Single(await TransportBelowLineAlarmsAsync(fixture));
         Assert.Equal(TaskTypeStationRuntimeSeed.GateStationRiotId, alarm.GetProperty("stationId").GetInt32());
+        Assert.Equal(firstBelow, alarm.GetProperty("since").GetDateTimeOffset());
         string detail = alarm.GetProperty("detail").GetString()!;
         Assert.Contains("电量 35%", detail, StringComparison.Ordinal);
         Assert.Contains("开往 ", detail, StringComparison.Ordinal);
-        Assert.Contains("VEHICLE_WAITING_AT_CHECKPOINT", detail, StringComparison.Ordinal);
+        Assert.Contains("行驶中", detail, StringComparison.Ordinal);
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 34 };
+        await RoundAtAsync(fixture, left + TimeSpan.FromSeconds(60));
+        alarm = Assert.Single(await TransportBelowLineAlarmsAsync(fixture));
+        Assert.Contains("电量 34%", alarm.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        Assert.Equal(firstBelow, alarm.GetProperty("since").GetDateTimeOffset());
+
+        fixture.Riot.MovementState = RiotMovementStates.WaitForCheckpoint;
+        DateTimeOffset held = left + TimeSpan.FromSeconds(80);
+        await RoundAtAsync(fixture, held);
+        Assert.Equal(held, (await ReloadAsync(fixture)).WaitingSince);
+        alarm = Assert.Single(await TransportBelowLineAlarmsAsync(fixture));
+        Assert.Equal(held, alarm.GetProperty("since").GetDateTimeOffset());
+        Assert.Contains("VEHICLE_WAITING_AT_CHECKPOINT", alarm.GetProperty("detail").GetString(), StringComparison.Ordinal);
 
         fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 41 };
         await RoundAtAsync(fixture, left + TimeSpan.FromSeconds(120));
+        Assert.Null((await ReloadAsync(fixture)).WaitingSince);
         Assert.Empty(await TransportBelowLineAlarmsAsync(fixture));
+    }
+
+    /// <summary>
+    /// 审查 M3：车快断电时 RIoT 往往正好读不到，监看那一轮把读数记成空。告警不能在这时消失：沿用上一次低于线的读数照报，写明自何时起读不到。
+    /// </summary>
+    [Fact]
+    public async Task ALoadedVehicleWhoseBatteryCannotBeReadStaysAlarmedWithItsLastReadingBelowTheLine()
+    {
+        await using RuntimeFixture fixture = await GateUnloadAsync();
+        DateTimeOffset arrived = fixture.Clock.GetUtcNow();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 39 };
+        DateTimeOffset read = arrived + TimeSpan.FromSeconds(2);
+        await RoundAtAsync(fixture, read);
+        Assert.Single(await TransportBelowLineAlarmsAsync(fixture));
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = null };
+        DateTimeOffset unread = read + TimeSpan.FromSeconds(2);
+        await RoundAtAsync(fixture, unread);
+        Assert.Null((await ReloadAsync(fixture)).WaitingBatteryPercent);
+
+        JsonElement alarm = Assert.Single(await TransportBelowLineAlarmsAsync(fixture));
+        string detail = alarm.GetProperty("detail").GetString()!;
+        Assert.Contains("电量 39%", detail, StringComparison.Ordinal);
+        Assert.Contains(read.ToString("O", System.Globalization.CultureInfo.InvariantCulture), detail, StringComparison.Ordinal);
+        Assert.Contains(
+            "自 " + unread.ToString("O", System.Globalization.CultureInfo.InvariantCulture) + " 起读不到", detail,
+            StringComparison.Ordinal);
+        Assert.Equal(arrived, alarm.GetProperty("since").GetDateTimeOffset());
+    }
+
+    /// <summary>
+    /// 审查 M2：检查点读一次失败（网关把 SDK 失败答成没有 movementState）不是「车走了」。修前码被换回会话未就绪、等待起点清零，
+    /// RIoT 每 10 分钟失败一次 10-23 就会重演。读不到时保留已有的检查点码与台账，闸门两侧一样。
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task OneFailedCheckpointReadDoesNotRestartTheWait(bool sessionNotReady)
+    {
+        await using RuntimeFixture fixture = sessionNotReady
+            ? await DrivingWithTheSessionNotReadyAsync()
+            : await DrivingWithTheSessionReadyAsync();
+        DateTimeOffset left = fixture.Clock.GetUtcNow();
+        fixture.Riot.MovementState = RiotMovementStates.WaitForCheckpoint;
+        DateTimeOffset held = left + TimeSpan.FromMinutes(1);
+        await RoundAtAsync(fixture, held);
+        JourneyRuntimeRow holding = await ReloadAsync(fixture);
+        Assert.Equal("VEHICLE_WAITING_AT_CHECKPOINT", holding.BlockReasonCode);
+        Assert.Equal(held, holding.WaitingSince);
+
+        fixture.Riot.FailNextMotionSamples = 1;
+        await RoundAtAsync(fixture, held + TimeSpan.FromMinutes(9));
+        Assert.Equal(0, fixture.Riot.FailNextMotionSamples);
+        JourneyRuntimeRow unread = await ReloadAsync(fixture);
+        Assert.Contains("CHECKPOINT", unread.BlockReasonCode ?? "(none)", StringComparison.Ordinal);
+        Assert.Equal(held, unread.WaitingSince);
+        Assert.Empty(WatchEntries(fixture));
+
+        await RoundAtAsync(fixture, held + fixture.Options.WaitingJourneyWarningAfter);
+        (_, string message) = Assert.Single(WatchEntries(fixture));
+        Assert.Contains("for 10 min", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 审查 S2：闸门后的采样是两次 RIoT 读，SDK 自己的超时各 30 秒，没有预算时一个不应答的 RIoT 能把整轮（连同派车）拖住一分钟。
+    /// 与监看读电量同一个预算（<c>WaitingJourneyBatteryReadBudget</c>）；超出按读不到处理，保留已有的检查点码。
+    /// </summary>
+    [Fact]
+    public async Task ACheckpointSamplePastItsBudgetBehindTheGateIsUnreadAndDoesNotHoldTheRoundBack()
+    {
+        await using RuntimeFixture fixture = await DrivingWithTheSessionNotReadyAsync();
+        DateTimeOffset left = fixture.Clock.GetUtcNow();
+        fixture.Riot.MovementState = RiotMovementStates.WaitForCheckpoint;
+        DateTimeOffset held = left + TimeSpan.FromSeconds(40);
+        await RoundAtAsync(fixture, held);
+        Assert.Equal("VEHICLE_WAITING_AT_CHECKPOINT", (await ReloadAsync(fixture)).BlockReasonCode);
+
+        fixture.Options.WaitingJourneyBatteryReadBudget = TimeSpan.FromMilliseconds(200);
+        fixture.Riot.MotionSampleDelay = token => Task.Delay(TimeSpan.FromSeconds(20), token);
+        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
+        await RoundAtAsync(fixture, held + TimeSpan.FromSeconds(40));
+        elapsed.Stop();
+
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"The round took {elapsed.Elapsed}.");
+        JourneyRuntimeRow runtime = await ReloadAsync(fixture);
+        Assert.Equal("VEHICLE_WAITING_AT_CHECKPOINT", runtime.BlockReasonCode);
+        Assert.Equal(held, runtime.WaitingSince);
+    }
+
+    /// <summary>同一趟旅程在开往闸口的路上，会话一直 Ready（合成车载端），到站没报：每轮走到站分支里的检查点判定。</summary>
+    private static async Task<RuntimeFixture> DrivingWithTheSessionReadyAsync()
+    {
+        RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow onTheWay = await fixture.AdvanceToGateArrivalAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, onTheWay.Stage);
+        await RoundAtAsync(fixture, fixture.Clock.GetUtcNow() + TimeSpan.FromSeconds(2));
+        JourneyRuntimeRow driving = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, driving.Stage);
+        Assert.Null(driving.BlockReasonCode);
+        return fixture;
     }
 
     /// <summary>
