@@ -480,11 +480,9 @@ public static class JourneyWithdrawal
         if (riotOrders is null && Trimmed(request.RiotVerification) is null) codes.Add(RiotVerificationRequired);
         // Online, the server reads RIoT for itself (control-server#771 part 2), as the fault recovery does for the same question
         // (VehicleFaultRecoveryService.VehicleOrderReasons). An incomplete answer is refused, never taken as "no order": nobody typed
-        // a verification to fall back on. Which of the listed orders are this journey's is judged once its intents are read.
-        if (riotOrders is { IsKnown: false })
-        {
-            codes.Add(RiotOrdersUnknown);
-        }
+        // a verification to fall back on. Which of the listed orders are this journey's is judged once its intents are read; the
+        // code itself is added after "already withdrawn" is judged, so a replay answers ALREADY_DONE however RIoT reads then
+        // (control-server#771 review L1).
         if (journeyId is null) codes.Add(JourneyRequired);
         if (vehicleKey is null) codes.Add(VehicleRequired);
         if (!Fits(request)) codes.Add(FieldTooLong);
@@ -513,6 +511,10 @@ public static class JourneyWithdrawal
             }
             codes.Add(JourneyAlreadyCompleted);
             return Refused(codes);
+        }
+        if (riotOrders is { IsKnown: false })
+        {
+            codes.Add(RiotOrdersUnknown);
         }
         if (runtime.CarriesNoDemand())
         {
@@ -622,18 +624,23 @@ public static class JourneyWithdrawal
             .ConfigureAwait(false);
 
         // Online (the user's option 2, 2026-10-25): an order RIoT still runs for the vehicle that is one of this journey's own -- its
-        // orderId on one of the intents above -- is cancelled through the order command surface before the withdrawal; any other is
-        // not this server's to cancel here, and refuses.
+        // orderId on one of the intents above -- is cancelled through the order command surface before the withdrawal, on the way to
+        // the pickup and nowhere else (control-server#771 review M1, Coordinator14 2026-11-11). That is the shape the user chose it
+        // for (agv01, 10-18). On any other leg the engine names the cancelled order ORDER_ENDED_WITHOUT_ARRIVAL, the leg is then no
+        // longer withdrawable, and the journey would be left half way with no exit -- so there the order is refused, as is any order
+        // not this journey's.
         JourneyWithdrawalRiotOrders? riot = null;
         if (riotOrders is not null)
         {
+            bool onTheWayToThePickup = runtime.Stage == JourneyRuntimeStage.AwaitingPickupArrival;
             riot = new JourneyWithdrawalRiotOrders(
                 riotOrders.IsKnown,
                 [.. riotOrders.UnfinishedOrderIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
                     .Select(orderId => intents.FirstOrDefault(intent => string.Equals(intent.OrderId, orderId, StringComparison.Ordinal)) is { } own
-                        ? new JourneyWithdrawalRiotOrder(orderId, own.UpperId, CancelBeforeWithdrawal)
+                        ? new JourneyWithdrawalRiotOrder(
+                            orderId, own.UpperId, onTheWayToThePickup ? CancelBeforeWithdrawal : OwnOrderNotCancelledAtThisStage)
                         : new JourneyWithdrawalRiotOrder(orderId, null, NotThisJourneys))]);
-            if (riot.Orders.Any(order => order.Disposition == NotThisJourneys))
+            if (riot.Orders.Any(order => order.Disposition != CancelBeforeWithdrawal))
             {
                 codes.Add(RiotOrderNotFinished);
             }

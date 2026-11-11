@@ -147,9 +147,15 @@ public sealed class JourneyWithdrawalService(
             second,
             JourneyWithdrawalBinding.AfterCancellation(held.CancellationDigest!, [.. own.Select(order => order.UpperId!)]),
             cancellationToken).ConfigureAwait(false);
-        return withdrawn is null
-            ? Busy(second)
-            : await AfterTheGateAsync(request, withdrawn, cancellationToken).ConfigureAwait(false);
+        if (withdrawn is null)
+        {
+            // The orders are cancelled and the vehicle has stopped: not taking the gate now must leave a record, with who asked and
+            // what was cancelled (control-server#771 review S3). Every other ending after a cancellation is the core's, audited there.
+            return await JourneyWithdrawal.RefuseAfterCancellationAsync(
+                audit, request, plan, [JourneyWithdrawal.RuntimeBusy], timeProvider.GetUtcNow(), second, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        return await AfterTheGateAsync(request, withdrawn, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>拿闸、判与写；轮次在等待上限内不放闸时为空（一行不写）。持闸期间不调 RIoT、不往车上发。</summary>

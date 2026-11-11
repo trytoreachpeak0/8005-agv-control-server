@@ -65,8 +65,10 @@ dotnet ControlServer.FieldOps.dll withdraw-journey --server http://<v2 基址>/ 
 
 - **RIoT 由服务端自己读**：这辆车在 RIoT 上有没有未结束的单，读到的单号进计划、进确认码。读不全拒（`RIOT_VEHICLE_ORDERS_UNKNOWN`），
   所以 `--riot-verification` 可以不填（填了照录进审计）。演练输出 `plan.riotOrders.orders` 逐张列出，每张带处置：
-  - `CANCEL_BEFORE_WITHDRAWAL`：这一趟自己的单（例如车正开往取货站的那张）。执行时**服务端先在 RIoT 上取消它**，读回确认已取消，
+  - `CANCEL_BEFORE_WITHDRAWAL`：这一趟自己的单，且旅程正开往取货站（10-18 agv01 那一形）。执行时**服务端先在 RIoT 上取消它**，读回确认已取消，
     再重判一遍、撤下（2026-10-25 用户选的做法）。服务端认得自己取消的单，不会重建。
+  - `OWN_ORDER_NOT_CANCELLED_AT_THIS_STAGE`：这一趟自己的单，但旅程不在开往取货站这一段（例如开往关卡）。服务端不取消，撤下拒
+    （`RIOT_ORDER_NOT_FINISHED`），交工程师：在那些阶段取消了单，旅程会变成不能撤的样子。
   - `NOT_THIS_JOURNEYS`：不是这一趟的单（外来单、别的旅程的单）。服务端不碰，撤下拒（`RIOT_ORDER_NOT_FINISHED`），交工程师。
   **不要自己去 RIoT 上取消本服务端的单**：服务端在跑时会把它当误操作、过一会儿自动重建。要取消就走撤下，让服务端来取消。
 - **取消会让车停在原地**：车可能停在机台单行通道里挡住后车，要人去把车开走或推走。所以演练输出 `vehicle`（RIoT 报的地图、站点、速度、
@@ -74,8 +76,12 @@ dotnet ControlServer.FieldOps.dll withdraw-journey --server http://<v2 基址>/ 
 - **取消没确认就不撤**：RIoT 接了取消、但读回来单还没结束（或读不到），撤下拒（`ORDER_CANCEL_NOT_CONFIRMED`），旅程与需求一行不改，
   输出 `cancellations` 列出每张单的对账结果（`Pending`、`Failed`、`Unknown`）。到 RIoT 上看那张单；过一会儿**重新演练、拿新码再执行**，
   服务端会再发一次取消（订单命令审计里是新的一次尝试，不覆盖上一次）。
-- **执行时 FieldOps 报 `UNAVAILABLE`**（等了 3 分钟没等到应答）：取消可能已经发出去了，不能当「什么都没发生」。先重新演练看现状：
-  旅程已撤下会拒 `JOURNEY_ALREADY_COMPLETED`；单已取消、旅程还在，就按新码再执行一次。
+- **执行一旦开始，服务端就做完**，不管 FieldOps 还在不在等：不会停在「单取消了、旅程没撤」的半路。
+- **执行时 FieldOps 报 `TIMED_OUT`**（默认等 180 秒，`--server-timeout-seconds` 可改）：请求可能已经送到，取消可能已经发出去了，
+  不能当「什么都没发生」。先用同一套参数、同一个确认码再执行一次：已经撤下了会回 `ALREADY_DONE`（RIoT 这时读不到也一样）。
+  不是 `ALREADY_DONE` 就重新演练看现状，单已取消、旅程还在，就按新码再执行。`UNAVAILABLE` 是连不上服务端，请求没送到。
+- **取消之后没撤成都有记录**：取消发出之后，不管是取消没确认、重判被拒，还是拿不到闸（`WITHDRAWAL_RUNTIME_BUSY`），都写一条失败审计，
+  带操作人和每张单的取消结果。
 - **取消之后照样重判**：取消确认之后，撤下把每一条准入再判一遍。取消本身带来的变化（单没了、引擎给旅程写的等人码）不算「演练之后变了」；
   别的变化（例如车上开了恢复会话）照样拒，这时单已经取消了，`cancellations` 里照列，车停在原地等人处理。
 - **与运行轮次串行**：撤下要等引擎这一轮做完才写，30 秒内等不到就拒（`WITHDRAWAL_RUNTIME_BUSY`，HTTP 503），一行不写，过一会儿再试。

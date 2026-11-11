@@ -113,9 +113,12 @@ public static class JourneyWithdrawalEndpoints
             request?.CargoLocation,
             request?.ClaimedRole,
             request?.ConfirmationCode);
+        // A withdrawal runs to its end once it starts, whether or not the client still waits (control-server#771 review S5,
+        // Coordinator14 2026-11-11): stopping between the cancellation and the write would leave the vehicle stopped and the journey
+        // unwithdrawn. A client that timed out replays and is answered ALREADY_DONE. A rehearsal writes nothing and may stop.
         JourneyWithdrawalResult result = string.IsNullOrWhiteSpace(asked.ConfirmationCode)
             ? await service.PlanAsync(asked, cancellationToken).ConfigureAwait(false)
-            : await service.WithdrawAsync(asked, cancellationToken).ConfigureAwait(false);
+            : await service.WithdrawAsync(asked, CancellationToken.None).ConfigureAwait(false);
 
         JourneyWithdrawalResponse body = new(
             result.Outcome,

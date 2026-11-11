@@ -42,7 +42,10 @@ internal static partial class Program
         WithdrawJourneyCommand + " needs --database <file> --probe-server <base url> (server stopped) and --confirm <code from "
         + PlanJourneyWithdrawalCommand + ">, with --journey --vehicle-key --operator --reason --site-verification "
         + "--riot-verification [--slot-facts --cargo-location]; with the server running, --server <base url> [--credential-env <variable>] "
-        + "instead of --database --probe-server";
+        + "[--server-timeout-seconds <n>, default 180] instead of --database --probe-server";
+
+    /// <summary>How long <c>--server</c> waits for the host's answer unless <c>--server-timeout-seconds</c> says otherwise.</summary>
+    private static readonly TimeSpan DefaultServerTimeout = TimeSpan.FromSeconds(180);
 
     private static readonly JsonSerializerOptions CamelCase = new(JsonSerializerDefaults.Web);
 
@@ -175,14 +178,24 @@ internal static partial class Program
             request = request with { ConfirmationCode = null };
         }
 
+        // 180 s by default, not the station release's 60 (control-server#771 part 2, option 2): one withdrawal may read RIoT twice,
+        // cancel an order and read it back (the SDK allows 30 s a call) and wait for the runtime round twice (30 s each).
+        TimeSpan timeout = DefaultServerTimeout;
+        if (options.TryGetValue("server-timeout-seconds", out string? seconds))
+        {
+            if (!int.TryParse(seconds, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture,
+                    out int value) || value < 1)
+            {
+                return Usage($"{command} --server-timeout-seconds takes a whole number of seconds, 1 or more");
+            }
+            timeout = TimeSpan.FromSeconds(value);
+        }
+
         // Same as the station release (#459 review): the server is on this machine or the plant LAN, never behind a proxy.
-        // 180 s, not the station release's 60 (control-server#771 part 2, option 2): one withdrawal may read RIoT twice, cancel an
-        // order and read it back (the SDK allows 30 s a call) and wait for the runtime round twice (30 s each). Timing out early
-        // would print UNAVAILABLE while the server goes on to cancel the order -- the person would read "nothing happened".
         using HttpClient client = new(new SocketsHttpHandler { UseProxy = false })
         {
             BaseAddress = server,
-            Timeout = TimeSpan.FromSeconds(180)
+            Timeout = timeout
         };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential);
         HttpResponseMessage response;
@@ -204,7 +217,25 @@ internal static partial class Program
                     confirmationCode = request.ConfirmationCode
                 });
         }
-        catch (Exception unreachable) when (unreachable is HttpRequestException or TaskCanceledException)
+        catch (TaskCanceledException late)
+        {
+            // No answer in time (control-server#771 review S2). The request may well have reached the server, and the server runs a
+            // withdrawal to its end whatever the client does: a cancellation may already have been sent. Never "nothing was sent".
+            return Emit(
+                new
+                {
+                    command,
+                    outcome = "TIMED_OUT",
+                    via = "server",
+                    server = server.ToString(),
+                    detail = $"No answer within {timeout.TotalSeconds:0} s. The request may have reached the server, and an order of "
+                        + "this journey may already have been cancelled: do not take this as nothing done; rehearse again "
+                        + "(plan-journey-withdrawal) to see where it stands; a withdrawal that went through answers ALREADY_DONE on replay.",
+                    cause = late.Message
+                },
+                1);
+        }
+        catch (HttpRequestException unreachable)
         {
             return Emit(
                 new

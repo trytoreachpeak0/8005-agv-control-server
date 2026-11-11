@@ -478,6 +478,14 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         Dictionary<string, SessionRecoveryRow> sessions = await dbContext.SessionRecoveries.AsNoTracking()
             .Where(row => agvIds.Contains(row.AgvId))
             .ToDictionaryAsync(row => row.AgvId, StringComparer.Ordinal, cancellationToken);
+        // control-server#771 review L6: a vehicle with a fault in effect is refused a withdrawal (FAULT_IN_EFFECT), so its rows carry
+        // no withdrawal hint.
+        HashSet<string> faultedAgvIds = new(
+            await dbContext.VehicleFaultStates.AsNoTracking()
+                .Where(row => agvIds.Contains(row.AgvId) && row.Level != VehicleFaultLevel.None)
+                .Select(row => row.AgvId)
+                .ToArrayAsync(cancellationToken),
+            StringComparer.Ordinal);
         // An idle return (control-server#390) has no gate leg.
         string[] gateUpperIds = [.. blocked.Select(row => row.GateUpperId).OfType<string>()];
         HashSet<string> departedForGate = new(
@@ -508,6 +516,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                     row.GateUpperId is { } gateUpperId && departedForGate.Contains(gateUpperId),
                     ownOrderInFlight.Contains(row.JourneyId),
                     heldByForeignOrder.Contains(row.AgvId),
+                    faultedAgvIds.Contains(row.AgvId),
                     demands.FactsOf(row.JourneyId),
                     now))
                 .ToArray()
@@ -520,6 +529,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         bool departedForGate,
         bool ownOrderInFlight,
         bool foreignOrderHoldsVehicle,
+        bool faulted,
         object[] demands,
         DateTimeOffset now)
     {
@@ -551,7 +561,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             blockReasonCode = row.BlockReasonCode,
             blockReasonDescription = Describe(row.BlockReasonCode, foreignOrderHoldsVehicle, row.IsIdleReturn(), row.IsCharging()),
             // control-server#771 part 2: where a person may take this journey off by hand.
-            manualWithdrawalHint = Withdrawable(row, explained) ? ManualWithdrawalHint : null,
+            manualWithdrawalHint = !faulted && Withdrawable(row, explained) ? ManualWithdrawalHint : null,
             blockReasonSince = row.BlockReasonSince,
             blockedSeconds = blockedFor is TimeSpan elapsed ? (long?)elapsed.TotalSeconds : null,
             escalationLevel = level.ToString(),
@@ -643,12 +653,21 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
     /// 那一种）。撤下本身还收别的阶段上的失联，但那些阶段（开往关卡、离站核验）车上多半有货，撤下会拒，这里不提示，免得把人引过去。
     /// 车上有没有货、有没有故障这里不判：那要读归属、仓位与故障，是撤下演练的事，提示里写明「车上没货时」。
     /// </summary>
+    /// <remarks>
+    /// 开往取货站时这一趟自己的单已经在 RIoT 上结束而车没到（<c>ORDER_ENDED_WITHOUT_ARRIVAL</c>：单在 RIoT 被取消，或撤下取消了它之后被别的
+    /// 准入拒了）也给（审查 S4）：这时这一趟已经没有单在跑，撤下正好收它。车故障在效的不给（审查 L6，调用方判）：撤下会以 <c>FAULT_IN_EFFECT</c> 拒。
+    /// </remarks>
     private static bool Withdrawable(JourneyRuntimeRow row, bool explainedByOwnOrder) =>
         !row.CarriesNoDemand() &&
         JourneyWithdrawal.InAWithdrawableState(row) &&
         (row is { Stage: JourneyRuntimeStage.Blocked, BlockReasonCode: "LOAD_RESULT_REQUIRES_RECOVERY" } ||
          (row is { Stage: JourneyRuntimeStage.AwaitingPickupArrival, BlockReasonCode: SessionLostReason or SessionNotReadyReason } &&
-          !explainedByOwnOrder));
+          !explainedByOwnOrder) ||
+         row is
+         {
+             Stage: JourneyRuntimeStage.AwaitingPickupArrival,
+             BlockReasonCode: JourneyRuntimeEngine.OrderEndedWithoutArrivalReason
+         });
 
     /// <summary>车被外来订单挡着时加在阻断说明后面的那一句（control-server#330）。</summary>
     internal const string ForeignOrderHoldsVehicleNote =
