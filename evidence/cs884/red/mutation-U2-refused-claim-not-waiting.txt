@@ -1,0 +1,9 @@
+== U2-refused-claim-not-waiting (review rework, on 4164c35e0)
+-        !round.AcceptedDemandIds.Contains(demandId) || round.ClaimsIntakeRefused.Contains(demandId);
++        !round.AcceptedDemandIds.Contains(demandId);
+----
+失败 ControlServer.Tests.DispatchVerdictTransitionLogTests.ARefusedIntakeClaimIsStillWaiting [2 ms]
+失败!  - 失败:     1，通过:     7，已跳过:     0，总计:     8，持续时间: 2 s - ControlServer.Tests.dll (net8.0)
+错误消息:
+Assert.Equal() Failure: Values differ
+Expected: 1

@@ -12,3 +12,10 @@
 
 Cost: `DispatchVerdictTransitionLog.Record` takes no DbContext; it walks the round outcome the runner already built and the
 catalog read at round start, once per round. No query is added.
+
+## Review rework (M1, S1, L1)
+
+- `red/mutation-U1-*`, `U5-*`, `U2-*` — the reviewer's three surviving mutations, each applied alone on `4164c35e0`; each
+  now fails exactly one of the three new tests (a vehicle sitting out keeps its codes; a demand leaving the catalog while
+  the vehicle sits out is still forgotten; a refused intake claim is still waiting).
+- `green/targeted-review-rework.txt` — same filter, 468/468.
