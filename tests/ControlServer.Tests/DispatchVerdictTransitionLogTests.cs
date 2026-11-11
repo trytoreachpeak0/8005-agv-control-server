@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
@@ -126,6 +127,82 @@ public sealed class DispatchVerdictTransitionLogTests
         Assert.Contains("(1 vehicle/demand pairs); 1 pair(s)", full, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 车这一轮没参加（读 RIoT 抛异常，同在途车报位置 0、计划读不出时整段不参加）：它的码保持不动，那一轮与下一轮都零条；
+    /// 之后码真变了，记的那一条带的是那一轮的轮次号——不参加的几轮也走过了比对、计过轮次（审查 M1，变异 U1）。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleThatSitsOutARoundKeepsItsCodesAndLogsNothing()
+    {
+        await using RuntimeFixture fixture = await FixtureWithDemandAsync(TrialSublot);
+        await RoundAsync(fixture);
+        Assert.Single(VerdictLines(fixture));
+
+        fixture.Riot.ReadVehicleDelay = _ => Task.FromException(new HttpRequestException("RIoT unreachable"));
+        await RoundAsync(fixture);
+        await RoundAsync(fixture);
+        Assert.Single(VerdictLines(fixture));
+        Assert.Equal(1, fixture.VerdictTransitions.TrackedPairCount);
+
+        fixture.Riot.ReadVehicleDelay = null;
+        TurnRuleOff(fixture);
+        await RoundAsync(fixture);
+        string[] lines = VerdictLines(fixture);
+        Assert.Equal(2, lines.Length);
+        Assert.Contains(
+            $"from {DispatchReasonCodes.DemandTrialSublot} to {DispatchAdmissionChain.Eligible} (round 4 at ",
+            lines[1],
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 需求离开目录的那一轮车正好没参加：照样记一条「判定消失」并忘掉它，不因为「这辆车说不出来」而永远留着（审查 M1，变异 U5）。
+    /// </summary>
+    [Fact]
+    public async Task ADemandThatLeavesTheCatalogWhileTheVehicleSitsOutIsStillForgotten()
+    {
+        await using RuntimeFixture fixture = await FixtureWithDemandAsync(TrialSublot);
+        await RoundAsync(fixture);
+        Assert.Single(VerdictLines(fixture));
+
+        fixture.Riot.ReadVehicleDelay = _ => Task.FromException(new HttpRequestException("RIoT unreachable"));
+        fixture.Catalog.Set();
+        await RoundAsync(fixture);
+
+        string[] lines = VerdictLines(fixture);
+        Assert.Equal(2, lines.Length);
+        Assert.Contains(
+            $"on demand {Demand} changed from {DispatchReasonCodes.DemandTrialSublot} to NONE (round 2 at ",
+            lines[1],
+            StringComparison.Ordinal);
+        Assert.Equal(0, fixture.VerdictTransitions.TrackedPairCount);
+    }
+
+    /// <summary>
+    /// 受理被拒的认领（control-server#242）仍在等：它在 <c>AcceptedDemandIds</c> 里，但也在 <c>ClaimsIntakeRefused</c> 里，不当成离开积压。
+    /// 拒收那一轮记它变成 <c>ELIGIBLE</c>、照旧跟踪；下一轮码不变，零条——忘掉它的话下一轮会再记一次「首次判到」（审查 S1，变异 U2）。
+    /// 直接喂轮次结局：整轮夹具里造一次受理拒收要动受理本身，与这里要钉的口径无关。
+    /// </summary>
+    [Fact]
+    public void ARefusedIntakeClaimIsStillWaiting()
+    {
+        DispatchVerdictTransitionLog log = new();
+        DateTimeOffset now = Now;
+
+        Assert.Single(log.Record(Outcome(UnitRound(now, accepted: []), DispatchReasonCodes.DemandTrialSublot)).Transitions);
+
+        DispatchRoundFacts refused = UnitRound(now.AddSeconds(10), accepted: [Demand]) with
+        {
+            ClaimsIntakeRefused = new HashSet<string>(StringComparer.Ordinal) { Demand },
+        };
+        DispatchVerdictTransition changed = Assert.Single(log.Record(Outcome(refused, DispatchAdmissionChain.Eligible)).Transitions);
+        Assert.Equal(DispatchAdmissionChain.Eligible, changed.NewReasonCode);
+        Assert.Equal(1, log.TrackedPairCount);
+
+        Assert.Empty(log.Record(Outcome(UnitRound(now.AddSeconds(20), accepted: []), DispatchAdmissionChain.Eligible)).Transitions);
+        Assert.Equal(1, log.TrackedPairCount);
+    }
+
     /// <summary>宿主经依赖注入拿到它：单例（跨轮状态），派车轮的必填参数——整轮夹具不经注入，漏注册时它们照样绿。</summary>
     [Fact]
     public void TheHostRegistersItAsASingleton()
@@ -170,6 +247,50 @@ public sealed class DispatchVerdictTransitionLogTests
         [.. fixture.EngineLog.Entries
             .Where(entry => entry.Message.StartsWith("Dispatch verdict for vehicle", StringComparison.Ordinal))
             .Select(entry => entry.Message)];
+
+    private const string UnitAgv = "AGV-UNIT";
+
+    private static DispatchRoundFacts UnitRound(DateTimeOffset now, string[] accepted) => new(
+        new DemandCatalogSnapshot("11111111-1111-4111-8111-111111111111", 21, [UnitDemand(now)]),
+        new RiotMapStationCatalogSnapshot(25, now, new string('c', 64), []),
+        new SingleStationView(new RiotMapStation(210, "关卡")),
+        accepted.ToHashSet(StringComparer.Ordinal),
+        now,
+        new VehicleDispatchPolicy([], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY"));
+
+    private static AcceptedDemandSnapshot UnitDemand(DateTimeOffset now) => new(
+        Demand,
+        $"{TrialSublot}|WIRE_TO_GATE",
+        7,
+        "11111111-1111-4111-8111-111111111111",
+        21,
+        now,
+        "SERIES-1",
+        "WIRE_TO_GATE",
+        TrialSublot,
+        1,
+        now.AddMinutes(-10),
+        now.AddMinutes(-9),
+        "TRACE-1",
+        "COMMIT-1",
+        new LiveMesFieldSet("N1-1", "EQP-01", "STEP-01", now, "PDFN5×6-8L(12R)"));
+
+    private static DispatchRoundOutcome Outcome(DispatchRoundFacts round, string reasonCode) => new(
+        round,
+        [new DispatchVehicleOutcome(UnitAgv, $"KEY-{UnitAgv}",
+        [
+            new DispatchCandidateVerdict(
+                new DispatchCandidateEvaluation(
+                    round.Catalog.Items[0],
+                    round,
+                    new DispatchVehicleFacts(
+                        $"KEY-{UnitAgv}",
+                        UnitAgv,
+                        new OnboardDispatchFacts(1, [1, 2, 3, 4], true, true, true, true, false),
+                        new RiotVehicleObservation($"KEY-{UnitAgv}", true, true, "IDLE", "MAP-25", 4, 90, "NO_CHARGE", 0, round.Now),
+                        round.Now)),
+                reasonCode),
+        ])]);
 
     private static async Task<string[]> AcceptedAsync(RuntimeFixture fixture) =>
         await fixture.Context.AcceptedDemands.AsNoTracking().Select(row => row.DemandId).ToArrayAsync(Token);

@@ -1997,7 +1997,7 @@ public sealed partial class MultiVehicleExecutionTests
         // history, and this transcript pins what the round decided, which they do not alter. DispatchVerdictTransitionLogTests
         // pins them.
         foreach (EventRecordingLogger<JourneyRuntimeEngine>.Entry entry in fixture.EngineLog.Entries
-                     .Where(entry => entry.EventId.Id != 2884))
+                     .Where(entry => !(entry.EventId.Id == 2884 && entry.EventId.Name == "LogVerdictChanged")))
         {
             Line($"log {entry.EventId.Id} {entry.EventId.Name} {entry.Level}: {entry.Message}");
         }
