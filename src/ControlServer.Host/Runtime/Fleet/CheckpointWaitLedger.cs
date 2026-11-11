@@ -55,4 +55,34 @@ public sealed class CheckpointWaitLedger
 
     /// <summary>Forgets <paramref name="vehicleKey"/>'s wait, because it is no longer waiting.</summary>
     public void Clear(string vehicleKey) => _waitingSince.TryRemove(vehicleKey, out _);
+
+    /// <summary>
+    /// How often a vehicle behind the readiness gate is asked whether it holds at a checkpoint (control-server#866).
+    /// </summary>
+    /// <remarks>
+    /// A real onboard is not ready for the whole of a leg that carries this server's order, so behind the gate is where a
+    /// driving vehicle spends every round, and a motion sample is two RIoT reads. Asked every round, that is two more requests
+    /// per driving vehicle per round, on the round that also dispatches. The budget a checkpoint wait is judged against is
+    /// minutes and the waiting journey warning is ten, so half a minute late changes no outcome.
+    /// </remarks>
+    public static readonly TimeSpan BehindTheGateSampleInterval = TimeSpan.FromSeconds(30);
+
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _sampledBehindTheGateAt = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether <paramref name="vehicleKey"/> is due a checkpoint sample behind the readiness gate at <paramref name="now"/>;
+    /// when it is, <paramref name="now"/> is recorded as its latest one. The first time is always due.
+    /// </summary>
+    public bool TakeBehindTheGateSample(string vehicleKey, DateTimeOffset now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
+        if (_sampledBehindTheGateAt.TryGetValue(vehicleKey, out DateTimeOffset last) &&
+            now - last < BehindTheGateSampleInterval &&
+            now >= last)
+        {
+            return false;
+        }
+        _sampledBehindTheGateAt[vehicleKey] = now;
+        return true;
+    }
 }

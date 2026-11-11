@@ -1,0 +1,12 @@
+mutation: M7-not-high
+file: src/ControlServer.Host/Dashboard/ChargingDashboardFacts.cs
+diff:
+-            or AlarmBelowMandatoryOnTransportJourney
++            or AlarmBelowMandatoryEligibilityHeld
+filter: FullyQualifiedName~ACheckpointHoldOnALegWithTheSessionNotReady|FullyQualifiedName~BehindTheReadinessGateACheckpoint|FullyQualifiedName~ALoadedVehicleWaitingAtItsUnload|FullyQualifiedName~ALoadedVehicleDrivingBelowTheLine|FullyQualifiedName~OnlyAWaitingJourneyThatCarriesDemands
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ALoadedVehicleWaitingAtItsUnloadBelowTheMandatoryLineIsAlarmedOnTheDashboardUntilItsBatteryIsBackAboveIt [4 s]
+  错误消息:
+   Assert.Equal() Failure: Strings differ
+Expected: "HIGH"
+Actual:   "MEDIUM"
+失败!  - 失败:     1，通过:     4，已跳过:     0，总计:     5，持续时间: 11 s - ControlServer.Tests.dll (net8.0)

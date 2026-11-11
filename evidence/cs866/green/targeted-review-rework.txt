@@ -1,0 +1,8 @@
+filter: FullyQualifiedName~ArchitectureTests|FullyQualifiedName~WaitingJourney|FullyQualifiedName~MultiVehicleExecutionTests|FullyQualifiedName~ChargingDashboard|FullyQualifiedName~ChargingAllocat|FullyQualifiedName~VehicleFaultIsolationTests|FullyQualifiedName~PickupDispatchPlanPastOwnOrder|FullyQualifiedName~OwnOrderRebuild|FullyQualifiedName~InTransitOrder|FullyQualifiedName~StalledOrder|FullyQualifiedName~IdleReturnExecution|FullyQualifiedName~ChargingExecution|FullyQualifiedName~BlockedJourney|FullyQualifiedName~OnboardSessionLost|FullyQualifiedName~JourneyRuntimeWorker|FullyQualifiedName~DashboardQuery|FullyQualifiedName~StopSequence|FullyQualifiedName~ClearanceMove|FullyQualifiedName~StagingPickup|FullyQualifiedName~ArrivalPublishInterrupted|FullyQualifiedName~DispatchRound|FullyQualifiedName~Batch7JourneyAcceptance|FullyQualifiedName~JourneyRuntimeWorkerAdmission|FullyQualifiedName~StructuralDispatchBlock|FullyQualifiedName~DispatchVerdictTransitionLog|FullyQualifiedName~TrialSublotAdmission|FullyQualifiedName~DispatchBacklog|FullyQualifiedName~ChargingCycle|FullyQualifiedName~ChargingInterruption
+commit: 73ab8c31f (src/ and tests/ unchanged since 61e22987c; clean tree), dotnet build --no-incremental then --no-build
+已通过! - 失败:     0，通过:  1591，已跳过:     0，总计:  1591，持续时间: 2 m 4 s - ControlServer.Tests.dll (net8.0)
+
+all cs#866 tests (12 filters):
+已通过! - 失败:     0，通过:    13，已跳过:     0，总计:    13，持续时间: 19 s - ControlServer.Tests.dll (net8.0)
+
+dotnet format --verify-no-changes on changed .cs files: exit 2, all 14 WHITESPACE findings in DispatchRoundRunner.cs lines 803-917 (pre-existing on fp/v2-impl; this ticket changes lines 584-590 only); every other changed file clean.

@@ -500,6 +500,32 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// control-server#866 review S1: behind the readiness gate the checkpoint sample is rationed per vehicle. Two vehicles whose
+    /// sessions are down on their own orders, both holding at a checkpoint, are each asked in the same round and each named; a
+    /// ration shared across the fleet would let only the first one through.
+    /// </summary>
+    [Fact]
+    public async Task TwoVehiclesBehindTheReadinessGateAtACheckpointAreEachNamedInTheSameRound()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.DropSessionAsync(FleetFixture.AgvIds[0]);
+        await fixture.DropSessionAsync(FleetFixture.AgvIds[1]);
+        fixture.Riot.MovementState = RiotMovementStates.WaitForCheckpoint;
+
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        foreach (string agvId in FleetFixture.AgvIds[..2])
+        {
+            fixture.Context.ChangeTracker.Clear();
+            Assert.Equal(
+                JourneyRuntimeEngine.CheckpointWaitReason,
+                (await fixture.JourneyOfAsync(agvId)).BlockReasonCode);
+        }
+    }
+
+    /// <summary>
     /// Past the budget the wait stops being ordinary and the journey says a different thing.
     /// </summary>
     [Fact]

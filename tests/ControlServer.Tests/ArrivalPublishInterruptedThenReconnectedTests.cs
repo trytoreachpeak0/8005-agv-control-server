@@ -613,6 +613,44 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     }
 
     /// <summary>
+    /// control-server#866 审查 S3：闸门后写的是检查点码时（车在检查点排队），传输类失败同样保留这个码与它的开始时间、等待起点。
+    /// 修前保护条件只认 <c>ONBOARD_SESSION_NOT_READY</c>，推进失败码盖掉检查点码，等人计时清零重来。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    public async Task OnTheOwnOrderATransportFailureAtACheckpointKeepsTheCheckpointCodeAndItsStart()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        ConnectionCut cut = ConnectionCut.Attach(fixture);
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+        fixture.Riot.MovementState = "MT_WAIT_FOR_CHECKPOINT";
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        JourneyRuntimeRow first = await fixture.RuntimeAsync();
+        Assert.Equal("VEHICLE_WAITING_AT_CHECKPOINT", first.BlockReasonCode);
+        DateTimeOffset since = first.BlockReasonSince!.Value;
+        Assert.Equal(since, first.WaitingSince);
+
+        await ReconnectStillOnOwnOrderAsync(fixture, generation: 2);
+        cut.On(
+            line => MessageType(line) == "UpcomingStopPlanSnapshot",
+            () => new InvalidOperationException(
+                "The send failed.", new IOException("No recovered Onboard peer is connected for the test vehicle.")));
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.HearFromPeerAsync();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+
+        JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
+        Assert.NotEqual(since, fixture.Clock.GetUtcNow());
+        Assert.Equal("VEHICLE_WAITING_AT_CHECKPOINT", runtime.BlockReasonCode);
+        Assert.Equal(since, runtime.BlockReasonSince);
+        Assert.Equal(since, runtime.WaitingSince);
+    }
+
+    /// <summary>
     /// 现场的前半段：车到取货站，到站发布把车辆业务状态与清单发出去并被确认，到站那一版计划在发送时断线。
     /// 返回的夹具停在「阶段仍是 <c>AwaitingPickupArrival</c>、发件箱里前两张已确认、连接已恢复」的那一刻。
     /// </summary>

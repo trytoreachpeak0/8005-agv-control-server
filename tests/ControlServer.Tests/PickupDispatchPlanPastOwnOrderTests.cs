@@ -63,6 +63,29 @@ public sealed class PickupDispatchPlanPastOwnOrderTests
     }
 
     /// <summary>
+    /// control-server#866 审查 M1：同一个窗口里车在检查点排队，闸门后写的是检查点码而不是 <c>ONBOARD_SESSION_NOT_READY</c>；
+    /// 会话仍是因自己的在途单而未就绪，这版计划照样要送到。修前（只认会话未就绪码）发件箱 0 行。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    public async Task ThePickupPlanReachesTheVehicleHeldAtACheckpointWhileItsSessionIsDownOnTheOwnOrder()
+    {
+        await using RuntimeFixture fixture = await AcceptedWithOrderConfirmedAsync();
+
+        await DropSessionOnOwnOrderAsync(fixture);
+        fixture.Riot.MovementState = "MT_WAIT_FOR_CHECKPOINT";
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, runtime.Stage);
+        Assert.Equal("VEHICLE_WAITING_AT_CHECKPOINT", runtime.BlockReasonCode);
+        ProtocolOutboxRow plan = Assert.Single(await PlanRowsAsync(fixture));
+        Assert.Equal(PlanMessageId, plan.MessageId);
+        Assert.Single(PlanLinesSent(fixture));
+    }
+
+    /// <summary>
     /// 恰好一次：未就绪时发出、车确认之后，会话回到 <c>Ready</c> 的第一轮推进不再发它——
     /// <c>PublishPickupDispatchPlanOnceAsync</c> 按同一个 messageId 认出发件箱里已有那一行，补发只补没确认的行。
     /// </summary>

@@ -111,6 +111,9 @@ internal static class JourneyRuntimeWorkerTestKit
         /// 与合入前的派车结论等价；要测「没有策略」的用例换掉它再调 <c>RecreateEngineAsync</c>，链随引擎重建。
         /// </summary>
         public IChargingPolicyResolver ChargingPolicy { get; set; } = TestChargingPolicies.AllApprovedAt(40);
+
+        /// <summary>The charging allocation board the engine's allocator writes, kept across engine rebuilds like the host's singleton (control-server#866).</summary>
+        public ControlServer.Host.Runtime.Charging.ChargingAllocationBoard ChargingBoard { get; } = new();
         public RecordingRiot Riot { get; }
         public RecordingPeer Peer { get; }
         public RecordingRouteCostProbe RouteCosts { get; }
@@ -1212,7 +1215,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 EngineLog,
                 IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy, vehicleFacts: Riot),
                 ChargingPolicy,
-                ChargingTestKit.Create(Context, Options, Clock, Riot, Peer, Riot),
+                ChargingTestKit.Create(Context, Options, Clock, Riot, Peer, Riot, board: ChargingBoard),
                 TrialSublotLog,
                 VerdictTransitions);
             return new JourneyRuntimeEngine(
@@ -2019,17 +2022,41 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         public TimeSpan MotionObservedAtLag { get; set; } = TimeSpan.Zero;
 
-        public Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
+        /// <summary>How many motion samples were taken (control-server#866: behind the readiness gate they are rationed).</summary>
+        public int MotionSampleCount => Volatile.Read(ref _motionSampleCount);
+
+        private int _motionSampleCount;
+
+        /// <summary>
+        /// How many of the next motion samples come back the way the product gateway answers an SDK failure: no movement state,
+        /// motion Unknown (control-server#866 review M2).
+        /// </summary>
+        public int FailNextMotionSamples { get; set; }
+
+        /// <summary>Awaited inside every motion sample, with the caller's token: a RIoT that answers late (control-server#866 review S2).</summary>
+        public Func<CancellationToken, Task>? MotionSampleDelay { get; set; }
+
+        public async Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
-            return Task.FromResult(new VehicleMotionSample(
+            Interlocked.Increment(ref _motionSampleCount);
+            if (MotionSampleDelay is { } delay)
+            {
+                await delay(cancellationToken);
+            }
+            if (FailNextMotionSamples > 0)
+            {
+                FailNextMotionSamples--;
+                return new VehicleMotionSample(
+                    deviceKey, VehicleMotionReading.Unknown, null, null, null, null, _clock.GetUtcNow());
+            }
+            return new VehicleMotionSample(
                 deviceKey,
                 HttpRiotMovementGateway.ReadMotion(MovementState, Vehicle.Speed),
                 MovementState,
                 Vehicle.Speed,
                 Vehicle.CurrentMap,
                 Vehicle.CurrentStationId,
-                _clock.GetUtcNow() - MotionObservedAtLag));
+                _clock.GetUtcNow() - MotionObservedAtLag);
         }
 
         /// <summary>

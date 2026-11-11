@@ -88,6 +88,12 @@ public sealed class ChargingAllocationBoard
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Reason, string Detail)> _last =
         new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 每辆车最近一次读到的电量（control-server#866）：派车轮与等人监看本来就读的那几次顺手记下，看板的「带单车低于强制充电线」读它，
+    /// 不为它多读一次 RIoT。
+    /// </summary>
+    public VehicleBatteryReadings Batteries { get; } = new();
+
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Reason, string Detail)> _compared =
         new(StringComparer.Ordinal);
 
