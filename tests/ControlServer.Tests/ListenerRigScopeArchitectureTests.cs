@@ -41,7 +41,11 @@ public sealed class ListenerRigScopeArchitectureTests
             "one runtime worker round (poll interval one hour, the test stops the worker before a second); no listener, " +
             "nothing else resolves the engine while the round runs",
         ["StagingPickupNoCountdownTests.cs: fixture.ChargingPolicy"] =
-            "a charging policy resolver over in-memory versions (TestChargingPolicies); no DbContext"
+            "a charging policy resolver over in-memory versions (TestChargingPolicies); no DbContext",
+        ["WaitingJourneyBatteryWatchTests.cs: fixture.ChargingPolicy"] =
+            "a charging policy resolver over in-memory versions (TestChargingPolicies); no DbContext (control-server#866)",
+        ["WaitingJourneyDashboardTests.cs: chargingPolicy"] =
+            "a fixed in-memory charging policy resolver (TestChargingPolicies); no DbContext, nothing mutable (control-server#866)"
     };
 
     [Fact]

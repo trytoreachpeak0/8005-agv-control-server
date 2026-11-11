@@ -322,6 +322,7 @@ internal static class ChargingDashboardDescriptions
     internal const string AlarmBelowMandatoryDepartureNotProven = "CHARGING_BELOW_MANDATORY_DEPARTURE_NOT_PROVEN";
     internal const string AlarmBelowMandatoryPositionUnknown = "CHARGING_BELOW_MANDATORY_POSITION_UNKNOWN";
     internal const string AlarmBelowMandatoryEligibilityHeld = "CHARGING_BELOW_MANDATORY_ELIGIBILITY_HELD";
+    internal const string AlarmBelowMandatoryOnTransportJourney = "CHARGING_BELOW_MANDATORY_ON_TRANSPORT_JOURNEY";
 
     internal static IReadOnlyDictionary<string, string> OwnAlarmCodes { get; } =
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -337,6 +338,9 @@ internal static class ChargingDashboardDescriptions
             [AlarmBelowMandatoryEligibilityHeld] =
                 "电量低于强制充电线，但这辆车的充电资格暂停着（之前一次充电中断或充电无进展留下的，细节写明是哪一条）：清桩、桩的恢复都不会解除它，"
                 + "不给它分任何桩、它也不接搬运，电量会一直往下掉，直到这条暂停被单独解除",
+            [AlarmBelowMandatoryOnTransportJourney] =
+                "电量低于强制充电线，但这辆车带着搬运旅程停着等（等人装卸、阻断，或在交通管制检查点排队）：有搬运用途的车不进充电队列，"
+                + "服务端不会自己撤单、也不会送它去充电，电量会一直往下掉，直到这趟旅程走完或有人处理。显示 30%～34% 的车几分钟内可能骤降断电",
             [JourneyRuntimeEngine.OnboardSessionLostReason] =
                 "车载端会话失联：这辆车正处在充电周期、清桩或人工充电等待中，车载端听不到了。服务端只阻断它的新业务，继续经 RIoT 观察，"
                 + "不结束、不释放、不改派（REQ-0287）",
@@ -358,6 +362,9 @@ internal static class ChargingDashboardDescriptions
                 "到车前检查车的电池与充电接口，查明那次充电为什么断了或充不进；确认可以再充电后，由持故障恢复凭据的人经车辆充电资格恢复入口 "
                 + "POST " + ChargingStationEndpoints.VehicleRecoveryRoute + " 解除（写明人员与依据），下一轮就会分桩。"
                 + "同一次中断若还让某个充电桩暂停着，桩要另做恢复确认。一时处理不了的，先给车人工充电，再联系系统维护人员",
+            [AlarmBelowMandatoryOnTransportJourney] =
+                "看细节里的旅程、阶段与位置，决定是等还是撤单去充电：站上等人装卸的，催现场尽快把这一站做完；等不到人、或在检查点一直不放行的，"
+                + "联系系统维护人员撤下这趟旅程，再给车人工充电（不要在 RIoT 里给这辆车另下单）。门开着时不要让车耗到断电，断电会让这一站要人工恢复",
             [JourneyRuntimeEngine.OnboardSessionLostReason] = "检查车载端电脑与网络；车可能仍在桩上，不要据此认为桩已空",
             [StageCompleteAwaitingDeparture] =
                 "看车是否在桩上关了机，或一直没有活派给它；缺哪一项确认见服务端日志事件 2249。确认车已离开而桩没放时，经人工释放入口处理",
@@ -449,6 +456,8 @@ internal static class ChargingDashboardDescriptions
             or AlarmBelowMandatoryDepartureNotProven
             or AlarmBelowMandatoryPositionUnknown
             or AlarmBelowMandatoryEligibilityHeld
+            // control-server#866: a loaded vehicle left where it stands while its battery runs down.
+            or AlarmBelowMandatoryOnTransportJourney
             or JourneyRuntimeEngine.OnboardSessionLostReason
             or ChargingStationHoldTriggers.UnableToChargeConfirmed
             or ChargingStationHoldTriggers.InterruptionConfirmed
@@ -487,6 +496,39 @@ internal static class ChargingDashboardDescriptions
     /// </summary>
     internal static string DescribePositionUnknown(int? batteryPercent) =>
         $"{DescribeBattery(batteryPercent)}；RIoT 报它不在任何站上（currentPosition 0）或没报位置，分配不拿猜的位置去分桩";
+
+    /// <summary>
+    /// <see cref="AlarmBelowMandatoryOnTransportJourney"/> 的细节（control-server#866）：电量与读数时刻、低于的那条线、旅程、阶段与原因码、卡在哪里、
+    /// 自何时起停着等。停着的阶段写「停在」当前停靠的站，路上的（检查点、单子停了）写「开往」它；停靠读不到时写读不到。
+    /// </summary>
+    internal static string DescribeTransportBelowTheLine(
+        JourneyRuntimeRow journey,
+        int? mandatoryChargeEntryPercent,
+        WaitingBatteryLevel level,
+        int rescueBatteryPercent,
+        JourneyStopRow? stop)
+    {
+        string line = level == WaitingBatteryLevel.BelowRescueLine
+            ? string.Create(CultureInfo.InvariantCulture, $"已低于救命线 {rescueBatteryPercent}%")
+            : string.Create(CultureInfo.InvariantCulture, $"低于强制充电线 {mandatoryChargeEntryPercent}%");
+        if (level == WaitingBatteryLevel.BelowRescueLine && mandatoryChargeEntryPercent is int entry)
+        {
+            line += string.Create(CultureInfo.InvariantCulture, $"（强制充电线 {entry}%）");
+        }
+        string where = stop is null
+            ? "当前停靠读不到"
+            : JourneyWaitClassification.Of(journey.Stage) == JourneyStageActivity.Travelling
+                ? $"开往 {stop.StationId}（RIoT 站 {stop.StationRiotId.ToString(CultureInfo.InvariantCulture)}）途中"
+                : $"停在 {stop.StationId}（RIoT 站 {stop.StationRiotId.ToString(CultureInfo.InvariantCulture)}）";
+        string reason = journey.BlockReasonCode is { } code ? $"，原因码 {code}" : string.Empty;
+        string since = journey.WaitingSince is { } start
+            ? string.Create(CultureInfo.InvariantCulture, $"，自 {start:O} 起停着等")
+            : string.Empty;
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"电量 {journey.WaitingBatteryPercent}%（读于 {journey.WaitingBatteryObservedAt:O}），{line}；旅程 {journey.JourneyId}，"
+            + $"阶段 {journey.Stage}{reason}，{where}{since}");
+    }
 
     /// <summary>
     /// <see cref="AlarmBelowMandatoryEligibilityHeld"/> 的细节：电量，与这辆车此刻每一条未恢复的资格暂停——id、原因、写入时刻（control-server#877）。

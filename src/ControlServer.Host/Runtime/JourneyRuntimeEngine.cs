@@ -1378,7 +1378,8 @@ public sealed partial class JourneyRuntimeEngine(
             else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
                      !string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
             {
-                runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", now);
+                runtime.SetBlockReason(
+                    await ReasonBehindTheReadinessGateAsync(runtime, now, cancellationToken).ConfigureAwait(false), now);
                 runtime.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -3226,13 +3227,9 @@ public sealed partial class JourneyRuntimeEngine(
     /// </remarks>
     private async Task NameCheckpointWaitAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
     {
-        VehicleMotionSample sample = await motionFacts
-            .SampleMotionAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
-        bool waiting = string.Equals(
-            sample.MovementState, RiotMovementStates.WaitForCheckpoint, StringComparison.Ordinal);
-        if (!waiting)
+        string? reason = await JudgeCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
+        if (reason is null)
         {
-            checkpointWaits.Clear(runtime.VehicleKey);
             if (IsCheckpointReason(runtime.BlockReasonCode))
             {
                 runtime.SetBlockReason(null, timeProvider.GetUtcNow());
@@ -3242,13 +3239,6 @@ public sealed partial class JourneyRuntimeEngine(
             return;
         }
 
-        TimeSpan waited = checkpointWaits.Observe(runtime.VehicleKey, sample.ObservedAt);
-        bool exceeded = waited > runtimeOptions.CheckpointWaitBudget;
-        string reason = exceeded ? CheckpointWaitExceededReason : CheckpointWaitReason;
-        if (exceeded)
-        {
-            LogCheckpointWaitExceeded(logger, runtime.AgvId, runtime.DemandId ?? runtime.JourneyId, null);
-        }
         if (string.Equals(runtime.BlockReasonCode, reason, StringComparison.Ordinal))
         {
             return;
@@ -3257,6 +3247,72 @@ public sealed partial class JourneyRuntimeEngine(
         runtime.SetBlockReason(reason, timeProvider.GetUtcNow());
         runtime.UpdatedAt = timeProvider.GetUtcNow();
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The checkpoint code RIoT's answer calls for, or null when the vehicle is not holding at a checkpoint (whose wait is
+    /// then forgotten). Writes nothing on the row: <see cref="NameCheckpointWaitAsync"/> and the readiness gate each write it
+    /// their own way.
+    /// </summary>
+    /// <remarks>
+    /// 2105 is logged when the wait goes past its budget, not every round after (control-server#866): behind the readiness
+    /// gate the wait is now judged on a real onboard too, and 10-23's two hours at a checkpoint would have been a line every
+    /// round. The code itself says it for as long as it lasts.
+    /// </remarks>
+    private async Task<string?> JudgeCheckpointWaitAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    {
+        VehicleMotionSample sample = await motionFacts
+            .SampleMotionAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        bool waiting = string.Equals(
+            sample.MovementState, RiotMovementStates.WaitForCheckpoint, StringComparison.Ordinal);
+        if (!waiting)
+        {
+            checkpointWaits.Clear(runtime.VehicleKey);
+            return null;
+        }
+
+        TimeSpan waited = checkpointWaits.Observe(runtime.VehicleKey, sample.ObservedAt);
+        bool exceeded = waited > runtimeOptions.CheckpointWaitBudget;
+        if (exceeded && !string.Equals(runtime.BlockReasonCode, CheckpointWaitExceededReason, StringComparison.Ordinal))
+        {
+            LogCheckpointWaitExceeded(logger, runtime.AgvId, runtime.DemandId ?? runtime.JourneyId, null);
+        }
+        return exceeded ? CheckpointWaitExceededReason : CheckpointWaitReason;
+    }
+
+    /// <summary>
+    /// The code a journey carries behind the readiness gate when no in-flight order code of its own stands: a checkpoint
+    /// wait RIoT reports on an arrival leg, otherwise <c>ONBOARD_SESSION_NOT_READY</c> (control-server#866).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why the gate asks at all.</b> The arrival branches name a checkpoint wait, but a real onboard carrying this server's
+    /// order is not ready for the whole leg, so its rounds never reach them. On 10-23 agv01 held at a checkpoint for 2 h 23 min
+    /// behind a powered-down agv02 with the session RecoveryRequired throughout; the journey read
+    /// <c>ONBOARD_SESSION_NOT_READY</c>, which <see cref="JourneyWaitClassification"/> deliberately does not count as a wait on a
+    /// leg, so the waiting journey watch never logged 2163 or 2164 while its battery fell from 60% to 32%. A checkpoint wait is
+    /// named on the RIoT side, which is exactly the kind of code the table does count.
+    /// </para>
+    /// <para>
+    /// Rationed per vehicle (<see cref="CheckpointWaitLedger.BehindTheGateSampleInterval"/>): between two samples the
+    /// checkpoint code that stands stays, and anything else reads as the gate's own code, as before this ticket.
+    /// </para>
+    /// </remarks>
+    private async Task<string> ReasonBehindTheReadinessGateAsync(
+        JourneyRuntimeRow runtime,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        const string sessionNotReady = "ONBOARD_SESSION_NOT_READY";
+        if (!WaitsOnAnArrivalTheVehicleReports(runtime.Stage))
+        {
+            return sessionNotReady;
+        }
+        if (!checkpointWaits.TakeBehindTheGateSample(runtime.VehicleKey, now))
+        {
+            return IsCheckpointReason(runtime.BlockReasonCode) ? runtime.BlockReasonCode! : sessionNotReady;
+        }
+        return await JudgeCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false) ?? sessionNotReady;
     }
 
     private static bool IsCheckpointReason(string? reason) =>
