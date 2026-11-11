@@ -47,3 +47,13 @@ Filter: the five new tests.
 | M5 | journeys not waiting alarmed | 2 red |
 | M6 | battery at or above the line alarmed | 2 red |
 | M7 | alarm not registered HIGH | 1 red (`MEDIUM`) |
+
+## Review rework (review of `252644e08`, report `C:/work/8005-scratch/review-cs866/SUMMARY.md`)
+
+- Tests first: `6baf53069`; `red/review-tests-on-reviewed-head.txt` - eight red on the reviewed implementation, the
+  two-vehicle S1 test green by design (a guard, proven by mutation R-S1).
+- The D-UNREAD rows of `OnlyAWaitingJourney...` use the new `VehicleBatteryReadings` API, so they came with the
+  implementation commit; mutation R-M3 shows they and the engine-level M3 test go red without the fallback.
+- Battery source for the driving alarm (S5): the dispatch round's `ReadVehicleAsync` for every admitted vehicle, which
+  already ran before the en-route plan check; recorded in memory on `ChargingAllocationBoard.Batteries`. No RIoT request
+  and no database write were added to either round.
