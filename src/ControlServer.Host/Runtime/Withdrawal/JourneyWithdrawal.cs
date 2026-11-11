@@ -117,6 +117,26 @@ public sealed record JourneyWithdrawalVehicle(
 /// <summary>撤下之前服务端发的一次取消，与对账的结果。</summary>
 public sealed record JourneyWithdrawalOrderCancellation(string OrderId, string UpperId, string Outcome);
 
+/// <summary>服务端在线时这一次请求读到的：RIoT 上这辆车未结束的单、车此刻的位置与速度、已经发过的取消。</summary>
+public sealed record JourneyWithdrawalOnlineFacts(
+    RiotVehicleOrderObservation Orders,
+    JourneyWithdrawalVehicle? Vehicle,
+    IReadOnlyList<JourneyWithdrawalOrderCancellation>? Cancellations = null);
+
+/// <summary>撤下时拿什么核「人看过的就是这一份」：演练给的确认码，或者（取消之后）第一步算的摘要。</summary>
+/// <param name="HoldForCancellation">核对过了、这一趟自己的单还在跑时先不写，答要取消（在线第一步）。</param>
+/// <param name="Digest">取消之后核对用的摘要；为空即按确认码核。</param>
+/// <param name="CancelledUpperIds">第一步要取消的那几张单的意图（摘要不看它们的状态）。</param>
+internal sealed record JourneyWithdrawalBinding(bool HoldForCancellation, string? Digest, IReadOnlyCollection<string> CancelledUpperIds)
+{
+    public static JourneyWithdrawalBinding ByCode { get; } = new(false, null, []);
+
+    public static JourneyWithdrawalBinding ByCodeHoldingForCancellation { get; } = new(true, null, []);
+
+    public static JourneyWithdrawalBinding AfterCancellation(string digest, IReadOnlyCollection<string> cancelledUpperIds) =>
+        new(false, digest, cancelledUpperIds);
+}
+
 /// <summary>演练或撤下的结果。</summary>
 /// <param name="Outcome"><c>PLANNED</c>、<c>WITHDRAWN</c>、<c>ALREADY_DONE</c> 或 <c>REJECTED</c>。</param>
 /// <param name="AuditRecordId">撤下（含被拒）写的管理员审计；演练不写，为空。</param>
@@ -133,7 +153,11 @@ public sealed record JourneyWithdrawalResult(
     string? RevokedGrantId = null,
     DateTimeOffset? RiotObservedAt = null,
     JourneyWithdrawalVehicle? Vehicle = null,
-    IReadOnlyList<JourneyWithdrawalOrderCancellation>? Cancellations = null);
+    IReadOnlyList<JourneyWithdrawalOrderCancellation>? Cancellations = null)
+{
+    /// <summary>在线第一步答 <c>CANCELLATION_REQUIRED</c> 时，取消之后核对用的摘要；不对外给。</summary>
+    internal string? CancellationDigest { get; init; }
+}
 
 /// <summary>
 /// 人工撤下一趟旅程（control-server#771）：车上没货时，旅程收尾，需求退回待派、不抑制；挂着一次结果未知的装货时，那一次结成取消。
@@ -210,26 +234,24 @@ public static class JourneyWithdrawal
         ControlServerDbContext dbContext,
         JourneyWithdrawalRequest request,
         CancellationToken cancellationToken) =>
-        PlanAsync(dbContext, request, riotOrders: null, cancellationToken);
+        PlanAsync(dbContext, request, online: null, cancellationToken);
 
-    /// <summary>演练，带服务端在线时自己读到的 RIoT（<paramref name="riotOrders"/> 为空即离线写法）。</summary>
-    public static async Task<JourneyWithdrawalResult> PlanAsync(
+    /// <summary>演练，带服务端在线时自己读到的 RIoT 与车（<paramref name="online"/> 为空即离线写法）。</summary>
+    internal static async Task<JourneyWithdrawalResult> PlanAsync(
         ControlServerDbContext dbContext,
         JourneyWithdrawalRequest request,
-        RiotVehicleOrderObservation? riotOrders,
+        JourneyWithdrawalOnlineFacts? online,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(request);
-        Assessment assessment = await AssessAsync(dbContext, request, riotOrders, cancellationToken).ConfigureAwait(false);
-        if (assessment.AlreadyWithdrawn)
-        {
-            return new JourneyWithdrawalResult(Rejected, [JourneyAlreadyCompleted], null, null, null, RiotObservedAt: riotOrders?.ObservedAt);
-        }
-        return assessment.Codes.Count > 0
-            ? new JourneyWithdrawalResult(Rejected, [.. assessment.Codes], assessment.Plan, null, null, RiotObservedAt: riotOrders?.ObservedAt)
-            : new JourneyWithdrawalResult(
-                Planned, [], assessment.Plan, assessment.ConfirmationCode, null, RiotObservedAt: riotOrders?.ObservedAt);
+        Assessment assessment = await AssessAsync(dbContext, request, online?.Orders, [], cancellationToken).ConfigureAwait(false);
+        JourneyWithdrawalResult result = assessment.AlreadyWithdrawn
+            ? new JourneyWithdrawalResult(Rejected, [JourneyAlreadyCompleted], null, null, null)
+            : assessment.Codes.Count > 0
+                ? new JourneyWithdrawalResult(Rejected, [.. assessment.Codes], assessment.Plan, null, null)
+                : new JourneyWithdrawalResult(Planned, [], assessment.Plan, assessment.ConfirmationCode, null);
+        return WithOnline(result, online);
     }
 
     /// <summary>
@@ -239,7 +261,8 @@ public static class JourneyWithdrawal
     /// <remarks>
     /// <para>
     /// <b>判与写在同一个写事务里</b>（这台服务端的写事务是 <c>BEGIN IMMEDIATE</c>）：判完之后、写之前，不会有别的写者插进来改了计划。
-    /// FieldOps 直接写库时服务端停着、库锁在手，本来就没有别的写者；将来服务端在线的入口经同一个方法，靠的是这一条。
+    /// FieldOps 直接写库时服务端停着、库锁在手，本来就没有别的写者；服务端在线的入口（<see cref="JourneyWithdrawalService"/>）经同一个方法，
+    /// 另外与运行轮次串行。
     /// </para>
     /// <para>
     /// <b>写什么</b>，全在一次保存里：那一次没结的装货结成 <see cref="StationOperationStatus.Cancelled"/>（与对上的补偿、取消同一个终态，
@@ -260,21 +283,38 @@ public static class JourneyWithdrawal
         DateTimeOffset now,
         OnboardJourneyPublisher? publisher,
         CancellationToken cancellationToken) =>
-        WithdrawAsync(dbContext, audit, request, now, publisher, riotOrders: null, cancellationToken);
+        WithdrawAsync(dbContext, audit, request, now, publisher, online: null, JourneyWithdrawalBinding.ByCode, cancellationToken);
 
-    /// <summary>撤下，带服务端在线时自己读到的 RIoT（<paramref name="riotOrders"/> 为空即离线写法）。</summary>
-    public static async Task<JourneyWithdrawalResult> WithdrawAsync(
+    /// <summary>
+    /// 撤下，在线写法的两步都经这里（<see cref="JourneyWithdrawalService"/>，方案二）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>第一步</b>（<see cref="JourneyWithdrawalBinding.ByCodeHoldingForCancellation"/>）：照常判、核确认码。计划里有这一趟自己的、还在
+    /// RIoT 上跑的单时，不写、不写审计，答 <see cref="CancellationRequired"/> 并给出取消之后核对用的摘要（<see cref="JourneyWithdrawalResult.CancellationDigest"/>）；
+    /// 服务端随后经订单命令面取消它们。没有这样的单就当场撤下，与离线一样。
+    /// </para>
+    /// <para>
+    /// <b>第二步</b>（<see cref="JourneyWithdrawalBinding.AfterCancellation"/>）：取消都确认之后再判一次，每一条准入照判；确认码换成那份摘要来核。
+    /// 摘要不含取消本身会带来的变化——RIoT 上的单没了、那张单的意图状态、引擎看见本服务端自己取消的单之后给旅程写的等人码与更新时刻、车停下之后
+    /// 会话的安全读数（只在没有结果未知的装货时；有的话门的证据照样核）——其余与人看过的计划逐项相同才撤。那张单这时若还在 RIoT 上跑，拒
+    /// （<see cref="OrderCancelNotConfirmed"/>）。
+    /// </para>
+    /// </remarks>
+    internal static async Task<JourneyWithdrawalResult> WithdrawAsync(
         ControlServerDbContext dbContext,
         IGovernanceAuditWriter audit,
         JourneyWithdrawalRequest request,
         DateTimeOffset now,
         OnboardJourneyPublisher? publisher,
-        RiotVehicleOrderObservation? riotOrders,
+        JourneyWithdrawalOnlineFacts? online,
+        JourneyWithdrawalBinding binding,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(binding);
 
         IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
@@ -283,18 +323,31 @@ public static class JourneyWithdrawal
         string? withdrawnVehicle = null;
         await using (transaction)
         {
-            Assessment assessment = await AssessAsync(dbContext, request, riotOrders, cancellationToken).ConfigureAwait(false);
+            Assessment assessment = await AssessAsync(
+                dbContext, request, online?.Orders, binding.CancelledUpperIds, cancellationToken).ConfigureAwait(false);
             if (assessment.AlreadyWithdrawn)
             {
                 string id = await WriteAuditAsync(
-                    audit, request, assessment, GovernanceActionOutcome.Succeeded, AlreadyDone, now, cancellationToken)
+                    audit, request, assessment, GovernanceActionOutcome.Succeeded, AlreadyDone, now, online, cancellationToken)
                     .ConfigureAwait(false);
                 result = new JourneyWithdrawalResult(AlreadyDone, [], null, null, id);
             }
             else
             {
                 List<string> codes = [.. assessment.Codes];
-                if (codes.Count == 0 && Trimmed(request.ConfirmationCode) is null)
+                if (binding.Digest is { } digest)
+                {
+                    // After the cancellation: an order of this journey RIoT still runs was not cancelled after all.
+                    if (assessment.Plan?.RiotOrders?.Orders.Any(order => order.Disposition == CancelBeforeWithdrawal) == true)
+                    {
+                        codes.Add(OrderCancelNotConfirmed);
+                    }
+                    else if (codes.Count == 0 && !string.Equals(digest, assessment.CancellationDigest, StringComparison.Ordinal))
+                    {
+                        codes.Add(ConfirmationStale);
+                    }
+                }
+                else if (codes.Count == 0 && Trimmed(request.ConfirmationCode) is null)
                 {
                     codes.Add(ConfirmationRequired);
                 }
@@ -307,12 +360,22 @@ public static class JourneyWithdrawal
                 if (codes.Count > 0)
                 {
                     string id = await WriteAuditAsync(
-                        audit, request, assessment with { Codes = codes }, GovernanceActionOutcome.Failed, Rejected, now,
+                        audit, request, assessment with { Codes = codes }, GovernanceActionOutcome.Failed, Rejected, now, online,
                         cancellationToken).ConfigureAwait(false);
                     // A stale code is answered with the plan as it now stands and its code, so the person reads it again first.
                     result = new JourneyWithdrawalResult(
                         Rejected, [.. codes], assessment.Plan,
                         codes is [ConfirmationStale] ? assessment.ConfirmationCode : null, id);
+                }
+                else if (binding.HoldForCancellation &&
+                         assessment.Plan!.RiotOrders?.Orders.Any(order => order.Disposition == CancelBeforeWithdrawal) == true)
+                {
+                    // Confirmed, and this journey's own orders run in RIoT: nothing is written until they are cancelled.
+                    result = new JourneyWithdrawalResult(
+                        CancellationRequired, [], assessment.Plan, assessment.ConfirmationCode, null)
+                    {
+                        CancellationDigest = assessment.CancellationDigest
+                    };
                 }
                 else
                 {
@@ -320,7 +383,7 @@ public static class JourneyWithdrawal
                         .ConfigureAwait(false);
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     string id = await WriteAuditAsync(
-                        audit, request, assessment, GovernanceActionOutcome.Succeeded, Withdrawn, now, cancellationToken)
+                        audit, request, assessment, GovernanceActionOutcome.Succeeded, Withdrawn, now, online, cancellationToken)
                         .ConfigureAwait(false);
                     withdrawnVehicle = assessment.Plan!.AgvId;
                     result = new JourneyWithdrawalResult(Withdrawn, [], assessment.Plan, assessment.ConfirmationCode, id);
@@ -341,8 +404,34 @@ public static class JourneyWithdrawal
             }
             await SettleSessionAsync(dbContext, withdrawnVehicle, cancellationToken).ConfigureAwait(false);
         }
-        return result with { RiotObservedAt = riotOrders?.ObservedAt };
+        return WithOnline(result, online);
     }
+
+    /// <summary>
+    /// 在线撤下里取消没有全部确认时写的那条失败审计（撤下没写任何东西）：计划、理由码与每一次取消的结果都在里面。
+    /// </summary>
+    internal static async Task<JourneyWithdrawalResult> RefuseAfterCancellationAsync(
+        IGovernanceAuditWriter audit,
+        JourneyWithdrawalRequest request,
+        JourneyWithdrawalPlan? plan,
+        IReadOnlyList<string> codes,
+        DateTimeOffset now,
+        JourneyWithdrawalOnlineFacts online,
+        CancellationToken cancellationToken)
+    {
+        string id = await WriteAuditAsync(
+            audit, request, new Assessment(codes, plan, null, false), GovernanceActionOutcome.Failed, Rejected, now, online,
+            cancellationToken).ConfigureAwait(false);
+        return WithOnline(new JourneyWithdrawalResult(Rejected, [.. codes], plan, null, id), online);
+    }
+
+    private static JourneyWithdrawalResult WithOnline(JourneyWithdrawalResult result, JourneyWithdrawalOnlineFacts? online) =>
+        online is null
+            ? result
+            : result with { RiotObservedAt = online.Orders.ObservedAt, Vehicle = online.Vehicle, Cancellations = online.Cancellations };
+
+    /// <summary>第一步答这个：确认码对得上，这一趟自己的单还在 RIoT 上跑，要先取消（不写、不写审计）。</summary>
+    internal const string CancellationRequired = "CANCELLATION_REQUIRED";
 
     private const string Planned = "PLANNED";
     private const string Withdrawn = "WITHDRAWN";
@@ -358,20 +447,25 @@ public static class JourneyWithdrawal
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
     };
 
-    /// <summary>判一次的结果：拒绝的理由（为空即可以撤）、计划与确认码。</summary>
+    /// <summary>判一次的结果：拒绝的理由（为空即可以撤）、计划、确认码，与取消之后核对用的摘要。</summary>
     private sealed record Assessment(
         IReadOnlyList<string> Codes,
         JourneyWithdrawalPlan? Plan,
         string? ConfirmationCode,
-        bool AlreadyWithdrawn);
+        bool AlreadyWithdrawn,
+        string? CancellationDigest = null);
 
     private sealed record SlotFact(int Slot, string Fact);
 
-    /// <summary>判一次，只读。<paramref name="riotOrders"/> 不为空是在线写法：RIoT 由服务端自己读，人填的核对文本不再必填（照录）。</summary>
+    /// <summary>
+    /// 判一次，只读。<paramref name="riotOrders"/> 不为空是在线写法：RIoT 由服务端自己读，人填的核对文本不再必填（照录）。
+    /// <paramref name="cancelledUpperIds"/> 是在线第二步里第一步取消过的那几张单（摘要不看它们）。
+    /// </summary>
     private static async Task<Assessment> AssessAsync(
         ControlServerDbContext dbContext,
         JourneyWithdrawalRequest request,
         RiotVehicleOrderObservation? riotOrders,
+        IReadOnlyCollection<string> cancelledUpperIds,
         CancellationToken cancellationToken)
     {
         List<string> codes = [];
@@ -383,22 +477,10 @@ public static class JourneyWithdrawal
         if (riotOrders is null && Trimmed(request.RiotVerification) is null) codes.Add(RiotVerificationRequired);
         // Online, the server reads RIoT for itself (control-server#771 part 2), as the fault recovery does for the same question
         // (VehicleFaultRecoveryService.VehicleOrderReasons). An incomplete answer is refused, never taken as "no order": nobody typed
-        // a verification to fall back on. An unfinished order is refused here too -- the floor every option of the user's Q1 shares.
-        JourneyWithdrawalRiotOrders? riot = null;
-        if (riotOrders is not null)
+        // a verification to fall back on. Which of the listed orders are this journey's is judged once its intents are read.
+        if (riotOrders is { IsKnown: false })
         {
-            riot = new JourneyWithdrawalRiotOrders(
-                riotOrders.IsKnown,
-                [.. riotOrders.UnfinishedOrderIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
-                    .Select(orderId => new JourneyWithdrawalRiotOrder(orderId, null, NotThisJourneys))]);
-            if (!riotOrders.IsKnown)
-            {
-                codes.Add(RiotOrdersUnknown);
-            }
-            else if (riotOrders.HasUnfinishedOrder == true)
-            {
-                codes.Add(RiotOrderNotFinished);
-            }
+            codes.Add(RiotOrdersUnknown);
         }
         if (journeyId is null) codes.Add(JourneyRequired);
         if (vehicleKey is null) codes.Add(VehicleRequired);
@@ -536,6 +618,24 @@ public static class JourneyWithdrawal
         JourneyWithdrawalIntent[] intents = await JudgeIntentsAsync(dbContext, runtime, stops, codes, cancellationToken)
             .ConfigureAwait(false);
 
+        // Online (the user's option 2, 2026-10-25): an order RIoT still runs for the vehicle that is one of this journey's own -- its
+        // orderId on one of the intents above -- is cancelled through the order command surface before the withdrawal; any other is
+        // not this server's to cancel here, and refuses.
+        JourneyWithdrawalRiotOrders? riot = null;
+        if (riotOrders is not null)
+        {
+            riot = new JourneyWithdrawalRiotOrders(
+                riotOrders.IsKnown,
+                [.. riotOrders.UnfinishedOrderIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+                    .Select(orderId => intents.FirstOrDefault(intent => string.Equals(intent.OrderId, orderId, StringComparison.Ordinal)) is { } own
+                        ? new JourneyWithdrawalRiotOrder(orderId, own.UpperId, CancelBeforeWithdrawal)
+                        : new JourneyWithdrawalRiotOrder(orderId, null, NotThisJourneys))]);
+            if (riot.Orders.Any(order => order.Disposition == NotThisJourneys))
+            {
+                codes.Add(RiotOrderNotFinished);
+            }
+        }
+
         VehicleFaultFact? fault = await new VehicleFaultStore(dbContext).ReadAsync(runtime.AgvId, cancellationToken)
             .ConfigureAwait(false);
         if (fault is not null && fault.Level != VehicleFaultLevel.None)
@@ -587,8 +687,46 @@ public static class JourneyWithdrawal
             [.. rebuilds.Select(row => new JourneyWithdrawalRebuild(row.RebuildId, row.State, row.StoppedReason, row.EndedUpperId))],
             riot);
         string[] distinct = [.. codes.Distinct(StringComparer.Ordinal)];
+        HashSet<string> cancelled = new(cancelledUpperIds, StringComparer.Ordinal);
+        cancelled.UnionWith(riot?.Orders.Where(order => order.Disposition == CancelBeforeWithdrawal).Select(order => order.UpperId!) ?? []);
         return new Assessment(
-            distinct, plan, distinct.Length == 0 ? CodeOf(plan, facts, Trimmed(request.CargoLocation)) : null, false);
+            distinct,
+            plan,
+            distinct.Length == 0 ? CodeOf(plan, facts, Trimmed(request.CargoLocation)) : null,
+            false,
+            distinct.Length == 0 ? DigestAfterCancellation(plan, facts, Trimmed(request.CargoLocation), cancelled) : null);
+    }
+
+    /// <summary>
+    /// 取消之后核对用的摘要：与确认码同一份计划、仓位事实与篮子去向，减去取消本身会带来的变化——RIoT 上的单、被取消的那几张单的意图、
+    /// 引擎看见本服务端自己取消的单之后给旅程写的等人码与更新时刻（<c>JourneyRuntimeEngine.RecordOrderEndedInRiotAsync</c>），以及车停下之后会话
+    /// 的读数（只在没有结果未知的装货时：有的话门的证据是撤下要核的，照样算进去）。
+    /// </summary>
+    private static string DigestAfterCancellation(
+        JourneyWithdrawalPlan plan, IReadOnlyList<SlotFact> facts, string? cargoLocation, IReadOnlySet<string> cancelledUpperIds)
+    {
+        JourneyWithdrawalPlan steady = plan with
+        {
+            BlockReasonCode = null,
+            JourneyUpdatedAt = default,
+            RiotOrders = null,
+            OrderIntents = [.. plan.OrderIntents.Where(intent => !cancelledUpperIds.Contains(intent.UpperId))],
+        };
+        if (plan.UnresolvedLoad is null)
+        {
+            steady = steady with
+            {
+                SessionReadiness = null,
+                SessionReasonCode = null,
+                SessionUnsettledAttempt = null,
+                SessionActiveUnlockSlots = null,
+                SessionSafetyRevision = null,
+                SessionSafetyReasonCodes = null,
+                SessionSafetySummaryObservedAt = null,
+                SessionUpdatedAt = null,
+            };
+        }
+        return CodeOf(steady, facts, cargoLocation);
     }
 
     /// <summary>
