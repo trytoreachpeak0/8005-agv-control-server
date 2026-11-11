@@ -2019,9 +2019,15 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         public TimeSpan MotionObservedAtLag { get; set; } = TimeSpan.Zero;
 
+        /// <summary>How many motion samples were taken (control-server#866: behind the readiness gate they are rationed).</summary>
+        public int MotionSampleCount => Volatile.Read(ref _motionSampleCount);
+
+        private int _motionSampleCount;
+
         public Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            Interlocked.Increment(ref _motionSampleCount);
             return Task.FromResult(new VehicleMotionSample(
                 deviceKey,
                 HttpRiotMovementGateway.ReadMotion(MovementState, Vehicle.Speed),

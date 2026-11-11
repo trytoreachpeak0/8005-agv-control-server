@@ -224,6 +224,63 @@ public sealed class WaitingJourneyDashboardTests
         Assert.Equal(["Unknown", "BelowRescueLine"], journeys.Select(journey => journey.GetProperty("batteryLevel").GetString()));
     }
 
+    /// <summary>
+    /// 「充电告警」卡片上带单车低于强制充电线的那一条（control-server#866）报给谁、不报给谁：只报<b>带单</b>、<b>停着等</b>（与等人卡片同一个判法）、
+    /// 监看落库的读数<b>低于</b>这辆车强制充电线的旅程。空闲返回与充电旅程没有单，照旧走充电队列，不报；正常在路上的不报；等于线不报；
+    /// 没有已批准策略的车判不了强制线，只在救命线下报。读不到停靠的旅程照样报，位置写读不到。
+    /// </summary>
+    [Fact]
+    public async Task OnlyAWaitingJourneyThatCarriesDemandsAndReadsBelowItsMandatoryLineIsAlarmedAsATransportBelowTheLine()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        await database.AddAsync("D-LOW", JourneyRuntimeStage.AwaitingUnloadResult, stageStart: Now.AddMinutes(-40),
+            battery: 29, readAt: Now.AddSeconds(-2));
+        await database.AddAsync("D-AT-LINE", JourneyRuntimeStage.AwaitingUnloadResult, stageStart: Now.AddMinutes(-40),
+            battery: 30, readAt: Now.AddSeconds(-2));
+        await database.AddAsync("D-DRIVING", JourneyRuntimeStage.AwaitingGateArrival, stageStart: Now.AddMinutes(-3),
+            battery: 20, readAt: Now.AddMinutes(-30), reason: JourneyWaitClassification.SessionNotReadyReason);
+        await database.AddAsync("D-IDLE", JourneyRuntimeStage.Blocked, stageStart: Now.AddMinutes(-40),
+            battery: 20, readAt: Now.AddSeconds(-2), reason: "SOME_BLOCK", journeyId: IdleReturnIdentity.JourneyIdPrefix + "D-IDLE");
+        await database.AddAsync("D-CHARGE", JourneyRuntimeStage.Blocked, stageStart: Now.AddMinutes(-40),
+            battery: 20, readAt: Now.AddSeconds(-2), reason: "SOME_BLOCK", journeyId: ChargingIdentity.JourneyIdPrefix + "D-CHARGE");
+        await database.AddAsync("D-UNREAD", JourneyRuntimeStage.Blocked, stageStart: Now.AddMinutes(-40),
+            battery: null, readAt: Now.AddSeconds(-2), reason: "UNLOAD_RESULT_REQUIRES_RECOVERY");
+
+        JsonElement alarm = Assert.Single(await TransportBelowLineAlarmsAsync(database, TestChargingPolicies.AllApproved));
+        Assert.Equal("AGV-D-LOW", alarm.GetProperty("agvId").GetString());
+        string detail = alarm.GetProperty("detail").GetString()!;
+        Assert.Contains("电量 29%", detail, StringComparison.Ordinal);
+        Assert.Contains("强制充电线 30%", detail, StringComparison.Ordinal);
+        Assert.Contains(JourneyIdentity.ForAnchorDemand("D-LOW"), detail, StringComparison.Ordinal);
+        Assert.Contains("读不到", detail, StringComparison.Ordinal);
+
+        // Without an approved policy the mandatory line is unknown: 29% is not judged, 12% is under the rescue line regardless.
+        await database.AddAsync("D-RESCUE", JourneyRuntimeStage.AwaitingUnloadResult, stageStart: Now.AddMinutes(-40),
+            battery: 12, readAt: Now.AddSeconds(-2));
+        JsonElement rescue = Assert.Single(await TransportBelowLineAlarmsAsync(database, TestChargingPolicies.None));
+        Assert.Equal("AGV-D-RESCUE", rescue.GetProperty("agvId").GetString());
+        Assert.Contains("救命线 15%", rescue.GetProperty("detail").GetString(), StringComparison.Ordinal);
+    }
+
+    private static async Task<JsonElement[]> TransportBelowLineAlarmsAsync(DashboardDatabase database, IChargingPolicyResolver chargingPolicy)
+    {
+        ServiceCollection services = new();
+        services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new JourneyRuntimeOptions()));
+        services.AddSingleton(new Host.Runtime.Charging.ChargingAllocationBoard());
+        services.AddScoped(_ => chargingPolicy);
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        ChargingAlarmsQueryEndpoint endpoint = ActivatorUtilities.CreateInstance<ChargingAlarmsQueryEndpoint>(provider);
+        await using ControlServerDbContext reading = database.NewContext();
+        object result = await endpoint.ReadAsync(reading, TestContext.Current.CancellationToken);
+        using JsonDocument document = JsonDocument.Parse(JsonSerializer.Serialize(result));
+        return
+        [
+            .. document.RootElement.GetProperty("alarms").EnumerateArray()
+                .Where(alarm => alarm.GetProperty("code").GetString() == "CHARGING_BELOW_MANDATORY_ON_TRANSPORT_JOURNEY")
+                .Select(alarm => alarm.Clone())
+        ];
+    }
+
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
@@ -258,12 +315,14 @@ public sealed class WaitingJourneyDashboardTests
             DateTimeOffset stageStart,
             int? battery,
             DateTimeOffset? readAt,
-            string? reason = null)
+            string? reason = null,
+            string? journeyId = null)
         {
             CancellationToken cancellationToken = TestContext.Current.CancellationToken;
             await using (ControlServerDbContext add = NewContext())
             {
                 JourneyRuntimeRow row = WaitingJourneyBatteryWatchTests.Runtime(demandId, stage, stageStart);
+                row.JourneyId = journeyId ?? row.JourneyId;
                 row.SetBlockReason(reason, stageStart);
                 add.JourneyRuntimes.Add(row);
                 await add.SaveChangesAsync(cancellationToken);
