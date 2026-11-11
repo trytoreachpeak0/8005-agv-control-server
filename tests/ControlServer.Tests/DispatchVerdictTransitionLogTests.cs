@@ -38,6 +38,7 @@ public sealed class DispatchVerdictTransitionLogTests
         string first = Assert.Single(VerdictLines(fixture));
         Assert.Contains($"vehicle {fixture.Options.AgvId} on demand {Demand}", first, StringComparison.Ordinal);
         Assert.Contains($"from NONE to {DispatchReasonCodes.DemandTrialSublot} (round 1 at ", first, StringComparison.Ordinal);
+        Assert.Matches(@"\(round 1 at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}\+00:00\);", first);
         Assert.Matches(@"session generation \d+, battery 80% NO_CHARGE, station 1, area N1-1, task type WIRE_TO_GATE\.$", first);
 
         await RoundAsync(fixture);

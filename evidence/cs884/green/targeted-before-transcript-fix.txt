@@ -1,0 +1,6 @@
+first targeted run, before the transcript change: 2 failures, both the control-server#209 transcript pin picking up the new 2884 lines (decisions identical)
+失败 ControlServer.Tests.MultiVehicleExecutionTests.ARoundWithMoreCandidatesThanVehiclesDecidesAsBeforeTheMove [155 ms]
+失败 ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseRiotReadThrowsLeavesTheVehiclesOnEitherSideOfItServed [61 ms]
+失败!  - 失败:     2，通过:   463，已跳过:     0，总计:   465，持续时间: 38 s - ControlServer.Tests.dll (net8.0)
+log 2884 LogVerdictChanged Information: Dispatch verdict for vehicle V1 on demand 10000000-0000-4000-8000-000000000000 changed from NONE to ELIGIBLE (round 1 at 09/08/2026 06:00:00 +00:00); session generation 1, battery 80% NO_CHARGE, station 300, area N1-1, task type WIRE_TO_GATE.
+log 2884 LogVerdictChanged Information: Dispatch verdict for vehicle V2 on demand 10000000-0000-4000-8000-000000000000 changed from NONE to ELIGIBLE (round 1 at 09/08/2026 06:00:00 +00:00); session generation 1, battery 80% NO_CHARGE, station 300, area N1-1, task type WIRE_TO_GATE.

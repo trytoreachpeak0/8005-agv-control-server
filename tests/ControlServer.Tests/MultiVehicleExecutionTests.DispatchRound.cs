@@ -1993,7 +1993,11 @@ public sealed partial class MultiVehicleExecutionTests
             Line($"riot command {commandType} {orderId}");
         }
 
-        foreach (EventRecordingLogger<JourneyRuntimeEngine>.Entry entry in fixture.EngineLog.Entries)
+        // control-server#884's verdict change lines (2884) are left out: they restate the verdicts listed above as a change
+        // history, and this transcript pins what the round decided, which they do not alter. DispatchVerdictTransitionLogTests
+        // pins them.
+        foreach (EventRecordingLogger<JourneyRuntimeEngine>.Entry entry in fixture.EngineLog.Entries
+                     .Where(entry => entry.EventId.Id != 2884))
         {
             Line($"log {entry.EventId.Id} {entry.EventId.Name} {entry.Level}: {entry.Message}");
         }
