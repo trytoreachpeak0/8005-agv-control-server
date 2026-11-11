@@ -703,7 +703,7 @@ public static class JourneyWithdrawal
     /// 的读数（只在没有结果未知的装货时：有的话门的证据是撤下要核的，照样算进去）。
     /// </summary>
     private static string DigestAfterCancellation(
-        JourneyWithdrawalPlan plan, IReadOnlyList<SlotFact> facts, string? cargoLocation, IReadOnlySet<string> cancelledUpperIds)
+        JourneyWithdrawalPlan plan, IReadOnlyList<SlotFact> facts, string? cargoLocation, HashSet<string> cancelledUpperIds)
     {
         JourneyWithdrawalPlan steady = plan with
         {
@@ -986,6 +986,7 @@ public static class JourneyWithdrawal
         GovernanceActionOutcome outcome,
         string result,
         DateTimeOffset now,
+        JourneyWithdrawalOnlineFacts? online,
         CancellationToken cancellationToken)
     {
         bool fits = Fits(request);
@@ -1019,7 +1020,20 @@ public static class JourneyWithdrawal
                 (fits ? Trimmed(request.JourneyId) : null) ?? "(none)",
                 null,
                 outcome,
-                JsonSerializer.Serialize(new { said, plan = assessment.Plan, codes = assessment.Codes, result }, DetailOptions),
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        said,
+                        plan = assessment.Plan,
+                        codes = assessment.Codes,
+                        result,
+                        // Online only (control-server#771 part 2): when RIoT was read, where the vehicle stood, and every
+                        // cancellation the server sent before this withdrawal with what reading it back said.
+                        riotObservedAt = online?.Orders.ObservedAt,
+                        vehicle = online?.Vehicle,
+                        cancellations = online?.Cancellations
+                    },
+                    DetailOptions),
                 ClaimedAdministratorRole: fits ? Trimmed(request.ClaimedRole) : null),
             now,
             cancellationToken);

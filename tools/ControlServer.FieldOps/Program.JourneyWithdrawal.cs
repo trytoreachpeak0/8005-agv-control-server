@@ -250,6 +250,8 @@ internal static partial class Program
                     auditRecordId = Read(body, "auditRecordId"),
                     revokedGrantId = Read(body, "revokedGrantId"),
                     riotObservedAt = Read(body, "riotObservedAt"),
+                    vehicle = Read(body, "vehicle"),
+                    cancellations = Read(body, "cancellations"),
                     detail = status is 200 or 409 ? null : Read(body, "detail") ?? Read(body, "title") ?? (object)text
                 },
                 outcome is "PLANNED" or "WITHDRAWN" or "ALREADY_DONE" ? 0 : 1);

@@ -40,7 +40,6 @@ public sealed class JourneyWithdrawalService(
     IRiotVehicleOrderFacts orderFacts,
     IRiotVehicleFacts vehicleFacts,
     RiotOrderCommandService orderCommands,
-    IRiotOrderCommandAuditStore commandAudit,
     JourneyMutationGate gate,
     OnboardJourneyPublisher publisher,
     RecoveryGrantRegistry grants,
@@ -60,35 +59,130 @@ public sealed class JourneyWithdrawalService(
 
     private readonly TimeSpan _gateWait = gateTimeout ?? DefaultGateTimeout;
 
-    // Stub until the cancellation is written (control-server#771 part 2, option 2).
-    private readonly object _pending = (vehicleFacts, orderCommands, commandAudit);
+    /// <summary>
+    /// 撤下之前取消这一趟自己的单时，写进订单命令审计的理由。引擎认得这一类审计行（<c>RiotOrderCommandAudit</c> 上这张单的
+    /// <c>CANCEL_ORDER</c>），看见单没了不重建（<c>JourneyRuntimeEngine.OwnOrderRebuild</c>，事件 2174）。
+    /// </summary>
+    public const string CancellationReason =
+        "control-server#771 manual withdrawal: this journey's own order is cancelled before the journey is withdrawn";
 
-    /// <summary>演练：读一次 RIoT，判一次，一行不写、不写审计、不拿闸。</summary>
+    /// <summary>
+    /// 演练：读一次 RIoT（这辆车未结束的单与车此刻的位置、速度），判一次，一行不写、不写审计、不拿闸、不取消任何单。
+    /// 这一趟自己的单还在跑时，计划把它列成 <see cref="JourneyWithdrawal.CancelBeforeWithdrawal"/>，确认码覆盖它的单号。
+    /// </summary>
     public async Task<JourneyWithdrawalResult> PlanAsync(JourneyWithdrawalRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        RiotVehicleOrderObservation orders = await ReadOrdersAsync(request, cancellationToken).ConfigureAwait(false);
-        return await JourneyWithdrawal.PlanAsync(dbContext, request, orders, cancellationToken).ConfigureAwait(false);
+        JourneyWithdrawalOnlineFacts online = await ReadOnlineFactsAsync(request, cancellations: null, cancellationToken)
+            .ConfigureAwait(false);
+        return await JourneyWithdrawal.PlanAsync(dbContext, request, online, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>撤下：闸外读 RIoT，闸内判与写，放闸之后发收尾快照、收回点名这一趟的授权。</summary>
+    /// <summary>
+    /// 撤下（用户 10-25 选方案二）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>第一步</b>：闸外读 RIoT 与车，闸内判、核确认码。这一趟自己的单不在 RIoT 上跑，当场撤下，与之前一样。
+    /// </para>
+    /// <para>
+    /// <b>这一趟自己的单还在跑</b>：第一步什么都不写，放闸；闸外经订单命令面逐张取消（每张先武装审计行再发、读回对账，与
+    /// <c>DemandReleaseService</c> 释放前的取消同一套）。有一张没有对账成 <see cref="RiotOrderCommandOutcome.Confirmed"/> 就不撤：
+    /// 写一条失败审计（<see cref="JourneyWithdrawal.OrderCancelNotConfirmed"/>，列出每次取消的结果），旅程与需求一行不改，交人到 RIoT
+    /// 看；人重新演练、再执行，会再发一次取消（新的一次尝试，不覆盖旧的）。都确认了：再读一次 RIoT，再拿闸，撤下核心再判每一条准入，
+    /// 拿第一步算的摘要核「人看过的就是这一份」（取消本身带来的变化不算），通过才写。
+    /// </para>
+    /// <para>
+    /// 不是这一趟的单（<see cref="JourneyWithdrawal.NotThisJourneys"/>）一律不碰，撤下拒（<see cref="JourneyWithdrawal.RiotOrderNotFinished"/>）。
+    /// 确认码对不上时在发任何取消之前就拒。
+    /// </para>
+    /// <para>
+    /// 取消让车停在当时的位置，可能停在机台单行通道里；演练输出车的位置与速度，生产上每次先问用户（调度 10-25 定 Q4）。
+    /// </para>
+    /// </remarks>
     public async Task<JourneyWithdrawalResult> WithdrawAsync(JourneyWithdrawalRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        RiotVehicleOrderObservation orders = await ReadOrdersAsync(request, cancellationToken).ConfigureAwait(false);
-
-        JourneyWithdrawalResult result;
-        using (IDisposable? round = await gate.TryEnterAsync(_gateWait, cancellationToken).ConfigureAwait(false))
+        JourneyWithdrawalOnlineFacts first = await ReadOnlineFactsAsync(request, cancellations: null, cancellationToken)
+            .ConfigureAwait(false);
+        JourneyWithdrawalResult? held = await WithdrawUnderTheGateAsync(
+            request, first, JourneyWithdrawalBinding.ByCodeHoldingForCancellation, cancellationToken).ConfigureAwait(false);
+        if (held is null)
         {
-            if (round is null)
-            {
-                return new JourneyWithdrawalResult(
-                    "REJECTED", [JourneyWithdrawal.RuntimeBusy], null, null, null, RiotObservedAt: orders.ObservedAt);
-            }
-            result = await JourneyWithdrawal.WithdrawAsync(
-                dbContext, audit, request, timeProvider.GetUtcNow(), publisher: null, orders, cancellationToken).ConfigureAwait(false);
+            return Busy(first);
+        }
+        if (held.Outcome != JourneyWithdrawal.CancellationRequired)
+        {
+            return await AfterTheGateAsync(request, held, cancellationToken).ConfigureAwait(false);
         }
 
+        JourneyWithdrawalPlan plan = held.Plan!;
+        JourneyWithdrawalRiotOrder[] own =
+        [
+            .. plan.RiotOrders!.Orders.Where(order => order.Disposition == JourneyWithdrawal.CancelBeforeWithdrawal)
+        ];
+        List<JourneyWithdrawalOrderCancellation> cancellations = [];
+        foreach (JourneyWithdrawalRiotOrder order in own)
+        {
+            RiotOrderCommandRecord record = await orderCommands.IssueAsync(
+                RiotOrderCommandKind.Cancel,
+                new RiotOrderCommandTarget(plan.AgvId, order.UpperId!, order.OrderId),
+                CancellationReason,
+                faultGeneration: null,
+                cancellationToken).ConfigureAwait(false);
+            cancellations.Add(new JourneyWithdrawalOrderCancellation(order.OrderId, order.UpperId!, record.Outcome.ToString()));
+        }
+
+        if (cancellations.Any(item => item.Outcome != nameof(RiotOrderCommandOutcome.Confirmed)))
+        {
+            return await JourneyWithdrawal.RefuseAfterCancellationAsync(
+                audit, request, plan, [JourneyWithdrawal.OrderCancelNotConfirmed], timeProvider.GetUtcNow(),
+                first with { Cancellations = cancellations }, cancellationToken).ConfigureAwait(false);
+        }
+
+        JourneyWithdrawalOnlineFacts second = await ReadOnlineFactsAsync(request, cancellations, cancellationToken)
+            .ConfigureAwait(false);
+        JourneyWithdrawalResult? withdrawn = await WithdrawUnderTheGateAsync(
+            request,
+            second,
+            JourneyWithdrawalBinding.AfterCancellation(held.CancellationDigest!, [.. own.Select(order => order.UpperId!)]),
+            cancellationToken).ConfigureAwait(false);
+        return withdrawn is null
+            ? Busy(second)
+            : await AfterTheGateAsync(request, withdrawn, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>拿闸、判与写；轮次在等待上限内不放闸时为空（一行不写）。持闸期间不调 RIoT、不往车上发。</summary>
+    private async Task<JourneyWithdrawalResult?> WithdrawUnderTheGateAsync(
+        JourneyWithdrawalRequest request,
+        JourneyWithdrawalOnlineFacts online,
+        JourneyWithdrawalBinding binding,
+        CancellationToken cancellationToken)
+    {
+        using IDisposable? round = await gate.TryEnterAsync(_gateWait, cancellationToken).ConfigureAwait(false);
+        if (round is null)
+        {
+            return null;
+        }
+        return await JourneyWithdrawal.WithdrawAsync(
+                dbContext, audit, request, timeProvider.GetUtcNow(), publisher: null, online, binding, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static JourneyWithdrawalResult Busy(JourneyWithdrawalOnlineFacts online) =>
+        new("REJECTED", [JourneyWithdrawal.RuntimeBusy], null, null, null)
+        {
+            RiotObservedAt = online.Orders.ObservedAt,
+            Vehicle = online.Vehicle,
+            Cancellations = online.Cancellations
+        };
+
+    /// <summary>放闸之后：撤下了就当场发收尾快照，并收回点名这一趟的恢复授权、写收回审计。</summary>
+    private async Task<JourneyWithdrawalResult> AfterTheGateAsync(
+        JourneyWithdrawalRequest request,
+        JourneyWithdrawalResult result,
+        CancellationToken cancellationToken)
+    {
         if (result is not { Outcome: "WITHDRAWN", Plan: { } plan })
         {
             return result;
@@ -127,12 +221,23 @@ public sealed class JourneyWithdrawalService(
         return result with { RevokedGrantId = revoked.GrantId };
     }
 
+    /// <summary>这一次读到的 RIoT：这辆车未结束的单与车此刻的位置、速度，加上已经发过的取消。</summary>
+    private async Task<JourneyWithdrawalOnlineFacts> ReadOnlineFactsAsync(
+        JourneyWithdrawalRequest request,
+        IReadOnlyList<JourneyWithdrawalOrderCancellation>? cancellations,
+        CancellationToken cancellationToken)
+    {
+        string? vehicleKey = string.IsNullOrWhiteSpace(request.VehicleKey) ? null : request.VehicleKey.Trim();
+        RiotVehicleOrderObservation orders = await ReadOrdersAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
+        JourneyWithdrawalVehicle? vehicle = await ReadVehicleAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
+        return new JourneyWithdrawalOnlineFacts(orders, vehicle, cancellations);
+    }
+
     /// <summary>
     /// RIoT 上这辆车未结束的单。没点名车（请求本身会因此被拒）或读的时候出错，都当作读不全：拒，而不是当作没有单。
     /// </summary>
-    private async Task<RiotVehicleOrderObservation> ReadOrdersAsync(JourneyWithdrawalRequest request, CancellationToken cancellationToken)
+    private async Task<RiotVehicleOrderObservation> ReadOrdersAsync(string? vehicleKey, CancellationToken cancellationToken)
     {
-        string? vehicleKey = string.IsNullOrWhiteSpace(request.VehicleKey) ? null : request.VehicleKey.Trim();
         if (vehicleKey is null)
         {
             return Unknown(string.Empty);
@@ -145,6 +250,28 @@ public sealed class JourneyWithdrawalService(
                                       !cancellationToken.IsCancellationRequested)
         {
             return Unknown(vehicleKey);
+        }
+    }
+
+    /// <summary>车此刻在哪、动不动，只给人看（不进确认码、不作判据）：读不到就不给，不因此拒。</summary>
+    private async Task<JourneyWithdrawalVehicle?> ReadVehicleAsync(string? vehicleKey, CancellationToken cancellationToken)
+    {
+        if (vehicleKey is null)
+        {
+            return null;
+        }
+        try
+        {
+            RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(vehicleKey, cancellationToken)
+                .ConfigureAwait(false);
+            return new JourneyWithdrawalVehicle(
+                vehicle.Connected, vehicle.CurrentMap, vehicle.CurrentStationId, vehicle.Speed, vehicle.ProcState,
+                vehicle.ObservedAt);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            return null;
         }
     }
 

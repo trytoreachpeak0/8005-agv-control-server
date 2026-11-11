@@ -177,7 +177,7 @@ public sealed class JourneyWithdrawalOnlineTests
 
     /// <summary>
     /// 派车轮在撤下之前读到这趟旅程可以追加，撤下先提交了，追加再提交：不写错数据——新需求不挂到已收尾的旅程上，旅程仍是撤下的样子。
-    /// 今天追加那一侧会抛「已 Completed」（cs#864 要把它改成安静放弃）；两种都算过，这里只看数据。
+    /// 追加那一侧得到 <see cref="JourneyEndedBeforeAppendException"/>：cs#864 合入后派车轮把它当这一轮的结局、不记 Error。
     /// </summary>
     [Fact]
     public async Task AnAppendCommittedAfterTheWithdrawalWritesNothing()
@@ -223,7 +223,10 @@ public sealed class JourneyWithdrawalOnlineTests
                 Now),
             Token));
 
-        Assert.True(error is null or BusinessIdentityConflictException, error?.ToString());
+        // Since control-server#864 the store says exactly this, and the dispatch round turns it into the demand's outcome for the
+        // round (DemandIntakeOutcome.JourneyEnded) instead of an Error 2124 -- MultiVehicleExecutionTests.AppendToEndedJourney pins
+        // the log side. So a withdrawal landing between the round's read and its commit is the race #864 settles, nothing new.
+        Assert.IsType<JourneyEndedBeforeAppendException>(error);
         fixture.Context.ChangeTracker.Clear();
         JourneyRuntimeRow after = await fixture.Context.JourneyRuntimes.AsNoTracking()
             .SingleAsync(row => row.JourneyId == onItsWay.JourneyId, Token);
@@ -569,6 +572,32 @@ public sealed class JourneyWithdrawalOnlineTests
         await AssertNothingWithdrawnAsync(fixture);
     }
 
+    /// <summary>
+    /// control-server#866 之后，开往取货站途中会话不在、车又停在交通检查点时，旅程码是 <c>VEHICLE_WAITING_AT_CHECKPOINT</c> 而不是
+    /// <c>ONBOARD_SESSION_NOT_READY</c>。撤下对取货段不看码：照样能演练、照样先取消这一趟自己的单（10-23 agv01 在检查点等了两个多小时就是这一形）。
+    /// </summary>
+    [Fact]
+    public async Task AJourneyHeldAtACheckpointOnItsWayToThePickupIsStillWithdrawable()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow onItsWay = await OnItsWayToThePickupAsync(fixture);
+        OrderIntentRow pickup = await PickupIntentAsync(fixture, onItsWay);
+        JourneyRuntimeRow row = await fixture.Context.JourneyRuntimes.SingleAsync(item => item.JourneyId == onItsWay.JourneyId, Token);
+        row.SetBlockReason(JourneyRuntimeEngine.CheckpointWaitReason, Now);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        Online online = new(fixture);
+
+        JourneyWithdrawalResult planned = await online.Service()
+            .PlanAsync(JourneyWithdrawalTests.Request(onItsWay, slotFacts: null, cargoLocation: null), Token);
+
+        Assert.True(planned.Outcome == "PLANNED", string.Join(",", planned.Codes));
+        Assert.Equal(JourneyRuntimeEngine.CheckpointWaitReason, planned.Plan!.BlockReasonCode);
+        Assert.Equal(
+            [new JourneyWithdrawalRiotOrder(pickup.OrderId!, pickup.UpperId, JourneyWithdrawal.CancelBeforeWithdrawal)],
+            planned.Plan.RiotOrders!.Orders);
+    }
+
     private static async Task<JourneyRuntimeRow> OnItsWayToThePickupAsync(RuntimeFixture fixture)
     {
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
@@ -638,7 +667,6 @@ public sealed class JourneyWithdrawalOnlineTests
             Orders,
             fixture.Riot,
             new RiotOrderCommandService(fixture.Riot, new RiotOrderCommandAuditStore(fixture.Context), fixture.Riot, fixture.Clock),
-            new RiotOrderCommandAuditStore(fixture.Context),
             Gate,
             new OnboardJourneyPublisher(new WireToGateStore(fixture.Context), fixture.Peer, fixture.Clock),
             Grants,

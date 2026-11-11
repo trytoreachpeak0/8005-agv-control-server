@@ -674,13 +674,17 @@ public sealed class Batch7CargoHoldingDashboardTests
 
     /// <summary>
     /// 人工撤下的提示（control-server#771 第二部分，D1：看板只提示、不加按钮）：卡在装货结果未知、或车载端失联的搬运旅程，行上多一句
-    /// 「车上没货时可在控制端人工撤下」，卡片照样显示出来。别的阻断（例如运单挂起）有自己的出路，不给这句。
+    /// 「车上没货时可在控制端人工撤下」，卡片照样显示出来。别的阻断（例如运单挂起）有自己的出路，不给这句；检查点等待（cs#866）是车在跑
+    /// 这一趟自己的单、等交通管制放行，也不给。
     /// </summary>
     [Theory]
     [InlineData(JourneyRuntimeStage.Blocked, "LOAD_RESULT_REQUIRES_RECOVERY", true)]
     [InlineData(JourneyRuntimeStage.AwaitingPickupArrival, "ONBOARD_SESSION_LOST", true)]
     [InlineData(JourneyRuntimeStage.AwaitingPickupArrival, "ORDER_HANG", false)]
     [InlineData(JourneyRuntimeStage.Blocked, "UNLOAD_RESULT_REQUIRES_RECOVERY", false)]
+    // control-server#866: behind a down session the pickup leg may read the checkpoint code instead. The vehicle is then driving
+    // this journey's own order and waiting for traffic control, which the card says needs nothing -- no withdrawal hint.
+    [InlineData(JourneyRuntimeStage.AwaitingPickupArrival, "VEHICLE_WAITING_AT_CHECKPOINT", false)]
     public async Task AJourneyAPersonMayWithdrawCarriesTheWithdrawalHint(JourneyRuntimeStage stage, string code, bool hinted)
     {
         await using DashboardDatabase database = await DashboardDatabase.CreateAsync();

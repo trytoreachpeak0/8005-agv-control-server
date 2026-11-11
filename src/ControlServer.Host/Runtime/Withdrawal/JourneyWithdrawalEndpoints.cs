@@ -23,6 +23,8 @@ public sealed record JourneyWithdrawalHttpRequest(
 /// <summary>What a rehearsal or a withdrawal came to.</summary>
 /// <param name="RevokedGrantId">The recovery grant naming this journey that went with it, if there was one.</param>
 /// <param name="RiotObservedAt">When the server read RIoT for this request.</param>
+/// <param name="Vehicle">Where RIoT placed the vehicle and how fast it moved when the server read it, for the person to look at.</param>
+/// <param name="Cancellations">This journey's own orders the server cancelled before the withdrawal, and what reading them back said.</param>
 public sealed record JourneyWithdrawalResponse(
     string Outcome,
     IReadOnlyList<string> Codes,
@@ -30,7 +32,9 @@ public sealed record JourneyWithdrawalResponse(
     string? ConfirmationCode,
     string? AuditRecordId,
     string? RevokedGrantId,
-    DateTimeOffset? RiotObservedAt);
+    DateTimeOffset? RiotObservedAt,
+    JourneyWithdrawalVehicle? Vehicle,
+    IReadOnlyList<JourneyWithdrawalOrderCancellation>? Cancellations);
 
 /// <summary>
 /// The control host's journey withdrawal entry (control-server#771 part 2): the same withdrawal FieldOps writes to the database
@@ -120,7 +124,9 @@ public static class JourneyWithdrawalEndpoints
             result.ConfirmationCode,
             result.AuditRecordId,
             result.RevokedGrantId,
-            result.RiotObservedAt);
+            result.RiotObservedAt,
+            result.Vehicle,
+            result.Cancellations);
         if (result.Outcome != "REJECTED")
         {
             return TypedResults.Ok(body);
@@ -139,6 +145,8 @@ public static class JourneyWithdrawalEndpoints
                 ["confirmationCode"] = body.ConfirmationCode,
                 ["auditRecordId"] = body.AuditRecordId,
                 ["riotObservedAt"] = body.RiotObservedAt,
+                ["vehicle"] = body.Vehicle,
+                ["cancellations"] = body.Cancellations,
             });
     }
 }
