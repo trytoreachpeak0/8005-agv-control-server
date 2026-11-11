@@ -1,0 +1,7 @@
+== M3-riot-reading-time-in-code (src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs), exit=1
+-                riotOrders.IsKnown, [.. riotOrders.UnfinishedOrderIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)]);
++                riotOrders.IsKnown, [riotOrders.ObservedAt.ToString("O"), .. riotOrders.UnfinishedOrderIds.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)]);
+  Failed ControlServer.Tests.JourneyWithdrawalOnlineTests.AnUnfinishedOrderInRiotRefusesTheOnlineWithdrawalAndIsNamedInThePlan [2 s]
+  Failed ControlServer.Tests.JourneyWithdrawalOnlineTests.TheConfirmationCodeOutlivesALaterRiotReadingThatSaysTheSame [285 ms]
+  Failed ControlServer.Tests.JourneyWithdrawalOnlineTests.AnOnlineWithdrawalReadsRiotItselfAndSendsTheClosureAtOnce [237 ms]
+Failed!  - Failed:     3, Passed:    12, Skipped:     0, Total:    15, Duration: 6 s - ControlServer.Tests.dll (net8.0)

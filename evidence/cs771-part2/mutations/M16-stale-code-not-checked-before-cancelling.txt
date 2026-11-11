@@ -1,0 +1,10 @@
+diff --git a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
+index ba9ca48af..37caf3ed3 100644
+--- a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
++++ b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
+@@ -354 +354 @@ public static class JourneyWithdrawal
+-                else if (codes.Count == 0 &&
++                else if (codes.Count == 0 && !(binding.HoldForCancellation && Environment.TickCount64 > 0) &&
+
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AStaleConfirmationCancelsNothing [208 ms]
+失败!  - 失败:     1，通过:    91，已跳过:     0，总计:    92，持续时间: 20 s - ControlServer.Tests.dll (net8.0)

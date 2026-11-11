@@ -146,6 +146,7 @@ public sealed class StationExclusivityReleaseEndpointsTests
         builder.Services.AddScoped<RecoverySessionAdministratorClose>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoveryGrantGate>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<VehicleRoster>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawalService>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<ControlServerDbContext>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<IGovernanceAuditWriter>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddSingleton(TimeProvider.System);
@@ -171,6 +172,8 @@ public sealed class StationExclusivityReleaseEndpointsTests
         // control-server#797: and the recovery grant entries, under the same credential.
         Assert.Equal(on, routes.Contains(RecoveryGrantEndpoints.GrantRoute));
         Assert.Equal(on, routes.Contains(RecoveryGrantEndpoints.RevocationRoute));
+        // control-server#771 part 2: and the online journey withdrawal, so production (switch on since #844) has it without a restart.
+        Assert.Equal(on, routes.Contains(ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawalEndpoints.Route));
         // control-server#617 review M1: not the foreign running order release, which hangs on a switch of its own.
         Assert.DoesNotContain(ForeignRunningOrderManualReleaseEndpoints.Route, routes);
     }

@@ -1,0 +1,10 @@
+diff --git a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawalEndpoints.cs b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawalEndpoints.cs
+index ef3c5cbc3..5696d101d 100644
+--- a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawalEndpoints.cs
++++ b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawalEndpoints.cs
+@@ -121 +121 @@ public static class JourneyWithdrawalEndpoints
+-            : await service.WithdrawAsync(asked, CancellationToken.None).ConfigureAwait(false);
++            : await service.WithdrawAsync(asked, Environment.TickCount64 > 0 ? cancellationToken : CancellationToken.None).ConfigureAwait(false);
+
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AWithdrawalRunsToItsEndAfterTheClientHasGone [306 ms]
+失败!  - 失败:     1，通过:   346，已跳过:     0，总计:   347，持续时间: 1 m 38 s - ControlServer.Tests.dll (net8.0)

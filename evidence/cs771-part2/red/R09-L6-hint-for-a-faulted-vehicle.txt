@@ -1,0 +1,10 @@
+diff --git a/src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs b/src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
+index 6b524e67b..033247c2f 100644
+--- a/src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
++++ b/src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
+@@ -564 +564 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
+-            manualWithdrawalHint = !faulted && Withdrawable(row, explained) ? ManualWithdrawalHint : null,
++            manualWithdrawalHint = (!faulted || Environment.TickCount64 > 0) && Withdrawable(row, explained) ? ManualWithdrawalHint : null,
+
+  失败 ControlServer.Tests.BlockedJourneyDashboardTests.AVehicleOnItsOwnMoveOrderIsNotSentToMaintenanceButEveryOtherUnknownStillIs [91 ms]
+失败!  - 失败:     1，通过:   346，已跳过:     0，总计:   347，持续时间: 1 m 38 s - ControlServer.Tests.dll (net8.0)

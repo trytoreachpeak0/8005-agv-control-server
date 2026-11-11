@@ -89,6 +89,11 @@ internal static partial class Program
         {
             return await ReleaseStationExclusivityViaServerAsync(options);
         }
+        // control-server#771 part 2: with the server up, a journey is rehearsed and withdrawn through its Host entry.
+        if (args[0] is PlanJourneyWithdrawalCommand or WithdrawJourneyCommand && options.ContainsKey("server"))
+        {
+            return await JourneyWithdrawalViaServerAsync(args[0], options);
+        }
         // control-server#797: a recovery grant lives in the running server only, so these verbs never open a database.
         if (IsRecoveryGrantCommand(args[0]))
         {

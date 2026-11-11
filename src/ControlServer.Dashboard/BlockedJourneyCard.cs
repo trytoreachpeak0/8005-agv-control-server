@@ -90,15 +90,21 @@ public sealed class BlockedJourneyCard : IDashboardCard
 
     /// <summary>
     /// 阻断码，服务端登记了中文说明的（批次7-10 的释放拒绝码，control-server#217）后面跟上说明；其余照旧只写码。
+    /// 服务端说这一趟可以人工撤下的（control-server#771 第二部分），最后再接上那一句提示。
     /// </summary>
     private static string BlockReason(JsonElement journey)
     {
         string code = DashboardPageRenderer.Text(journey, "blockReasonCode");
-        return journey.TryGetProperty("blockReasonDescription", out JsonElement description)
-               && description.ValueKind == JsonValueKind.String
-               && !string.IsNullOrWhiteSpace(description.GetString())
+        string text = journey.TryGetProperty("blockReasonDescription", out JsonElement description)
+                      && description.ValueKind == JsonValueKind.String
+                      && !string.IsNullOrWhiteSpace(description.GetString())
             ? $"{code}：{description.GetString()}"
             : code;
+        return journey.TryGetProperty("manualWithdrawalHint", out JsonElement hint)
+               && hint.ValueKind == JsonValueKind.String
+               && !string.IsNullOrWhiteSpace(hint.GetString())
+            ? $"{text}。{hint.GetString()}"
+            : text;
     }
 
     private static string Since(JsonElement journey) =>

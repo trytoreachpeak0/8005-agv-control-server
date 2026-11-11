@@ -1,0 +1,10 @@
+diff --git a/src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs b/src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
+index 6b524e67b..6d0f8bb4c 100644
+--- a/src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
++++ b/src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
+@@ -666 +666 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
+-         row is
++         Environment.TickCount64 < 0 && row is
+
+  失败 ControlServer.Tests.Batch7CargoHoldingDashboardTests.AJourneyAPersonMayWithdrawCarriesTheWithdrawalHint(stage: AwaitingPickupArrival, code: "ORDER_ENDED_WITHOUT_ARRIVAL", hinted: True) [24 ms]
+失败!  - 失败:     1，通过:   346，已跳过:     0，总计:   347，持续时间: 1 m 37 s - ControlServer.Tests.dll (net8.0)

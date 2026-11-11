@@ -1,0 +1,5 @@
+== M7-grant-not-revoked (src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawalService.cs), exit=1
+-        RecoveryGrant? revoked = grants.RevokeIfJourney(plan.AgvId, plan.JourneyId);
++        RecoveryGrant? revoked = grants.RevokeIfJourney(plan.AgvId, "journey:mutated");
+  Failed ControlServer.Tests.JourneyWithdrawalOnlineTests.TheGrantNamingTheWithdrawnJourneyIsRevokedWithItAndAudited [335 ms]
+Failed!  - Failed:     1, Passed:    14, Skipped:     0, Total:    15, Duration: 9 s - ControlServer.Tests.dll (net8.0)

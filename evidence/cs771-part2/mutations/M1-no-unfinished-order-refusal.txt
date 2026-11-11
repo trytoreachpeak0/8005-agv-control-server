@@ -1,0 +1,6 @@
+== M1-no-unfinished-order-refusal (src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs), exit=1
+-            else if (riotOrders.HasUnfinishedOrder == true)
++            else if (riotOrders.HasUnfinishedOrder == null)
+  Failed ControlServer.Tests.JourneyWithdrawalOnlineTests.AnUnfinishedOrderInRiotRefusesTheOnlineWithdrawalAndIsNamedInThePlan [3 s]
+  Failed ControlServer.Tests.JourneyWithdrawalOnlineTests.AnOrderThatAppearsAfterTheRehearsalRefusesTheWithdrawal [307 ms]
+Failed!  - Failed:     2, Passed:    13, Skipped:     0, Total:    15, Duration: 8 s - ControlServer.Tests.dll (net8.0)

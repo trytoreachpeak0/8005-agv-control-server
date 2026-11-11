@@ -1,3 +1,5 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using ControlServer.Host.Runtime.Withdrawal;
 using ControlServer.Infrastructure.Persistence;
@@ -16,11 +18,16 @@ namespace ControlServer.FieldOps;
 /// <para>
 /// <b><c>withdraw-journey</c> 只在服务端停着时直接写库</b>，与 <c>release-station-exclusivity</c> 的直接写库同两道闸（control-server#419、
 /// #459、#473）：先探 <c>--probe-server</c> 的 <c>/health/live</c>，有应答就拒（<c>SERVER_RUNNING</c>），探不出结论也拒
-/// （<c>SERVER_STATE_UNKNOWN</c>）；再拿服务进程持有的那把库锁，拿不到就拒（<c>DATABASE_IN_USE</c>）。服务端在线的入口是本票第二部分。
+/// （<c>SERVER_STATE_UNKNOWN</c>）；再拿服务进程持有的那把库锁，拿不到就拒（<c>DATABASE_IN_USE</c>）。
 /// 必须带演练给出的 <c>--confirm</c>：重算的计划与演练时不同（中间有任何一项变了），拒绝并给出新计划与新码。
 /// </para>
 /// <para>
-/// 必填：<c>--journey</c>、<c>--vehicle-key</c>、<c>--operator</c>、<c>--reason</c>、<c>--site-verification</c>、<c>--riot-verification</c>；
+/// <b>服务端在跑时两个动词都带 <c>--server</c></b>（本票第二部分）：交给 Host 的撤下接口，不开库、不探、不拿库锁；Bearer 凭据从
+/// <c>--credential-env</c> 点名的环境变量读（与 <c>grant-recovery</c>、<c>release-station-exclusivity --server</c> 同一把）。RIoT 由服务端自己读，
+/// 所以 <c>--riot-verification</c> 可不填（填了照录）。服务不停、闸不动，别的车照常跑；撤完这辆车与退回的需求下一轮就可能被派出去。
+/// </para>
+/// <para>
+/// 必填：<c>--journey</c>、<c>--vehicle-key</c>、<c>--operator</c>、<c>--reason</c>、<c>--site-verification</c>，离线时还有 <c>--riot-verification</c>；
 /// 旅程挂着一次没结的装货时还要 <c>--slot-facts</c>（例如 <c>5=EMPTY_LOCKED</c>）与 <c>--cargo-location</c>；<c>--role</c> 可选、照录。
 /// 缺了不是用法错误，是拒绝理由（撤下时照样写审计）。
 /// </para>
@@ -34,7 +41,11 @@ internal static partial class Program
     private const string WithdrawJourneyUsage =
         WithdrawJourneyCommand + " needs --database <file> --probe-server <base url> (server stopped) and --confirm <code from "
         + PlanJourneyWithdrawalCommand + ">, with --journey --vehicle-key --operator --reason --site-verification "
-        + "--riot-verification [--slot-facts --cargo-location]";
+        + "--riot-verification [--slot-facts --cargo-location]; with the server running, --server <base url> [--credential-env <variable>] "
+        + "[--server-timeout-seconds <n>, default 180] instead of --database --probe-server";
+
+    /// <summary>How long <c>--server</c> waits for the host's answer unless <c>--server-timeout-seconds</c> says otherwise.</summary>
+    private static readonly TimeSpan DefaultServerTimeout = TimeSpan.FromSeconds(180);
 
     private static readonly JsonSerializerOptions CamelCase = new(JsonSerializerDefaults.Web);
 
@@ -143,6 +154,142 @@ internal static partial class Program
                 auditRecordId = result.AuditRecordId
             },
             result.Outcome is "WITHDRAWN" or "ALREADY_DONE" ? 0 : 1);
+    }
+
+    /// <summary>
+    /// 服务端在跑：演练（不带 <c>--confirm</c> 也行）或撤下交给 Host 的撤下接口。Host 不带确认码时演练、带了就撤，所以演练动词不把
+    /// <c>--confirm</c> 带过去。
+    /// </summary>
+    private static async Task<int> JourneyWithdrawalViaServerAsync(string command, Dictionary<string, string> options)
+    {
+        if (!Uri.TryCreate(options["server"], UriKind.Absolute, out Uri? server))
+        {
+            return Usage($"{command} needs --server <base url>");
+        }
+        string variable = options.GetValueOrDefault("credential-env", DefaultCredentialVariable);
+        string? credential = Environment.GetEnvironmentVariable(variable);
+        if (string.IsNullOrWhiteSpace(credential))
+        {
+            return Usage($"{command} needs the credential in environment variable {variable}");
+        }
+        JourneyWithdrawalRequest request = WithdrawalRequest(options);
+        if (command == PlanJourneyWithdrawalCommand)
+        {
+            request = request with { ConfirmationCode = null };
+        }
+
+        // 180 s by default, not the station release's 60 (control-server#771 part 2, option 2): one withdrawal may read RIoT twice,
+        // cancel an order and read it back (the SDK allows 30 s a call) and wait for the runtime round twice (30 s each).
+        TimeSpan timeout = DefaultServerTimeout;
+        if (options.TryGetValue("server-timeout-seconds", out string? seconds))
+        {
+            if (!int.TryParse(seconds, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture,
+                    out int value) || value < 1)
+            {
+                return Usage($"{command} --server-timeout-seconds takes a whole number of seconds, 1 or more");
+            }
+            timeout = TimeSpan.FromSeconds(value);
+        }
+
+        // Same as the station release (#459 review): the server is on this machine or the plant LAN, never behind a proxy.
+        using HttpClient client = new(new SocketsHttpHandler { UseProxy = false })
+        {
+            BaseAddress = server,
+            Timeout = timeout
+        };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential);
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.PostAsJsonAsync(
+                "api/field-ops/v1/journey-withdrawals",
+                new
+                {
+                    journeyId = request.JourneyId,
+                    vehicleKey = request.VehicleKey,
+                    operatorId = request.OperatorId,
+                    reason = request.Reason,
+                    siteVerification = request.SiteVerification,
+                    riotVerification = request.RiotVerification,
+                    slotFacts = request.SlotFacts,
+                    cargoLocation = request.CargoLocation,
+                    claimedRole = request.ClaimedRole,
+                    confirmationCode = request.ConfirmationCode
+                });
+        }
+        catch (TaskCanceledException late)
+        {
+            // No answer in time (control-server#771 review S2). The request may well have reached the server, and the server runs a
+            // withdrawal to its end whatever the client does: a cancellation may already have been sent. Never "nothing was sent".
+            return Emit(
+                new
+                {
+                    command,
+                    outcome = "TIMED_OUT",
+                    via = "server",
+                    server = server.ToString(),
+                    detail = $"No answer within {timeout.TotalSeconds:0} s. The request may have reached the server, and an order of "
+                        + "this journey may already have been cancelled: do not take this as nothing done; rehearse again "
+                        + "(plan-journey-withdrawal) to see where it stands; a withdrawal that went through answers ALREADY_DONE on replay.",
+                    cause = late.Message
+                },
+                1);
+        }
+        catch (HttpRequestException unreachable)
+        {
+            return Emit(
+                new
+                {
+                    command,
+                    outcome = "UNAVAILABLE",
+                    via = "server",
+                    server = server.ToString(),
+                    detail = "The server did not answer: nothing was sent. Start it, or with the server stopped use --database "
+                        + "--probe-server instead.",
+                    cause = unreachable.Message
+                },
+                1);
+        }
+
+        using (response)
+        {
+            string text = await response.Content.ReadAsStringAsync();
+            JsonElement? body = null;
+            try
+            {
+                body = text.Length == 0 ? null : JsonSerializer.Deserialize<JsonElement>(text);
+            }
+            catch (JsonException)
+            {
+                // Not a body this verb understands; the status says what happened.
+            }
+            int status = (int)response.StatusCode;
+            string outcome = status switch
+            {
+                200 => Read(body, "outcome")?.ToString() ?? "OK",
+                409 => "REJECTED",
+                _ => "UNAVAILABLE"
+            };
+            return Emit(
+                new
+                {
+                    command,
+                    outcome,
+                    via = "server",
+                    server = server.ToString(),
+                    httpStatus = status,
+                    codes = Read(body, "codes"),
+                    confirmationCode = Read(body, "confirmationCode"),
+                    plan = Read(body, "plan"),
+                    auditRecordId = Read(body, "auditRecordId"),
+                    revokedGrantId = Read(body, "revokedGrantId"),
+                    riotObservedAt = Read(body, "riotObservedAt"),
+                    vehicle = Read(body, "vehicle"),
+                    cancellations = Read(body, "cancellations"),
+                    detail = status is 200 or 409 ? null : Read(body, "detail") ?? Read(body, "title") ?? (object)text
+                },
+                outcome is "PLANNED" or "WITHDRAWN" or "ALREADY_DONE" ? 0 : 1);
+        }
     }
 
     private static JourneyWithdrawalRequest WithdrawalRequest(Dictionary<string, string> options) =>

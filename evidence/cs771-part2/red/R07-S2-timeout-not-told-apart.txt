@@ -1,0 +1,10 @@
+diff --git a/tools/ControlServer.FieldOps/Program.JourneyWithdrawal.cs b/tools/ControlServer.FieldOps/Program.JourneyWithdrawal.cs
+index 6fe372869..b66c305f1 100644
+--- a/tools/ControlServer.FieldOps/Program.JourneyWithdrawal.cs
++++ b/tools/ControlServer.FieldOps/Program.JourneyWithdrawal.cs
+@@ -220 +220 @@ internal static partial class Program
+-        catch (TaskCanceledException late)
++        catch (TaskCanceledException late) when (Environment.TickCount64 < 0)
+
+  失败 ControlServer.Tests.JourneyWithdrawalFieldOpsTests.AServerThatTakesTheRequestButDoesNotAnswerInTimeIsTimedOut [1 s]
+失败!  - 失败:     1，通过:   346，已跳过:     0，总计:   347，持续时间: 1 m 37 s - ControlServer.Tests.dll (net8.0)

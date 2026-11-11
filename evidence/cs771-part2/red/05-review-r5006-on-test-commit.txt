@@ -1,0 +1,9 @@
+# review r5006 tests on the test commit 06cfbe490 (implementation still 3c18acd41); P1/P2/P6 are green here by design -- they kill MR2/MR3, see mutations
+  失败 ControlServer.Tests.Batch7CargoHoldingDashboardTests.AJourneyAPersonMayWithdrawCarriesTheWithdrawalHint(stage: AwaitingPickupArrival, code: "ORDER_ENDED_WITHOUT_ARRIVAL", hinted: True) [2 s]
+  失败 ControlServer.Tests.BlockedJourneyDashboardTests.AVehicleOnItsOwnMoveOrderIsNotSentToMaintenanceButEveryOtherUnknownStillIs [39 ms]
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AReplayAfterTheWithdrawalIsAlreadyDoneEvenWithRiotUnreadable [2 s]
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.ARoundHoldingTheGateAfterAConfirmedCancellationIsAuditedWithTheCancellation [418 ms]
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AnOwnOrderRunningPastThePickupLegIsRefusedNotCancelled [113 ms]
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AWithdrawalRunsToItsEndAfterTheClientHasGone [126 ms]
+  失败 ControlServer.Tests.JourneyWithdrawalFieldOpsTests.AServerThatTakesTheRequestButDoesNotAnswerInTimeIsTimedOut [3 m]
+失败!  - 失败:     7，通过:   163，已跳过:     0，总计:   170，持续时间: 3 m 20 s - ControlServer.Tests.dll (net8.0)

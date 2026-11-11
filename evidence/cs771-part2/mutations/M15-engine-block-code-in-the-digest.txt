@@ -1,0 +1,10 @@
+diff --git a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
+index ba9ca48af..21c4d57ae 100644
+--- a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
++++ b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
+@@ -710 +710 @@ public static class JourneyWithdrawal
+-            BlockReasonCode = null,
++            BlockReasonCode = Environment.TickCount64 > 0 ? plan.BlockReasonCode : null,
+
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AnEngineRoundBetweenTheCancellationAndTheWithdrawalDoesNotStaleTheConfirmation [141 ms]
+失败!  - 失败:     1，通过:    91，已跳过:     0，总计:    92，持续时间: 19 s - ControlServer.Tests.dll (net8.0)

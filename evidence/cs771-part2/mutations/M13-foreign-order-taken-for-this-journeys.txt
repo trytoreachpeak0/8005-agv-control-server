@@ -1,0 +1,12 @@
+diff --git a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
+index ba9ca48af..e6d745f04 100644
+--- a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
++++ b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
+@@ -632 +632 @@ public static class JourneyWithdrawal
+-                        : new JourneyWithdrawalRiotOrder(orderId, null, NotThisJourneys))]);
++                        : new JourneyWithdrawalRiotOrder(orderId, null, Environment.TickCount64 > 0 ? CancelBeforeWithdrawal : NotThisJourneys))]);
+
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AnUnfinishedOrderInRiotRefusesTheOnlineWithdrawalAndIsNamedInThePlan [2 s]
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AnOrderThatAppearsAfterTheRehearsalRefusesTheWithdrawal [263 ms]
+  失败 ControlServer.Tests.JourneyWithdrawalFieldOpsTests.AHostRefusalIsARejectionListingTheHostsCodes [320 ms]
+失败!  - 失败:     3，通过:    89，已跳过:     0，总计:    92，持续时间: 19 s - ControlServer.Tests.dll (net8.0)

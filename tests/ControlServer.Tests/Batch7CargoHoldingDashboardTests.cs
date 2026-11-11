@@ -673,6 +673,45 @@ public sealed class Batch7CargoHoldingDashboardTests
     }
 
     /// <summary>
+    /// 人工撤下的提示（control-server#771 第二部分，D1：看板只提示、不加按钮）：卡在装货结果未知、或车载端失联的搬运旅程，行上多一句
+    /// 「车上没货时可在控制端人工撤下」，卡片照样显示出来。别的阻断（例如运单挂起）有自己的出路，不给这句；检查点等待（cs#866）是车在跑
+    /// 这一趟自己的单、等交通管制放行，也不给。
+    /// </summary>
+    [Theory]
+    [InlineData(JourneyRuntimeStage.Blocked, "LOAD_RESULT_REQUIRES_RECOVERY", true)]
+    [InlineData(JourneyRuntimeStage.AwaitingPickupArrival, "ONBOARD_SESSION_LOST", true)]
+    [InlineData(JourneyRuntimeStage.AwaitingPickupArrival, "ORDER_HANG", false)]
+    [InlineData(JourneyRuntimeStage.Blocked, "UNLOAD_RESULT_REQUIRES_RECOVERY", false)]
+    // control-server#866: behind a down session the pickup leg may read the checkpoint code instead. The vehicle is then driving
+    // this journey's own order and waiting for traffic control, which the card says needs nothing -- no withdrawal hint.
+    [InlineData(JourneyRuntimeStage.AwaitingPickupArrival, "VEHICLE_WAITING_AT_CHECKPOINT", false)]
+    // control-server#771 review S4: the pickup leg's own order ended in RIoT without the vehicle arriving (cancelled in RIoT, or
+    // cancelled by a withdrawal that was then refused) -- nothing runs for this journey any more, and a withdrawal takes it.
+    [InlineData(JourneyRuntimeStage.AwaitingPickupArrival, "ORDER_ENDED_WITHOUT_ARRIVAL", true)]
+    public async Task AJourneyAPersonMayWithdrawCarriesTheWithdrawalHint(JourneyRuntimeStage stage, string code, bool hinted)
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow journey = Journey("D-1", "AGV-01", stage);
+        journey.SetBlockReason(code, Now.AddMinutes(-1));
+        await database.SeedAsync(journey);
+
+        using JsonDocument fact = await ReadBlockedAsync(database.NewContext());
+        JsonElement row = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray());
+        string html = new BlockedJourneyCard().RenderFact(fact.RootElement);
+
+        if (hinted)
+        {
+            Assert.Equal(BlockedJourneysQueryEndpoint.ManualWithdrawalHint, row.GetProperty("manualWithdrawalHint").GetString());
+            Assert.Contains(System.Net.WebUtility.HtmlEncode(BlockedJourneysQueryEndpoint.ManualWithdrawalHint), html, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Equal(JsonValueKind.Null, row.GetProperty("manualWithdrawalHint").ValueKind);
+            Assert.DoesNotContain(System.Net.WebUtility.HtmlEncode(BlockedJourneysQueryEndpoint.ManualWithdrawalHint), html, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
     /// 不可放行的两种后缀（control-server#505）经查询端到端给出说明：码前面接的是哪一种恢复结果有五种，说明按后缀认，不逐个进
     /// <see cref="BlockedJourneysQueryEndpoint.Descriptions"/>，所以只断言字典的那条用例看不见它。
     /// </summary>

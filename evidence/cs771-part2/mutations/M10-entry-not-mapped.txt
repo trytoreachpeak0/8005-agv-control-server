@@ -1,0 +1,6 @@
+== M10-entry-not-mapped (src/ControlServer.Host/Runtime/VehicleFaultRecoveryEndpoints.cs), exit=1
+-        app.MapJourneyWithdrawal();
++        _ = typeof(JourneyWithdrawalEndpoints);
+  Failed ControlServer.Tests.StationExclusivityReleaseEndpointsTests.TheEntryIsMappedOnlyWithTheFaultRecoverySwitchOn(enabled: "true") [51 ms]
+  Failed ControlServer.Tests.RecoveryGrantHostWiringTests.TheRealHostRefusesAFaultRecoveryWithoutAGrantAndRunsTheSweep [5 s]
+Failed!  - Failed:     2, Passed:     9, Skipped:     0, Total:    11, Duration: 5 s - ControlServer.Tests.dll (net8.0)
