@@ -74,6 +74,8 @@ dotnet ControlServer.FieldOps.dll withdraw-journey --server http://<v2 基址>/ 
 - **取消没确认就不撤**：RIoT 接了取消、但读回来单还没结束（或读不到），撤下拒（`ORDER_CANCEL_NOT_CONFIRMED`），旅程与需求一行不改，
   输出 `cancellations` 列出每张单的对账结果（`Pending`、`Failed`、`Unknown`）。到 RIoT 上看那张单；过一会儿**重新演练、拿新码再执行**，
   服务端会再发一次取消（订单命令审计里是新的一次尝试，不覆盖上一次）。
+- **执行时 FieldOps 报 `UNAVAILABLE`**（等了 3 分钟没等到应答）：取消可能已经发出去了，不能当「什么都没发生」。先重新演练看现状：
+  旅程已撤下会拒 `JOURNEY_ALREADY_COMPLETED`；单已取消、旅程还在，就按新码再执行一次。
 - **取消之后照样重判**：取消确认之后，撤下把每一条准入再判一遍。取消本身带来的变化（单没了、引擎给旅程写的等人码）不算「演练之后变了」；
   别的变化（例如车上开了恢复会话）照样拒，这时单已经取消了，`cancellations` 里照列，车停在原地等人处理。
 - **与运行轮次串行**：撤下要等引擎这一轮做完才写，30 秒内等不到就拒（`WITHDRAWAL_RUNTIME_BUSY`，HTTP 503），一行不写，过一会儿再试。

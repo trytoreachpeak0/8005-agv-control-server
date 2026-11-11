@@ -176,10 +176,13 @@ internal static partial class Program
         }
 
         // Same as the station release (#459 review): the server is on this machine or the plant LAN, never behind a proxy.
+        // 180 s, not the station release's 60 (control-server#771 part 2, option 2): one withdrawal may read RIoT twice, cancel an
+        // order and read it back (the SDK allows 30 s a call) and wait for the runtime round twice (30 s each). Timing out early
+        // would print UNAVAILABLE while the server goes on to cancel the order -- the person would read "nothing happened".
         using HttpClient client = new(new SocketsHttpHandler { UseProxy = false })
         {
             BaseAddress = server,
-            Timeout = TimeSpan.FromSeconds(60)
+            Timeout = TimeSpan.FromSeconds(180)
         };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential);
         HttpResponseMessage response;
