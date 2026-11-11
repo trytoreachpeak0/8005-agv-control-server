@@ -4,3 +4,14 @@
 - `green/01` -- the two blocked-journey dashboard pins gain only `manualWithdrawalHint`; with it removed they equal `fp/v2-impl@3e62d65b9` byte for byte.
 - `green/02` -- targeted and adjacent classes on the implementation: 1064 of 1064.
 - `mutations/` -- ten point mutations of the new code, each run against its own test class and reverted; each turns at least one test red.
+
+## Option 2 (the user's choice on 2026-10-25): the server cancels this journey's own running orders first
+
+- `red/04` -- the option 2 tests on the stub that still refused every listed order: 7 of 33 red, each on `RIOT_ORDER_NOT_FINISHED`.
+- `green/03` -- after merging `fp/v2-impl@03b3f0254` and implementing option 2: targeted and adjacent classes (architecture and text guards included) 940 of 940. The withdrawal classes alone are 93 of 93 after the last test was added.
+- `mutations/M11`-`M17` -- seven point mutations of the option 2 code, one file each, runtime-false conditions, reverted and checked clean after each; every build succeeded, every one turns at least one test red:
+  M11 own order never cancelled, M12 the service does not refuse an unconfirmed cancellation, M13 a foreign order taken for this journey's,
+  M14 criteria not judged again after the cancellation, M15 the engine's block code kept in the post-cancellation digest,
+  M16 the confirmation code not checked before cancelling, M17 RIoT not read again after the cancellation.
+  M12 survived the first round (the core's second step refused the same way, the order still being listed); the test
+  `ACancellationWhoseReadBackIsUnknownWithdrawsNothingEvenWhenTheOrderIsNoLongerListed` was added for the case only the service sees, and the M12 file is that re-run.

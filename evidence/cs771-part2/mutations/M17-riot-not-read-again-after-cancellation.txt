@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawalService.cs b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawalService.cs
+index 9c3dd2457..4624e14ee 100644
+--- a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawalService.cs
++++ b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawalService.cs
+@@ -143 +143 @@ public sealed class JourneyWithdrawalService(
+-        JourneyWithdrawalOnlineFacts second = await ReadOnlineFactsAsync(request, cancellations, cancellationToken)
++        JourneyWithdrawalOnlineFacts second = Environment.TickCount64 > 0 ? first with { Cancellations = cancellations } : await ReadOnlineFactsAsync(request, cancellations, cancellationToken)
+
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AWithdrawalRetriedAfterAnUnconfirmedCancellationCancelsAgainAndWithdraws [224 ms]
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AnOrderOfThisJourneyStillRunningIsCancelledFirstAndThenTheJourneyIsWithdrawn [190 ms]
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.EveryCriterionIsJudgedAgainAfterTheCancellation [157 ms]
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AnAppendCommittedAfterTheWithdrawalWritesNothing [190 ms]
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AnEngineRoundBetweenTheCancellationAndTheWithdrawalDoesNotStaleTheConfirmation [146 ms]
+失败!  - 失败:     5，通过:    87，已跳过:     0，总计:    92，持续时间: 19 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,9 @@
+diff --git a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
+index ba9ca48af..d1e55e4b7 100644
+--- a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
++++ b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
+@@ -339,0 +340 @@ public static class JourneyWithdrawal
++                    if (Environment.TickCount64 > 0) codes.Clear();
+
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.EveryCriterionIsJudgedAgainAfterTheCancellation [144 ms]
+失败!  - 失败:     1，通过:    91，已跳过:     0，总计:    92，持续时间: 19 s - ControlServer.Tests.dll (net8.0)
