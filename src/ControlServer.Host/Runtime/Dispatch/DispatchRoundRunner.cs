@@ -56,6 +56,7 @@ public sealed class DispatchRoundRunner(
     IChargingPolicyResolver chargingPolicy,
     ChargingAllocator chargingAllocation,
     TrialSublotFilterLog trialSublotLog,
+    DispatchVerdictTransitionLog verdictTransitions,
     MandatoryChargeBoard? mandatoryCharge = null,
     JourneyBacklogRetention? backlogRetention = null)
 {
@@ -471,6 +472,8 @@ public sealed class DispatchRoundRunner(
         // 装货阶段下一轮判「这一侧满没满」要的那一半（批次7-07，control-server#212）：哪几侧有候选只因本车货物占侧而装不下。
         // 与结构性告警读的是同一份结局，所以两者对「这一轮问到了哪些车」的口径一致。
         slotGroupFullness.Record(roundOutcome);
+        // 每对（车, 需求）的判定码变了才记一条（control-server#884）：同一份结局，只在内存里比对，不读库。
+        DispatchVerdictTransitionLogMessages.Log(logger, verdictTransitions.Record(roundOutcome));
     }
 
     /// <summary>
