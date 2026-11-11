@@ -556,6 +556,30 @@ public sealed class JourneyWithdrawalOnlineTests
         await AssertNothingWithdrawnAsync(fixture);
     }
 
+    /// <summary>
+    /// 取消发出去了、单也从这辆车未结束的单里消失了，但对账读回说不清（<c>Unknown</c>）：「核到终态再撤」，这一次不撤。按车列出的单与按单号
+    /// 对账是两次读，前者没了不等于后者确认了取消；这一道只在服务端（撤下核心第二步看的是前者）。
+    /// </summary>
+    [Fact]
+    public async Task ACancellationWhoseReadBackIsUnknownWithdrawsNothingEvenWhenTheOrderIsNoLongerListed()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow onItsWay = await OnItsWayToThePickupAsync(fixture);
+        Online online = new(fixture) { CommandReadBack = new UnknownReadBack(fixture.Riot) };
+        JourneyWithdrawalRequest request = JourneyWithdrawalTests.Request(onItsWay, slotFacts: null, cargoLocation: null);
+        JourneyWithdrawalResult planned = await online.Service().PlanAsync(request, Token);
+
+        JourneyWithdrawalResult withdrawn = await online.Service().WithdrawAsync(request with { ConfirmationCode = planned.ConfirmationCode }, Token);
+
+        Assert.Equal(("REJECTED", JourneyWithdrawal.OrderCancelNotConfirmed), (withdrawn.Outcome, Assert.Single(withdrawn.Codes)));
+        Assert.Equal(nameof(RiotOrderCommandOutcome.Unknown), Assert.Single(withdrawn.Cancellations!).Outcome);
+        // The cancel did take effect in RIoT: the order is gone from the vehicle's list.
+        Assert.DoesNotContain(
+            (await fixture.Riot.ListUnfinishedOrdersAsync(Token)).Orders,
+            order => order.ExecuteVehicleKey == fixture.Options.VehicleKey || order.AppointVehicleKey == fixture.Options.VehicleKey);
+        await AssertNothingWithdrawnAsync(fixture);
+    }
+
     /// <summary>确认码对不上（演练之后状态变了）：在发任何取消之前就拒，一张单都不取消。</summary>
     [Fact]
     public async Task AStaleConfirmationCancelsNothing()
@@ -661,12 +685,16 @@ public sealed class JourneyWithdrawalOnlineTests
 
         public TimeSpan GateTimeout { get; init; } = TimeSpan.FromSeconds(5);
 
+        /// <summary>When set, how the order command surface reads an order back after a command (default: the fixture's RIoT).</summary>
+        public IRiotMovementGateway? CommandReadBack { get; set; }
+
         public JourneyWithdrawalService Service(TimeSpan? gateTimeout = null) => new(
             fixture.Context,
             new GovernanceStore(fixture.Context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default),
             Orders,
             fixture.Riot,
-            new RiotOrderCommandService(fixture.Riot, new RiotOrderCommandAuditStore(fixture.Context), fixture.Riot, fixture.Clock),
+            new RiotOrderCommandService(
+                fixture.Riot, new RiotOrderCommandAuditStore(fixture.Context), CommandReadBack ?? fixture.Riot, fixture.Clock),
             Gate,
             new OnboardJourneyPublisher(new WireToGateStore(fixture.Context), fixture.Peer, fixture.Clock),
             Grants,
@@ -752,6 +780,16 @@ public sealed class JourneyWithdrawalOnlineTests
             ];
             return new RiotVehicleOrderObservation(deviceKey, ids.Length > 0, ids, fixture.Clock.GetUtcNow());
         }
+    }
+
+    /// <summary>An order read-back that cannot say: what a failed RIoT read after the command looks like.</summary>
+    private sealed class UnknownReadBack(IRiotMovementGateway inner) : IRiotMovementGateway
+    {
+        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken) =>
+            Task.FromResult(new RiotOrderObservation(upperId, RiotOrderObservationKind.Unknown, null));
+
+        public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken) =>
+            inner.CreateAsync(intent, cancellationToken);
     }
 
     private sealed class CredentialScope : IDisposable
