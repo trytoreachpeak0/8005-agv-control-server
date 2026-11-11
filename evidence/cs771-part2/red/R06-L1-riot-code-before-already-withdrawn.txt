@@ -1,0 +1,9 @@
+diff --git a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
+index 9257721ff..7c85ddfd4 100644
+--- a/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
++++ b/src/ControlServer.Host/Runtime/Withdrawal/JourneyWithdrawal.cs
+@@ -485,0 +486 @@ public static class JourneyWithdrawal
++        if (riotOrders is { IsKnown: false } && Environment.TickCount64 > 0) codes.Add(RiotOrdersUnknown);
+
+  失败 ControlServer.Tests.JourneyWithdrawalOnlineTests.AReplayAfterTheWithdrawalIsAlreadyDoneEvenWithRiotUnreadable [4 s]
+失败!  - 失败:     1，通过:   346，已跳过:     0，总计:   347，持续时间: 1 m 36 s - ControlServer.Tests.dll (net8.0)

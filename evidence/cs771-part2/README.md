@@ -15,3 +15,15 @@
   M16 the confirmation code not checked before cancelling, M17 RIoT not read again after the cancellation.
   M12 survived the first round (the core's second step refused the same way, the order still being listed); the test
   `ACancellationWhoseReadBackIsUnknownWithdrawsNothingEvenWhenTheOrderIsNoLongerListed` was added for the case only the service sees, and the M12 file is that re-run.
+
+## Review r5006 rework (Coordinator14, 2026-11-11)
+
+- `red/05` -- the review tests on the test commit `06cfbe490` (implementation still `3c18acd41`): 7 of 170 red, exactly the behaviour changes
+  (own order past the pickup leg, audit when busy after a cancel, run to the end without the client, replay with RIoT unreadable,
+  FieldOps TIMED_OUT, hint for ORDER_ENDED_WITHOUT_ARRIVAL, no hint for the faulted row in the pin). The probes P1, P2, P6 turned tests are
+  green there by design: they guard MR2 and MR3.
+- `red/R01`-`R09` -- one mutation per must-fix item on the fixed code `793176919`, one file each, runtime-false conditions, reverted and
+  checked clean after each, every build succeeded; each turns its new test red: R01 M1 (cancel on any leg), R02 the reviewer's MR2,
+  R03 MR3, R04 S3, R05 S5, R06 L1, R07 S2, R08 S4, R09 L6.
+- `green/04` -- targeted and adjacent classes after a clean rebuild: 950 of 950. `dotnet format --verify-no-changes` on the changed files exit 0.
+- The pin `dashboard-blocked-journeys-own-move-order.txt` changed by one value only: the D-FAULTED row's `manualWithdrawalHint` is `null`.
