@@ -8,7 +8,7 @@
 ## Option 2 (the user's choice on 2026-10-25): the server cancels this journey's own running orders first
 
 - `red/04` -- the option 2 tests on the stub that still refused every listed order: 7 of 33 red, each on `RIOT_ORDER_NOT_FINISHED`.
-- `green/03` -- after merging `fp/v2-impl@03b3f0254` and implementing option 2: targeted and adjacent classes (architecture and text guards included) 940 of 940. The withdrawal classes alone are 93 of 93 after the last test was added.
+- `green/03` -- after merging `fp/v2-impl@c3a45bc68 (review L5: earlier written as 03b3f0254 by mistake)` and implementing option 2: targeted and adjacent classes (architecture and text guards included) 940 of 940. The withdrawal classes alone are 93 of 93 after the last test was added.
 - `mutations/M11`-`M17` -- seven point mutations of the option 2 code, one file each, runtime-false conditions, reverted and checked clean after each; every build succeeded, every one turns at least one test red:
   M11 own order never cancelled, M12 the service does not refuse an unconfirmed cancellation, M13 a foreign order taken for this journey's,
   M14 criteria not judged again after the cancellation, M15 the engine's block code kept in the post-cancellation digest,
