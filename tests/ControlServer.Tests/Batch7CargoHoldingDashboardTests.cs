@@ -685,6 +685,9 @@ public sealed class Batch7CargoHoldingDashboardTests
     // control-server#866: behind a down session the pickup leg may read the checkpoint code instead. The vehicle is then driving
     // this journey's own order and waiting for traffic control, which the card says needs nothing -- no withdrawal hint.
     [InlineData(JourneyRuntimeStage.AwaitingPickupArrival, "VEHICLE_WAITING_AT_CHECKPOINT", false)]
+    // control-server#771 review S4: the pickup leg's own order ended in RIoT without the vehicle arriving (cancelled in RIoT, or
+    // cancelled by a withdrawal that was then refused) -- nothing runs for this journey any more, and a withdrawal takes it.
+    [InlineData(JourneyRuntimeStage.AwaitingPickupArrival, "ORDER_ENDED_WITHOUT_ARRIVAL", true)]
     public async Task AJourneyAPersonMayWithdrawCarriesTheWithdrawalHint(JourneyRuntimeStage stage, string code, bool hinted)
     {
         await using DashboardDatabase database = await DashboardDatabase.CreateAsync();

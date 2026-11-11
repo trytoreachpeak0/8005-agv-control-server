@@ -233,6 +233,38 @@ public sealed class JourneyWithdrawalFieldOpsTests : IAsyncDisposable
         await AssertBlockedAndUnauditedAsync();
     }
 
+    /// <summary>
+    /// 服务端接了请求却在时限内没答（审查 S2）：<c>TIMED_OUT</c>、退出码 1，说清请求可能已送达、取消可能已发出，要先重新演练看现状，
+    /// 不说「什么都没发」。时限用 <c>--server-timeout-seconds</c> 缩到 1 秒（默认 180）。
+    /// </summary>
+    [Fact]
+    public async Task AServerThatTakesTheRequestButDoesNotAnswerInTimeIsTimedOut()
+    {
+        string[] arguments = await SeedAsync();
+        using CredentialVariable credential = new();
+        using System.Net.Sockets.TcpListener silent = new(System.Net.IPAddress.Loopback, 0);
+        silent.Start();
+        int port = ((System.Net.IPEndPoint)silent.LocalEndpoint).Port;
+        // Accepts and reads, never answers.
+        Task holding = Task.Run(async () =>
+        {
+            using System.Net.Sockets.TcpClient peer = await silent.AcceptTcpClientAsync(Token);
+            byte[] buffer = new byte[4096];
+            while (await peer.GetStream().ReadAsync(buffer, Token) > 0)
+            {
+            }
+        }, Token);
+
+        (int exit, JsonElement output) = await RunAsync(
+            [WithdrawVerb, .. arguments, "--confirm", "X", "--server", $"http://127.0.0.1:{port}/", "--credential-env", credential.Name,
+                "--server-timeout-seconds", "1"]);
+
+        Assert.Equal((1, "TIMED_OUT"), (exit, output.GetProperty("outcome").GetString()));
+        string detail = output.GetProperty("detail").GetString()!;
+        Assert.Contains("rehearse again", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("nothing was sent", detail, StringComparison.Ordinal);
+    }
+
     public ValueTask DisposeAsync()
     {
         SqliteConnection.ClearAllPools();

@@ -223,6 +223,9 @@ public static class JourneyWithdrawal
     /// <summary>RIoT 上不是这一趟的单：不碰，撤下拒。</summary>
     public const string NotThisJourneys = "NOT_THIS_JOURNEYS";
 
+    /// <summary>RIoT 上这一趟自己的单，但旅程不在开往取货站这一段：不取消，撤下拒（control-server#771 审查 M1）。</summary>
+    public const string OwnOrderNotCancelledAtThisStage = "OWN_ORDER_NOT_CANCELLED_AT_THIS_STAGE";
+
     /// <summary>理由、两条核实记录与那一篮去向的最长长度（去掉首尾空白后的 UTF-16 码元）。</summary>
     public const int MaxTextLength = 500;
 
