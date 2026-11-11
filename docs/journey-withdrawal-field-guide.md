@@ -64,8 +64,18 @@ dotnet ControlServer.FieldOps.dll withdraw-journey --server http://<v2 基址>/ 
 和离线写法不同的地方：
 
 - **RIoT 由服务端自己读**：这辆车在 RIoT 上有没有未结束的单，读到的单号进计划、进确认码。读不全拒（`RIOT_VEHICLE_ORDERS_UNKNOWN`），
-  有未结束的单拒（`RIOT_ORDER_NOT_FINISHED`），所以 `--riot-verification` 可以不填（填了照录进审计）。
-  车还挂着活单时怎么办（拒，还是由服务端先取消再撤）在等用户定，这一版是拒；**不要自己去 RIoT 上取消本服务端的单**：服务端在跑时会把它当误操作、过一会儿自动重建。
+  所以 `--riot-verification` 可以不填（填了照录进审计）。演练输出 `plan.riotOrders.orders` 逐张列出，每张带处置：
+  - `CANCEL_BEFORE_WITHDRAWAL`：这一趟自己的单（例如车正开往取货站的那张）。执行时**服务端先在 RIoT 上取消它**，读回确认已取消，
+    再重判一遍、撤下（2026-10-25 用户选的做法）。服务端认得自己取消的单，不会重建。
+  - `NOT_THIS_JOURNEYS`：不是这一趟的单（外来单、别的旅程的单）。服务端不碰，撤下拒（`RIOT_ORDER_NOT_FINISHED`），交工程师。
+  **不要自己去 RIoT 上取消本服务端的单**：服务端在跑时会把它当误操作、过一会儿自动重建。要取消就走撤下，让服务端来取消。
+- **取消会让车停在原地**：车可能停在机台单行通道里挡住后车，要人去把车开走或推走。所以演练输出 `vehicle`（RIoT 报的地图、站点、速度、
+  是否在线、读数时刻）给人看过再执行；它不进确认码。生产上每次撤下都先问用户。
+- **取消没确认就不撤**：RIoT 接了取消、但读回来单还没结束（或读不到），撤下拒（`ORDER_CANCEL_NOT_CONFIRMED`），旅程与需求一行不改，
+  输出 `cancellations` 列出每张单的对账结果（`Pending`、`Failed`、`Unknown`）。到 RIoT 上看那张单；过一会儿**重新演练、拿新码再执行**，
+  服务端会再发一次取消（订单命令审计里是新的一次尝试，不覆盖上一次）。
+- **取消之后照样重判**：取消确认之后，撤下把每一条准入再判一遍。取消本身带来的变化（单没了、引擎给旅程写的等人码）不算「演练之后变了」；
+  别的变化（例如车上开了恢复会话）照样拒，这时单已经取消了，`cancellations` 里照列，车停在原地等人处理。
 - **与运行轮次串行**：撤下要等引擎这一轮做完才写，30 秒内等不到就拒（`WITHDRAWAL_RUNTIME_BUSY`，HTTP 503），一行不写，过一会儿再试。
 - **不用停受理、不用关闸开闸**：撤下只看这一辆车，别的车有没有在途旅程不相干。收尾快照当场发给在线的车；车停稳（`MODE_AUTO`、`MT_FINISHED`）后会话回到 Ready。
 - **恢复授权**：这辆车的恢复授权（`grant-recovery`）若点名的正是这一趟，撤下时一并收回，并写一条收回审计（理由 `JOURNEY_WITHDRAWN_BY_OPERATOR`）；
@@ -176,5 +186,6 @@ dotnet ControlServer.FieldOps.dll withdraw-journey --database <v2 库文件> --p
 | `FAULT_IN_EFFECT`／`EMERGENCY_STOP_OPEN`／`FAULTED_CARGO_BOUND` | 车的故障在效、急停没解除，或有故障货物绑定 | 先走故障清除与急停解除 |
 | `CONFIRMATION_REQUIRED`／`CONFIRMATION_STALE` | 没带确认码，或演练之后状态变了 | 重新演练 |
 | `RIOT_VEHICLE_ORDERS_UNKNOWN` | 在线：服务端读 RIoT 没读到完整回答 | 过一会儿重新演练；RIoT 一直读不了就交工程师 |
-| `RIOT_ORDER_NOT_FINISHED` | 在线：RIoT 上这辆车还有未结束的单（演练输出 `plan.riotOrders` 列出单号） | 车可能还在动，交工程师；不要自己在 RIoT 上取消 |
+| `RIOT_ORDER_NOT_FINISHED` | 在线：RIoT 上这辆车还有不是这一趟的未结束的单（演练输出 `plan.riotOrders.orders` 里处置为 `NOT_THIS_JOURNEYS` 的那几张） | 车可能还在动，交工程师；不要自己在 RIoT 上取消 |
+| `ORDER_CANCEL_NOT_CONFIRMED` | 在线：服务端取消了这一趟自己的单，读回来没确认已取消（输出 `cancellations` 列出每张的结果） | 到 RIoT 上看那张单；过一会儿重新演练、拿新码再执行 |
 | `WITHDRAWAL_RUNTIME_BUSY` | 在线：引擎这一轮 30 秒没做完 | 过一会儿再按同一个确认码；一直这样交工程师 |
