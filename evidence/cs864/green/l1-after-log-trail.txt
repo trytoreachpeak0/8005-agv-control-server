@@ -1,0 +1,13 @@
+# cs#864 green after the log trail (2146 wording + 2147), implementation commit follows 0f58103b0
+## MultiVehicleExecutionTests (whole class), StructuralDispatchBlockTests, Batch7CargoHoldingDashboardTests, Batch7JourneyAppendPersistenceTests, DispatchBacklog*, Architecture*
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatYieldsWithdrawsWhatItStagedOnAnotherVehiclesRowAndThatVehicleStillAdvances [300 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseSessionIsNotReadyOnItsOwnOrderNeverReachesTheAppend [70 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AJourneyThatEndsBetweenTheAppendDecisionAndTheAppendIsSkippedForTheRound [54 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnotherVehicleInTheSameRoundTakesItsOwnDemandWhileTheAppendIsDropped [59 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-runner-read", ending: "cancelled") [47 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-store-transaction", ending: "cancelled") [43 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-store-transaction", ending: "delivered") [43 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-runner-read", ending: "delivered") [44 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyStillRunningAtItsCommitIsTaken [35 ms]
+Total tests: 421
+     Passed: 421

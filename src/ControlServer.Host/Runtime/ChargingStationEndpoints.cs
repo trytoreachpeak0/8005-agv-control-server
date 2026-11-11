@@ -31,33 +31,66 @@ public sealed record VehicleChargingEligibilityRecoveryHttpRequest(
     string? AgvId, string? OperatorId, string? Basis, string? ClaimedRole);
 
 /// <summary>一次车辆充电资格恢复的结果。</summary>
+/// <param name="StationHoldsLeft">
+/// 恢复了的那几次中断在桩一侧留下、此刻仍未恢复的分配暂停（control-server#877）：解车不放桩（<c>REQ-0286</c>），桩要另走桩的恢复确认。
+/// </param>
+/// <param name="Notice">有 <paramref name="StationHoldsLeft"/> 时给人看的一句话，否则为空。</param>
 public sealed record VehicleChargingEligibilityRecoveryResponse(
     string AgvId,
     string VehicleKey,
     string Outcome,
     IReadOnlyList<string> HoldIds,
-    IReadOnlyList<string> Codes);
+    IReadOnlyList<string> Codes,
+    IReadOnlyList<ChargingHoldLeft>? StationHoldsLeft = null,
+    string? Notice = null);
+
+/// <summary>
+/// 一侧恢复之后另一侧还挂着的一条暂停（control-server#877）：哪一条、为什么、何时写下、从哪个入口解除。车的资格暂停 <see cref="MapId"/> 与
+/// <see cref="StationId"/> 为空；桩的分配暂停 <see cref="AgvId"/> 为空。
+/// </summary>
+public sealed record ChargingHoldLeft(
+    string HoldId,
+    string Reason,
+    DateTimeOffset HeldAt,
+    string? CycleId,
+    string? AgvId,
+    int? MapId,
+    int? StationId,
+    string RecoveryRoute);
 
 /// <summary>人工清桩确认的请求（Host 入口，放宽）。<c>clearedCondition</c> 取协议的三个值之一，缺省 <c>STATION_EMPTY</c>。</summary>
 public sealed record ChargingStationClearanceHttpRequest(
     string? AgvId, string? StationId, string? OperatorId, string? ClearedCondition);
 
 /// <summary>一次暂停或恢复的结果。</summary>
+/// <param name="VehicleHoldsLeft">
+/// 恢复时：恢复了的那几次中断在车一侧留下、此刻仍未恢复的充电资格暂停（control-server#877）：恢复桩不解车（<c>REQ-0286</c>），车要另走车辆充电资格恢复。
+/// 暂停（维修）时为空。
+/// </param>
+/// <param name="Notice">有 <paramref name="VehicleHoldsLeft"/> 时给人看的一句话，否则为空。</param>
 public sealed record ChargingStationHoldResponse(
     int MapId,
     int StationId,
     string Outcome,
     IReadOnlyList<string> HoldIds,
-    IReadOnlyList<string> Codes);
+    IReadOnlyList<string> Codes,
+    IReadOnlyList<ChargingHoldLeft>? VehicleHoldsLeft = null,
+    string? Notice = null);
 
 /// <summary>一次 Host 人工清桩确认的结果，与线上 <c>ManualStationClearanceConfirmationResult</c> 同义。</summary>
+/// <param name="VehicleHoldsLeft">
+/// 确认之后这辆车仍挂着的充电资格暂停（control-server#877）：清桩不解车（<c>REQ-0286</c>），车要另走车辆充电资格恢复。
+/// </param>
+/// <param name="Notice">有 <paramref name="VehicleHoldsLeft"/> 时给人看的一句话，否则为空。</param>
 public sealed record ChargingStationClearanceResponse(
     string AgvId,
     string ConfirmationRequestId,
     string Outcome,
     string? ReasonCode,
     string? DisplayMessage,
-    bool StationReleased);
+    bool StationReleased,
+    IReadOnlyList<ChargingHoldLeft>? VehicleHoldsLeft = null,
+    string? Notice = null);
 
 /// <summary>
 /// 充电桩的三个 Host 入口（批次9-08，control-server#406；票面第 8 条）：维修暂停、恢复确认、人工清桩。看板不加表单。
@@ -132,6 +165,28 @@ public static class ChargingStationEndpoints
             new EventId(2279, nameof(LogVehicleRecovered)),
             "Vehicle {VehicleKey}'s charging eligibility is back: {OperatorId} confirmed its recovery, closing {Count} hold(s). " +
             "No charger's allocation hold is touched (REQ-0286: the vehicle and the charger recover each on its own evidence).");
+
+    private static readonly Action<ILogger, int, int, string, string, Exception?> LogVehicleHoldsLeftAfterChargerRecovery =
+        LoggerMessage.Define<int, int, string, string>(
+            LogLevel.Warning,
+            new EventId(2345, nameof(LogVehicleHoldsLeftAfterChargerRecovery)),
+            "Charger {MapId}/{StationId} is back in allocation, but the same interruption left charging eligibility {Holds} still in " +
+            "force. Recovering the charger does not lift it (REQ-0286): until it is recovered with POST {Route} no charger is " +
+            "allocated to that vehicle.");
+
+    private static readonly Action<ILogger, string, Exception?> LogOtherSideUnreadable =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(2346, nameof(LogOtherSideUnreadable)),
+            "The recovery of {ObjectId} is done, but the holds the same interruption left on the other side could not be read to " +
+            "say which are left; the recovery stands. Check the other side on the charging dashboard.");
+
+    private static readonly Action<ILogger, string, string, string, Exception?> LogStationHoldsLeft =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(2344, nameof(LogStationHoldsLeft)),
+            "Vehicle {VehicleKey}'s charging eligibility is back, but the same interruption left {Holds} still in force. Recovering " +
+            "the vehicle does not return the charger (REQ-0286): until it is recovered with POST {Route} no vehicle is given it.");
 
     /// <summary>
     /// 映射三个入口：维修暂停总是映射；恢复确认与人工清桩只在 <see cref="VehicleFaultRecoveryEndpoints.EnabledKey"/> 打开时映射。答后两者有没有映射。
@@ -278,6 +333,7 @@ public static class ChargingStationEndpoints
         HttpContext context,
         ChargingStationRecoveryHttpRequest request,
         IChargingHoldStore holds,
+        VehicleRoster fleet,
         IGovernanceAuditWriter audit,
         IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
         TimeProvider timeProvider,
@@ -286,6 +342,7 @@ public static class ChargingStationEndpoints
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(holds);
+        ArgumentNullException.ThrowIfNull(fleet);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(recoveryOptions);
         ArgumentNullException.ThrowIfNull(timeProvider);
@@ -344,7 +401,39 @@ public static class ChargingStationEndpoints
             new { request.MapId, request.StationId, operatorId, basis, claimedRole, recovered, result = "RECOVERED" },
             cancellationToken).ConfigureAwait(false);
         LogRecovered(logger, request.MapId, request.StationId, operatorId!, recovered.Count, null);
-        return TypedResults.Ok(new ChargingStationHoldResponse(request.MapId, request.StationId, "RECOVERED", recovered, []));
+
+        // control-server#877 (added by the coordinator 11-10): the same interruption paused the vehicle's charging eligibility
+        // too, and recovering the charger does not lift it (REQ-0286); say which one is left and where it is lifted.
+        // Review L3: the recovery is committed; a failed read says so and still answers success.
+        IReadOnlyList<VehicleChargingEligibilityHold>? vehicleRead = null;
+        try
+        {
+            vehicleRead = await holds.ListActiveVehicleHoldsOfCyclesAsync(
+                    [.. active.Select(hold => hold.CycleId).OfType<string>()], cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            LogOtherSideUnreadable(logger, objectId, error);
+        }
+        ChargingHoldLeft[] vehiclesLeft =
+        [
+            .. (vehicleRead ?? [])
+                .Select(hold => ChargingHoldsLeft.Of(hold, fleet.ByVehicleKey(hold.VehicleKey)?.AgvId ?? hold.VehicleKey)),
+        ];
+        if (vehiclesLeft.Length > 0)
+        {
+            LogVehicleHoldsLeftAfterChargerRecovery(
+                logger, request.MapId, request.StationId,
+                string.Join("; ", vehiclesLeft.Select(hold =>
+                    $"vehicle {hold.AgvId} {ChargingHoldsLeft.Describe(hold.HoldId, hold.Reason, hold.HeldAt)}")),
+                VehicleRecoveryRoute, null);
+        }
+        return TypedResults.Ok(new ChargingStationHoldResponse(
+            request.MapId, request.StationId, "RECOVERED", recovered, [], vehiclesLeft,
+            vehicleRead is null
+                ? ChargingHoldsLeft.OtherSideUnreadableNotice
+                : ChargingHoldsLeft.VehicleNoticeAfterChargerRecovery(vehiclesLeft)));
     }
 
     // ---- 车辆充电资格恢复（放宽，批次9-09）------------------------------------------------------------------------------------
@@ -450,8 +539,35 @@ public static class ChargingStationEndpoints
             new { vehicle.AgvId, vehicle.VehicleKey, operatorId, basis, claimedRole, recovered, result = "RECOVERED" },
             cancellationToken, GovernedObjectKind.AgvLifecycle).ConfigureAwait(false);
         LogVehicleRecovered(logger, vehicle.VehicleKey, operatorId!, recovered.Count, null);
+
+        // control-server#877: the other way round -- the same interruption paused the charger too, and recovering the vehicle
+        // does not return the charger (REQ-0286). 11-04 only the vehicle was recovered and 230 stayed paused until 11-05.
+        // Review L3: the recovery is committed; a failed read says so and still answers success.
+        IReadOnlyList<ChargingStationAllocationHold>? stationRead = null;
+        try
+        {
+            stationRead = await holds.ListActiveStationHoldsOfCyclesAsync(
+                    [.. active.Select(hold => hold.CycleId).OfType<string>()], cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            LogOtherSideUnreadable(logger, objectId, error);
+        }
+        ChargingHoldLeft[] stationsLeft = [.. (stationRead ?? []).Select(ChargingHoldsLeft.Of)];
+        if (stationsLeft.Length > 0)
+        {
+            LogStationHoldsLeft(
+                logger, vehicle.VehicleKey,
+                string.Join("; ", stationsLeft.Select(hold => string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"charger {hold.MapId}/{hold.StationId} {ChargingHoldsLeft.Describe(hold.HoldId, hold.Reason, hold.HeldAt)}"))),
+                RecoveryRoute, null);
+        }
         return TypedResults.Ok(
-            new VehicleChargingEligibilityRecoveryResponse(vehicle.AgvId, vehicle.VehicleKey, "RECOVERED", recovered, []));
+            new VehicleChargingEligibilityRecoveryResponse(
+                vehicle.AgvId, vehicle.VehicleKey, "RECOVERED", recovered, [], stationsLeft,
+                stationRead is null ? ChargingHoldsLeft.OtherSideUnreadableNotice : ChargingHoldsLeft.StationNotice(stationsLeft)));
     }
 
     // ---- 人工清桩（放宽）--------------------------------------------------------------------------------------------------
@@ -556,7 +672,17 @@ public static class ChargingStationEndpoints
             decision.Decision.ProblemDisplayMessage, decision.StationReleased);
         if (decision.Decision.Outcome == FieldConfirmationDecision.Confirmed)
         {
-            return TypedResults.Ok(body);
+            // control-server#877: the clearance does not lift the vehicle's charging eligibility hold (REQ-0286); say which one
+            // is left and where it is lifted, read now (a replayed confirmation reads what is left now, too).
+            // Review L3: the decision is committed; a failed read says so and still answers the decision.
+            IReadOnlyList<VehicleChargingEligibilityHold>? read = await clearance
+                .TryReadVehicleHoldsLeftAsync(vehicle.AgvId, vehicle.VehicleKey, cancellationToken).ConfigureAwait(false);
+            ChargingHoldLeft[] left = [.. (read ?? []).Select(hold => ChargingHoldsLeft.Of(hold, vehicle.AgvId))];
+            return TypedResults.Ok(body with
+            {
+                VehicleHoldsLeft = left,
+                Notice = read is null ? ChargingHoldsLeft.OtherSideUnreadableNotice : ChargingHoldsLeft.VehicleNotice(vehicle.AgvId, left),
+            });
         }
         return TypedResults.Problem(
             statusCode: StatusCodes.Status409Conflict,

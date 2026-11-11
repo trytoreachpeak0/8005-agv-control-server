@@ -70,14 +70,14 @@ internal static class CurrentStopDepartures
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>按车过滤与「还没答」都在库里做</b>（独立审查 M3）。引擎每轮、每辆车都问一次，而收件箱没有清理，出发请求只增不减；原先把所有车的历史
-    /// 请求读回来逐条解析、再逐条查一次发件箱，开销随按键次数线性增长、拖慢整轮推进。现在库里用 <c>json_extract</c> 取信封上的车号，并对发件箱里的
-    /// 答复做反连接，读回来的只有这辆车还没答的那几条，通常是零条。
+    /// <b>按车过滤在库里做</b>（独立审查 M3）：库里用 <c>json_extract</c> 取信封上的车号，走收件箱的 <c>MessageType</c> 索引，只读这辆车的出发请求。
+    /// <c>json_extract</c> 比的是解析后的值：车号常是中文，存下的那一行里可能被转义，在原文上 <c>Contains</c> 永远不中，这里不受影响。
     /// </para>
     /// <para>
-    /// <c>json_extract</c> 比的是解析后的值：车号常是中文，存下的那一行里可能被转义，在原文上 <c>Contains</c> 永远不中，这里不受影响。
-    /// 答复的 messageId 由 <c>departureRequestId</c> 哈希派生（<see cref="ResultMessageId"/>），库里算不出来，所以反连接比的是答复载荷里的
-    /// <c>departureRequestId</c>。
+    /// <b>「还没答」按发件箱主键查</b>（control-server#874）。答复的 messageId 只由 <c>departureRequestId</c> 派生（<see cref="ResultMessageId"/>，
+    /// 写答复的两处都用它），所以这里在内存里算出每条请求的答复 id，再一次按主键查哪些已在发件箱里。原先在库里对每条请求做相关子查询、
+    /// 扫整张发件箱比答复载荷里的 <c>departureRequestId</c>：发件箱没有清理，成本是「出发请求累计数 × 发件箱行数」，10-27 生产上一辆车
+    /// 8,618 ms、一轮约 35 秒，录入判定、期限、派车与故障监看都跟着晚。现在发件箱那一侧是每条请求一次主键查找，与发件箱多大无关。
     /// </para>
     /// </remarks>
     public static async Task<IReadOnlyList<Request>> UnansweredAsync(
@@ -93,25 +93,37 @@ internal static class CurrentStopDepartures
                 FROM "ProtocolInbox" AS i
                 WHERE i."MessageType" = {RequestType}
                   AND json_extract(i."RequestJson", '$.agvId') = {agvId}
-                  AND NOT EXISTS (
-                      SELECT 1 FROM "ProtocolOutbox" AS o
-                      WHERE o."MessageType" = {ResultType}
-                        AND json_extract(o."PayloadJson", '$.payload.departureRequestId') =
-                            json_extract(i."RequestJson", '$.payload.departureRequestId'))
                 """)
             .AsNoTracking()
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        List<Request> unanswered = [];
+        // 同一个 departureRequestId 只留最早那一行；答过的只取号、不整行解析（与原先一样，已答的行从不经过 Parse）。
+        List<(string ResultId, ProtocolInboxRow Row)> earliest = [];
         HashSet<string> seen = new(StringComparer.Ordinal);
         foreach (ProtocolInboxRow row in rows.OrderBy(row => row.ReceivedAt).ThenBy(row => row.MessageId, StringComparer.Ordinal))
         {
-            Request request = Parse(row);
-            if (seen.Add(request.DepartureRequestId))
+            string departureRequestId = DepartureRequestIdOf(row);
+            if (seen.Add(departureRequestId))
             {
-                unanswered.Add(request);
+                earliest.Add((ResultMessageId(departureRequestId), row));
             }
         }
-        return unanswered;
+        if (earliest.Count == 0)
+        {
+            return [];
+        }
+        string[] resultIds = [.. earliest.Select(entry => entry.ResultId)];
+        HashSet<string> answered = (await dbContext.ProtocolOutbox.AsNoTracking()
+                .Where(row => resultIds.Contains(row.MessageId) && row.MessageType == ResultType)
+                .Select(row => row.MessageId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .ToHashSet(StringComparer.Ordinal);
+        return [.. earliest.Where(entry => !answered.Contains(entry.ResultId)).Select(entry => Parse(entry.Row))];
+    }
+
+    private static string DepartureRequestIdOf(ProtocolInboxRow row)
+    {
+        using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+        return document.RootElement.GetProperty("payload").GetProperty("departureRequestId").GetString()!;
     }
 
     /// <summary>

@@ -1243,16 +1243,16 @@ public sealed class ManualStationClearanceTests : IDisposable
             ChargingStationRecoveryHttpRequest request = new(Map, Near.StationId, "op-r11", "维修单 M-1", "维护管理员");
 
             var unauthenticated = await ChargingStationEndpoints.RecoverAsync(
-                HttpContextFor(null, IPAddress.Loopback), request, holds, Audit(fleet.Context), options, fleet.Clock,
+                HttpContextFor(null, IPAddress.Loopback), request, holds, new ControlServer.Host.Runtime.Fleet.VehicleRoster(Options.Create(fleet.Options)), Audit(fleet.Context), options, fleet.Clock,
                 NullLogger<ChargingStationRecoveryHttpRequest>.Instance, Token);
             Assert.IsType<UnauthorizedHttpResult>(unauthenticated.Result);
             var nothing = await ChargingStationEndpoints.RecoverAsync(
-                HttpContextFor(null, IPAddress.Loopback, "cs406-secret"), request with { StationId = Far.StationId }, holds,
+                HttpContextFor(null, IPAddress.Loopback, "cs406-secret"), request with { StationId = Far.StationId }, holds, new ControlServer.Host.Runtime.Fleet.VehicleRoster(Options.Create(fleet.Options)),
                 Audit(fleet.Context), options, fleet.Clock, NullLogger<ChargingStationRecoveryHttpRequest>.Instance, Token);
             Assert.Equal(StatusCodes.Status409Conflict, ((IStatusCodeHttpResult)nothing.Result).StatusCode);
 
             var recovered = await ChargingStationEndpoints.RecoverAsync(
-                HttpContextFor(null, IPAddress.Loopback, "cs406-secret"), request, holds, Audit(fleet.Context), options, fleet.Clock,
+                HttpContextFor(null, IPAddress.Loopback, "cs406-secret"), request, holds, new ControlServer.Host.Runtime.Fleet.VehicleRoster(Options.Create(fleet.Options)), Audit(fleet.Context), options, fleet.Clock,
                 NullLogger<ChargingStationRecoveryHttpRequest>.Instance, Token);
 
             Assert.Equal(StatusCodes.Status200OK, ((IStatusCodeHttpResult)recovered.Result).StatusCode);
@@ -1294,6 +1294,9 @@ public sealed class ManualStationClearanceTests : IDisposable
 
             Ok<ChargingStationClearanceResponse> ok = Assert.IsType<Ok<ChargingStationClearanceResponse>>(confirmed.Result);
             Assert.Equal((FieldConfirmationDecision.Confirmed, true), (ok.Value!.Outcome, ok.Value.StationReleased));
+            // control-server#877: a vehicle with no charging eligibility hold has nothing left to name.
+            Assert.Empty(ok.Value.VehicleHoldsLeft!);
+            Assert.Null(ok.Value.Notice);
             Assert.Null(await HolderAsync(fleet, Near.StationId));
             Assert.Single(await fleet.Context.Set<AdministratorAuditRecordRow>().AsNoTracking()
                 .Where(row => row.Action == ManualStationClearance.AuditAction).ToArrayAsync(Token));

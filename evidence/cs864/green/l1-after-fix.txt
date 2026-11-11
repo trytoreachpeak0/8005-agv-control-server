@@ -1,0 +1,14 @@
+# cs#864 green on 753eae7f1 (implementation; comment-only edits after this run)
+## run 1: MultiVehicleExecutionTests (whole class), StructuralDispatchBlockTests, Batch7CargoHoldingDashboardTests, Batch7JourneyAppendPersistenceTests, DispatchBacklog*
+Passed!  - Failed:     0, Passed:   339, Skipped:     0, Total:   339, Duration: 29 s - ControlServer.Tests.dll (net8.0)
+## run 2: Architecture*, the 8 cs#864 cases, StructuralDispatchBlockTests, Batch7CargoHoldingDashboardTests
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseSessionIsNotReadyOnItsOwnOrderNeverReachesTheAppend [8 s]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AJourneyThatEndsBetweenTheAppendDecisionAndTheAppendIsSkippedForTheRound [717 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnotherVehicleInTheSameRoundTakesItsOwnDemandWhileTheAppendIsDropped [295 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-runner-read", ending: "cancelled") [335 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-store-transaction", ending: "cancelled") [248 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-store-transaction", ending: "delivered") [212 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-runner-read", ending: "delivered") [231 ms]
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyStillRunningAtItsCommitIsTaken [152 ms]
+Total tests: 285
+     Passed: 285

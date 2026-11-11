@@ -1,0 +1,9 @@
+== S4-sweep-failure-swallowed-unlogged
+-            LogBacklogPurgeFailed(logger, error);
++            _ = error;
+    0 个错误
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.ASweepThatThrowsIsLoggedAndTheRoundGoesOn [3 s]
+  错误消息:
+   Assert.Contains() Failure: Filter not matched in collection
+     通过数: 12
+     失败数: 1

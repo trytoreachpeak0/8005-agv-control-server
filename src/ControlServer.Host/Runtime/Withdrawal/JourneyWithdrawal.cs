@@ -954,7 +954,7 @@ public static class JourneyWithdrawal
 
         // As the station deadline's release (control-server#703): the stop lost these many entries, so it gains as many worklist
         // versions, and its earlier versions are still retired by its range.
-        (await dbContext.Set<JourneyStopRow>().SingleAsync(row => row.StopId == currentStopId, cancellationToken).ConfigureAwait(false))
+        (await JourneyStopsForWrite.TrackedAsync(dbContext, currentStopId, cancellationToken).ConfigureAwait(false))
             .WorklistRefills += releasedFromCurrentStop;
         await new PickupStopTermination(dbContext)
             .StageJourneyClosureAsync(runtime, entryRequest, WithdrawnReason, now, cancellationToken)

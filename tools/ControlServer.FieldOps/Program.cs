@@ -157,6 +157,7 @@ internal static partial class Program
             ReadChargingPolicyCommand => await ReadChargingPolicyAsync(context, governance, options),
             ReleaseStationExclusivityCommand => await ReleaseStationExclusivityAsync(context, governance, databasePath, options, now),
             PlanJourneyWithdrawalCommand => await PlanJourneyWithdrawalAsync(context, options),
+            OutboxResidueCommand => await OutboxResidueAsync(context),
             WithdrawJourneyCommand => await WithdrawJourneyAsync(context, governance, databasePath, options, now),
             _ => Usage($"unknown command '{args[0]}'")
         };
@@ -168,7 +169,7 @@ internal static partial class Program
     internal static bool OpensReadOnly(string command) =>
         command is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand or ReadTaskTypeStationsCommand
             or ReadDispatchZoneParametersCommand or ReadWaitingPointsCommand or ReadChargerRosterCommand
-            or ReadChargingPolicyCommand or PlanJourneyWithdrawalCommand;
+            or ReadChargingPolicyCommand or PlanJourneyWithdrawalCommand or OutboxResidueCommand;
 
     private const string CheckBindingSnapshotsCommand = "check-binding-snapshots";
 

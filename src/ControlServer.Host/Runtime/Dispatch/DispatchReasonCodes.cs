@@ -63,9 +63,10 @@ public static class DispatchReasonCodes
     /// <para>
     /// Written by the dispatch round, not by an admission criterion, and only from a catalog that was read
     /// successfully -- the MesIngest catalog is the complete list of open demands, so absence from it is a
-    /// fact, whereas a failed read says nothing. The row is kept rather than deleted, and its
-    /// <c>LastSeenAt</c> keeps the last time the demand was actually in the catalog. A demand that comes back
-    /// is judged again like any other and keeps its <c>FirstSeenAt</c>.
+    /// fact, whereas a failed read says nothing. The row is kept, and its <c>LastSeenAt</c> is set once, to when the
+    /// mark was written: when the demand left the catalog. A demand that comes back is judged again like any other and
+    /// keeps its <c>FirstSeenAt</c> -- unless it stayed away longer than <c>JourneyRuntimeOptions.BacklogRetention</c>,
+    /// in which case <c>JourneyBacklogRetention</c> may have deleted the row and it starts afresh (control-server#881).
     /// </para>
     /// <para>
     /// Anything that lists waiting backlog (the dashboard, control-server#70) leaves these rows out; REQ-0210's
@@ -188,6 +189,12 @@ public static class DispatchReasonCodes
     /// 它可以被别的车、别的旅程接走。
     /// </summary>
     public const string EnRouteAppendDemandLeftThisJourney = "EN_ROUTE_APPEND_DEMAND_LEFT_THIS_JOURNEY";
+
+    /// <summary>
+    /// 派车轮选中「往这趟旅程追加」之后、提交之前，旅程结束了（操作员取消、送完；control-server#864）：这一轮放弃这次追加，
+    /// 需求留在积压里，下一轮重新分配——那时这辆车多半已经空下来，可以建新旅程接它，别的车也可以。正常竞态，不是故障。
+    /// </summary>
+    public const string FinalAppendJourneyEnded = "FINAL_APPEND_JOURNEY_ENDED";
 
     /// <summary>
     /// 这辆在途车的装货阶段已经结束（批次7-07，control-server#212）：持货超时了，或者装满之后已经离开最后一个装货停靠，

@@ -867,7 +867,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // 带跟踪的查询会被身份解析换回那个旧实例，事务再新也判的是旧阶段。这一行这里只用来判、不用来写。
         JourneyRuntimeRow journey = await dbContext.JourneyRuntimes.AsNoTracking()
             .SingleAsync(row => row.JourneyId == plan.JourneyId, cancellationToken).ConfigureAwait(false);
-        if (journey.Stage is JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed)
+        // Completed 单独一种异常（control-server#864）：旅程在这中间跑完了、被取消了，是派车轮预期之中的竞态，受理把它报成
+        // DemandIntakeOutcome.JourneyEnded，需求留到下一轮。原先与 Blocked 同抛 BusinessIdentityConflictException，被每车隔离记成
+        // Error 2124（10-23 10:50 agv01）。Blocked 不动：那是一辆等人介入的车，仍按原样报。
+        if (journey.Stage == JourneyRuntimeStage.Completed)
+        {
+            throw new JourneyEndedBeforeAppendException(
+                $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");
+        }
+
+        if (journey.Stage == JourneyRuntimeStage.Blocked)
         {
             throw new BusinessIdentityConflictException(
                 $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");
@@ -901,6 +910,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             throw new BusinessIdentityConflictException(
                 $"Journey '{plan.JourneyId}' was asked to yield its station ({journey.YieldTriggeredByVehicleKey}) and cannot take an appended demand.");
         }
+
+        // 插位按的那份计划还是不是库里这一份（control-server#879 审查 H2）。与上面几道同理：轮次读计划在事务外，只有与写在同一个事务里的
+        // 判据挡得住中间的改动。在写任何东西之前判，拒绝时什么也没写。
+        await AssertPlannedAgainstTheJourneyAsItIsAsync(plan, cancellationToken).ConfigureAwait(false);
 
         if (redispatch)
         {
@@ -1079,16 +1092,81 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         return created;
     }
 
+    /// <summary>
+    /// 这次追加的插位是不是按库里此刻这一份计划算的；不是就抛 <see cref="JourneyPlanChangedBeforeAppendException"/>，什么也不写
+    /// （control-server#879 审查 H2）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么要判。</b>插位在派车轮开头按当时的计划算，写库在后面；中间车载端连接上的一次取消可以提交它的计划修订——删掉一条没装的需求
+    /// 留下的空停靠、把后面的停靠往前挪。按旧插位照写，新需求会并进那个刚删掉的卸货停靠：它装上车之后没有一站会卸它，开放停靠走完旅程就收尾，
+    /// 货留在车上。删掉的停靠也会被写回开放停靠之间。下面那道「当前下一站的序位没变」只看一个停靠，挡不住这件事。
+    /// </para>
+    /// <para>
+    /// <b>两道。</b>要并入的停靠必须仍是开放的——这一道不靠调用方，任何插位都要守。其次，调用方带了 <see cref="JourneyAppendPlan.PlannedAgainst"/>
+    /// （派车轮总是带）时，库里这趟旅程的停靠集合、每个停靠的序位与状态都必须与它一致；多一个、少一个、任一个变了，都说明计划被改过。
+    /// 只比序位与状态：别的列（清单补版数、离站时刻）不影响插位。
+    /// </para>
+    /// <para>
+    /// <b>拒绝是可重试的结局，不是不变量被破坏</b>：与旅程在提交前结束（<see cref="JourneyEndedBeforeAppendException"/>）同一类，
+    /// 受理把它报成 <c>CandidateChanged</c>，这条需求下一轮按新计划重算，不记 Error。
+    /// </para>
+    /// </remarks>
+    private async Task AssertPlannedAgainstTheJourneyAsItIsAsync(JourneyAppendPlan plan, CancellationToken cancellationToken)
+    {
+        Dictionary<string, (int Sequence, string Status)> stored = (await dbContext.Set<JourneyStopRow>().AsNoTracking()
+                .Where(row => row.JourneyId == plan.JourneyId)
+                .Select(row => new { row.StopId, row.Sequence, row.Status })
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .ToDictionary(row => row.StopId, row => (row.Sequence, row.Status), StringComparer.Ordinal);
+
+        foreach (string mergeTarget in new[] { plan.PickupStopId, plan.UnloadStopId })
+        {
+            if (stored.TryGetValue(mergeTarget, out (int Sequence, string Status) target) &&
+                target.Status is JourneyStopStatuses.Completed or JourneyStopStatuses.Removed)
+            {
+                throw new JourneyPlanChangedBeforeAppendException(
+                    $"Demand '{plan.DemandId}' was to join stop '{mergeTarget}' of journey '{plan.JourneyId}', which is now " +
+                    $"{target.Status}; the placement was planned against an older plan.");
+            }
+        }
+
+        if (plan.PlannedAgainst is not { } basis)
+        {
+            return;
+        }
+
+        string[] changed =
+        [
+            .. basis
+                .Where(seen => !stored.TryGetValue(seen.StopId, out (int Sequence, string Status) now) ||
+                               now.Sequence != seen.Sequence ||
+                               !string.Equals(now.Status, seen.Status, StringComparison.Ordinal))
+                .Select(seen => stored.TryGetValue(seen.StopId, out (int Sequence, string Status) now)
+                    ? $"{seen.StopId} {seen.Sequence}/{seen.Status} -> {now.Sequence}/{now.Status}"
+                    : $"{seen.StopId} gone"),
+            .. stored.Keys
+                .Except(basis.Select(seen => seen.StopId), StringComparer.Ordinal)
+                .Select(stopId => $"{stopId} new"),
+        ];
+        if (changed.Length > 0)
+        {
+            throw new JourneyPlanChangedBeforeAppendException(
+                $"Journey '{plan.JourneyId}' changed after the append of '{plan.DemandId}' was planned: {string.Join(", ", changed)}.");
+        }
+    }
+
     /// <summary>把插入之后的序位写到每个停靠上；序位可变，身份是 <c>StopId</c>。</summary>
     private async Task ApplyResequencingAsync(JourneyAppendPlan plan, CancellationToken cancellationToken)
     {
         // 本次追加新开的停靠此刻还在变更跟踪器里、没有落库，而它也要被重排覆盖，所以这里把库里的和本地新加的
         // 并在一起看。只查数据库会把新停靠判成「重排提到了一个不存在的停靠」，把正常路径打挂。
-        JourneyStopRow[] stored = [.. (await dbContext.Set<JourneyStopRow>()
-                .Where(row => row.JourneyId == plan.JourneyId)
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-            .Concat(dbContext.Set<JourneyStopRow>().Local.Where(row => row.JourneyId == plan.JourneyId))
-            .DistinctBy(row => row.StopId, StringComparer.Ordinal)];
+        //
+        // 库里的那些要按库对齐之后再写（control-server#879）。派车轮与引擎共用这个上下文，本轮早先带跟踪读过的停靠还挂着旧实例；
+        // 车载端连接上的修订在这中间提交过，旧实例的序位就是过时的。下面按 StopId 赋新序位时，新值恰好等于旧实例的原值，EF 就不写这一列，
+        // 库里留着修订写的值，与这一次写下的其余停靠撞号——11-05 agv02 的两个 5、缺 8。
+        IReadOnlyList<JourneyStopRow> stored = await JourneyStopsForWrite.LoadAsync(dbContext, plan.JourneyId, cancellationToken)
+            .ConfigureAwait(false);
 
         // 重排必须覆盖这趟旅程的每一个既有停靠（批次7-06，control-server#211）。
         //
@@ -1138,6 +1216,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                     $"Resequencing names stop '{change.StopId}', which journey '{plan.JourneyId}' does not have.");
             row.Sequence = change.Sequence;
         }
+
+        // 写完再判一次整条旅程（control-server#879）：重排覆盖了每个停靠、当前下一站没动，序位也必须是 1 到停靠数、不重号。
+        // 不守就整笔回滚，需求留到下一轮重算，不把一份推进走不下去的计划存进库。
+        JourneyStopsForWrite.EnsureSequencesHold(plan.JourneyId, stored);
     }
 
     /// <summary>同一条追加重放：写下的东西必须与这一次要写的一样，否则是两次不同的追加用了同一个需求 id。</summary>

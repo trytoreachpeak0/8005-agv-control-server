@@ -107,6 +107,13 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "车有未清除的故障，需求不释放也不取消，车留给故障处理（急停与故障监看跟着这趟旅程走）",
             [DemandReleaseReasons.OrderStalledOrRebuilding] =
                 "这一段的运单停住了（挂起、被取消后等着同车重建、故障清除后等着重建），需求不释放也不取消，车况变了由重建的护栏与人处理",
+            // control-server#837：装货中取消授权之后车一直没答复，过了配置的时限（默认 2 分钟），这次装货交人工恢复。
+            [LoadCancellationAnswerTimeout.BlockReason] =
+                "操作员在装货中按了取消装货、服务端已同意，但车一直没有报回取消的结果（常见原因是车载端断网或程序崩溃），"
+                + "过了配置项 JourneyRuntime:LoadCancellationAnswerTimeout 规定的时长，服务端不再等，这次装货转人工恢复。"
+                + "请到车前核对这次装货的仓位里有没有货、仓门是否关好，再由维护管理员在车载端开异常处置："
+                + "仓位都是空的选补偿（证明全空），有货的选故障货物交接；处理不了请联系系统维护人员。"
+                + "车之后才报回的取消结果服务端只记录、不再执行",
             // control-server#754：扫码后分仓位时这一侧可用仓位不够（派车之后有仓位被禁用），这次录入已按 SLOT_INOPERABLE 拒收。
             [JourneyRuntimeEngine.LoadSlotAssignmentShortReason] =
                 "操作员扫码之后，服务端给这条需求分仓位时，这一侧可分配的空仓不够它要的花篮数，或者读不到这一侧的仓位信息"
@@ -118,6 +125,13 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "服务端没有开门。装货：这次扫码已被拒收，把车开回这一站、停稳之后重新扫码即可；卸货：车回到这一站停稳后自动继续，"
                 + "卸货站没有离站期限，在那之前会一直等。人推回站上的车，RIoT 常报不出当前站（读成 0），要在 RIoT 上把车重新定位到这一站。"
                 + "车确实停在站上而这一行一直不消失，请联系系统维护人员查服务端日志事件 2318（扣着期间每 5 分钟记一次读到的位置）",
+            // control-server#879：停靠序位重号或缺号，推进停在原地，要人核对车上的货与计划之后改库。
+            [JourneyRuntimeEngine.StopSequenceBrokenReason] =
+                "这趟任务的停靠顺序在服务端出了错（有两个停靠排在同一个位置，或者中间缺了一个位置），服务端分不清下一站该去哪里，"
+                + "所以不再给这辆车下新的单、不开门、不发新计划，车上的货留在车上。车如果正在去某一站的路上，那一段照常开到并停下；"
+                + "路上门锁、急停这些安全监看照常进行。"
+                + "请不要在 RIoT 上给这辆车另下单，也不要在车载屏上取消任务，联系系统维护人员：由维护人员核对车上实际装着哪几处的货、"
+                + "车载屏上显示的计划，再把停靠顺序改正；改正之后车会自动继续。服务端日志事件 2341 记着当时每个停靠排在第几位",
             // control-server#316：在途单在 RIoT 上停住，服务端不发任何命令，要人去 RIoT 或车前处理。
             [JourneyRuntimeEngine.OrderHangReason] =
                 "车正在执行的运单在 RIoT 上挂起（HANG）：服务端不暂停、不急停、不改派，这辆车也不接途中追加。请到现场确认原因，"
@@ -313,6 +327,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [ChargingExecutionReasons.OrderEnded] =
                 "充电单在 RIoT 被取消或删除，车已停稳：这趟充电结束，不重建。充电桩要等确认充电已停、车不在桩上、桩位空闲之后才释放；"
                 + "30 秒内不给这辆车安排任何充电桩，10 分钟内它的充电再失败一次，就改为人工充电等待",
+            [ChargingExecutionReasons.OrderEndedUndispatched] =
+                "充电单在 RIoT 一直没派给车就被取消或删除：车没有因为这张单动过，这趟充电当场按失败结束，充电桩同时释放、可以分给下一辆车，不重建。"
+                + "30 秒内不给这辆车安排任何充电桩，10 分钟内它的充电再失败一次，就改为人工充电等待",
             [ChargingExecutionReasons.OrderNeverAppeared] =
                 "开往充电桩的单发出后 RIoT 一直查无此单，车停稳、名下没有未完成的单：服务端放弃这张单，这趟充电按失败结束，不重建。"
                 + "充电桩的释放、冷却与再次失败后改为人工充电等待的规则同单被取消。这张单事后若在车上跑起来，服务端会取消它并告警",
@@ -341,6 +358,10 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [ChargingExecutionReasons.OrderNotFound] =
                 "充电单已发出并确认，RIoT 现在却查不到这张单，车也没有停在充电桩上充电：服务端不重建、不发命令，预占和充电用途都保持，"
                 + "持续十分钟以上会告警一次。请在 RIoT 上查这张单去了哪里、车在哪里",
+            [ChargingExecutionReasons.OrderNotDispatched] =
+                "充电单 RIoT 已经收下，却一直在排队、没有派给任何车（超过 5 分钟，配置项 JourneyRuntime:ChargingOrderUndispatchedAlarmAfter）："
+                + "车没有去充电，充电桩却一直被这趟充电占着，别的低电车分不到。服务端不取消这张单、不放桩、不动车。请在 RIoT 上看这张单为什么没派出"
+                + "（车离线、电量太低、路线走不通等）；要把桩让出来，先在 RIoT 上取消这张单，再由 R-11／R-13 名单里的人做人工清桩确认。RIoT 派出之后这条自动消失",
             [ChargingExecutionReasons.RechargedOnHeldCharger] =
                 "这次充电已结束：车充满后一直停在桩上，电量又掉到强制充电线以下，服务端在同一个桩上给它开了下一次充电",
             [ChargingExecutionReasons.ChargerReleasedForRecharge] =

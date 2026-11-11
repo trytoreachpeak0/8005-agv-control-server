@@ -1,0 +1,120 @@
+// control-server#881 bench: replays the dispatch round's database work on a copy of the field database, old statements vs new.
+// Args: <db> <old|new> <reps> <saves>
+using System.Diagnostics;
+using System.Globalization;
+using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+
+string db = args[0];
+if (args[1] is "migrate" or "purge")
+{
+    DbContextOptions<ControlServerDbContext> prep = new DbContextOptionsBuilder<ControlServerDbContext>()
+        .UseSqlite($"Data Source={db};Pooling=False").Options;
+    await using ControlServerDbContext context = new(prep);
+    if (args[1] == "migrate")
+    {
+        Stopwatch migrateWatch = Stopwatch.StartNew();
+        await context.Database.MigrateAsync();
+        Console.WriteLine($"migrated in {migrateWatch.ElapsedMilliseconds} ms");
+    }
+    else
+    {
+        DateTimeOffset at = DateTimeOffset.Parse(args[2], CultureInfo.InvariantCulture);
+        Stopwatch purgeWatch = Stopwatch.StartNew();
+        int purged = await JourneyBacklogRetention.PurgeAsync(context, new HashSet<string>(StringComparer.Ordinal), at, TimeSpan.FromDays(3), default);
+        Console.WriteLine($"purged {purged} rows in {purgeWatch.ElapsedMilliseconds} ms");
+    }
+    return;
+}
+bool isNew = args[1] == "new";
+int reps = int.Parse(args[2], CultureInfo.InvariantCulture);
+int saves = int.Parse(args[3], CultureInfo.InvariantCulture);
+DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+    .UseSqlite($"Data Source={db};Pooling=False").Options;
+
+// The round's catalog: the demands the last round before the backup saw (LastSeenAt within 2 minutes of the newest).
+HashSet<string> listed;
+await using (SqliteConnection connection = new($"Data Source={db};Mode=ReadOnly;Pooling=False"))
+{
+    await connection.OpenAsync();
+    await using SqliteCommand command = connection.CreateCommand();
+    command.CommandText = """
+        SELECT "DemandId" FROM "JourneyBacklog"
+        WHERE "LastSeenAt" >= '2026-11-10 01:19:04' AND "LastSeenAt" < '2026-11-10 01:21:05'
+        """;
+    listed = new(StringComparer.Ordinal);
+    await using SqliteDataReader reader = await command.ExecuteReaderAsync();
+    while (await reader.ReadAsync()) listed.Add(reader.GetString(0));
+}
+Console.WriteLine($"mode={(isNew ? "new" : "old")} listed={listed.Count} reps={reps} saves={saves}");
+
+List<double[]> samples = [];
+for (int rep = 0; rep <= reps; rep++)
+{
+    await using ControlServerDbContext ctx = new(options);
+    Stopwatch watch = Stopwatch.StartNew();
+    double Lap() { double ms = watch.Elapsed.TotalMilliseconds; watch.Restart(); return ms; }
+
+    // 1. Backlog load, tracked, as the round does it.
+    Dictionary<string, JourneyBacklogRow> backlog;
+    if (isNew)
+    {
+        string[] listedIds = [.. listed];
+        backlog = await ctx.JourneyBacklog
+            .Where(row => listedIds.Contains(row.DemandId) ||
+                          (row.AcceptedAt == null && row.ReasonCode != DispatchReasonCodes.DemandLeftCatalog))
+            .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal);
+    }
+    else
+    {
+        backlog = await ctx.JourneyBacklog.ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal);
+    }
+    double load = Lap();
+
+    // 2. The accepted set and the redispatch generations.
+    if (isNew)
+    {
+        string[] released = await DemandJourneyLookup.ReleasedForRedispatch(ctx).AsNoTracking().Select(row => row.DemandId).ToArrayAsync();
+        HashSet<string> accepted = (await ctx.AcceptedDemands.AsNoTracking().Select(row => row.DemandId).ToArrayAsync()).ToHashSet(StringComparer.Ordinal);
+        accepted.ExceptWith(released);
+        if (released.Length > 0)
+        {
+            _ = await ctx.Set<JourneyDemandRow>().AsNoTracking().Where(row => released.Contains(row.DemandId))
+                .GroupBy(row => row.DemandId).Select(g => new { g.Key, Max = g.Max(row => row.DispatchGeneration) }).ToArrayAsync();
+        }
+    }
+    else
+    {
+        IQueryable<AcceptedDemandRow> released = DemandJourneyLookup.ReleasedForRedispatch(ctx);
+        _ = await ctx.AcceptedDemands.Where(row => !released.Any(r => r.DemandId == row.DemandId)).Select(row => row.DemandId).ToArrayAsync();
+        _ = await ctx.Set<JourneyDemandRow>().AsNoTracking().Where(row => released.Any(d => d.DemandId == row.DemandId))
+            .GroupBy(row => row.DemandId).Select(g => new { g.Key, Max = g.Max(row => row.DispatchGeneration) }).ToArrayAsync();
+    }
+    double redispatch = Lap();
+
+    // 3. The engine's orphan check (unchanged code; it reads the same redispatch set).
+    _ = await DemandJourneyLookup.OrphanCandidates(ctx).Select(row => row.DemandId).ToArrayAsync();
+    double orphan = Lap();
+
+    // 4. The round's saves: each writes one listed row, the way a judged candidate's upsert does.
+    JourneyBacklogRow[] touchable = [.. listed.Where(backlog.ContainsKey).Select(id => backlog[id])];
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    for (int i = 0; i < saves; i++)
+    {
+        if (touchable.Length > 0) touchable[i % touchable.Length].LastSeenAt = now.AddMilliseconds(i);
+        await ctx.SaveChangesAsync();
+    }
+    double save = Lap();
+    if (rep > 0) samples.Add([load, redispatch, orphan, save, load + redispatch + orphan + save]);
+    if (rep == 0) Console.WriteLine($"tracked backlog rows={backlog.Count} touchable={touchable.Length}");
+}
+
+string[] names = ["load", "redispatch", "orphan", $"saves({saves})", "total"];
+for (int k = 0; k < names.Length; k++)
+{
+    double[] sorted = [.. samples.Select(s => s[k]).Order()];
+    double P(double q) => sorted[(int)Math.Ceiling(q * sorted.Length) - 1];
+    Console.WriteLine(FormattableString.Invariant($"{names[k],-12} p50={P(0.5),8:F1} ms  p90={P(0.9),8:F1} ms  max={sorted[^1],8:F1} ms"));
+}

@@ -1540,6 +1540,8 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasFilter("RemovedAt IS NULL");
 
+                    b.HasIndex("DemandId", "DispatchGeneration");
+
                     b.ToTable("JourneyDemands", (string)null);
                 });
 

@@ -278,6 +278,8 @@ jobs:
               @{ Name = 'session-established-while-moving'; Runs = 3; DefaultRuns = 3 }
               @{ Name = 'load-result-requires-recovery';    Runs = 1 }
               @{ Name = 'load-command-never-answered';      Runs = 1 }
+              # control-server#623: a load result taken while the session was not Ready is not followed by a replay of its command.
+              @{ Name = 'load-result-while-not-ready-not-replayed'; Runs = 1 }
               @{ Name = 'route-graph-engine';          Runs = 1 }
               @{ Name = 'create-gate';                 Runs = 1 }
               # FP-C13's negative evidence: the two REQ-0302 values unapproved, and nothing built.
@@ -608,6 +610,14 @@ jobs:
               # control-server#830 (REQ-0367, CP-0021, protocol 6.0.0 candidate): three baskets, two loaded, the operator asks to
               # leave the rest -- authorized, settled as two, the third slot released, and the gate unloads only those two.
               @{ Name = 'load-remaining-baskets-skipped'; Runs = 1; BatchId = 'program-210' }
+              # control-server#865: the session is established while slot 1's door stands open, then the door is locked. Below
+              # the mandatory line the vehicle gets no charger while the door is open; once locked, the server asks for a fresh
+              # snapshot (a SafetyStateChanged carries no slot states) and the vehicle is sent to charge.
+              @{ Name = 'charging-door-open-at-handshake-then-locked'; Runs = 1; BatchId = 'program-210' }
+              # control-server#863: a charge order RIoT never dispatches holds the only charger. Past the alarm window it is
+              # named and alarmed, nothing cancelled or released; a person's cancel in RIoT and a manual clearance free the
+              # charger, and the vehicle waiting for it gets it.
+              @{ Name = 'charging-order-not-dispatched-holds-charger'; Runs = 1; BatchId = 'program-210' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Measured, not
           # remembered: scripts/l2/Get-L2LaneEstimates.ps1 reads them out of past rounds' logs, and its -AsJson

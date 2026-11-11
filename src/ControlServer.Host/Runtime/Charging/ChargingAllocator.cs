@@ -55,6 +55,29 @@ public sealed record ChargingBoardPass(
     IReadOnlyDictionary<string, ChargingBoardVerdict> Verdicts,
     IReadOnlyDictionary<string, ChargingBoardObservation> Observations);
 
+/// <summary>一个新鲜样本与它那一串里上一个样本的关系（<see cref="ChargingAllocationBoard.StepSampleRun"/>）。</summary>
+public enum SampleRunLink
+{
+    /// <summary>这一串的第一个：周期的第一个、遥测断过之后的第一个、进程重启后的第一个。</summary>
+    Started,
+
+    /// <summary>观测时刻没有往前走：同一个读数读了两次，不是新样本。</summary>
+    Repeated,
+
+    /// <summary>接着上一个，相隔不超过给定的间隔。</summary>
+    Continuous,
+
+    /// <summary>接着上一个，中间没有遥测缺口，只是相隔超过给定的间隔。</summary>
+    Gapped,
+}
+
+/// <summary>一个样本的 <see cref="SampleRunLink"/> 与上一个样本的观测时刻（第一个没有上一个）。</summary>
+public readonly record struct SampleRunStep(SampleRunLink Link, DateTimeOffset? PreviousObservedAt)
+{
+    /// <summary>接着这一串里更早的一个样本、且是新的一个：判充满要的就是这个（control-server#876），不问隔了多久。</summary>
+    public bool FollowsAnEarlierSample => Link is SampleRunLink.Continuous or SampleRunLink.Gapped;
+}
+
 /// <summary>每辆车最近一次的充电分配结论，跨轮次保留（宿主里是单例）。</summary>
 /// <remarks>
 /// 一辆空闲车每一轮都判一次；结论变了才记一条日志（事件 2241），看板（批次9-10）也可以从这里读。放单例而不是静态字段或作用域实例上：
@@ -64,6 +87,12 @@ public sealed class ChargingAllocationBoard
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Reason, string Detail)> _last =
         new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 每辆车最近一次读到的电量（control-server#866）：派车轮与等人监看本来就读的那几次顺手记下，看板的「带单车低于强制充电线」读它，
+    /// 不为它多读一次 RIoT。
+    /// </summary>
+    public VehicleBatteryReadings Batteries { get; } = new();
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Reason, string Detail)> _compared =
         new(StringComparer.Ordinal);
@@ -218,26 +247,34 @@ public sealed class ChargingAllocationBoard
     /// <paramref name="maxGap"/> 才算连续。记下它，答它是否连续——一个周期的第一个样本、遥测断过之后的第一个样本都不连续，只重新开始观察。
     /// 观测时刻没有往前走（同一个读数读了两次）不算新样本，什么也不改、答否。进程重启后从头计：只会让充满判得更晚。
     /// </summary>
-    public bool ContinuesSampleRun(string cycleId, DateTimeOffset observedAt, TimeSpan maxGap)
+    public bool ContinuesSampleRun(string cycleId, DateTimeOffset observedAt, TimeSpan maxGap) =>
+        StepSampleRun(cycleId, observedAt, maxGap).Link == SampleRunLink.Continuous;
+
+    /// <summary>
+    /// 同 <see cref="ContinuesSampleRun"/>，但答得更细（control-server#876）：这个样本与这一串里上一个样本是什么关系，以及上一个样本的观测时刻。
+    /// <see cref="SampleRunLink.Gapped"/> 是「接着上一个、只是隔得比 <paramref name="maxGap"/> 久」：中间没有遥测缺口（缺口由
+    /// <see cref="BreakSampleRun"/> 打断），只是这一侧隔了这么久才又看一眼。
+    /// </summary>
+    public SampleRunStep StepSampleRun(string key, DateTimeOffset observedAt, TimeSpan maxGap)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(cycleId);
-        if (_sampleRun.TryGetValue(cycleId, out DateTimeOffset previous))
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        if (_sampleRun.TryGetValue(key, out DateTimeOffset previous))
         {
             if (observedAt <= previous)
             {
-                return false;
+                return new(SampleRunLink.Repeated, previous);
             }
-            _sampleRun[cycleId] = observedAt;
-            bool continuous = observedAt - previous <= maxGap;
-            if (!continuous)
+            _sampleRun[key] = observedAt;
+            if (observedAt - previous <= maxGap)
             {
-                _sampleRunStart[cycleId] = observedAt;
+                return new(SampleRunLink.Continuous, previous);
             }
-            return continuous;
+            _sampleRunStart[key] = observedAt;
+            return new(SampleRunLink.Gapped, previous);
         }
-        _sampleRun[cycleId] = observedAt;
-        _sampleRunStart[cycleId] = observedAt;
-        return false;
+        _sampleRun[key] = observedAt;
+        _sampleRunStart[key] = observedAt;
+        return new(SampleRunLink.Started, null);
     }
 
     /// <summary>电量遥测断了（读不到、过期）或周期已不在充电：下一个新鲜样本重新开始观察。</summary>
@@ -246,6 +283,24 @@ public sealed class ChargingAllocationBoard
         _sampleRun.TryRemove(cycleId, out _);
         _sampleRunStart.TryRemove(cycleId, out _);
     }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset At, int Percent)> _completionReached =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 这个周期自上一个缺口以来第一次新鲜地读到电量达到完成阈值（control-server#876）：记下那一个读数，之后再记不改它。遥测缺口与车辆观测丢失时调用方
+    /// 连同样本串一起 <see cref="ForgetCompletionReached"/>（<c>REQ-0287</c>：恢复后以新鲜连续样本重新观察，缺口前读到的阈值不拿来判满；审查 M1）。
+    /// 进程重启后从头记。
+    /// </summary>
+    public void RecordCompletionReached(string cycleId, DateTimeOffset observedAt, int percent) =>
+        _completionReached.TryAdd(cycleId, (observedAt, percent));
+
+    /// <summary>这个周期第一次读到达到完成阈值的那个读数；没读到过答空。</summary>
+    public (DateTimeOffset At, int Percent)? CompletionReached(string cycleId) =>
+        _completionReached.TryGetValue(cycleId, out (DateTimeOffset At, int Percent) reached) ? reached : null;
+
+    /// <summary>周期已判满或进了清桩中：不再需要它。</summary>
+    public void ForgetCompletionReached(string cycleId) => _completionReached.TryRemove(cycleId, out _);
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _sampleRunStart =
         new(StringComparer.Ordinal);
@@ -500,8 +555,10 @@ public sealed class ChargingAllocator(
             "(CHARGER_OCCUPANCY_UNKNOWN names what could not be read); is the route graph engine enabled and fresh " +
             "(CHARGING_ROUTE_GRAPH_UNAVAILABLE, CHARGER_UNREACHABLE); is the charger on allocation hold or renamed on the Map " +
             "(CHARGER_ALLOCATION_HELD, CHARGER_NOT_ON_CURRENT_MAP); can the vehicle set off at all (CHARGING_DEPARTURE_NOT_PROVEN_AT_ALLOCATION " +
-            "names what the departure gate still lacks: a slot not locked, a safety reason, RIoT not reading it stopped). Said " +
-            "once per vehicle per conclusion.");
+            "names what the departure gate still lacks: a slot not locked, a safety reason, RIoT not reading it stopped); does RIoT " +
+            "place the vehicle at a station at all (CHARGING_VEHICLE_POSITION_UNKNOWN: no position, or currentPosition 0 -- between " +
+            "two stations or with its localisation lost, as after the onboard PC lost power; relocate the vehicle in RIoT, nothing " +
+            "is allocated from a guessed position). Said once per vehicle per conclusion.");
 
     private static readonly Action<ILogger, int, int, string, DateTimeOffset, string, Exception?> LogReservationStuck =
         LoggerMessage.Define<int, int, string, DateTimeOffset, string>(
@@ -589,7 +646,7 @@ public sealed class ChargingAllocator(
         {
             try
             {
-                string? refusal = await QualifyAsync(candidate, cancellationToken).ConfigureAwait(false);
+                (string? refusal, string refusalDetail) = await QualifyAsync(candidate, cancellationToken).ConfigureAwait(false);
                 if (refusal is null)
                 {
                     queue.Add(candidate);
@@ -597,10 +654,17 @@ public sealed class ChargingAllocator(
                 else
                 {
                     // REQ-0286: a vehicle whose charging eligibility is paused, still below its line, queues and is warned
-                    // about -- it is not tried at another charger.
+                    // about -- it is not tried at another charger. control-server#528: so is one RIoT does not place at a station
+                    // (only a vehicle below its mandatory line gets this far): no charger is allocated to it until it is
+                    // relocated, and its battery goes on falling, so it is said once, by name.
+                    // control-server#877: the eligibility hold is named in the detail (id, reason, when written), and so in 2241
+                    // and 2246 -- on 11-04 the detail was empty and nothing said which hold or how to lift it.
                     verdicts[candidate.Vehicle.AgvId] = Refuse(
-                        candidate.Vehicle, refusal, "",
-                        waiting: refusal == ChargingAllocationReasons.VehicleEligibilityHeld ? refusal : null);
+                        candidate.Vehicle, refusal, refusalDetail,
+                        waiting: refusal is ChargingAllocationReasons.VehicleEligibilityHeld
+                            or ChargingAllocationReasons.VehiclePositionUnknown
+                            ? refusal
+                            : null);
                 }
             }
             catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -630,9 +694,9 @@ public sealed class ChargingAllocator(
     }
 
     /// <summary>
-    /// 这辆车进不进待充电集合：进答空，否则答挡住它的那一条的码。人工充电等待的告警与给车的快照也在这里对齐（每一轮，幂等）。
+    /// 这辆车进不进待充电集合：进答空，否则答挡住它的那一条的码与细节。人工充电等待的告警与给车的快照也在这里对齐（每一轮，幂等）。
     /// </summary>
-    private async Task<string?> QualifyAsync(ChargingCandidate candidate, CancellationToken cancellationToken)
+    private async Task<Qualification> QualifyAsync(ChargingCandidate candidate, CancellationToken cancellationToken)
     {
         FleetVehicle vehicle = candidate.Vehicle;
         if (await SettleManualChargingHoldAsync(candidate, cancellationToken).ConfigureAwait(false))
@@ -668,9 +732,12 @@ public sealed class ChargingAllocator(
             return readiness;
         }
 
-        if ((await holds.ListActiveVehicleHoldsAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false)).Count > 0)
+        IReadOnlyList<VehicleChargingEligibilityHold> eligibilityHolds =
+            await holds.ListActiveVehicleHoldsAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false);
+        if (eligibilityHolds.Count > 0)
         {
-            return ChargingAllocationReasons.VehicleEligibilityHeld;
+            return new Qualification(
+                ChargingAllocationReasons.VehicleEligibilityHeld, ChargingHoldsLeft.DescribeEligibilityHeld(eligibilityHolds));
         }
 
         // A charger this vehicle still holds from a cycle that ended: until the three confirmations release it (the sweep at
@@ -688,7 +755,15 @@ public sealed class ChargingAllocator(
             return ChargingAllocationReasons.VehicleStillHoldsCharger;
         }
 
-        return candidate.Facts.Vehicle.CurrentStationId is null ? ChargingAllocationReasons.VehiclePositionUnknown : null;
+        // control-server#528: RIoT's currentPosition 0 places it at no station -- no origin to measure the way to a charger from,
+        // the same as no reading. Routed from 0 every charger was CHARGER_UNREACHABLE (11-06 agv02, queued until it ran flat).
+        return candidate.Facts.Vehicle.KnownStationId is null ? ChargingAllocationReasons.VehiclePositionUnknown : null;
+    }
+
+    /// <summary><see cref="QualifyAsync"/> 的答案：挡住它的码（进集合为空）与细节（多数码没有细节，为空串）。</summary>
+    private readonly record struct Qualification(string? Refusal, string Detail)
+    {
+        public static implicit operator Qualification(string? refusal) => new(refusal, "");
     }
 
     private async Task<ChargingAllocationVerdict> SelectAndCommitAsync(
@@ -743,7 +818,7 @@ public sealed class ChargingAllocator(
         }
 
         reads.Occupancy ??= await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
-        int origin = candidate.Facts.Vehicle.CurrentStationId!.Value;
+        int origin = candidate.Facts.Vehicle.KnownStationId!.Value;
         List<string> excluded = [];
         List<(ChargerRosterEntry Charger, long CostMm)> eligible = [];
         foreach (ChargerRosterEntry charger in usable)
@@ -797,7 +872,7 @@ public sealed class ChargingAllocator(
         {
             string gaps = string.Join(", ", departureGaps.Distinct(StringComparer.Ordinal));
             return Refuse(
-                vehicle, ChargingAllocationReasons.DepartureNotProven, $"{detail}; departure: {gaps}", waiting: gaps,
+                vehicle, ChargingAllocationReasons.DepartureNotProven, $"{detail}{ChargingDepartureGaps.Marker}{gaps}", waiting: gaps,
                 comparedDetail: $"{comparedDetail}; departure: {gaps}");
         }
 
@@ -956,9 +1031,16 @@ public sealed class ChargingAllocator(
 
         reads.Occupancy = await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
         if (!reads.Occupancy.Vehicles.TryGetValue(vehicleKey, out RiotVehicleObservation? seen) ||
-            seen.CurrentStationId is not int origin)
+            seen.CurrentStationId is null)
         {
             return ChargingAllocationReasons.ChargerOccupancyUnknown;
+        }
+
+        // control-server#528: read at no station (currentPosition 0), there is no origin to route to the charger from -- the
+        // commitment does not stand for want of a position, not because the charger has become unreachable.
+        if (seen.KnownStationId is not int origin)
+        {
+            return ChargingAllocationReasons.VehiclePositionUnknown;
         }
 
         return await ExcludeAsync(charger, vehicleKey, origin, currentMap, reads, ownReservation: true, cancellationToken)

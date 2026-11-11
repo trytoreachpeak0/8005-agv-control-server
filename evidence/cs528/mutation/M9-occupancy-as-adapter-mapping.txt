@@ -1,0 +1,137 @@
+# mutation M9-occupancy-as-adapter-mapping on src/ControlServer.Host/Runtime/Charging/ChargerOccupancy.cs: s/if (observed.CurrentStationId is not int station)/if (observed.KnownStationId is not int station)/
+diff --git a/src/ControlServer.Host/Runtime/Charging/ChargerOccupancy.cs b/src/ControlServer.Host/Runtime/Charging/ChargerOccupancy.cs
+index e8812de92..61b0d9692 100644
+--- a/src/ControlServer.Host/Runtime/Charging/ChargerOccupancy.cs
++++ b/src/ControlServer.Host/Runtime/Charging/ChargerOccupancy.cs
+@@ -141,7 +141,7 @@ public sealed class ChargerOccupancyReader(
+                 continue;
+             }
+ 
+-            if (observed.CurrentStationId is not int station)
++            if (observed.KnownStationId is not int station)
+             {
+                 unknown.Add(($"{vehicle.AgvId}[{vehicle.VehicleKey}]:VEHICLE_POSITION_MISSING", "no current station reported"));
+                 continue;
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  ControlServer.Domain -> C:\work\8005-wt\cs528-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\work\8005-wt\cs528-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\work\8005-wt\cs528-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.ClockSkewProxy -> C:\work\8005-wt\cs528-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\work\8005-wt\cs528-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\work\8005-wt\cs528-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\work\8005-wt\cs528-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Application -> C:\work\8005-wt\cs528-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.Infrastructure -> C:\work\8005-wt\cs528-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\work\8005-wt\cs528-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> C:\work\8005-wt\cs528-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> C:\work\8005-wt\cs528-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> C:\work\8005-wt\cs528-8005-agv-control-server\tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)的测试运行
+VSTest 版本 17.11.1 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+[xUnit.net 00:00:06.84]     ControlServer.Tests.ChargingAllocationTests.AVehicleDrivingBetweenStationsReportsPositionZeroAndStopsNoOneFromCharging [FAIL]
+  失败 ControlServer.Tests.ChargingAllocationTests.AVehicleDrivingBetweenStationsReportsPositionZeroAndStopsNoOneFromCharging [54 ms]
+  错误消息:
+   Assert.Equal() Failure: Strings differ
+Expected: "BROKERX-0001"
+Actual:   null
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingAllocationTests.AVehicleDrivingBetweenStationsReportsPositionZeroAndStopsNoOneFromCharging() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingAllocationTests.cs:line 1198
+   at ControlServer.Tests.ChargingAllocationTests.AVehicleDrivingBetweenStationsReportsPositionZeroAndStopsNoOneFromCharging() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingAllocationTests.cs:line 1199
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:08.56]     ControlServer.Tests.ChargingAllocationTests.AVehicleChargingAtPositionZeroThatIsOfflineOrOnAnotherMapStopsNoOneFromCharging(which: "on-another-map") [FAIL]
+[xUnit.net 00:00:08.61]     ControlServer.Tests.ChargingAllocationTests.AVehicleChargingAtPositionZeroThatIsOfflineOrOnAnotherMapStopsNoOneFromCharging(which: "offline") [FAIL]
+  失败 ControlServer.Tests.ChargingAllocationTests.AVehicleChargingAtPositionZeroThatIsOfflineOrOnAnotherMapStopsNoOneFromCharging(which: "on-another-map") [51 ms]
+  错误消息:
+   Assert.Equal() Failure: Strings differ
+Expected: "BROKERX-0001"
+Actual:   null
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingAllocationTests.AVehicleChargingAtPositionZeroThatIsOfflineOrOnAnotherMapStopsNoOneFromCharging(String which) in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingAllocationTests.cs:line 1220
+   at ControlServer.Tests.ChargingAllocationTests.AVehicleChargingAtPositionZeroThatIsOfflineOrOnAnotherMapStopsNoOneFromCharging(String which) in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingAllocationTests.cs:line 1221
+--- End of stack trace from previous location ---
+  失败 ControlServer.Tests.ChargingAllocationTests.AVehicleChargingAtPositionZeroThatIsOfflineOrOnAnotherMapStopsNoOneFromCharging(which: "offline") [48 ms]
+  错误消息:
+   Assert.Equal() Failure: Strings differ
+Expected: "BROKERX-0001"
+Actual:   null
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingAllocationTests.AVehicleChargingAtPositionZeroThatIsOfflineOrOnAnotherMapStopsNoOneFromCharging(String which) in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingAllocationTests.cs:line 1220
+   at ControlServer.Tests.ChargingAllocationTests.AVehicleChargingAtPositionZeroThatIsOfflineOrOnAnotherMapStopsNoOneFromCharging(String which) in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingAllocationTests.cs:line 1221
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:09.34]     ControlServer.Tests.ChargingAllocationTests.AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(then: "leaves-the-charger") [FAIL]
+  失败 ControlServer.Tests.ChargingAllocationTests.AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(then: "leaves-the-charger") [52 ms]
+  错误消息:
+   Assert.Contains() Failure: Sub-string not found
+String:    "battery=20; 211=CHARGER_OCCUPANCY_UNKNOWN, 221=CHA"···
+Not found: "老厂前线新多仓位2[BROKERX-0002]:VEHICLE_CHARGING_WITHOUT_S"···
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingAllocationTests.AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(String then) in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingAllocationTests.cs:line 1245
+   at ControlServer.Tests.ChargingAllocationTests.AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(String then) in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingAllocationTests.cs:line 1264
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:09.39]     ControlServer.Tests.ChargingAllocationTests.AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(then: "placed-on-the-charger") [FAIL]
+[xUnit.net 00:00:09.62]     ControlServer.Tests.ChargingExecutionTests.AReservationLeftByAFailedCycleIsKeptWhileTheVehicleIsAtNoStationAndReleasedOnceItIsPlacedElsewhere [FAIL]
+  失败 ControlServer.Tests.ChargingAllocationTests.AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(then: "placed-on-the-charger") [48 ms]
+  错误消息:
+   Assert.Contains() Failure: Sub-string not found
+String:    "battery=20; 211=CHARGER_OCCUPANCY_UNKNOWN, 221=CHA"···
+Not found: "老厂前线新多仓位2[BROKERX-0002]:VEHICLE_CHARGING_WITHOUT_S"···
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingAllocationTests.AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(String then) in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingAllocationTests.cs:line 1245
+   at ControlServer.Tests.ChargingAllocationTests.AVehicleChargingWhereRiotCannotPlaceItHoldsEveryChargerUntilItIsPlacedOrLeaves(String then) in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingAllocationTests.cs:line 1264
+--- End of stack trace from previous location ---
+  失败 ControlServer.Tests.ChargingExecutionTests.AReservationLeftByAFailedCycleIsKeptWhileTheVehicleIsAtNoStationAndReleasedOnceItIsPlacedElsewhere [120 ms]
+  错误消息:
+   Assert.Contains() Failure: Sub-string not found
+String:    "Charger 25/211 is still reserved by vehicle BROKER"···
+Not found: "at no station"
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingExecutionTests.AReservationLeftByAFailedCycleIsKeptWhileTheVehicleIsAtNoStationAndReleasedOnceItIsPlacedElsewhere() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingExecutionTests.cs:line 1587
+   at ControlServer.Tests.ChargingExecutionTests.AReservationLeftByAFailedCycleIsKeptWhileTheVehicleIsAtNoStationAndReleasedOnceItIsPlacedElsewhere() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingExecutionTests.cs:line 1595
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:09.89]     ControlServer.Tests.ChargingExecutionTests.ACommitmentWhoseVehicleRiotPlacesAtNoStationIsWithdrawnAsPositionUnknown [FAIL]
+  失败 ControlServer.Tests.ChargingExecutionTests.ACommitmentWhoseVehicleRiotPlacesAtNoStationIsWithdrawnAsPositionUnknown [82 ms]
+  错误消息:
+   Assert.Contains() Failure: Sub-string not found
+String:    "CHARGING_WITHDRAWN_CHARGER_NO_LONGER_ELIGIBLE: the"···
+Not found: "CHARGING_VEHICLE_POSITION_UNKNOWN"
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingExecutionTests.ACommitmentWhoseVehicleRiotPlacesAtNoStationIsWithdrawnAsPositionUnknown() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingExecutionTests.cs:line 763
+   at ControlServer.Tests.ChargingExecutionTests.ACommitmentWhoseVehicleRiotPlacesAtNoStationIsWithdrawnAsPositionUnknown() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingExecutionTests.cs:line 764
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:12.98]     ControlServer.Tests.ChargingExecutionTests.AReservationLeftByAFailedCycleIsKeptWhileAnotherVehicleChargesWithoutAStationAndReleasedOnceItLeaves [FAIL]
+  失败 ControlServer.Tests.ChargingExecutionTests.AReservationLeftByAFailedCycleIsKeptWhileAnotherVehicleChargesWithoutAStationAndReleasedOnceItLeaves [135 ms]
+  错误消息:
+   Assert.Contains() Failure: Sub-string not found
+String:    "Charger 25/211 is still reserved by vehicle BROKER"···
+Not found: "the charger is not confirmed free (CHARGER_OCCUPAN"···
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingExecutionTests.AReservationLeftByAFailedCycleIsKeptWhileAnotherVehicleChargesWithoutAStationAndReleasedOnceItLeaves() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingExecutionTests.cs:line 1673
+   at ControlServer.Tests.ChargingExecutionTests.AReservationLeftByAFailedCycleIsKeptWhileAnotherVehicleChargesWithoutAStationAndReleasedOnceItLeaves() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingExecutionTests.cs:line 1683
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:16.62]     ControlServer.Tests.ChargingCycleProgressTests.AnotherVehicleDrivingAtNoStationDoesNotKeepALeftChargerFromBeingReleased [FAIL]
+[xUnit.net 00:00:17.22]     ControlServer.Tests.ChargingCycleProgressTests.AFullVehicleWarnedWhileWaitingOnItsChargerIsWarnedAgainOnceItIsStuckAtNoStation [FAIL]
+  失败 ControlServer.Tests.ChargingCycleProgressTests.AnotherVehicleDrivingAtNoStationDoesNotKeepALeftChargerFromBeingReleased [221 ms]
+  错误消息:
+   Assert.Null() Failure: Value is not null
+Expected: null
+Actual:   StationExclusivityRow { ChargerRosterVersion = 1, JourneyId = "charging:BROKERX-0001:20260908T060001000Z", MapId = 25, RecordId = "5f34d61d-a01e-4d08-ab11-20e8307f25c4", State = "OCCUPIED", ··· }
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingCycleProgressTests.AnotherVehicleDrivingAtNoStationDoesNotKeepALeftChargerFromBeingReleased() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingCycleProgressTests.cs:line 700
+   at ControlServer.Tests.ChargingCycleProgressTests.AnotherVehicleDrivingAtNoStationDoesNotKeepALeftChargerFromBeingReleased() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingCycleProgressTests.cs:line 701
+--- End of stack trace from previous location ---
+  失败 ControlServer.Tests.ChargingCycleProgressTests.AFullVehicleWarnedWhileWaitingOnItsChargerIsWarnedAgainOnceItIsStuckAtNoStation [592 ms]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   1
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingCycleProgressTests.AFullVehicleWarnedWhileWaitingOnItsChargerIsWarnedAgainOnceItIsStuckAtNoStation() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingCycleProgressTests.cs:line 1487
+   at ControlServer.Tests.ChargingCycleProgressTests.AFullVehicleWarnedWhileWaitingOnItsChargerIsWarnedAgainOnceItIsStuckAtNoStation() in C:\work\8005-wt\cs528-8005-agv-control-server\tests\ControlServer.Tests\ChargingCycleProgressTests.cs:line 1493
+--- End of stack trace from previous location ---
+
+失败!  - 失败:    10，通过:   342，已跳过:     0，总计:   352，持续时间: 16 s - ControlServer.Tests.dll (net8.0)

@@ -445,7 +445,9 @@ public sealed class UnloadStopDepartureWaitTests
         fixture.Context.Set<JourneyStopRow>().Add(UnloadStop(
             unloadHalfId, runtime.JourneyId, secondPickup.Sequence, secondPickup.StationId, secondPickup.StationRiotId,
             secondPickup.DispatchZone, runtime.CreatedAt));
-        unload.Sequence += 2;
+        // 插进一个停靠，后面的两个各往后挪一位：P1, U1, P2, U 连续编号。这里曾写 += 2，留下一个空号（P1=1、U1=2、P2=3、U=5），
+        // 产品代码从不写出这种序位；control-server#879 起推进开头判「1 到停靠数、不重号」，有空号的旅程停下等人，这条用例就走不下去了。
+        unload.Sequence += 1;
         secondPickup.Sequence += 1;
         first.UnloadStopId = unloadHalfId;
         await fixture.Context.SaveChangesAsync(token);

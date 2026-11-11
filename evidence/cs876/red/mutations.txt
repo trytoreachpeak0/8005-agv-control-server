@@ -1,0 +1,31 @@
+# Mutations, each reverting only the mutated file; filter: Charging* + UnableToCharge* classes
+# M1-M3 on 07451c536
+== M1-gap-rule-back (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ChargingCycle.cs): s/bool completes = step.FollowsAnEarlierSample \&\& reached is not null;/bool completes = continuous \&\& reached is not null;/
+-        bool completes = step.FollowsAnEarlierSample && reached is not null;
++        bool completes = continuous && reached is not null;
+  失败 ControlServer.Tests.ChargingCycleProgressTests.EverySampleOfTheCompletionJudgementIsLoggedWithItsObservedAtAndItsLinkToTheOneBefore [118 ms]
+  失败 ControlServer.Tests.ChargingCycleProgressTests.AFreshReadingAtTheThresholdCompletesTheCycleWhenRoundsAreFurtherApartThanTheEvidenceAge(restarted: False) [115 ms]
+  失败 ControlServer.Tests.ChargingCycleProgressTests.AFreshReadingAtTheThresholdCompletesTheCycleWhenRoundsAreFurtherApartThanTheEvidenceAge(restarted: True) [109 ms]
+失败!  - 失败:     3，通过:   361，已跳过:     0，总计:   364，持续时间: 23 s - ControlServer.Tests.dll (net8.0)
+== M2-no-reached-flag (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ChargingCycle.cs): s/bool completes = step.FollowsAnEarlierSample \&\& reached is not null;/bool completes = step.FollowsAnEarlierSample \&\& battery >= threshold;/
+-        bool completes = step.FollowsAnEarlierSample && reached is not null;
++        bool completes = step.FollowsAnEarlierSample && battery >= threshold;
+  失败 ControlServer.Tests.ChargingInterruptionTests.ACycleThatReachedTheThresholdIsCompletedByTheNextReadingEvenIfTheBatteryHasSinceDropped [111 ms]
+失败!  - 失败:     1，通过:   363，已跳过:     0，总计:   364，持续时间: 22 s - ControlServer.Tests.dll (net8.0)
+== M3-no-follow-rule (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ChargingCycle.cs): s/bool completes = step.FollowsAnEarlierSample \&\& reached is not null;/bool completes = reached is not null;/
+-        bool completes = step.FollowsAnEarlierSample && reached is not null;
++        bool completes = reached is not null;
+  失败 ControlServer.Tests.ChargingCycleProgressTests.WhenBatteryTelemetryIsLostCompletionWaitsAndNoReadingFromBeforeTheGapIsTakenAsStillTrue [204 ms]
+  失败 ControlServer.Tests.ChargingInterruptionTests.ACycleThatReachedTheThresholdIsCompletedByTheNextReadingEvenIfTheBatteryHasSinceDropped [95 ms]
+失败!  - 失败:     2，通过:   362，已跳过:     0，总计:   364，持续时间: 22 s - ControlServer.Tests.dll (net8.0)
+# M4 on 07451c536 SURVIVED -- no test read one RIoT snapshot twice; 51cb94645 adds TheSameSnapshotReadTwiceAfterATelemetryGapDoesNotCompleteTheCycle
+== M4-repeated-follows (src/ControlServer.Host/Runtime/Charging/ChargingAllocator.cs): s/Link is SampleRunLink.Continuous or SampleRunLink.Gapped;/Link is SampleRunLink.Continuous or SampleRunLink.Gapped or SampleRunLink.Repeated;/
+-    public bool FollowsAnEarlierSample => Link is SampleRunLink.Continuous or SampleRunLink.Gapped;
++    public bool FollowsAnEarlierSample => Link is SampleRunLink.Continuous or SampleRunLink.Gapped or SampleRunLink.Repeated;
+已通过! - 失败:     0，通过:   364，已跳过:     0，总计:   364，持续时间: 22 s - ControlServer.Tests.dll (net8.0)
+# M4 again on 51cb94645
+== M4-repeated-follows (src/ControlServer.Host/Runtime/Charging/ChargingAllocator.cs): s/Link is SampleRunLink.Continuous or SampleRunLink.Gapped;/Link is SampleRunLink.Continuous or SampleRunLink.Gapped or SampleRunLink.Repeated;/
+-    public bool FollowsAnEarlierSample => Link is SampleRunLink.Continuous or SampleRunLink.Gapped;
++    public bool FollowsAnEarlierSample => Link is SampleRunLink.Continuous or SampleRunLink.Gapped or SampleRunLink.Repeated;
+  失败 ControlServer.Tests.ChargingCycleProgressTests.TheSameSnapshotReadTwiceAfterATelemetryGapDoesNotCompleteTheCycle [119 ms]
+失败!  - 失败:     1，通过:   364，已跳过:     0，总计:   365，持续时间: 24 s - ControlServer.Tests.dll (net8.0)

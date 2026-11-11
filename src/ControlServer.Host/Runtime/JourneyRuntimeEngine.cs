@@ -58,8 +58,12 @@ public sealed partial class JourneyRuntimeEngine(
     IdleReturn.IdleReturnMaterializationFailures? idleReturnMaterializationFailures = null,
     Charging.StationClearanceExit? clearanceExit = null,
     StagingDepartureWarnings? stagingDepartureWarnings = null,
-    InTransitDoorReadings? doorReadings = null)
+    InTransitDoorReadings? doorReadings = null,
+    SessionReadinessRecheck? readinessRecheck = null)
 {
+    // control-server#837: the processor's heartbeat reads it (a singleton in the host); an engine built without it keeps its own.
+    private readonly SessionReadinessRecheck _readinessRecheck = readinessRecheck ?? new SessionReadinessRecheck();
+
     // control-server#789: the door grace and the door fault's sub-cause outlive the per-round engine (a singleton in the host,
     // which the worker also reads to wake when a grace runs out); an engine built without it keeps its own.
     private readonly InTransitDoorReadings _doorReadings = doorReadings ??
@@ -97,6 +101,12 @@ public sealed partial class JourneyRuntimeEngine(
         LogLevel.Warning,
         new EventId(2102, nameof(LogBoxCountFailed)),
         "SUBLOT_BOX_COUNT failed closed for demand {DemandId}.");
+    private static readonly Action<ILogger, string, string, string, Exception?> LogStopSequenceBroken =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Error,
+            new EventId(2341, nameof(LogStopSequenceBroken)),
+            "Vehicle {AgvId}'s journey {JourneyId} holds where it is: {Problem}. Nothing is advanced, ordered or published " +
+            "for it until a person puts the sequences right (control-server#879).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogDepartureAnswerNotValid =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -325,6 +335,12 @@ public sealed partial class JourneyRuntimeEngine(
     /// 而车可能在阻塞或断线期间被人开走、在别处停稳、会话恢复 Ready——10-19 agv03 一事。所以在开门的那一处再核，哪一条入口都绕不过去。
     /// </remarks>
     public const string SlotCommandVehicleNotAtStopReason = "SLOT_COMMAND_VEHICLE_NOT_AT_STOP";
+
+    /// <summary>
+    /// 这趟旅程的停靠序位不是「1 到停靠数、连续、不重号」（control-server#879）：推进停在原地等人核对、改库，不建腿、不下单、不发计划。
+    /// 11-05 agv02 的旅程有两个 5 号、缺 8 号，推进每轮抛同一个异常，车带着三处货停了近 4 小时。
+    /// </summary>
+    public const string StopSequenceBrokenReason = "JOURNEY_STOP_SEQUENCE_BROKEN";
 
     /// <summary>卸货因车不在站上扣着期间，多久再记一次当前读数（事件 2318，control-server#783 审查 S-1）。</summary>
     private static readonly TimeSpan HeldSlotCommandLogInterval = TimeSpan.FromMinutes(5);
@@ -580,7 +596,9 @@ public sealed partial class JourneyRuntimeEngine(
             // so it cannot replace the exception a failed round is carrying out of here.
             if (!cancellationToken.IsCancellationRequested)
             {
-                await new WaitingJourneyWatch(dbContext, vehicleFacts, chargingPolicy, runtimeOptions, timeProvider, logger)
+                await new WaitingJourneyWatch(
+                        dbContext, vehicleFacts, chargingPolicy, runtimeOptions, timeProvider, logger,
+                        dispatchRound.Charging.Board.Batteries)
                     .ObserveAsync(cancellationToken).ConfigureAwait(false);
                 await WatchOpenStopsAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -1161,9 +1179,93 @@ public sealed partial class JourneyRuntimeEngine(
         current.Stage != JourneyRuntimeStage.Completed &&
         !string.Equals(current.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal) &&
         !CarriesACodeThatNamesAWaitOnAPerson(current) &&
-        !(string.Equals(current.BlockReasonCode, JourneyWaitClassification.SessionNotReadyReason, StringComparison.Ordinal) &&
+        // control-server#866 review S3: behind the gate a checkpoint code stands where the session code would, and is kept alike.
+        !((string.Equals(current.BlockReasonCode, JourneyWaitClassification.SessionNotReadyReason, StringComparison.Ordinal) ||
+           IsCheckpointReason(current.BlockReasonCode)) &&
           IsTransportFailure(failure) &&
           await CurrentReadySessionAsync(current.AgvId, cancellationToken).ConfigureAwait(false) is null);
+
+    /// <summary>
+    /// 这趟旅程的停靠序位违反「1 到停靠数、连续、不重号」时，写 <see cref="StopSequenceBrokenReason"/>、记一次 Error，旅程停在当前这一步等人；
+    /// 序位好好的返回 false（control-server#879）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么在推进开头判，而不是让它抛。</b>建腿、推进、清单号（<see cref="JourneyStopCursor.FirstWorklistRevisionAt"/>）与
+    /// 计划修订号都按序位算，序位一坏，往下哪一步都可能按错的停靠发报文、下单，或者像 11-05 那样每轮在同一处抛
+    /// <c>Sequence contains no elements</c>：看板上只有一个笼统的「推进失败」，日志一轮一条、353 条说的是同一件事，没有一条说出病因。
+    /// 在这里判，病因只说一次，而且说的是病因本身：哪几号重了、缺了哪几号、每个停靠现在是几号。
+    /// </para>
+    /// <para>
+    /// <b>为什么不自己修。</b>重号的两个停靠谁先谁后，服务端说不出来——那要看车上实际装着什么、上一版计划发给车的是什么、哪个停靠已经有订单。
+    /// 11-05 那一次是人核过货与车上计划之后才改的库。写坏序位的路径已经堵上（<see cref="JourneyStopsForWrite"/>，写入时也判），
+    /// 这一道是给已经坏了的库，与之后万一还有别的路径漏网时用的。
+    /// </para>
+    /// <para>
+    /// <b>停下的是推进，不是在途单的监看</b>（审查 H1）。车可能正带着本服务端已下发的单在路上——那张单照样跑完，跑的这一路上门锁没锁、
+    /// 单在 RIoT 上 FAILED 或挂起，都要照常按住、急停、写码。所以在写自己的码之前，先照闸门关着那一侧的做法跑一遍
+    /// <see cref="NameInFlightOrderWithoutThePeerAsync"/>：它只读 RIoT、只向 RIoT 发命令，不向车载端发任何东西，也不依赖停靠序位
+    /// （它看的停靠在序位坏了时不取当前停靠，取开放停靠上还在途的意图里最新建的那张所在的停靠，见 <see cref="SupervisedStopAsync"/>：重号时当前停靠是同号里
+    /// 按 <c>StopId</c> 排前的那个，不一定是车正驶向的那一站，第二轮审查 H1′）。单自己的码立着时（故障、挂起、重建），留着那个码，不盖成序位码。
+    /// Blocked 与 AREA 站等准入的旅程也不改码，与闸门那一侧同一条：它们的码说的是另一件要人做的事。
+    /// </para>
+    /// <para>
+    /// <b>码相同不再写、不再记</b>：每轮都判，只在这个码第一次立起来的那一轮记 Error——不论是这里写的，还是单的码结束时由
+    /// <see cref="NameStalledOrderAsync"/> 按 <c>reasonOnceMovedOn</c> 写回成它（第二轮审查 S-a）；之后序位不变就不再记，开始时间从那一刻算起（与
+    /// <see cref="NameFailedAdvanceAsync"/> 同一个理由）。这个码指名在等人（<see cref="CarriesACodeThatNamesAWaitOnAPerson"/>），
+    /// 推进失败不会把它盖掉；闸门关着那一侧也不把它换成 <c>ONBOARD_SESSION_NOT_READY</c>（审查 S2），重连不会让它重记、重新计时。
+    /// 别的码（推进各阶段自己写、自己清的那些）照写成这个码：这一步之后的阶段这一轮都不跑，留着它们只会让看板说一件已经不是原因的事。
+    /// 派车轮不往这趟旅程追加，判的是停靠本身（<c>DispatchRoundRunner.ReadEnRoutePlanAsync</c>，审查 S3）。
+    /// </para>
+    /// <para>
+    /// 有人把序位改好之后，下一轮这里把码清掉、返回 false，推进照常往下走。清码的那次保存与 <see cref="ClearFailedAdvanceAsync"/> 同一条规矩
+    /// （审查 L4）：这一轮还留着别处的未保存改动时不清，下一轮再清。
+    /// </para>
+    /// </remarks>
+    private async Task<bool> HoldOnBrokenStopSequenceAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        RiotMapStationCatalogSnapshot currentMap,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (stops.SequenceProblem is not { } problem)
+        {
+            if (string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) &&
+                !dbContext.ChangeTracker.Entries()
+                    .Any(entry => !ReferenceEquals(entry.Entity, runtime) &&
+                                  entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            {
+                // 序位已经被人改好：码清掉，推进下面照常走，看板不再说这件事。
+                runtime.SetBlockReason(null, now);
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return false;
+        }
+
+        if (runtime.Stage == JourneyRuntimeStage.Blocked || IsHeldForAreaEndAdmission(runtime))
+        {
+            return true;
+        }
+
+        bool wasHeldForIt = string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal);
+        if (!await NameInFlightOrderWithoutThePeerAsync(runtime, currentMap, StopSequenceBrokenReason, cancellationToken)
+                .ConfigureAwait(false) &&
+            !string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
+        {
+            runtime.SetBlockReason(StopSequenceBrokenReason, now);
+            runtime.UpdatedAt = now;
+        }
+
+        // 这一轮码第一次成了序位码（这里写的，或者单的码结束时写回的）就记一次 Error；之前已经是它就不记。
+        if (!wasHeldForIt && string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
+        {
+            LogStopSequenceBroken(logger, runtime.AgvId, runtime.JourneyId, problem, null);
+        }
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
 
     /// <summary>
     /// 推进重新走通的那一轮，把上一轮留下的 <see cref="AdvanceFailedReason"/> 清掉：它说的是「上一轮失败了」，
@@ -1210,6 +1312,15 @@ public sealed partial class JourneyRuntimeEngine(
         DateTimeOffset now = timeProvider.GetUtcNow();
         // 上一轮推进落库的时刻，这一轮任何写入之前读（control-server#783 审查 S-1：长时间扣着卸货时按它判这一轮该不该再记读数）。
         DateTimeOffset previousAdvanceAt = runtime.UpdatedAt;
+        // 装货中取消等车答复超时（control-server#837）：在就绪门之前判。车载端不答时会话常常不就绪，判在门后就永远到不了；判定只读写库、不向车发任何东西。
+        // 挂起了的旅程由下面照常按 Blocked 处理。收口了的，登记这辆车：服务端只在应答车的报文时通告就绪，车停在站上可能很久没有安全变化，
+        // 由它的下一个心跳带出待恢复，恢复入口才亮（SessionReadinessRecheck）。
+        if (await LoadCancellationAnswerTimeout
+                .TryExpireAsync(dbContext, runtime, now, runtimeOptions.LoadCancellationAnswerTimeout, logger, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            _readinessRecheck.Request(runtime.AgvId);
+        }
         SessionRecoveryRow? session = await CurrentReadySessionAsync(runtime.AgvId, cancellationToken)
             .ConfigureAwait(false);
         if (session is null)
@@ -1266,9 +1377,13 @@ public sealed partial class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
-            else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime))
+            // 序位坏了的码不换成会话码（control-server#879 审查 S2）：换掉的话每次重连都重记一次 Error 2341、开始时间重算，
+            // 而序位坏了与会话就不就绪无关，人要做的事没变。
+            else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
+                     !string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
             {
-                runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", now);
+                runtime.SetBlockReason(
+                    await ReasonBehindTheReadinessGateAsync(runtime, now, cancellationToken).ConfigureAwait(false), now);
                 runtime.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -1300,6 +1415,16 @@ public sealed partial class JourneyRuntimeEngine(
         {
             return;
         }
+        // 已有结论的装卸命令先结算或退役、再补发（control-server#623）：车已作答的（结果在恢复期间到、或回了 RECOVERY_REQUIRED 之后被补偿终结）
+        // 修之前在这里每轮补发一次，车载端当重复命令忽略、不回任何东西，行永不确认。仍在等结果的不动，照常补发。
+        // 这里的保存是为结论来的，不该顺带提交本轮别处刻意留到下一步的改动（与 ClearFailedAdvanceAsync 同一条规矩）：还有别的未保存改动时
+        // 这一轮不结算，代价只是车多收一次它会当重复忽略的命令，下一轮再结算。
+        if (!dbContext.ChangeTracker.Entries()
+                .Any(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted) &&
+            await SlotCommandOutbox.ConcludeAsync(dbContext, runtime.AgvId, now, cancellationToken).ConfigureAwait(false) is not (0, 0))
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
         // 车还没确认的出发答复（control-server#713）跟着这一轮补发：会话就绪才走到这里，所以不夹在握手中间。
         HashSet<string> replayable = RuntimeMessageIds(runtime, stops);
         replayable.UnionWith(await CurrentStopDepartures.PendingResultIdsAsync(dbContext, runtime.AgvId, cancellationToken)
@@ -1310,6 +1435,12 @@ public sealed partial class JourneyRuntimeEngine(
             session.SessionGeneration,
             replayable,
             cancellationToken).ConfigureAwait(false);
+        // 停靠序位不连续或重号（control-server#879）：停在这里等人，不往下推。放在补发之后（补发只重发已经存下的行，与序位无关）、
+        // 计划重发之前（按坏序位排出来的计划会把两个停靠同时标成 ACTIVE 发给车，11-05 agv02 的 8822、8824 两版就是这样）。
+        if (await HoldOnBrokenStopSequenceAsync(runtime, stops, currentMap, now, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
         // 计划整体替换下发（ADR-cross-0053）：途中追加会在序列中间插进新停靠，而车上手里那张计划是插入之前的。
         // 补发在重放之后：重放先把没确认的旧行发完，新的那一版才不会被它顶回去。
         await RefreshUpcomingStopPlanAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
@@ -2714,15 +2845,16 @@ public sealed partial class JourneyRuntimeEngine(
         // (control-server#335 incremental review, P1g): a real onboard is not ready for the whole of a leg, so this -- not the
         // stage body -- is the path such a vehicle takes every round, and the rebuild below returns without ever reaching the
         // fault model. Unsupervised, a latched vehicle was never released and the rebuild waited on the fault for good.
-        await SuperviseDoorFaultOnEndedOrderAsync(runtime, stops.Current, cancellationToken).ConfigureAwait(false);
-        if (await OwnOrderRebuilds.ForStopAsync(dbContext, stops.Current, cancellationToken).ConfigureAwait(false) is not null)
+        JourneyStopRow supervised = await SupervisedStopAsync(stops, cancellationToken).ConfigureAwait(false);
+        await SuperviseDoorFaultOnEndedOrderAsync(runtime, supervised, cancellationToken).ConfigureAwait(false);
+        if (await OwnOrderRebuilds.ForStopAsync(dbContext, supervised, cancellationToken).ConfigureAwait(false) is not null)
         {
             return await AdvanceOwnOrderRebuildAsync(
-                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: peerReason, cancellationToken)
+                    runtime, supervised, currentMap, mayCreate: false, reasonOnceRebuilt: peerReason, cancellationToken)
                 .ConfigureAwait(false);
         }
         OrderIntentRow? intent = await dbContext.OrderIntents.SingleOrDefaultAsync(
-            row => row.MovementLegId == stops.Current.MovementLegId, cancellationToken).ConfigureAwait(false);
+            row => row.MovementLegId == supervised.MovementLegId, cancellationToken).ConfigureAwait(false);
         if (intent is null)
         {
             return false;
@@ -2748,6 +2880,50 @@ public sealed partial class JourneyRuntimeEngine(
         return await NameStalledOrderAsync(runtime, intent, order, cancellationToken, reasonOnceMovedOn: peerReason)
             .ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// 在途单监看要看的那个停靠：序位好好的时候就是当前停靠；序位坏了时，是开放停靠上还在途的意图里最新建的那张所在的停靠，没有就仍是当前停靠
+    /// （control-server#879 第二轮审查 H1′）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 序位重号时，「当前停靠」是同号的几个里按 <c>StopId</c> 排在前面的那个，不一定是车正驶向的那一站：11-05 那一趟里推进认的当前停靠
+    /// 是没有单的 2715f926，车真正带着的单是 6 号 6db68fd0 的。按当前停靠找单，找不到就当没有在途单，门没锁也不急停。
+    /// 订单意图只在为一段腿下单时建（离站那一刻建下一站的那一张），所以开放停靠上还在途（已确认或创建已发出）的意图里最新建的那张，就是车此刻带着的单；
+    /// 更早的意图可能还挂在某个开放停靠上、库里仍是 CONFIRMED 而单早已跑完或被取消，按停靠次序取第一个会取到它（第三轮审查 S-1）。
+    /// 已完成的停靠不在开放停靠里，它们的意图不参与。
+    /// </para>
+    /// <para>
+    /// 序位守着时不多读一次库，答案与修之前逐字相同。
+    /// </para>
+    /// </remarks>
+    private async Task<JourneyStopRow> SupervisedStopAsync(JourneyStopCursor stops, CancellationToken cancellationToken)
+    {
+        if (stops.SequenceProblem is null)
+        {
+            return stops.Current;
+        }
+
+        // 只认还在途的意图，多于一张取最新建的那张（第三轮审查 S-1）：开放停靠上可能挂着一张更早、早已跑完或被取消的意图
+        // （库里状态仍是 CONFIRMED，单在 RIoT 上已终态），按停靠次序取第一个有意图的会取到它，门没锁也不急停，还会给错的那站记重建。
+        // 车此刻带着的单是最后下的那一张：离站那一刻为下一站建意图，所以 CreatedAt 最新的就是它。客户端排序：SQLite 的 ORDER BY 接不了 DateTimeOffset。
+        string[] legs = [.. stops.OpenStops.Select(stop => stop.MovementLegId)];
+        string? latest = (await dbContext.OrderIntents.AsNoTracking()
+                .Where(row => legs.Contains(row.MovementLegId) && InFlightIntentStatuses.Contains(row.Status))
+                .Select(row => new { row.MovementLegId, row.CreatedAt })
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .OrderByDescending(row => row.CreatedAt)
+            .FirstOrDefault()?.MovementLegId;
+        return stops.OpenStops.FirstOrDefault(stop => string.Equals(stop.MovementLegId, latest, StringComparison.Ordinal))
+            ?? stops.Current;
+    }
+
+    /// <summary>
+    /// 还在途的订单意图：已确认，或创建已经发出、结果未定，或单在 RIoT 上已终态而创建一直没确认、等着对账（第三轮审查 S-1、S-2：
+    /// 后者引擎每轮仍要处理——FAILED 交故障模型，CANCELLED 记重建；与 <c>IdleReturnEvaluator</c>、<c>JourneyWithdrawal</c> 的「结果未定」集合对齐）。<see cref="SupervisedStopAsync"/> 只在这几种里找车此刻带着的单。
+    /// </summary>
+    private static readonly string[] InFlightIntentStatuses =
+        ["CONFIRMED", "CREATE_ATTEMPTED", "RESULT_UNKNOWN", "TERMINAL_RECONCILIATION_REQUIRED"];
 
     /// <summary>
     /// <see cref="NameInFlightOrderWithoutThePeerAsync"/> for an ordinary leg whose create has not been confirmed
@@ -3055,13 +3231,9 @@ public sealed partial class JourneyRuntimeEngine(
     /// </remarks>
     private async Task NameCheckpointWaitAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
     {
-        VehicleMotionSample sample = await motionFacts
-            .SampleMotionAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
-        bool waiting = string.Equals(
-            sample.MovementState, RiotMovementStates.WaitForCheckpoint, StringComparison.Ordinal);
-        if (!waiting)
+        string? reason = await JudgeCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
+        if (reason is null)
         {
-            checkpointWaits.Clear(runtime.VehicleKey);
             if (IsCheckpointReason(runtime.BlockReasonCode))
             {
                 runtime.SetBlockReason(null, timeProvider.GetUtcNow());
@@ -3071,13 +3243,6 @@ public sealed partial class JourneyRuntimeEngine(
             return;
         }
 
-        TimeSpan waited = checkpointWaits.Observe(runtime.VehicleKey, sample.ObservedAt);
-        bool exceeded = waited > runtimeOptions.CheckpointWaitBudget;
-        string reason = exceeded ? CheckpointWaitExceededReason : CheckpointWaitReason;
-        if (exceeded)
-        {
-            LogCheckpointWaitExceeded(logger, runtime.AgvId, runtime.DemandId ?? runtime.JourneyId, null);
-        }
         if (string.Equals(runtime.BlockReasonCode, reason, StringComparison.Ordinal))
         {
             return;
@@ -3086,6 +3251,96 @@ public sealed partial class JourneyRuntimeEngine(
         runtime.SetBlockReason(reason, timeProvider.GetUtcNow());
         runtime.UpdatedAt = timeProvider.GetUtcNow();
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The checkpoint code RIoT's answer calls for, or null when the vehicle is not holding at a checkpoint (whose wait is
+    /// then forgotten). Writes nothing on the row: <see cref="NameCheckpointWaitAsync"/> and the readiness gate each write it
+    /// their own way.
+    /// </summary>
+    /// <remarks>
+    /// 2105 is logged when the wait goes past its budget, not every round after (control-server#866): behind the readiness
+    /// gate the wait is now judged on a real onboard too, and 10-23's two hours at a checkpoint would have been a line every
+    /// round. The code itself says it for as long as it lasts.
+    /// <para>
+    /// <b>A sample that could not be read keeps what stands</b> (review M2): the checkpoint code if one stands, and the ledger's
+    /// start either way, as <see cref="NameInFlightOrderWithoutThePeerAsync"/> keeps an order's code it cannot read. The gateway
+    /// answers an SDK failure with no movement state; taken for "not waiting", one failed read in ten minutes cleared the code,
+    /// restarted the wait and the waiting journey watch never reached its threshold -- 10-23 again. A sample past
+    /// <see cref="JourneyRuntimeOptions.WaitingJourneyBatteryReadBudget"/> is unread too (review S2): it is two RIoT reads with the
+    /// SDK's thirty-second timeout each, on the round that also dispatches; the watch's battery read is bounded the same way.
+    /// </para>
+    /// </remarks>
+    private async Task<string?> JudgeCheckpointWaitAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    {
+        string? standing = IsCheckpointReason(runtime.BlockReasonCode) ? runtime.BlockReasonCode : null;
+        VehicleMotionSample sample;
+        using (CancellationTokenSource expiry = new(runtimeOptions.WaitingJourneyBatteryReadBudget, timeProvider))
+        using (CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token))
+        {
+            try
+            {
+                sample = await motionFacts.SampleMotionAsync(runtime.VehicleKey, linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return standing;
+            }
+        }
+        if (sample.MovementState is null)
+        {
+            return standing;
+        }
+        bool waiting = string.Equals(
+            sample.MovementState, RiotMovementStates.WaitForCheckpoint, StringComparison.Ordinal);
+        if (!waiting)
+        {
+            checkpointWaits.Clear(runtime.VehicleKey);
+            return null;
+        }
+
+        TimeSpan waited = checkpointWaits.Observe(runtime.VehicleKey, sample.ObservedAt);
+        bool exceeded = waited > runtimeOptions.CheckpointWaitBudget;
+        if (exceeded && !string.Equals(runtime.BlockReasonCode, CheckpointWaitExceededReason, StringComparison.Ordinal))
+        {
+            LogCheckpointWaitExceeded(logger, runtime.AgvId, runtime.DemandId ?? runtime.JourneyId, null);
+        }
+        return exceeded ? CheckpointWaitExceededReason : CheckpointWaitReason;
+    }
+
+    /// <summary>
+    /// The code a journey carries behind the readiness gate when no in-flight order code of its own stands: a checkpoint
+    /// wait RIoT reports on an arrival leg, otherwise <c>ONBOARD_SESSION_NOT_READY</c> (control-server#866).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why the gate asks at all.</b> The arrival branches name a checkpoint wait, but a real onboard carrying this server's
+    /// order is not ready for the whole leg, so its rounds never reach them. On 10-23 agv01 held at a checkpoint for 2 h 23 min
+    /// behind a powered-down agv02 with the session RecoveryRequired throughout; the journey read
+    /// <c>ONBOARD_SESSION_NOT_READY</c>, which <see cref="JourneyWaitClassification"/> deliberately does not count as a wait on a
+    /// leg, so the waiting journey watch never logged 2163 or 2164 while its battery fell from 60% to 32%. A checkpoint wait is
+    /// named on the RIoT side, which is exactly the kind of code the table does count.
+    /// </para>
+    /// <para>
+    /// Rationed per vehicle (<see cref="CheckpointWaitLedger.BehindTheGateSampleInterval"/>): between two samples the
+    /// checkpoint code that stands stays, and anything else reads as the gate's own code, as before this ticket.
+    /// </para>
+    /// </remarks>
+    private async Task<string> ReasonBehindTheReadinessGateAsync(
+        JourneyRuntimeRow runtime,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        const string sessionNotReady = "ONBOARD_SESSION_NOT_READY";
+        if (!WaitsOnAnArrivalTheVehicleReports(runtime.Stage))
+        {
+            return sessionNotReady;
+        }
+        if (!checkpointWaits.TakeBehindTheGateSample(runtime.VehicleKey, now))
+        {
+            return IsCheckpointReason(runtime.BlockReasonCode) ? runtime.BlockReasonCode! : sessionNotReady;
+        }
+        return await JudgeCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false) ?? sessionNotReady;
     }
 
     private static bool IsCheckpointReason(string? reason) =>
@@ -3494,8 +3749,7 @@ public sealed partial class JourneyRuntimeEngine(
 
         // 只在这个上下文里改，不保存：旧的那一版由 PublishStopWorklistAsync 退役，升版的次数、退役与新的一版在入队那一次保存里
         // 一起落库。崩在那之前就什么都没落库，下一轮照样认出车上的期限是旧的、照样升版（PR #353 审查 M1）。
-        JourneyStopRow tracked = await dbContext.Set<JourneyStopRow>()
-            .SingleAsync(row => row.StopId == stop.StopId, cancellationToken).ConfigureAwait(false);
+        JourneyStopRow tracked = await JourneyStopsForWrite.TrackedAsync(dbContext, stop.StopId, cancellationToken).ConfigureAwait(false);
         tracked.WorklistRefills += 1;
         return await JourneyStopCursor.LoadIncludingUnsavedChangesAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
@@ -3614,8 +3868,7 @@ public sealed partial class JourneyRuntimeEngine(
                     stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, earlier), cancellationToken)
                 .ConfigureAwait(false);
         }
-        JourneyStopRow tracked = await dbContext.Set<JourneyStopRow>()
-            .SingleAsync(row => row.StopId == stop.StopId, cancellationToken).ConfigureAwait(false);
+        JourneyStopRow tracked = await JourneyStopsForWrite.TrackedAsync(dbContext, stop.StopId, cancellationToken).ConfigureAwait(false);
         tracked.WorklistRefills += revision - formula + 1;
         runtime.UpdatedAt = now;
 
@@ -3852,8 +4105,12 @@ public sealed partial class JourneyRuntimeEngine(
         bool foreignOrderHoldsVehicle = (await ForeignOrders.ForeignRunningOrders
                 .HeldAgvIdsAsync(dbContext, cancellationToken).ConfigureAwait(false))
             .Contains(runtime.AgvId);
+        // control-server#866 review M1: a checkpoint code is what the gate writes in place of its own while the vehicle holds at a
+        // checkpoint; the session is down on the same own order, so it is explained the same way.
         if (!Dashboard.OwnMovementOrderExplanation.Explains(
-                runtime.BlockReasonCode,
+                IsCheckpointReason(runtime.BlockReasonCode)
+                    ? Dashboard.OwnMovementOrderExplanation.SessionNotReadyBlock
+                    : runtime.BlockReasonCode,
                 session.ReasonCode,
                 session.SafetyReasonCodesJson,
                 session.SafetyUnknownPresent,
@@ -5868,13 +6125,19 @@ public sealed partial class JourneyRuntimeEngine(
             "pickup-dispatch-plan");
 
     /// <summary>
-    /// 车离开当前停靠之后要去的那一个：序位上紧接着的、还开着的停靠（批次7-06，control-server#211）。
+    /// 车离开当前停靠之后要去的那一个：开放停靠里紧跟在当前停靠后面的那个（批次7-06，control-server#211）。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 取不到就是在最后一个停靠上问了「下一段腿去哪」——那一刻旅程该结束而不是再开一张订单，所以响亮地停下。
+    /// </para>
+    /// <para>
+    /// 与推进取当前停靠是同一个列表、同一个次序（<see cref="JourneyStopCursor.NextOpenStopAfterCurrent"/>，control-server#879）。这之前按
+    /// 「序位严格大于当前停靠」取，序位重号时跳过同号的那一个，建腿与推进从此各走各的。
+    /// </para>
     /// </remarks>
     private static JourneyStopRow NextStopAfterCurrent(JourneyStopCursor stops) =>
-        stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence)
+        stops.NextOpenStopAfterCurrent
         ?? throw new InvalidDataException(
             $"Stop {stops.Current.StopId} is the last one; there is no next leg to depart on.");
 
@@ -6026,7 +6289,7 @@ public sealed partial class JourneyRuntimeEngine(
 
     /// <summary>被跟踪的那一份停靠行，用来写状态。</summary>
     private Task<JourneyStopRow> TrackedStopAsync(string stopId, CancellationToken cancellationToken) =>
-        dbContext.Set<JourneyStopRow>().SingleAsync(row => row.StopId == stopId, cancellationToken);
+        JourneyStopsForWrite.TrackedAsync(dbContext, stopId, cancellationToken);
 
     /// <summary>
     /// 这趟旅程有权补发的消息，按停靠与归属枚举出来。
@@ -6473,6 +6736,8 @@ public sealed partial class JourneyRuntimeEngine(
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.OrderEndedStopNotProven, StringComparison.Ordinal) ||
         // control-server#447: its start is what the manual settlement's bound is counted from; a failed advance must not reset it.
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.ArrivalNotProven, StringComparison.Ordinal) ||
+        // control-server#879: its stop sequences are broken; a person has to check the cargo and the plan and put them right.
+        string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) ||
         // control-server#404: a charging journey whose cycle is gone waits for a person to look.
         string.Equals(runtime.BlockReasonCode, Charging.ChargingExecutionReasons.CycleMissing, StringComparison.Ordinal);
 
@@ -6866,7 +7131,7 @@ public sealed partial class JourneyRuntimeEngine(
         {
             return deadline;
         }
-        if (stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence) is
+        if (stops.NextOpenStopAfterCurrent is
             { StopRole: JourneyStopRoles.Pickup } next &&
             string.Equals(next.StationId, stops.Current.StationId, StringComparison.Ordinal))
         {

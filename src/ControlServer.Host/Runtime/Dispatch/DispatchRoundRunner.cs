@@ -56,7 +56,9 @@ public sealed class DispatchRoundRunner(
     IChargingPolicyResolver chargingPolicy,
     ChargingAllocator chargingAllocation,
     TrialSublotFilterLog trialSublotLog,
-    MandatoryChargeBoard? mandatoryCharge = null)
+    DispatchVerdictTransitionLog verdictTransitions,
+    MandatoryChargeBoard? mandatoryCharge = null,
+    JourneyBacklogRetention? backlogRetention = null)
 {
     // The backlog's decision fingerprint is a hash over this serialisation, so it is the engine's setting exactly: a
     // different one would read every backlog row written before the move as a changed demand.
@@ -129,6 +131,28 @@ public sealed class DispatchRoundRunner(
             "Asking whether vehicle {AgvId} may take an appended demand failed: {ExceptionType}. The round " +
             "left it under way and went on to its end.");
 
+    /// <summary>
+    /// 派车轮选中「往这趟旅程追加」之后、提交之前旅程结束了（control-server#864）。信息级：这是预期之中的竞态，车与需求都没出错，
+    /// 运维什么都不用做；记下来是为了频率看得见（生产 10-21～10-23 三天三次，此前记成 2123／2124）。
+    /// </summary>
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogAppendJourneyEnded =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Information,
+            new EventId(2146, nameof(LogAppendJourneyEnded)),
+            "Vehicle {AgvId}'s journey {JourneyId} ended before demand {DemandId} could be appended to it; the append " +
+            "was dropped for this round, and the demand stays in the backlog to be reassigned next round ({ReasonCode}).");
+
+    /// <summary>
+    /// 上一轮因要追加的旅程已结束而被放弃的需求，这一轮被接走了（control-server#864）。与 2146 按需求号配对：
+    /// 生产 10-21～10-25 五次跳过，日志里看不出后来补派没有（Coordinator12 10-25）。
+    /// </summary>
+    private static readonly Action<ILogger, string, string, string, Exception?> LogDroppedAppendReassigned =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Information,
+            new EventId(2147, nameof(LogDroppedAppendReassigned)),
+            "Demand {DemandId}, whose append was dropped in an earlier round because the journey had ended, was " +
+            "reassigned this round: vehicle {AgvId} took it into journey {JourneyId}.");
+
     private static readonly Action<ILogger, string, int, int, long, string, Exception?> LogEnteredMandatoryCharge =
         LoggerMessage.Define<string, int, int, long, string>(
             LogLevel.Warning,
@@ -144,7 +168,31 @@ public sealed class DispatchRoundRunner(
             "Vehicle {VehicleKey} is no longer below its mandatory charge entry threshold (or its battery or policy can no " +
             "longer be read, which blocks it for that reason instead).");
 
+    private static readonly Action<ILogger, int, TimeSpan, Exception?> LogBacklogPurged =
+        LoggerMessage.Define<int, TimeSpan>(
+            LogLevel.Information,
+            new EventId(2881, nameof(LogBacklogPurged)),
+            "Deleted {Count} backlog row(s) of demands that left the MesIngest catalog more than {Retention} ago and that nothing " +
+            "refers to (control-server#881).");
+
+    private static readonly Action<ILogger, Exception?> LogBacklogPurgeFailed =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(2882, nameof(LogBacklogPurgeFailed)),
+            "Sweeping the backlog of demands that left the catalog failed (control-server#881); the round went on, and the next " +
+            "sweep tries again.");
+
+    private static readonly Action<ILogger, int, string, Exception?> LogBacklogPurgeSkippedUnreadable =
+        LoggerMessage.Define<int, string>(
+            LogLevel.Warning,
+            new EventId(2883, nameof(LogBacklogPurgeSkippedUnreadable)),
+            "The backlog sweep skipped {Count} dead row(s) whose LastSeenAt it could not read, and kept them " +
+            "(control-server#881); first ones: {DemandIds}.");
+
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
+
+    // control-server#881: the host registers one for the process; a runner built without it keeps its own.
+    private readonly JourneyBacklogRetention _backlogRetention = backlogRetention ?? new JourneyBacklogRetention();
 
     // control-server#403: the host registers one for the process; a runner built without it keeps its own.
     private readonly MandatoryChargeBoard _mandatoryCharge = mandatoryCharge ?? new MandatoryChargeBoard();
@@ -160,7 +208,7 @@ public sealed class DispatchRoundRunner(
     /// is not.
     /// </remarks>
     private static bool IsInvariantBreach(Exception error) =>
-        error is BusinessIdentityConflictException or JourneyPlanFreezeIncompleteException;
+        error is BusinessIdentityConflictException or JourneyPlanFreezeIncompleteException or JourneyStopSequenceBrokenException;
 
     /// <summary>
     /// 一轮派车：<b>先定任务，再只为那条任务比车</b>（REQ-0200；批次7-06，control-server#211）。
@@ -214,10 +262,11 @@ public sealed class DispatchRoundRunner(
             return;
         }
 
-        Dictionary<string, JourneyBacklogRow> backlogByDemandId = await dbContext.JourneyBacklog
-            .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
+        HashSet<string> listed = snapshot.Items.Select(item => item.DemandId).ToHashSet(StringComparer.Ordinal);
+        await SweepBacklogAsync(listed, now, cancellationToken).ConfigureAwait(false);
+        Dictionary<string, JourneyBacklogRow> backlogByDemandId = await LoadBacklogAsync(listed, cancellationToken)
             .ConfigureAwait(false);
-        await MarkBacklogLeftCatalogAsync(backlogByDemandId, snapshot, cancellationToken).ConfigureAwait(false);
+        await MarkBacklogLeftCatalogAsync(backlogByDemandId, snapshot, now, cancellationToken).ConfigureAwait(false);
         // The MesIngest catalog is MES's own list of open transport demands, and a journey of ours
         // reaching Completed does not take the demand out of it. A demand this server has accepted is
         // bound to its one journey permanently; it is never a candidate again, whatever stage that
@@ -227,13 +276,19 @@ public sealed class DispatchRoundRunner(
         // 批次7-10（control-server#215）起有一个例外：已释放、等着改派的需求（REQ-0328）不算「已受理」，它要能再被派一次。
         // 判据只有 DemandJourneyLookup.ReleasedForRedispatch 一处定义，孤儿检查排除的是同一批——两处各写一份会分叉成
         // 「放过去了却被当成孤儿抛」或者反过来。它的受理行照旧复用，见 WireToGateStore.IsReleasedForRedispatchAsync。
-        IQueryable<AcceptedDemandRow> releasedForRedispatch = DemandJourneyLookup.ReleasedForRedispatch(dbContext);
-        HashSet<string> acceptedDemandIds = (await dbContext.AcceptedDemands
-                .Where(row => !releasedForRedispatch.Any(released => released.DemandId == row.DemandId))
+        //
+        // control-server#881：待改派的那批只读一次，受理集合与改派代次都用它。原来两条语句各把它当相关子查询嵌一遍：受理集合对每条受理行、
+        // 改派代次对 JourneyDemands 每一行各跑一次，生产库上一轮开头这两处各约 1 s。
+        string[] releasedForRedispatch = await DemandJourneyLookup.ReleasedForRedispatch(dbContext).AsNoTracking()
+            .Select(row => row.DemandId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        HashSet<string> acceptedDemandIds = (await dbContext.AcceptedDemands.AsNoTracking()
                 .Select(row => row.DemandId)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .ToHashSet(StringComparer.Ordinal);
-        Dictionary<string, long> redispatchGenerations = await RedispatchGenerationsAsync(cancellationToken)
+        acceptedDemandIds.ExceptWith(releasedForRedispatch);
+        Dictionary<string, long> redispatchGenerations = await RedispatchGenerationsAsync(
+                releasedForRedispatch, cancellationToken)
             .ConfigureAwait(false);
 
         VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken)
@@ -251,6 +306,11 @@ public sealed class DispatchRoundRunner(
             admissionPolicyDrifted)
         {
             ClaimsIntakeRefused = claimsIntakeRefused,
+            AppendsDroppedOnEndedJourney = backlogByDemandId.Values
+                .Where(row => row.AcceptedAt is null &&
+                              string.Equals(row.ReasonCode, DispatchReasonCodes.FinalAppendJourneyEnded, StringComparison.Ordinal))
+                .Select(row => row.DemandId)
+                .ToHashSet(StringComparer.Ordinal),
             ZoneParameters = zoneParameters,
             RedispatchGenerations = redispatchGenerations,
             // REQ-0366（control-server#827）：判据、受理前重判与轮末两个汇总都按这一个值判。
@@ -412,6 +472,8 @@ public sealed class DispatchRoundRunner(
         // 装货阶段下一轮判「这一侧满没满」要的那一半（批次7-07，control-server#212）：哪几侧有候选只因本车货物占侧而装不下。
         // 与结构性告警读的是同一份结局，所以两者对「这一轮问到了哪些车」的口径一致。
         slotGroupFullness.Record(roundOutcome);
+        // 每对（车, 需求）的判定码变了才记一条（control-server#884）：同一份结局，只在内存里比对，不读库。
+        DispatchVerdictTransitionLogMessages.Log(logger, verdictTransitions.Record(roundOutcome));
     }
 
     /// <summary>
@@ -519,12 +581,22 @@ public sealed class DispatchRoundRunner(
                 .ReadOnboardFactsAsync(vehicle.AgvId, linked.Token).ConfigureAwait(false);
             RiotVehicleObservation observation = await vehicleFacts
                 .ReadVehicleAsync(vehicle.VehicleKey, linked.Token).ConfigureAwait(false);
+            // control-server#866: kept for the dashboard's loaded-vehicle-below-the-line alarm, before the plan check below drops a
+            // vehicle on the move (RIoT reads it at no station while it drives). The read is the one this round makes anyway. A vehicle
+            // RIoT reports offline or disabled has no current battery, as the charging allocation registers it (REQ-0269).
+            chargingAllocation.Board.Batteries.Record(
+                vehicle.AgvId,
+                observation is { Connected: true, Enabled: true } ? observation.BatteryPercent : null,
+                timeProvider.GetUtcNow());
             EnRouteVehiclePlan? plan = underWay
                 ? await ReadEnRoutePlanAsync(vehicle, observation, linked.Token).ConfigureAwait(false)
                 : null;
             if (underWay && plan is null)
             {
-                // 在途却读不出计划：这一轮不问它追加，别的车照常。旅程正在被推进段改写时会短暂落进这里。
+                // 在途却读不出计划：这一轮整辆车不参加（不出逐车判定、不问它追加），别的车照常。两种情形：旅程正在被推进段改写时
+                // 短暂落进这里；RIoT 读不到它的位置或报它不在任何站上（currentPosition 0，真 RIoT 上车一开动就是这样，
+                // control-server#528 审查 S1）。后者让行驶中的车整段不参加派车轮：全车不可达的结构阻断要等它停到站上才立得起来，
+                // 积压看板的逐车判定里也没有它。
                 return null;
             }
 
@@ -642,9 +714,11 @@ public sealed class DispatchRoundRunner(
         RiotVehicleObservation observation,
         CancellationToken cancellationToken)
     {
-        if (observation.CurrentStationId is not { } vehicleStation)
+        if (observation.KnownStationId is not { } vehicleStation)
         {
             // 不知道车在哪，就算不出任何一段代价，也就谈不上追加。fail closed，与可达性判据同一条道理。
+            // currentPosition 0（不在任何站上）同样没有起点（control-server#528）。这一处不只是口径：以前从 0 算代价、到不了，
+            // 车仍作为参加者出一份「不追加」的判定；现在答空，调用方让整辆车不参加这一轮（见 TryAdmitToRoundAsync 那一处）。
             return null;
         }
 
@@ -685,7 +759,11 @@ public sealed class DispatchRoundRunner(
 
         JourneyStopCursor stops = await JourneyStopCursor
             .LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
-        return stops.OpenStops.Count == 0
+        // A journey whose stop sequences are broken (control-server#879) is held for a person, and its plan is exactly what cannot be
+        // planned into: the planner numbers the whole journey afresh, so an append would sort the duplicates out by StopId -- an order
+        // only a person who has checked the cargo may choose. Judged on the stops themselves, not on the journey's code (review S3):
+        // the code can be overwritten (a session drop writes ONBOARD_SESSION_NOT_READY over it), the sequences cannot.
+        return stops.OpenStops.Count == 0 || stops.SequenceProblem is not null
             ? null
             : EnRoutePlanOf(stops, vehicleStation, runtime.LoadingPhaseState == LoadingPhaseStates.Closed) with
             {
@@ -731,7 +809,8 @@ public sealed class DispatchRoundRunner(
                 StringComparer.Ordinal),
             LoadingPhaseClosed: loadingPhaseClosed,
             TrailingRemovedStopIds: [.. trailingRemoved.Select(stop => stop.StopId)],
-            DemandsThatLeft: stops.DemandsThatLeft);
+            DemandsThatLeft: stops.DemandsThatLeft,
+            PlannedAgainst: [.. stops.Stops.Select(stop => new JourneyStopBasis(stop.StopId, stop.Sequence, stop.Status))]);
     }
 
     /// <summary>一辆车对一条任务的裁决：过了就成为一份出价，没过就只留下积压里的理由。</summary>
@@ -850,7 +929,7 @@ public sealed class DispatchRoundRunner(
     /// 行上就是受理自己写的，那时本来也没有别人可以被挡。
     /// </remarks>
     /// <param name="winnerWroteItsOwnReason">
-    /// 胜者是不是已经写下了这条需求自己那条更具体的积压理由（受理拒绝的四种之一）。
+    /// 胜者是不是已经写下了这条需求自己那条更具体的积压理由（受理拒绝的几种之一）。
     /// <b>是的话就不要再把它盖成「已被接走」</b>（批次7-06，control-server#211）：那条需求一辆车都没接走，
     /// 而看板读的正是积压行的理由——它会指着一辆不存在的车，查的人先去找那辆车。
     ///
@@ -1064,7 +1143,9 @@ public sealed class DispatchRoundRunner(
         acceptedDemandIds.Add(demandId);
         claimedHere.Add(demandId);
         JourneyIntakeResult result = underWay
-            ? await AppendToJourneyAsync(selected, plan, intakeAt, FinalAdmissionAsync, cancellationToken)
+            ? await AppendToJourneyAsync(
+                    selected, plan, intakeAt, FinalAdmissionAsync, round.AppendsDroppedOnEndedJourney.Contains(demandId),
+                    cancellationToken)
                 .ConfigureAwait(false)
             : await intakeCoordinator.AcceptAndDispatchToPickupAsync(
                     selected.Candidate.Snapshot,
@@ -1078,7 +1159,8 @@ public sealed class DispatchRoundRunner(
         {
             if (result.IntakeOutcome is DemandIntakeOutcome.CandidateChanged
                 or DemandIntakeOutcome.FinalAdmissionRejected
-                or DemandIntakeOutcome.JourneyPlanIncomplete)
+                or DemandIntakeOutcome.JourneyPlanIncomplete
+                or DemandIntakeOutcome.JourneyEnded)
             {
                 claimsIntakeRefused.Add(demandId);
             }
@@ -1091,6 +1173,7 @@ public sealed class DispatchRoundRunner(
                     DemandIntakeOutcome.CandidateChanged => "FINAL_CATALOG_DECISION_FACT_CHANGED",
                     DemandIntakeOutcome.FinalAdmissionRejected => windowRefusalAtIntake ?? "FINAL_DYNAMIC_FACTS_NOT_READY",
                     DemandIntakeOutcome.JourneyPlanIncomplete => "FINAL_JOURNEY_PLAN_INCOMPLETE",
+                    DemandIntakeOutcome.JourneyEnded => DispatchReasonCodes.FinalAppendJourneyEnded,
                     _ => throw new InvalidOperationException($"Unsupported intake outcome '{result.IntakeOutcome}'.")
                 },
                 timeProvider.GetUtcNow(),
@@ -1128,6 +1211,11 @@ public sealed class DispatchRoundRunner(
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        if (round.AppendsDroppedOnEndedJourney.Contains(demandId))
+        {
+            LogDroppedAppendReassigned(logger, demandId, selected.Vehicle.AgvId, createdJourneyId, null);
+        }
+
         return CandidateDispatchOutcome.Taken;
     }
 
@@ -1145,7 +1233,7 @@ public sealed class DispatchRoundRunner(
 
         /// <summary>
         /// 这条任务这一轮结束，<b>而且它已经写下了自己那条更具体的积压理由</b>——最终重读发现候选没了、变了、
-        /// 车的最终事实不就绪、计划冻结不全，四种之一。落裁决时不要再把它盖成「已被接走」。
+        /// 车的最终事实不就绪、计划冻结不全、要追加的旅程已经结束（control-server#864），五种之一。落裁决时不要再把它盖成「已被接走」。
         /// </summary>
         RefusedWithItsOwnReason
     }
@@ -1156,6 +1244,7 @@ public sealed class DispatchRoundRunner(
         JourneyExecutionPlan plan,
         DateTimeOffset intakeAt,
         Func<CancellationToken, Task<bool>> finalAdmission,
+        bool reassigningADroppedAppend,
         CancellationToken cancellationToken)
     {
         EnRouteAppendPlacement placement = selected.Placement
@@ -1170,9 +1259,20 @@ public sealed class DispatchRoundRunner(
         if (runtime is null)
         {
             // 这一轮读到它在途之后，旅程已经结束了（操作员取消、收尾）：不问它追加，与 ReadEnRoutePlanAsync 读不出计划时一样。
-            // 这是正常竞态，不是这辆车出了错；原先 First() 在这里抛，记成 2123（control-server#791，10-19 agv02）。
-            // 按受理拒收处理：轮末这条需求不算接走，积压行记「最终动态事实不就绪」，下一轮按空闲车重新判。
-            return new JourneyIntakeResult(DemandIntakeOutcome.FinalAdmissionRejected, null);
+            // 这是正常竞态，不是这辆车出了错；原先 First() 在这里抛，记成 2123（control-server#791，10-19 agv02；生产包 9c8c34a5
+            // 不含那次修复，10-21、10-23 又各一次）。与写库那一侧撞上 Completed 是同一个竞态的另一个时刻，结局一致
+            // （control-server#864）：轮末这条需求不算接走，积压行记旅程已结束，下一轮重新分配。
+            // 旅程 id 只为日志：结束的那一趟已经不在上面的查询里，按这辆车最近建的那一趟找回来。
+            string? endedJourneyId = (await dbContext.JourneyRuntimes.AsNoTracking()
+                    .Where(row => row.AgvId == selected.Vehicle.AgvId)
+                    .Select(row => new { row.JourneyId, row.CreatedAt })
+                    .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+                .OrderByDescending(row => row.CreatedAt)
+                .FirstOrDefault()?.JourneyId;
+            LogAppendJourneyEnded(
+                logger, selected.Vehicle.AgvId, endedJourneyId ?? "(none)", demandId,
+                DispatchReasonCodes.FinalAppendJourneyEnded, null);
+            return new JourneyIntakeResult(DemandIntakeOutcome.JourneyEnded, null);
         }
 
         // 这里<b>不</b>判旅程还接不接得下追加，那件事在 WireToGateStore.StageAndCommitAppendAsync 的事务里判
@@ -1190,13 +1290,24 @@ public sealed class DispatchRoundRunner(
             selected.Candidate.Route.DispatchZone,
             selected.DispatchZoneParameterVersion,
             [.. placement.Resequenced.Select(stop => new JourneyStopSequenceChange(stop.StopId, stop.Sequence))],
-            intakeAt);
+            intakeAt,
+            placement.PlannedAgainst);
         DemandIntakeOutcome outcome = await intakeCoordinator.AppendToJourneyAsync(
                 selected.Candidate.Snapshot,
                 append,
                 finalAdmission,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (outcome == DemandIntakeOutcome.JourneyEnded)
+        {
+            LogAppendJourneyEnded(
+                logger, selected.Vehicle.AgvId, runtime.JourneyId, demandId, DispatchReasonCodes.FinalAppendJourneyEnded, null);
+        }
+        else if (outcome == DemandIntakeOutcome.Accepted && reassigningADroppedAppend)
+        {
+            LogDroppedAppendReassigned(logger, demandId, selected.Vehicle.AgvId, runtime.JourneyId, null);
+        }
+
         return new JourneyIntakeResult(outcome, null);
     }
 
@@ -1328,11 +1439,66 @@ public sealed class DispatchRoundRunner(
             }
         }
 
+        // Back are the rows the round held, as committed (control-server#881): reading the whole table here would undo the
+        // narrowed load in RunAsync every time a vehicle's segment ends early. A row the segment created and never saved is not
+        // in the store and is written afresh if the round comes back to it, as before.
+        string[] held = [.. backlogByDemandId.Keys];
         backlogByDemandId.Clear();
         foreach (JourneyBacklogRow row in await dbContext.JourneyBacklog
+                     .Where(row => held.Contains(row.DemandId))
                      .ToArrayAsync(cancellationToken).ConfigureAwait(false))
         {
             backlogByDemandId[row.DemandId] = row;
+        }
+    }
+
+    /// <summary>
+    /// The backlog rows this round can touch, tracked: every row of a demand the catalog lists, and every row not yet accepted
+    /// and not yet marked as gone from the catalog -- the ones <see cref="MarkBacklogLeftCatalogAsync"/> may have to mark.
+    /// </summary>
+    /// <remarks>
+    /// Until control-server#881 this read the whole table, tracked, and the field table was four-fifths rows of demands MES had
+    /// closed long before (50,615 rows on 2026-11-05, 43,400 of them <see cref="DispatchReasonCodes.DemandLeftCatalog"/>): every
+    /// save of the round ran its pre-save hooks over all of them, 166 ms a save against 29 ms without. Every reader of the
+    /// dictionary looks a row up by a catalog demand's id, and the two scans over its values -- the left-catalog mark and the
+    /// dropped-append set -- only ever act on unaccepted rows that are not marked yet, so what is left out was never acted on.
+    /// </remarks>
+    private async Task<Dictionary<string, JourneyBacklogRow>> LoadBacklogAsync(
+        IReadOnlySet<string> listed,
+        CancellationToken cancellationToken)
+    {
+        string[] listedIds = [.. listed];
+        return await dbContext.JourneyBacklog
+            .Where(row => listedIds.Contains(row.DemandId) ||
+                          (row.AcceptedAt == null && row.ReasonCode != DispatchReasonCodes.DemandLeftCatalog))
+            .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Deletes the dead backlog rows past their retention, at most once per <see cref="JourneyBacklogRetention.SweepInterval"/>
+    /// (control-server#881). A failure is logged and the round goes on: dispatching does not depend on it.
+    /// </summary>
+    private async Task SweepBacklogAsync(IReadOnlySet<string> listed, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        try
+        {
+            JourneyBacklogPurge? purge = await _backlogRetention
+                .SweepIfDueAsync(dbContext, listed, now, runtimeOptions.BacklogRetention, cancellationToken)
+                .ConfigureAwait(false);
+            if (purge?.Deleted > 0)
+            {
+                LogBacklogPurged(logger, purge.Deleted, runtimeOptions.BacklogRetention, null);
+            }
+            if (purge?.Unreadable.Count > 0)
+            {
+                LogBacklogPurgeSkippedUnreadable(
+                    logger, purge.Unreadable.Count, string.Join(", ", purge.Unreadable.Take(5)), null);
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            LogBacklogPurgeFailed(logger, error);
         }
     }
 
@@ -1420,8 +1586,10 @@ public sealed class DispatchRoundRunner(
     /// <remarks>
     /// Rows are only ever written for demands in the catalog, so without this a demand MES closed before this
     /// server took it kept its last reason forever. Saved here, ahead of the vehicle loop, because a vehicle that
-    /// runs out its budget clears the change tracker. <c>LastSeenAt</c> is left alone: it stays the last time the
-    /// demand was in the catalog. See <see cref="DispatchReasonCodes.DemandLeftCatalog"/>.
+    /// runs out its budget clears the change tracker. <c>LastSeenAt</c> is set to the moment of marking, once: from then on it
+    /// is when the demand left the catalog, which is what <see cref="JourneyBacklogRetention"/> counts its retention from
+    /// (control-server#881 review S1). Before the mark it was the last time a vehicle judged the demand, which can be days
+    /// before it left when no vehicle was free. See <see cref="DispatchReasonCodes.DemandLeftCatalog"/>.
     /// </remarks>
     /// <summary>
     /// 每条已释放、等着改派的需求，这一次再受理时的代次（批次7-10，control-server#215）。
@@ -1437,11 +1605,16 @@ public sealed class DispatchRoundRunner(
     /// 插位判据算停靠 id 用的也是它——各算各的就会在「新停靠叫什么」上不一致。
     /// </para>
     /// </remarks>
-    private async Task<Dictionary<string, long>> RedispatchGenerationsAsync(CancellationToken cancellationToken)
+    private async Task<Dictionary<string, long>> RedispatchGenerationsAsync(
+        string[] releasedForRedispatch,
+        CancellationToken cancellationToken)
     {
-        IQueryable<AcceptedDemandRow> released = DemandJourneyLookup.ReleasedForRedispatch(dbContext);
+        if (releasedForRedispatch.Length == 0)
+        {
+            return new Dictionary<string, long>(StringComparer.Ordinal);
+        }
         var highest = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
-            .Where(row => released.Any(demand => demand.DemandId == row.DemandId))
+            .Where(row => releasedForRedispatch.Contains(row.DemandId))
             .GroupBy(row => row.DemandId)
             .Select(group => new { DemandId = group.Key, Generation = group.Max(row => row.DispatchGeneration) })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -1454,6 +1627,7 @@ public sealed class DispatchRoundRunner(
     private async Task MarkBacklogLeftCatalogAsync(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         DemandCatalogSnapshot snapshot,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         HashSet<string> listed = snapshot.Items.Select(item => item.DemandId).ToHashSet(StringComparer.Ordinal);
@@ -1465,6 +1639,7 @@ public sealed class DispatchRoundRunner(
                 !string.Equals(row.ReasonCode, DispatchReasonCodes.DemandLeftCatalog, StringComparison.Ordinal))
             {
                 row.ReasonCode = DispatchReasonCodes.DemandLeftCatalog;
+                row.LastSeenAt = now;
                 marked = true;
             }
         }

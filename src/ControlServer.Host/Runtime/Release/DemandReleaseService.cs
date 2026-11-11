@@ -57,6 +57,13 @@ public sealed class DemandReleaseService(
     // 收尾快照在释放落库之后由它发出（control-server#323，JourneyClosure）。
     private readonly OnboardJourneyPublisher _publisher = publisher;
 
+    private static readonly Action<ILogger, string, string, Exception?> LogRevisionRefusedBrokenSequences =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Warning,
+            new EventId(2342, nameof(LogRevisionRefusedBrokenSequences)),
+            "Releasing from journey {JourneyId} was abandoned: its plan revision would leave {Problem}. Nothing was saved for it " +
+            "this round; the other journeys go on (control-server#879).");
+
     private static readonly Action<ILogger, string, Exception?> LogYieldedToJourneyCommit =
         LoggerMessage.Define<string>(
             LogLevel.Information,
@@ -121,6 +128,19 @@ public sealed class DemandReleaseService(
                 }
                 LogYieldedToJourneyCommit(logger, journey.JourneyId, null);
             }
+            catch (JourneyStopSequenceBrokenException broken)
+            {
+                // control-server#879 审查 M1：这一趟的修订会写出坏序位，整笔不存。只隔离这一趟：丢掉它暂存的改动，别的旅程照常判。
+                // 序位本来就坏了的旅程在下面 RunForJourneyAsync 开头就跳过，走不到这里；能走到这里的是读完之后、修订之前别处把它改坏的那一轮。
+                foreach (Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry in dbContext.ChangeTracker.Entries().ToArray())
+                {
+                    if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                    {
+                        entry.State = EntityState.Detached;
+                    }
+                }
+                LogRevisionRefusedBrokenSequences(logger, journey.JourneyId, broken.Message, null);
+            }
         }
 
         return outcomes;
@@ -132,6 +152,12 @@ public sealed class DemandReleaseService(
         CancellationToken cancellationToken)
     {
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken).ConfigureAwait(false);
+        // 停靠序位坏了的旅程不在这里释放（control-server#879 审查 M1）：释放要修订计划，修订按坏序位写出来的仍是坏的，写入时被拒、每轮一次。
+        // 引擎已经把它停下、记过一次（JOURNEY_STOP_SEQUENCE_BROKEN），等人改好序位之后这里照常判。
+        if (stops.SequenceProblem is not null)
+        {
+            return [];
+        }
         JourneyStopDemand[] waiting = [.. stops.Demands.Where(item =>
             item.Membership.Status == JourneyDemandStatuses.PendingLoad)];
         if (waiting.Length == 0)

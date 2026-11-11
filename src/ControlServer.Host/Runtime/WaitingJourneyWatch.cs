@@ -48,7 +48,8 @@ internal sealed class WaitingJourneyWatch(
     IChargingPolicyResolver chargingPolicy,
     JourneyRuntimeOptions options,
     TimeProvider timeProvider,
-    ILogger logger)
+    ILogger logger,
+    Charging.VehicleBatteryReadings? batteryReadings = null)
 {
     /// <summary>How stale an unchanged reading may grow before it is recorded again.</summary>
     internal static readonly TimeSpan RecordRefresh = TimeSpan.FromMinutes(1);
@@ -123,6 +124,9 @@ internal sealed class WaitingJourneyWatch(
     {
         int? battery = await ReadBatteryAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
         DateTimeOffset now = timeProvider.GetUtcNow();
+        // control-server#866 review M3: the row records null when the read gives nothing; the dashboard's alarm keeps reporting the
+        // last good reading from here, with since when nothing could be read.
+        batteryReadings?.Record(runtime.AgvId, battery, now);
         // Null only for a row no save has reconciled since the column arrived; its last write is the nearest later bound.
         DateTimeOffset? waitingSince = runtime.WaitingSince;
         TimeSpan waited = now - (waitingSince ?? runtime.UpdatedAt);

@@ -564,7 +564,8 @@ public sealed partial class MultiVehicleExecutionTests
         JourneyBacklogRow second = await fixture.Context.JourneyBacklog.AsNoTracking()
             .SingleAsync(row => row.DemandId == FleetFixture.Demand(1, "N1-2", 1).DemandId, TestContext.Current.CancellationToken);
         Assert.Null(second.AcceptedAt);
-        Assert.Equal("FINAL_DYNAMIC_FACTS_NOT_READY", second.ReasonCode);
+        // control-server#864：原先记「最终动态事实不就绪」，与写库那一侧撞上 Completed 时的结果不一致；两处统一成旅程已结束。
+        Assert.Equal(DispatchReasonCodes.FinalAppendJourneyEnded, second.ReasonCode);
     }
 
     /// <summary>
@@ -1992,7 +1993,11 @@ public sealed partial class MultiVehicleExecutionTests
             Line($"riot command {commandType} {orderId}");
         }
 
-        foreach (EventRecordingLogger<JourneyRuntimeEngine>.Entry entry in fixture.EngineLog.Entries)
+        // control-server#884's verdict change lines (2884) are left out: they restate the verdicts listed above as a change
+        // history, and this transcript pins what the round decided, which they do not alter. DispatchVerdictTransitionLogTests
+        // pins them.
+        foreach (EventRecordingLogger<JourneyRuntimeEngine>.Entry entry in fixture.EngineLog.Entries
+                     .Where(entry => !(entry.EventId.Id == 2884 && entry.EventId.Name == "LogVerdictChanged")))
         {
             Line($"log {entry.EventId.Id} {entry.EventId.Name} {entry.Level}: {entry.Message}");
         }

@@ -1,0 +1,6 @@
+== M4-no-capacity
+-                        if (_pairs >= _capacity)
++                        if (Environment.TickCount64 < 0)
+----
+失败 ControlServer.Tests.DispatchVerdictTransitionLogTests.TrackingIsBoundedAndSaysSoOnce [97 ms]
+失败!  - 失败:     1，通过:     4，已跳过:     0，总计:     5，持续时间: 2 s - ControlServer.Tests.dll (net8.0)

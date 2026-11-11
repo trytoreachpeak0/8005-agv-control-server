@@ -111,8 +111,9 @@ internal static class ChargingDashboardDescriptions
                 "充电单在 RIoT 上处于未识别的状态（SUSPENDED 8）：服务端按仍在执行处理，车、桩预占与充电用途都保持，不做任何自动动作，"
                 + "请人工到 RIoT 核实",
             [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] =
-                "充电单在 RIoT 被取消或删除，服务端还没证明车已停稳、名下没有单：车、桩预占与充电用途都保持，也不会另建一张充电单。车证明停稳之后这次充电按失败结束，"
-                + "桩要等充电已停、车不在桩上、桩位空闲三项确认之后才放。持续不消失请到现场看车是否还在动",
+                "充电单在 RIoT 被取消或删除（RIoT 已把它派给过车），服务端还没证明车已停稳、名下没有单：车、桩预占与充电用途都保持，也不会另建一张充电单。"
+                + "车证明停稳之后这次充电按失败结束，桩要等充电已停、车不在桩上、桩位空闲三项确认之后才放。持续 10 分钟以上充电桩卡片标超时；"
+                + "请到现场看车是否还在动，车已停住且不在桩上时由 R-11／R-13 名单里的人确认清桩",
             [VehicleFaultEvidence.OrderFailed] =
                 "充电单在 RIoT 上失败（FAILED），服务端已把车判为疑似故障：不派新单，车、桩预占与充电用途都保持。请到现场排除原因；若急停已锁住，"
                 + "先按急停人工解除；然后由现场人员经故障清除入口确认。故障清除后这次充电按失败结束，不会另建一张充电单；30 秒内不给这辆车安排任何充电桩，"
@@ -169,7 +170,8 @@ internal static class ChargingDashboardDescriptions
             [ChargingAllocationReasons.VehicleEligibilityHeld] = "这辆车的充电资格暂停着：恢复之前不分桩",
             [ChargingAllocationReasons.VehicleStillHoldsCharger] =
                 "这辆车自己还占着一个充电桩（上一次充电结束了、桩还没按三项确认放掉）：不再给它分桩，免得向原桩再发一次充电动作",
-            [ChargingAllocationReasons.VehiclePositionUnknown] = "不知道车停在哪个站：算不出到各个桩的路程，不分桩",
+            [ChargingAllocationReasons.VehiclePositionUnknown] =
+                "不知道车停在哪个站（RIoT 没报位置，或报它不在任何站上：两站之间、定位丢失）：算不出到各个桩的路程，不分桩",
             [ChargingAllocationReasons.RouteGraphUnavailable] = "路网没开或这张图的路网不可用：最近优先无从计算，不猜",
             [ChargingAllocationReasons.RosterEmptyManualHold] = "名册里没有这辆车能用的桩：转为人工充电等待并告警",
             [ChargingAllocationReasons.RepeatedlyFailedManualHold] = "这辆车的充电单短时间内第二次被取消、删除或失败：转为人工充电等待并告警",
@@ -317,6 +319,10 @@ internal static class ChargingDashboardDescriptions
     internal const string AlarmRosterEmpty = "CHARGER_ROSTER_EMPTY";
     internal const string AlarmRosterNeverImported = "CHARGER_ROSTER_NEVER_IMPORTED";
     internal const string AlarmManualChargingHold = "MANUAL_CHARGING_HOLD";
+    internal const string AlarmBelowMandatoryDepartureNotProven = "CHARGING_BELOW_MANDATORY_DEPARTURE_NOT_PROVEN";
+    internal const string AlarmBelowMandatoryPositionUnknown = "CHARGING_BELOW_MANDATORY_POSITION_UNKNOWN";
+    internal const string AlarmBelowMandatoryEligibilityHeld = "CHARGING_BELOW_MANDATORY_ELIGIBILITY_HELD";
+    internal const string AlarmBelowMandatoryOnTransportJourney = "CHARGING_BELOW_MANDATORY_ON_TRANSPORT_JOURNEY";
 
     internal static IReadOnlyDictionary<string, string> OwnAlarmCodes { get; } =
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -324,6 +330,17 @@ internal static class ChargingDashboardDescriptions
             [AlarmRosterEmpty] = "充电桩名册为空：当前生效的名册一个桩都没有，自动充电已停，需要充电的车转为人工充电等待（规格 5.5，不静默）",
             [AlarmRosterNeverImported] = "充电桩名册从没导入过：没有任何一版名册，自动充电从没开始，需要充电的车转为人工充电等待",
             [AlarmManualChargingHold] = "这辆车在服务端持有的人工充电等待中：不分桩、不接搬运、不做空闲返回、不动车",
+            [AlarmBelowMandatoryDepartureNotProven] =
+                "电量低于强制充电线，但车此刻过不了出发前安全检查（缺哪一项见细节）：不给它分桩、它也不接搬运，电量会一直往下掉，直到缺的那一项好了",
+            [AlarmBelowMandatoryPositionUnknown] =
+                "电量低于强制充电线，但 RIoT 没把这辆车定位在任何一个站上（停在两站之间，或车载电脑断电重启后定位丢失）：算不出它到各个桩的路，"
+                + "不给它分桩、它也不接搬运，电量会一直往下掉，直到它重新被定位到某个站上",
+            [AlarmBelowMandatoryEligibilityHeld] =
+                "电量低于强制充电线，但这辆车的充电资格暂停着（之前一次充电中断或充电无进展留下的，细节写明是哪一条）：清桩、桩的恢复都不会解除它，"
+                + "不给它分任何桩、它也不接搬运，电量会一直往下掉，直到这条暂停被单独解除",
+            [AlarmBelowMandatoryOnTransportJourney] =
+                "电量低于强制充电线，但这辆车带着搬运旅程（在路上，或停着等人装卸、被阻断、在交通管制检查点排队）：有搬运用途的车不进充电队列，"
+                + "服务端不会自己撤单、也不会送它去充电，电量会一直往下掉，直到这趟旅程走完或有人处理。显示 30%～34% 的车几分钟内可能骤降断电",
             [JourneyRuntimeEngine.OnboardSessionLostReason] =
                 "车载端会话失联：这辆车正处在充电周期、清桩或人工充电等待中，车载端听不到了。服务端只阻断它的新业务，继续经 RIoT 观察，"
                 + "不结束、不释放、不改派（REQ-0287）",
@@ -336,6 +353,18 @@ internal static class ChargingDashboardDescriptions
             [AlarmRosterEmpty] = "给需要充电的车人工充电，充完由管理员在车上点「充电后返回服务」；要恢复自动充电，导入一版登记了桩的名册",
             [AlarmRosterNeverImported] = "给需要充电的车人工充电；要开自动充电，先按治理流程导入充电桩名册",
             [AlarmManualChargingHold] = "到车前人工充电，充完由管理员在车上点「充电后返回服务」",
+            [AlarmBelowMandatoryDepartureNotProven] =
+                "到车前看细节里点名的那一项：仓门没锁好的把门关好锁上，下一轮就会分桩；锁不上或一时处理不了的，先给车人工充电，再联系系统维护人员",
+            [AlarmBelowMandatoryPositionUnknown] =
+                "到车前确认车停在哪里，在 RIoT 里给车重新定位（车不在站点上的，先由现场人员把车挪到最近的站点上）；定位到站上之后下一轮就会分桩。"
+                + "一时定位不了的，先给车人工充电，再联系系统维护人员",
+            [AlarmBelowMandatoryEligibilityHeld] =
+                "到车前检查车的电池与充电接口，查明那次充电为什么断了或充不进；确认可以再充电后，由持故障恢复凭据的人经车辆充电资格恢复入口 "
+                + "POST " + ChargingStationEndpoints.VehicleRecoveryRoute + " 解除（写明人员与依据），下一轮就会分桩。"
+                + "同一次中断若还让某个充电桩暂停着，桩要另做恢复确认。一时处理不了的，先给车人工充电，再联系系统维护人员",
+            [AlarmBelowMandatoryOnTransportJourney] =
+                "看细节里的旅程、阶段与位置，决定是等还是撤单去充电：站上等人装卸的，催现场尽快把这一站做完；等不到人、或在检查点一直不放行的，"
+                + "联系系统维护人员撤下这趟旅程，再给车人工充电（不要在 RIoT 里给这辆车另下单）。门开着时不要让车耗到断电，断电会让这一站要人工恢复",
             [JourneyRuntimeEngine.OnboardSessionLostReason] = "检查车载端电脑与网络；车可能仍在桩上，不要据此认为桩已空",
             [StageCompleteAwaitingDeparture] =
                 "看车是否在桩上关了机，或一直没有活派给它；缺哪一项确认见服务端日志事件 2249。确认车已离开而桩没放时，经人工释放入口处理",
@@ -388,6 +417,8 @@ internal static class ChargingDashboardDescriptions
             [ChargingExecutionReasons.ReservationLostAtArrival] = "到现场确认车停的位置与桩的归属",
             [ChargingExecutionReasons.ArrivalNotProven] = "到现场看车停在哪里",
             [ChargingExecutionReasons.OrderNotFound] = "在 RIoT 上查这张充电单去了哪里、车在哪里",
+            [ChargingExecutionReasons.OrderNotDispatched] =
+                "在 RIoT 上看这张充电单为什么一直没派给车；要让出充电桩，先在 RIoT 上取消这张单，再由 R-11／R-13 名单里的人确认清桩",
             [ChargingExecutionReasons.DepartureNotProven] = "检查车载端连接与仓门",
             [ChargingExecutionReasons.DepartureRouteGraphUnavailable] =
                 "通常几秒内自行恢复，不用处理；持续不恢复时查路网页面的不可用原因与服务端到 RIoT 的连接",
@@ -397,7 +428,8 @@ internal static class ChargingDashboardDescriptions
             [ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.UnsupportedOrderShape)] = "查服务端日志并报开发",
             [JourneyRuntimeEngine.OrderHangReason] = "到现场确认原因，在 RIoT 里继续这张单",
             [JourneyRuntimeEngine.OrderStateUnrecognizedReason] = "到 RIoT 核实这张单的状态",
-            [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] = "到现场看车是否还在动",
+            [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] =
+                "到现场看车是否还在动；车已停住、不在充电桩上而桩一直没放时，由 R-11／R-13 名单里的人确认清桩",
             [VehicleFaultEvidence.OrderFailed] = "到现场排除原因，必要时先人工解除急停，再经故障清除入口确认",
             // control-server#788：门锁类急停不自动解除，急停锁着时续行会被拒（FAULT_RECOVERY_EMERGENCY_LATCHED）：先由人解除，再续行。
             // control-server#789（CP-0017）：只因读不到的，读数恢复满 10 秒后服务端自己解除，单仍停着，仍要人续行。
@@ -421,6 +453,11 @@ internal static class ChargingDashboardDescriptions
         AlarmRosterEmpty
             or AlarmRosterNeverImported
             or AlarmManualChargingHold
+            or AlarmBelowMandatoryDepartureNotProven
+            or AlarmBelowMandatoryPositionUnknown
+            or AlarmBelowMandatoryEligibilityHeld
+            // control-server#866: a loaded vehicle left where it stands while its battery runs down.
+            or AlarmBelowMandatoryOnTransportJourney
             or JourneyRuntimeEngine.OnboardSessionLostReason
             or ChargingStationHoldTriggers.UnableToChargeConfirmed
             or ChargingStationHoldTriggers.InterruptionConfirmed
@@ -439,11 +476,108 @@ internal static class ChargingDashboardDescriptions
             or ChargingExecutionReasons.ClearanceMoveHeld
             or ChargingExecutionReasons.ClearanceMoveEnded
             or ChargingExecutionReasons.VehicleObservationLost
+            // control-server#863: the only charger held by a charge that cannot go, which only a person can clear.
+            or ChargingExecutionReasons.OrderNotDispatched
+            // control-server#882: the charger stays held by an order that is already over until the vehicle is proven stopped.
+            or JourneyRuntimeEngine.OrderEndedWithoutArrivalReason
             or ChargingExecutionReasons.ReservationLostAtArrival
             or ChargingExecutionReasons.CycleMissing
             or VehicleFaultEvidence.OrderFailed => SeverityHigh,
         _ => SeverityMedium,
     };
+
+    private static string DescribeBattery(int? batteryPercent) =>
+        batteryPercent is int percent
+            ? string.Create(CultureInfo.InvariantCulture, $"电量 {percent}%")
+            : "电量本轮读不到";
+
+    /// <summary>
+    /// <see cref="AlarmBelowMandatoryPositionUnknown"/> 的细节：电量，与 RIoT 没把它定位在站上这件事（control-server#528）。
+    /// </summary>
+    internal static string DescribePositionUnknown(int? batteryPercent) =>
+        $"{DescribeBattery(batteryPercent)}；RIoT 报它不在任何站上（currentPosition 0）或没报位置，分配不拿猜的位置去分桩";
+
+    /// <summary>
+    /// <see cref="AlarmBelowMandatoryOnTransportJourney"/> 的细节（control-server#866）：电量与读数时刻（读不到时自何时起）、低于的那条线、旅程、
+    /// 阶段与原因码、卡在哪里、自何时起。停着的阶段写「停在」当前停靠的站，路上的写「开往」它（停着等的路上阶段是检查点或单子停了，照样写开往）；
+    /// 停靠读不到时写读不到。
+    /// </summary>
+    internal static string DescribeTransportBelowTheLine(JourneyRuntimeRow journey, TransportBelowTheLine facts, JourneyStopRow? stop)
+    {
+        string line = facts.Level == WaitingBatteryLevel.BelowRescueLine
+            ? string.Create(CultureInfo.InvariantCulture, $"已低于救命线 {facts.RescuePercent}%")
+            : string.Create(CultureInfo.InvariantCulture, $"低于强制充电线 {facts.MandatoryChargeEntryPercent}%");
+        if (facts.Level == WaitingBatteryLevel.BelowRescueLine && facts.MandatoryChargeEntryPercent is int entry)
+        {
+            line += string.Create(CultureInfo.InvariantCulture, $"（强制充电线 {entry}%）");
+        }
+        string unread = facts.UnreadSince is { } unreadSince
+            ? string.Create(CultureInfo.InvariantCulture, $"，自 {unreadSince:O} 起读不到新读数，这是最后一次读到的")
+            : string.Empty;
+        string where = stop is null
+            ? "当前停靠读不到"
+            : JourneyWaitClassification.Of(journey.Stage) == JourneyStageActivity.Travelling
+                ? $"开往 {stop.StationId}（RIoT 站 {stop.StationRiotId.ToString(CultureInfo.InvariantCulture)}）途中"
+                : $"停在 {stop.StationId}（RIoT 站 {stop.StationRiotId.ToString(CultureInfo.InvariantCulture)}）";
+        string reason = journey.BlockReasonCode is { } code ? $"，原因码 {code}" : string.Empty;
+        string since = (facts.Waiting, facts.Since) switch
+        {
+            (true, { } start) => string.Create(CultureInfo.InvariantCulture, $"，自 {start:O} 起停着等"),
+            (true, null) => string.Empty,
+            (false, { } below) => string.Create(CultureInfo.InvariantCulture, $"，行驶中，自 {below:O} 起读到低于线"),
+            (false, null) => "，行驶中，本进程没有读到它从线上降到线下的那一刻",
+        };
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"电量 {facts.Percent}%（读于 {facts.ReadAt:O}{unread}），{line}；旅程 {journey.JourneyId}，"
+            + $"阶段 {journey.Stage}{reason}，{where}{since}");
+    }
+
+    /// <summary>这一类告警这次读不出来时那一行的细节（control-server#866 审查 S4）：其余告警照出。</summary>
+    internal static string DescribeTransportBelowTheLineUnreadable(string errorType) =>
+        $"带单车电量这一项这次读不到（{errorType}）：哪辆带单的车低于强制充电线此刻看不出来，其余告警照常。刷新再看，一直读不到时联系系统维护人员";
+
+    /// <summary>
+    /// <see cref="AlarmBelowMandatoryEligibilityHeld"/> 的细节：电量，与这辆车此刻每一条未恢复的资格暂停——id、原因、写入时刻（control-server#877）。
+    /// </summary>
+    internal static string DescribeEligibilityHeld(int? batteryPercent, IReadOnlyList<VehicleChargingEligibilityHoldRow> holds) =>
+        $"{DescribeBattery(batteryPercent)}；充电资格暂停 "
+        + string.Join("、", holds.Select(hold => string.Create(
+            CultureInfo.InvariantCulture,
+            $"{hold.HoldId}（{hold.Reason}：{EligibilityHoldReasons.GetValueOrDefault(hold.Reason) ?? "服务端记下的原因没有中文说明，请报开发"}，写入于 {hold.HeldAt:O}）")))
+        + " 还没解除";
+
+    /// <summary>
+    /// <see cref="AlarmBelowMandatoryDepartureNotProven"/> 的细节：电量，与出发门缺的每一项的人话，原码跟在括号里（control-server#865）。
+    /// </summary>
+    internal static string DescribeDepartureGaps(int? batteryPercent, IReadOnlyList<string> gaps)
+    {
+        string battery = DescribeBattery(batteryPercent);
+        string missing = gaps.Count == 0
+            ? "服务端没有记下缺哪一项，见服务端日志事件 2241"
+            : string.Join("；", gaps.Select(gap => $"{DescribeDepartureGap(gap)}（{gap}）"));
+        return $"{battery}；出发前安全检查缺：{missing}";
+    }
+
+    private static string DescribeDepartureGap(string gap)
+    {
+        const string slotPrefix = "SLOT_";
+        const string slotSuffix = "_NOT_LOCKED";
+        if (gap.StartsWith(slotPrefix, StringComparison.Ordinal) && gap.EndsWith(slotSuffix, StringComparison.Ordinal) &&
+            int.TryParse(gap.AsSpan(slotPrefix.Length, gap.Length - slotPrefix.Length - slotSuffix.Length),
+                NumberStyles.None, CultureInfo.InvariantCulture, out int slotNo))
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{slotNo}号仓没锁好或开锁输出没复位");
+        }
+        return gap switch
+        {
+            "ONBOARD_SESSION_NOT_READY" => "车载端会话未就绪",
+            "SAFETY_STATE_UNREADABLE" => "读不到车载端这一代会话的安全状态",
+            "RIOT_VEHICLE_NOT_STOPPED" => "RIoT 读不到车已停稳",
+            Runtime.Dispatch.NonBusinessDepartureGate.RiotSafetyUnreadable => "读 RIoT 的车辆安全状态失败",
+            _ => "车载端或 RIoT 报的阻断原因",
+        };
+    }
 
     /// <summary>告警码的中文说明：卡片自己的码、桩阶段、暂停来源、充电旅程上的码，依次找。</summary>
     internal static string? DescribeAlarm(string code) =>
@@ -494,6 +628,17 @@ internal static class ChargingDashboardDescriptions
     internal static string Minutes(TimeSpan span) =>
         ((long)Math.Round(span.TotalMinutes)).ToString(CultureInfo.InvariantCulture);
 }
+
+/// <summary>带单车低于强制充电线那一行要说的事实（control-server#866）。</summary>
+internal sealed record TransportBelowTheLine(
+    int Percent,
+    DateTimeOffset ReadAt,
+    DateTimeOffset? UnreadSince,
+    int? MandatoryChargeEntryPercent,
+    WaitingBatteryLevel Level,
+    int RescuePercent,
+    bool Waiting,
+    DateTimeOffset? Since);
 
 /// <summary>
 /// 充电看板一次读到的库里事实（批次9-10，control-server#408）：名册、周期、桩独占、暂停、清桩、人工充电等待、充电旅程与用途占有。
@@ -661,6 +806,38 @@ internal sealed class ChargingDashboardFacts
         now - start > window
             ? now - start
             : null;
+
+    /// <summary>
+    /// 预占着桩的那趟充电去不了桩（control-server#863）：单在 RIoT 一直没派出（<c>CHARGING_ORDER_NOT_DISPATCHED</c>，引擎写上它时已经过了自己的窗口），
+    /// 或车在途中失联超过告警窗口（<c>CHARGING_VEHICLE_OBSERVATION_LOST</c>，从点名的时刻算），或单已在 RIoT 被取消或删除而车一直没证明停稳、超过告警窗口
+    /// （<c>ORDER_ENDED_WITHOUT_ARRIVAL</c>，control-server#882）。是就答桩卡上的超时说明，否则答空。只读旅程行上的码与时刻。
+    /// </summary>
+    public static string? ReservedByAStuckApproach(string stage, JourneyRuntimeRow? journey, DateTimeOffset now, TimeSpan window)
+    {
+        if (stage != ChargingDashboardDescriptions.StageReserved ||
+            journey is not { BlockReasonCode: { } code, BlockReasonSince: { } since })
+        {
+            return null;
+        }
+        return code switch
+        {
+            ChargingExecutionReasons.OrderNotDispatched =>
+                $"充电桩被一趟没派出的充电预占：它的充电单 RIoT 收下了，却一直没有派给车（点名已 {ChargingDashboardDescriptions.Minutes(now - since)} 分钟，"
+                + "服务端日志事件 2284），车没去充电，别的车分不到这个桩。服务端不取消单、不放桩；要让出桩，先在 RIoT 上取消这张充电单，"
+                + "再由 R-11／R-13 名单里的人确认清桩",
+            ChargingExecutionReasons.VehicleObservationLost when now - since > window =>
+                $"充电桩被一辆去桩途中失联的车预占：RIoT 已 {ChargingDashboardDescriptions.Minutes(now - since)} 分钟读不到它（告警窗口 "
+                + $"{ChargingDashboardDescriptions.Minutes(window)} 分钟，服务端日志事件 2261）。车可能还在路上，也可能已在桩上，服务端不放桩、不动车；"
+                + "到现场找到车，在 RIoT 上取消充电单，再由 R-11／R-13 名单里的人确认清桩",
+            // control-server#882: the order is over, but the vehicle RIoT had bound to it is not proven stopped, so nothing is
+            // released (an order RIoT never bound ends the cycle and frees the charger in the round that reads the end).
+            JourneyRuntimeEngine.OrderEndedWithoutArrivalReason when now - since > window =>
+                $"充电桩被一趟已经结束的充电预占：它的充电单在 RIoT 已被取消或删除 {ChargingDashboardDescriptions.Minutes(now - since)} 分钟（告警窗口 "
+                + $"{ChargingDashboardDescriptions.Minutes(window)} 分钟，服务端日志事件 2256），服务端一直读不到车已停稳（车离线、读不到或读着在动），"
+                + "不放桩、不动车，别的车分不到这个桩。到现场找到车，确认它已停住、不在桩上，再由 R-11／R-13 名单里的人确认清桩",
+            _ => null,
+        };
+    }
 
     /// <summary>超过窗口时引擎写的那条日志的事件号。</summary>
     public static string OverdueEventId(string stage) =>

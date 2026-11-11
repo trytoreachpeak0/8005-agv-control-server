@@ -94,6 +94,19 @@ public sealed class JourneyRuntimeOptions
     /// </remarks>
     public TimeSpan CatalogAgeWindow { get; set; } = DefaultCatalogAgeWindow;
 
+    /// <summary>The default of <see cref="BacklogRetention"/>: three days.</summary>
+    public static readonly TimeSpan DefaultBacklogRetention = TimeSpan.FromDays(3);
+
+    /// <summary>
+    /// How long a backlog row of a demand that left the MesIngest catalog is kept, counted from the last time the catalog listed it
+    /// (control-server#881). Past it, a row nothing else refers to is deleted by the dispatch round (<c>JourneyBacklogRetention</c>).
+    /// </summary>
+    /// <remarks>
+    /// At least one hour: a demand that leaves the catalog briefly and comes back would otherwise lose its first-seen time and its
+    /// starvation escalation record. The field deletion of 2026-11-05 used one day.
+    /// </remarks>
+    public TimeSpan BacklogRetention { get; set; } = DefaultBacklogRetention;
+
     /// <summary>
     /// The trial sublot rule's character position (REQ-0368, CP-0023, control-server#828): counted from 1, the leading
     /// <c>Q</c> of a SUBLOT being character 1. Zero, the default, turns the rule off.
@@ -199,6 +212,18 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan AreaEndAdmissionRevokedTimeout { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// How long a during-load cancellation may wait for the vehicle's answer after its authorization before the server gives up on
+    /// it: the journey is blocked under <c>LOAD_CANCELLATION_UNANSWERED</c>, the load held for recovery, and the administrator's ways
+    /// out -- a recovery session, the fault cargo handoff, the compensation -- are open (control-server#837, the user's choice of
+    /// 2026-10-27).
+    /// </summary>
+    /// <remarks>
+    /// Two minutes by default, the user's figure. Counted from the authorization on file, so a restart does not start it over.
+    /// Between 30 s and 30 minutes: shorter would cut into an ordinary clearing, longer is no backstop.
+    /// </remarks>
+    public TimeSpan LoadCancellationAnswerTimeout { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>
     /// How long a journey may stand waiting for a person in one stage before the waiting journey watch logs it, with the
     /// vehicle's battery (control-server#273). Ten minutes by default, decided by the user on 2026-09-22.
     /// </summary>
@@ -260,6 +285,17 @@ public sealed class JourneyRuntimeOptions
     /// and at most one hour.
     /// </summary>
     public TimeSpan ChargingOrderAbsentAbandonAfter { get; set; } = TimeSpan.FromSeconds(120);
+
+    /// <summary>
+    /// How long a confirmed charge order may stay QUEUEING with no vehicle bound to run it (RIoT's <c>executeVehicleKey</c> still
+    /// <c>--</c>) before the charging journey is named <c>CHARGING_ORDER_NOT_DISPATCHED</c>, alarmed and shown overdue on the
+    /// charger card (control-server#863). An alarm window only: nothing is cancelled, released or moved when it runs out
+    /// (REQ-0165, REQ-0168, REQ-0169), and it is not a battery parameter of REQ-0282. Five minutes by default: REQ-0165 and
+    /// BC-ORDER-013 say an executable order normally binds within seconds, while 2026-10-22's order stayed unbound for
+    /// three hours holding the only charger. Counted from the cycle's <c>OrderConfirmedAt</c>, so a restart does not reset
+    /// it. Positive and at most one hour.
+    /// </summary>
+    public TimeSpan ChargingOrderUndispatchedAlarmAfter { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Whether the server itself cancels the old charge order of a cycle in the clearing loop after an unable-to-charge
@@ -435,6 +471,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         {
             failures.Add("AreaEndAdmissionRevokedTimeout must be positive.");
         }
+        if (options.LoadCancellationAnswerTimeout < TimeSpan.FromSeconds(30) ||
+            options.LoadCancellationAnswerTimeout > TimeSpan.FromMinutes(30))
+        {
+            failures.Add("LoadCancellationAnswerTimeout must be between 30 s and 30 minutes.");
+        }
         if (options.DepartureSafetyResultWait <= TimeSpan.Zero ||
             options.DepartureSafetyResultWait > TimeSpan.FromSeconds(10))
         {
@@ -459,6 +500,10 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         if (options.CatalogAgeWindow <= TimeSpan.Zero || options.CatalogAgeWindow > TimeSpan.FromHours(24))
         {
             failures.Add("CatalogAgeWindow must be positive and at most 24 hours.");
+        }
+        if (options.BacklogRetention < TimeSpan.FromHours(1))
+        {
+            failures.Add("BacklogRetention must be at least 1 hour.");
         }
         // control-server#828: half a trial sublot rule looks configured and filters nothing (TrialSublotRule.IsOn), so it is refused.
         if (options.TrialSublotCharacterPosition < 0 ||
@@ -530,6 +575,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             failures.Add(
                 "ChargingOrderAbsentAbandonAfter plus OwnOrderRebuildDelay must be shorter than OwnOrderRebuildRepeatWindow, " +
                 "or a repeatedly failing create is never stopped.");
+        }
+        if (options.ChargingOrderUndispatchedAlarmAfter <= TimeSpan.Zero ||
+            options.ChargingOrderUndispatchedAlarmAfter > TimeSpan.FromHours(1))
+        {
+            failures.Add("ChargingOrderUndispatchedAlarmAfter must be positive and at most 1 h.");
         }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);

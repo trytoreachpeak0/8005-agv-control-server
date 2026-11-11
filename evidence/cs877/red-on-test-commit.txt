@@ -1,0 +1,38 @@
+# Red on the test commit (local, dotnet test --filter, 7 selected)
+  失败 ControlServer.Tests.ChargingDashboardRealRunTests.AVehicleBelowTheMandatoryLineWithItsChargingEligibilityHeldIsAlarmed [4 s]
+  错误消息:
+   Assert.Single() Failure: The collection did not contain any matching items
+Expected:   (predicate expression)
+Collection: []
+  堆栈跟踪:
+  失败 ControlServer.Tests.ChargingInterruptionTests.AHostClearanceAfterAnInterruptionNamesTheVehicleHoldStillInForce [4 s]
+  错误消息:
+   System.ArgumentNullException : Value cannot be null. (Parameter 'collection')
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingInterruptionTests.AHostClearanceAfterAnInterruptionNamesTheVehicleHoldStillInForce() in C:\work\8005-wt\cs877-8005-agv-control-server\tests\ControlServer.Tests\ChargingInterruptionTests.cs:line 707
+   at ControlServer.Tests.ChargingInterruptionTests.AHostClearanceAfterAnInterruptionNamesTheVehicleHoldStillInForce() in C:\work\8005-wt\cs877-8005-agv-control-server\tests\ControlServer.Tests\ChargingInterruptionTests.cs:line 720
+  失败 ControlServer.Tests.ManualStationClearanceTests.TheClearanceEntryDecidesThroughTheSameDecisionWithTheCredential [4 s]
+  错误消息:
+   System.ArgumentNullException : Value cannot be null. (Parameter 'collection')
+  堆栈跟踪:
+     at ControlServer.Tests.ManualStationClearanceTests.TheClearanceEntryDecidesThroughTheSameDecisionWithTheCredential() in C:\work\8005-wt\cs877-8005-agv-control-server\tests\ControlServer.Tests\ManualStationClearanceTests.cs:line 1298
+   at ControlServer.Tests.ManualStationClearanceTests.TheClearanceEntryDecidesThroughTheSameDecisionWithTheCredential() in C:\work\8005-wt\cs877-8005-agv-control-server\tests\ControlServer.Tests\ManualStationClearanceTests.cs:line 1301
+  失败 ControlServer.Tests.ChargingInterruptionTests.AnOnboardClearanceAfterAnInterruptionLogsTheVehicleHoldStillInForce [140 ms]
+  错误消息:
+   Assert.Single() Failure: The collection did not contain any matching items
+Expected:   (predicate expression)
+Collection: [Entry { EventId = LogDecided, Level = Warning, Message = Manual station clearance 00000000-0000-4000-8000-000000000407 for vehicle 老厂前线新多仓位1 at charger 充电点1: CONFIRMED, station released True (SUCCESS). The charger's allocation hold, if any, stays until a ChargingStationRecoveryConfirmation., Error =  }]
+  堆栈跟踪:
+  失败 ControlServer.Tests.ChargingInterruptionTests.TheEligibilityHeldRefusalNamesTheHoldItsReasonAndWhenItWasWritten [221 ms]
+  错误消息:
+   Assert.Contains() Failure: Sub-string not found
+String:    ""
+Not found: "5bd212bb-2c18-605f-bd74-6e9399654f67"
+  堆栈跟踪:
+  失败 ControlServer.Tests.ChargingInterruptionTests.RecoveringTheVehicleNamesTheChargerHoldOfTheSameInterruptionStillInForce [180 ms]
+  错误消息:
+   System.ArgumentNullException : Value cannot be null. (Parameter 'collection')
+  堆栈跟踪:
+     at ControlServer.Tests.ChargingInterruptionTests.RecoveringTheVehicleNamesTheChargerHoldOfTheSameInterruptionStillInForce() in C:\work\8005-wt\cs877-8005-agv-control-server\tests\ControlServer.Tests\ChargingInterruptionTests.cs:line 807
+   at ControlServer.Tests.ChargingInterruptionTests.RecoveringTheVehicleNamesTheChargerHoldOfTheSameInterruptionStillInForce() in C:\work\8005-wt\cs877-8005-agv-control-server\tests\ControlServer.Tests\ChargingInterruptionTests.cs:line 838
+失败!  - 失败:     6，通过:     1，已跳过:     0，总计:     7，持续时间: 5 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,12 @@
+== S5-no-generation-index
+-        builder.HasIndex(row => new { row.DemandId, row.DispatchGeneration });
++        // removed
+    0 个错误
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.TheRedispatchGenerationReadSearchesJourneyDemandsByIndex [554 ms]
+  错误消息:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+  失败 ControlServer.Tests.DispatchRoundBacklogScaleTests.EveryRedispatchReadOfARoundSearchesJourneyDemandsByIndex [168 ms]
+  错误消息:
+   JourneyDemands is scanned: [SCAN a | CORRELATED SCALAR SUBQUERY 4 | SEARCH a0 USING INDEX sqlite_autoindex_AcceptedDemands_1 (DemandId=?) | CORRELATED SCALAR SUBQUERY 1 | SEARCH j USING INDEX IX_JourneyDemands_DemandId (DemandId=?) | SCAN j0 EXISTS | CORRELATED SCALAR SUBQUERY 2 | SCAN j1] in SELECT "a"."DemandId"
+     通过数: 11
+     失败数: 2

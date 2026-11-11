@@ -1,0 +1,34 @@
+# Round-2 mutations on 8bd0e457b, each reverting only the mutated file; filter: FullyQualifiedName~JourneyStopSequenceRaceTests|FullyQualifiedName~ReconnectModelTests
+== Q1-supervise-current-only (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-        if (stops.SequenceProblem is null)
++        if (true || stops.SequenceProblem is null)
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanStillStopsAVehicleWhenTheDuplicateTakesTheCurrentPlaceFromItsOrder(behindTheReadinessGate: False) [169 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanStillStopsAVehicleWhenTheDuplicateTakesTheCurrentPlaceFromItsOrder(behindTheReadinessGate: True) [152 ms]
+失败!  - 失败:     2，通过:    24，已跳过:     0，总计:    26，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== Q2-supervised-is-last-with-intent (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-        return stops.OpenStops.FirstOrDefault(stop => withIntent.Contains(stop.MovementLegId)) ?? stops.Current;
++        return stops.OpenStops.LastOrDefault(stop => !withIntent.Contains(stop.MovementLegId)) ?? stops.Current;
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanStillStopsAVehicleWhenTheDuplicateTakesTheCurrentPlaceFromItsOrder(behindTheReadinessGate: False) [172 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanStillStopsAVehicleWhenTheDuplicateTakesTheCurrentPlaceFromItsOrder(behindTheReadinessGate: True) [133 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanStillStopsAVehicleWhoseDoorIsNotLockedOnTheWay(behindTheReadinessGate: False) [176 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanStillStopsAVehicleWhoseDoorIsNotLockedOnTheWay(behindTheReadinessGate: True) [132 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.TheBrokenSequenceIsLoggedOnceWhenItsCodeTakesOverFromAnOrderThatHungFirst [123 ms]
+失败!  - 失败:     5，通过:    21，已跳过:     0，总计:    26，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== Q3-log-only-when-hold-writes (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-        if (!wasHeldForIt && string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
++        if (false && !wasHeldForIt && string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWithBrokenStopSequencesIsHeldWithItsOwnReasonOnceAndResumesWhenTheyAreRepaired [161 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ASessionDropDoesNotReplaceTheBrokenSequenceCodeNorLogItAgain [175 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.TheBrokenSequenceIsLoggedOnceWhenItsCodeTakesOverFromAnOrderThatHungFirst [138 ms]
+失败!  - 失败:     3，通过:    23，已跳过:     0，总计:    26，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== Q4-intake-maps-plan-change-to-error (src/ControlServer.Application/WireToGateOrchestration.cs)
+-            catch (JourneyPlanChangedBeforeAppendException)
++            catch (JourneyPlanChangedBeforeAppendException) when (false)
+C:\work\8005-wt\cs879-8005-agv-control-server\src\ControlServer.Application\WireToGateOrchestration.cs(132,67): error CS8359: 筛选器表达式是常量 “false”，请考虑删除 catch 子句 [C:\work\8005-wt\cs879-8005-agv-control-server\src\ControlServer.Application\ControlServer.Application.csproj]
+C:\work\8005-wt\cs879-8005-agv-control-server\src\ControlServer.Application\WireToGateOrchestration.cs(136,17): error CS0162: 检测到无法访问的代码 [C:\work\8005-wt\cs879-8005-agv-control-server\src\ControlServer.Application\ControlServer.Application.csproj]
+== Q4-intake-maps-plan-change-to-error (src/ControlServer.Application/WireToGateOrchestration.cs)
+-            catch (JourneyPlanChangedBeforeAppendException)
++            catch (JourneyPlanChangedBeforeAppendException) when (Environment.TickCount64 < 0)
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AnAppendRefusedBecauseItsPlanChangedIsACandidateChangedIntakeOutcome [12 ms]
+失败!  - 失败:     1，通过:    25，已跳过:     0，总计:    26，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+# Q4 first try was a compile error (CS8359 constant filter); rerun with a runtime-false filter, result above.

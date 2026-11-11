@@ -500,6 +500,32 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// control-server#866 review S1: behind the readiness gate the checkpoint sample is rationed per vehicle. Two vehicles whose
+    /// sessions are down on their own orders, both holding at a checkpoint, are each asked in the same round and each named; a
+    /// ration shared across the fleet would let only the first one through.
+    /// </summary>
+    [Fact]
+    public async Task TwoVehiclesBehindTheReadinessGateAtACheckpointAreEachNamedInTheSameRound()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.DropSessionAsync(FleetFixture.AgvIds[0]);
+        await fixture.DropSessionAsync(FleetFixture.AgvIds[1]);
+        fixture.Riot.MovementState = RiotMovementStates.WaitForCheckpoint;
+
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        foreach (string agvId in FleetFixture.AgvIds[..2])
+        {
+            fixture.Context.ChangeTracker.Clear();
+            Assert.Equal(
+                JourneyRuntimeEngine.CheckpointWaitReason,
+                (await fixture.JourneyOfAsync(agvId)).BlockReasonCode);
+        }
+    }
+
+    /// <summary>
     /// Past the budget the wait stops being ordinary and the journey says a different thing.
     /// </summary>
     [Fact]
@@ -1497,7 +1523,8 @@ public sealed partial class MultiVehicleExecutionTests
                 ChargingTestKit.Create(
                     Context, Options, Clock, Riot, Peer, Riot, Riot, RouteGraph(), ChargingBoard, ChargingLog,
                     clearanceExit: clearanceExit),
-                TrialSublotLog);
+                TrialSublotLog,
+                VerdictTransitions);
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,
@@ -1624,6 +1651,9 @@ public sealed partial class MultiVehicleExecutionTests
 
         /// <summary>试验机批号滤除日志的跨轮状态（control-server#828），宿主里是单例。</summary>
         public TrialSublotFilterLog TrialSublotLog { get; } = new();
+
+        /// <summary>派车判定变化的跨轮状态（control-server#884）：宿主里是单例，这里一个夹具一份，跨轮次保留。</summary>
+        public DispatchVerdictTransitionLog VerdictTransitions { get; set; } = new();
 
         /// <summary>
         /// 人工清除故障的入口（空闲返回的 FAILED 单由人清除后收尾，control-server#390），按宿主的组装、用夹具的 RIoT 与车载端。
@@ -2325,16 +2355,23 @@ public sealed partial class MultiVehicleExecutionTests
         public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            string[] reasons = SafetyReasonsByVehicle.GetValueOrDefault(vehicleKey) ?? SafetyReasons;
             return Task.FromResult(new RiotVehicleSafetyObservation(
                 vehicleKey,
-                SafetyReasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
+                reasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
                 clock.GetUtcNow(),
                 "L1",
-                SafetyReasons));
+                reasons));
         }
 
         /// <summary>What the safety read names for every vehicle; empty means stopped with nothing in the way.</summary>
         public string[] SafetyReasons { get; set; } = [];
+
+        /// <summary>
+        /// What the safety read names for one vehicle, in place of <see cref="SafetyReasons"/> (control-server#882: 11-06 agv01
+        /// read motion MT_NA with sys and location ERROR while the other vehicles read stopped).
+        /// </summary>
+        public Dictionary<string, string[]> SafetyReasonsByVehicle { get; } = new(StringComparer.Ordinal);
 
         /// <summary>The vehicle key whose reads do not come back, or null.</summary>
         /// <remarks>
@@ -2616,6 +2653,28 @@ public sealed partial class MultiVehicleExecutionTests
             {
                 Kind = RiotOrderObservationKind.Active,
                 OrderState = RiotOrderState.Suspended,
+            };
+
+        /// <summary>
+        /// Puts an order back to RIoT's QUEUEING (1) with no vehicle bound to run it yet -- <c>executeVehicleKey</c> "--", read by
+        /// the gateway as <see cref="RiotOrderObservation.ExecuteVehicleBound"/> false; the appointed vehicle stays the key
+        /// (control-server#863: 2026-10-22's charge order sat like this for three hours).
+        /// </summary>
+        public void QueueOrderUnbound(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Active,
+                OrderState = RiotOrderState.Queueing,
+                ExecuteVehicleBound = false,
+            };
+
+        /// <summary>RIoT binds the appointed vehicle to a queued order and runs it: EXECUTING (3), bound.</summary>
+        public void BindOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Active,
+                OrderState = RiotOrderState.Executing,
+                ExecuteVehicleBound = true,
             };
 
         /// <summary>Moves an order to RIoT's HANG (9), which the gateway reads as Active (control-server#316).</summary>

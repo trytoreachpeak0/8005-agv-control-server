@@ -35,7 +35,8 @@ namespace ControlServer.Domain;
 /// needs the session and order rows, and this table is read where there are none (the database context that stamps the
 /// wait). What it gives up is small: a leg that has really stopped is named on the RIoT side -- an order failed or hung, a
 /// checkpoint wait past its budget, a session gone silent -- and those still count. At a stop the code changes nothing: the
-/// stage is stationary and waits anyway.
+/// stage is stationary and waits anyway. A checkpoint wait is named behind the readiness gate too since control-server#866:
+/// before it the gate wrote this code over it, and 10-23's 2 h 23 min at a checkpoint went unwarned.
 /// </para>
 /// </remarks>
 public static class JourneyWaitClassification

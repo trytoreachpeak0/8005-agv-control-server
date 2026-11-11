@@ -1,0 +1,31 @@
+filter: FullyQualifiedName~ThePickupPlanReachesTheVehicleHeldAtACheckpoint|FullyQualifiedName~ATransportFailureAtACheckpoint|FullyQualifiedName~TwoVehiclesBehindTheReadinessGate|FullyQualifiedName~ALoadedVehicleBelowTheLineIsAlarmedWhileDriving|FullyQualifiedName~ALoadedVehicleWhoseBatteryCannotBeRead|FullyQualifiedName~OneFailedCheckpointReadDoesNotRestartTheWait|FullyQualifiedName~ACheckpointSamplePastItsBudget|FullyQualifiedName~ATransportBelowTheLineThatCannotBeRead
+commit: review tests on top of 252644e08 (implementation as reviewed)
+S1 (TwoVehicles...) is a guard: green here by design, proven by mutation R-S1.
+  失败 ControlServer.Tests.WaitingJourneyDashboardTests.ATransportBelowTheLineThatCannotBeReadSaysSoAndLeavesTheRestOfTheCardStanding [2 s]
+  错误消息:
+   System.IO.InvalidDataException : The charging policy store could not be read.
+  失败 ControlServer.Tests.PickupDispatchPlanPastOwnOrderTests.ThePickupPlanReachesTheVehicleHeldAtACheckpointWhileItsSessionIsDownOnTheOwnOrder [2 s]
+  错误消息:
+   Assert.Single() Failure: The collection was empty
+  失败 ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderATransportFailureAtACheckpointKeepsTheCheckpointCodeAndItsStart [2 s]
+  错误消息:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(System.InvalidOperationException)
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ALoadedVehicleWhoseBatteryCannotBeReadStaysAlarmedWithItsLastReadingBelowTheLine [4 s]
+  错误消息:
+   Assert.Single() Failure: The collection was empty
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ALoadedVehicleBelowTheLineIsAlarmedWhileDrivingFromTheFirstReadingBelowIt [2 s]
+  错误消息:
+   Assert.Single() Failure: The collection was empty
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.OneFailedCheckpointReadDoesNotRestartTheWait(sessionNotReady: False) [2 s]
+  错误消息:
+   Assert.Contains() Failure: Sub-string not found
+String:    "(none)"
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.OneFailedCheckpointReadDoesNotRestartTheWait(sessionNotReady: True) [2 s]
+  错误消息:
+   Assert.Contains() Failure: Sub-string not found
+String:    "ONBOARD_SESSION_NOT_READY"
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ACheckpointSamplePastItsBudgetBehindTheGateIsUnreadAndDoesNotHoldTheRoundBack [22 s]
+  错误消息:
+   The round took 00:00:20.0080803.
+失败!  - 失败:     8，通过:     1，已跳过:     0，总计:     9，持续时间: 33 s - ControlServer.Tests.dll (net8.0)

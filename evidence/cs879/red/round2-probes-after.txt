@@ -1,0 +1,13 @@
+# second-round review probes (C:/work/8005-scratch/review-cs879/ReviewProbe879R2Tests.cs, unchanged) on 8bd0e457b; on 903627e7 the review recorded A(break) -> faults=[] commands=[] in both gate cells, B -> error2341=0
+  已通过 ControlServer.Tests.ReviewProbe879R2Tests.ProbeADoorNotLockedWhenTheBreakMovesCurrent(breakSequences: False, behindGate: False) [2 s]
+ break=False gate=False: stage=AwaitingPickupArrival code=VEHICLE_DOOR_NOT_PROVEN_LOCKED; faults=[SuspectedBlocked/VEHICLE_DOOR_NOT_PROVEN_LOCKED]; commands=[OrderHold,triggerEmergency]
+  已通过 ControlServer.Tests.ReviewProbe879R2Tests.ProbeADoorNotLockedWhenTheBreakMovesCurrent(breakSequences: True, behindGate: False) [196 ms]
+ break=True gate=False: stage=AwaitingPickupArrival code=VEHICLE_DOOR_NOT_PROVEN_LOCKED; faults=[SuspectedBlocked/VEHICLE_DOOR_NOT_PROVEN_LOCKED]; commands=[OrderHold,triggerEmergency]
+  已通过 ControlServer.Tests.ReviewProbe879R2Tests.ProbeADoorNotLockedWhenTheBreakMovesCurrent(breakSequences: True, behindGate: True) [137 ms]
+ break=True gate=True: stage=AwaitingPickupArrival code=VEHICLE_DOOR_NOT_PROVEN_LOCKED; faults=[SuspectedBlocked/VEHICLE_DOOR_NOT_PROVEN_LOCKED]; commands=[OrderHold,triggerEmergency]
+  已通过 ControlServer.Tests.ReviewProbe879R2Tests.ProbeBHangThenMovesOnLeavesTheSequenceCodeButLogs2341 [134 ms]
+ afterHang=ORDER_HANG afterMovedOn=JOURNEY_STOP_SEQUENCE_BROKEN later=JOURNEY_STOP_SEQUENCE_BROKEN error2341=1
+  失败 ControlServer.Tests.ReviewProbe879R2Tests.ProbeCSilentSessionOverTheSequenceCode(hangDuringSilence: True) [168 ms]
+ hang=True: ORDER_HANG -> ORDER_HANG -> ORDER_HANG -> ORDER_HANG -> heard:JOURNEY_STOP_SEQUENCE_BROKEN -> heard2:JOURNEY_STOP_SEQUENCE_BROKEN; since 2026-08-26T01:00:02.0000000+00:00 -> 2026-08-26T01:00:19.0000000+00:00; error2341=2
+  已通过 ControlServer.Tests.ReviewProbe879R2Tests.ProbeCSilentSessionOverTheSequenceCode(hangDuringSilence: False) [179 ms]
+ hang=False: JOURNEY_STOP_SEQUENCE_BROKEN -> JOURNEY_STOP_SEQUENCE_BROKEN -> JOURNEY_STOP_SEQUENCE_BROKEN -> JOURNEY_STOP_SEQUENCE_BROKEN -> heard:JOURNEY_STOP_SEQUENCE_BROKEN -> heard2:JOURNEY_STOP_SEQUENCE_BROKEN; since 2026-08-26T01:00:02.0000000+00:00 -> 2026-08-26T01:00:02.0000000+00:00; error2341=1

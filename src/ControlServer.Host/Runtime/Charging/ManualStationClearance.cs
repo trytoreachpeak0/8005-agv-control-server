@@ -126,6 +126,8 @@ public sealed class ManualStationClearance(
         ChargingExecutionReasons.BatteryTelemetryLost,
         ChargingExecutionReasons.ArrivalNotProven,
         ChargingExecutionReasons.OrderNotFound,
+        // control-server#863: the order has to be ended in RIoT first (Judge refuses otherwise and says so).
+        ChargingExecutionReasons.OrderNotDispatched,
         // control-server#407: an interruption or no progress that could only be alarmed about.
         ChargingExecutionReasons.InterruptionNotIsolated,
         ChargingExecutionReasons.NoProgressNotIsolated,
@@ -138,6 +140,27 @@ public sealed class ManualStationClearance(
             new EventId(2266, nameof(LogDecided)),
             "Manual station clearance {ConfirmationRequestId} for vehicle {AgvId} at charger {StationId}: {Outcome}, station " +
             "released {Released} ({Detail}). The charger's allocation hold, if any, stays until a ChargingStationRecoveryConfirmation.");
+
+    private static readonly Action<ILogger, string, string, bool, string, string, Exception?> LogVehicleHoldsLeft =
+        LoggerMessage.Define<string, string, bool, string, string>(
+            LogLevel.Warning,
+            new EventId(2343, nameof(LogVehicleHoldsLeft)),
+            "The manual clearance of charger {StationId} for vehicle {AgvId} is confirmed (charger released now: {Released}), but " +
+            "the vehicle still carries charging eligibility {Holds}. The clearance does not lift it (REQ-0286): until it is " +
+            "recovered with POST {Route} no charger is allocated to the vehicle, and below its mandatory charge line its battery " +
+            "goes on falling.");
+
+    private static readonly Action<ILogger, string, Exception?> LogHoldsLeftUnreadable =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(2346, nameof(LogHoldsLeftUnreadable)),
+            "The manual clearance for vehicle {AgvId} is decided, but its charging eligibility holds could not be read to say which " +
+            "are left; the decision stands. Check the vehicle on the charging dashboard.");
+
+    /// <summary>
+    /// 在调用方的收件箱事务里判定（保存点）时，提交前不说 2343：记在这里，由 <see cref="AnnounceHoldsLeftAsync"/> 在提交之后说（cs#877 审查 L3）。
+    /// </summary>
+    private (ManualStationClearanceRequest Request, bool Released)? _toAnnounce;
 
     private static readonly JsonSerializerOptions DetailOptions = new()
     {
@@ -208,6 +231,7 @@ public sealed class ManualStationClearance(
         {
             throw new ArgumentException("The observation is of another confirmation request.", nameof(observed));
         }
+        _toAnnounce = null;
         FieldConfirmationRequestIdentity identity = new(
             request.ConfirmationRequestId, request.AgvId, request.SessionGeneration, request.RequestMessageId,
             request.RequestContentHash, request.OperatorId ?? "", request.VerificationMethod, request.VerifiedAt,
@@ -375,7 +399,81 @@ public sealed class ManualStationClearance(
             LogDecided(
                 logger, request.ConfirmationRequestId, request.AgvId, request.StationId, stored.Decision.Outcome,
                 stored.StationReleased, code ?? disposition, null);
+            if (code is null && request.VehicleKey is not null)
+            {
+                // control-server#877: said once per decision, from either entry -- the onboard result's shape is the protocol's
+                // and has no place for it; the Host entry also returns it (TryReadVehicleHoldsLeftAsync). Review L3: only once
+                // the decision is committed -- inside the caller's inbox transaction that is after the caller commits.
+                if (transaction.OwnsTransaction)
+                {
+                    await SayHoldsLeftAsync(request, stored.StationReleased, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    _toAnnounce = (request, stored.StationReleased);
+                }
+            }
             return stored;
+        }
+    }
+
+    /// <summary>
+    /// 入站处理器的收件箱事务提交之后调（cs#877 审查 L3）：这一次判定在那个事务里确认了清桩、且确认此刻已落库，就说 2343（车还挂着资格暂停时）。
+    /// 事务回滚了的什么也不说；说过一次就忘掉。读失败只记 2346，不抛。
+    /// </summary>
+    public async Task AnnounceHoldsLeftAsync(CancellationToken cancellationToken)
+    {
+        if (_toAnnounce is not { } pending)
+        {
+            return;
+        }
+        _toAnnounce = null;
+        try
+        {
+            ManualStationClearanceConfirmation? stored = await requests
+                .ReadManualStationClearanceAsync(pending.Request.ConfirmationRequestId, cancellationToken).ConfigureAwait(false);
+            if (stored is null || stored.Request.RequestMessageId != pending.Request.RequestMessageId ||
+                stored.Decision.Outcome != FieldConfirmationDecision.Confirmed)
+            {
+                return;
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            LogHoldsLeftUnreadable(logger, pending.Request.AgvId, error);
+            return;
+        }
+        await SayHoldsLeftAsync(pending.Request, pending.Released, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 这辆车此刻仍挂着的充电资格暂停（control-server#877）。清桩不解除它们（<c>REQ-0286</c>）；Host 入口把它们放进结果。判定已经提交之后才读：
+    /// 读失败记 2346、答空（cs#877 审查 L3），调用方照旧答成功。
+    /// </summary>
+    public async Task<IReadOnlyList<VehicleChargingEligibilityHold>?> TryReadVehicleHoldsLeftAsync(
+        string agvId, string vehicleKey, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await new ChargingHoldStore(dbContext).ListActiveVehicleHoldsAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            LogHoldsLeftUnreadable(logger, agvId, error);
+            return null;
+        }
+    }
+
+    private async Task SayHoldsLeftAsync(ManualStationClearanceRequest request, bool released, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<VehicleChargingEligibilityHold>? left =
+            await TryReadVehicleHoldsLeftAsync(request.AgvId, request.VehicleKey!, cancellationToken).ConfigureAwait(false);
+        if (left is { Count: > 0 })
+        {
+            LogVehicleHoldsLeft(
+                logger, request.StationId, request.AgvId, released,
+                string.Join("; ", left.Select(hold => ChargingHoldsLeft.Describe(hold.HoldId, hold.Reason, hold.HeldAt))),
+                ChargingStationEndpoints.VehicleRecoveryRoute, null);
         }
     }
 
@@ -458,6 +556,9 @@ public sealed class ManualStationClearance(
             _own?.CommitAsync(cancellationToken) ?? _outer!.ReleaseSavepointAsync(Savepoint, cancellationToken);
 
         public ValueTask DisposeAsync() => _own?.DisposeAsync() ?? ValueTask.CompletedTask;
+
+        /// <summary>判定自己开的事务：提交即落库。否则只是调用方事务里的保存点，落不落库由调用方定。</summary>
+        public bool OwnsTransaction => _own is not null;
     }
 
     /// <summary>旧单此刻在 RIoT 里的样子；读不到记 <see cref="RiotOrderObservationKind.Unknown"/>（处置随之是 <see cref="PositionUnknown"/>）。</summary>

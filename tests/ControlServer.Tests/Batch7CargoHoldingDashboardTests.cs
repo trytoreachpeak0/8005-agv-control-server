@@ -651,6 +651,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData("LOAD_SLOT_ASSIGNMENT_SHORT")]
     // control-server#783：装卸命令前车不在这一站上。
     [InlineData("SLOT_COMMAND_VEHICLE_NOT_AT_STOP")]
+    // control-server#879：停靠序位重号或缺号，推进停在原地。
+    [InlineData("JOURNEY_STOP_SEQUENCE_BROKEN")]
     public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
     {
         Assert.True(BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code), $"{code} has no description");

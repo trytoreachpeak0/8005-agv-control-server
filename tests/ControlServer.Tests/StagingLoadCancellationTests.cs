@@ -630,6 +630,8 @@ public sealed class StagingLoadCancellationTests
         RuntimeFixture fixture, string demandId, StationOperationRow load, string cancellationId = CancellationId)
     {
         int[] slots = JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson)!;
+        // Nothing loaded and every door shut since the load began (control-server#837).
+        await TestSlotReadings.SeedProvenEmptyAsync(fixture.Context, fixture.Options.AgvId, fixture.Clock.GetUtcNow());
         await using ControlServerDbContext connection = fixture.OpenConnectionContext();
         string authorization = await ProcessAsync(fixture, connection, "LoadCancellationStartRequested", new
         {

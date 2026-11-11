@@ -1,7 +1,11 @@
+using System.Globalization;
 using ControlServer.Application;
+using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Dashboard;
@@ -18,7 +22,12 @@ namespace ControlServer.Host.Dashboard;
 /// <item>每一次还没恢复的桩分配暂停（充不上、中断、无进展、维修）；</item>
 /// <item>未完成的充电旅程上此刻写着的码（到桩不充电、RIoT 车辆观测丢失、电量遥测丢失、清桩中旧单被恢复等）；</item>
 /// <item>充满待离桩、失败待放桩超过告警窗口的桩（与引擎事件 2249、2247 同一个窗口）；</item>
-/// <item>车载端会话失联、而服务端还为它记着充电周期、桩、清桩或人工充电等待的车（REQ-0287 的第三种失联）。</item>
+/// <item>车载端会话失联、而服务端还为它记着充电周期、桩、清桩或人工充电等待的车（REQ-0287 的第三种失联）；</item>
+/// <item>唯一不在库里的一类：低于强制充电线、又过不了出发前安全门而分不到桩的车（细节点名缺哪一项，control-server#865），与低于强制充电线、
+/// RIoT 却没把它定位在任何站上的车（control-server#528），与低于强制充电线、充电资格暂停着的车（control-server#877，暂停本身读库），
+/// 都读最近一轮已完成的充电分配（分配板，宿主单例）。</item>
+/// <item>带着搬运旅程停着等、监看落库的电量低于这辆车强制充电线的车（control-server#866）：有用途的车不进充电队列，这是分配板上看不到的那一类，
+/// 读旅程行上 <see cref="WaitingJourneyWatch"/> 记下的读数，看板自己不问 RIoT、引擎每轮也不为它多做任何事。</item>
 /// </list>
 /// <para>
 /// <b>无合格桩</b>不单列：它是充电分配的结论，看逐车卡片的排队原因（<c>notReadable</c> 里写明）。<b>中断、无进展</b>（批次9-09）以桩的暂停与旅程码出现（<c>notReadable</c> 里写明）。
@@ -28,26 +37,42 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
 {
     private readonly VehicleRoster _roster;
     private readonly JourneyRuntimeOptions _options;
+    private readonly ChargingAllocationBoard _board;
+    private readonly TimeSpan _passLiveness;
     private readonly TimeProvider _clock;
+    private readonly IServiceScopeFactory? _scopes;
 
     public ChargingAlarmsQueryEndpoint()
-        : this(Options.Create(new JourneyRuntimeOptions()), TimeProvider.System)
+        : this(Options.Create(new JourneyRuntimeOptions()), new ChargingAllocationBoard(), TimeProvider.System)
     {
     }
 
-    /// <summary>挂在宿主上时用这一个：名册与告警窗口都从宿主的同一份运行时配置取，不要求宿主另外注册名册。</summary>
+    /// <summary>
+    /// 挂在宿主上时用这一个：名册与告警窗口都从宿主的同一份运行时配置取，不要求宿主另外注册名册；分配板是充电分配写的那一块单例
+    /// （control-server#865：低于强制线又过不了出发门的车只在那里，不在库里）。充电策略（每辆车的强制充电线）是作用域的，端点是宿主根上造的，
+    /// 所以每次请求开一个作用域取（control-server#866，同 <see cref="WaitingJourneysQueryEndpoint"/>）。
+    /// </summary>
     [ActivatorUtilitiesConstructor]
-    public ChargingAlarmsQueryEndpoint(IOptions<JourneyRuntimeOptions> options)
-        : this(options, TimeProvider.System)
+    public ChargingAlarmsQueryEndpoint(
+        IOptions<JourneyRuntimeOptions> options, ChargingAllocationBoard board, IServiceScopeFactory scopes)
+        : this(options, board, TimeProvider.System, scopes)
     {
     }
 
-    internal ChargingAlarmsQueryEndpoint(IOptions<JourneyRuntimeOptions> options, TimeProvider clock)
+    /// <param name="scopes">为空时读不到充电策略：带单车的强制充电线判不了，只在救命线下告警（control-server#866）。</param>
+    internal ChargingAlarmsQueryEndpoint(
+        IOptions<JourneyRuntimeOptions> options,
+        ChargingAllocationBoard board,
+        TimeProvider clock,
+        IServiceScopeFactory? scopes = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         _roster = new VehicleRoster(options);
         _options = options.Value;
+        _board = board ?? throw new ArgumentNullException(nameof(board));
+        _passLiveness = options.Value.PollInterval * ChargingVehiclesQueryEndpoint.PassLivenessPollIntervals;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _scopes = scopes;
     }
 
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "charging-alarms";
@@ -124,6 +149,76 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
             }
         }
 
+        // control-server#865: below the mandatory line (every vehicle the allocation weighs is) and held back by the departure
+        // gate. The gate stays shut; this says which slot or fact to go and look at while the battery falls. Read from the
+        // latest completed allocation pass, and only while the allocation is running, as the per-vehicle card reads it.
+        ChargingBoardPass? pass = _board.LatestCompletedPass;
+        if (pass is not null && pass.CompletedAt <= now && now - pass.CompletedAt <= _passLiveness)
+        {
+            foreach ((string agvId, ChargingBoardVerdict verdict) in pass.Verdicts
+                         .Where(pair => pair.Value.Reason == ChargingAllocationReasons.DepartureNotProven)
+                         .OrderBy(pair => pair.Key, StringComparer.Ordinal))
+            {
+                int? battery = pass.Observations.GetValueOrDefault(agvId)?.BatteryPercent;
+                alarms.Add(new Alarm(
+                    ChargingDashboardDescriptions.AlarmBelowMandatoryDepartureNotProven,
+                    agvId,
+                    MapId: null,
+                    StationId: null,
+                    Since: null,
+                    ChargingDashboardDescriptions.DescribeDepartureGaps(battery, ChargingDepartureGaps.Of(verdict.Detail))));
+            }
+
+            // control-server#528: below the mandatory line too (the allocation answers position unknown only past that check), and
+            // RIoT places it at no station (11-06 agv02 after its onboard PC lost power). No charger is allocated from a guessed
+            // position, so the only way out is a person relocating it in RIoT.
+            foreach (string agvId in pass.Verdicts
+                         .Where(pair => pair.Value.Reason == ChargingAllocationReasons.VehiclePositionUnknown)
+                         .Select(pair => pair.Key)
+                         .OrderBy(agvId => agvId, StringComparer.Ordinal))
+            {
+                alarms.Add(new Alarm(
+                    ChargingDashboardDescriptions.AlarmBelowMandatoryPositionUnknown,
+                    agvId,
+                    MapId: null,
+                    StationId: null,
+                    Since: null,
+                    ChargingDashboardDescriptions.DescribePositionUnknown(pass.Observations.GetValueOrDefault(agvId)?.BatteryPercent)));
+            }
+        }
+
+        // control-server#877: below the mandatory line too (the allocation answers eligibility held only past that check), and
+        // the vehicle's charging eligibility is paused (11-04 agv02 ran flat on one an earlier interruption left). No charger is
+        // allocated until a person recovers it; this says which hold, and the field action where it is lifted. Only while the
+        // hold is still open now: one recovered since the pass is not alarmed about.
+        if (pass is not null && pass.CompletedAt <= now && now - pass.CompletedAt <= _passLiveness)
+        {
+            foreach (string agvId in pass.Verdicts
+                         .Where(pair => pair.Value.Reason == ChargingAllocationReasons.VehicleEligibilityHeld)
+                         .Select(pair => pair.Key)
+                         .OrderBy(agvId => agvId, StringComparer.Ordinal))
+            {
+                string? vehicleKey = _roster.ByAgvId(agvId)?.VehicleKey;
+                VehicleChargingEligibilityHoldRow[] open =
+                [
+                    .. facts.OpenEligibilityHolds.Where(hold => vehicleKey is not null && hold.VehicleKey == vehicleKey),
+                ];
+                if (open.Length == 0)
+                {
+                    continue;
+                }
+                alarms.Add(new Alarm(
+                    ChargingDashboardDescriptions.AlarmBelowMandatoryEligibilityHeld,
+                    agvId,
+                    MapId: null,
+                    StationId: null,
+                    Since: open[0].HeldAt,
+                    ChargingDashboardDescriptions.DescribeEligibilityHeld(pass.Observations.GetValueOrDefault(agvId)?.BatteryPercent, open)));
+            }
+        }
+
+        alarms.AddRange(await TransportJourneysBelowTheLineAsync(dbContext, cancellationToken));
+
         foreach (FleetVehicle vehicle in facts.Contact.Vehicles.Where(vehicle => !facts.Contact.InContact(vehicle)))
         {
             List<string> held = [];
@@ -167,6 +262,146 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
             },
             unavailableVehicles = facts.Contact.Unavailable(),
         };
+    }
+
+    /// <summary>
+    /// 带单车低于强制充电线（control-server#866）：未完成、带需求（不是空闲返回、不是充电）、电量低于这辆车强制充电线（或救命线）的旅程，一条一行，
+    /// 停着等的与在路上的都报（审查 S5）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>读数从哪来，看板自己不问 RIoT、引擎每轮也不为它多读一次：</b>停着等的（<see cref="JourneyWaitClassification.IsWaiting"/>，与等人卡片同一个判法）
+    /// 取 <see cref="WaitingJourneyWatch"/> 落库的那次；在路上的取派车轮为在途车本来就读的那一次（<see cref="VehicleBatteryReadings"/>，分配板上）。
+    /// 落库的读数是空（这一轮读不到）时，沿用分配板上最后一次读到的值照报，写明自何时起读不到（审查 M3）：车快断电时正是 RIoT 读不到的时候。
+    /// </para>
+    /// <para>
+    /// 线与等人卡片一样判（<see cref="WaitingJourneyBattery.Level"/>）：低于强制充电线或救命线才报，等于线不报；没有已批准策略的车判不了强制线，只在救命线下报。
+    /// 停靠读不到（序位坏了、库里没有停靠）的旅程照样报，位置写读不到。<c>since</c>：停着等的是开始等的时刻，在路上的是本进程首次读到低于线的时刻（审查 L3）。
+    /// </para>
+    /// <para>
+    /// 只在看板请求时读：一次查未完成的旅程，策略与停靠只为要报的那几行读。读不出来（审查 S4）时出一行说读不到，不让整张卡片报错。
+    /// </para>
+    /// </remarks>
+    private async Task<List<Alarm>> TransportJourneysBelowTheLineAsync(
+        ControlServerDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReadTransportJourneysBelowTheLineAsync(dbContext, cancellationToken);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            return
+            [
+                new Alarm(
+                    ChargingDashboardDescriptions.AlarmBelowMandatoryOnTransportJourney,
+                    AgvId: null,
+                    MapId: null,
+                    StationId: null,
+                    Since: null,
+                    ChargingDashboardDescriptions.DescribeTransportBelowTheLineUnreadable(error.GetType().Name)),
+            ];
+        }
+    }
+
+    private async Task<List<Alarm>> ReadTransportJourneysBelowTheLineAsync(
+        ControlServerDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        JourneyRuntimeRow[] journeys = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.Stage != JourneyRuntimeStage.Completed)
+            .ToArrayAsync(cancellationToken);
+        List<(JourneyRuntimeRow Journey, bool Waiting, TransportBatteryReading Reading)> candidates = [];
+        foreach (JourneyRuntimeRow journey in journeys
+                     .Where(row => !row.CarriesNoDemand())
+                     .OrderBy(row => row.AgvId, StringComparer.Ordinal)
+                     .ThenBy(row => row.JourneyId, StringComparer.Ordinal))
+        {
+            bool waiting = JourneyWaitClassification.IsWaiting(journey.Stage, journey.BlockReasonCode);
+            if (ReadingOf(journey, waiting) is { } reading)
+            {
+                candidates.Add((journey, waiting, reading));
+            }
+        }
+        List<Alarm> alarms = [];
+        if (candidates.Count == 0)
+        {
+            return alarms;
+        }
+
+        await using AsyncServiceScope? scope = _scopes?.CreateAsyncScope();
+        IChargingPolicyResolver? resolver = scope?.ServiceProvider.GetRequiredService<IChargingPolicyResolver>();
+        foreach ((JourneyRuntimeRow journey, bool waiting, TransportBatteryReading reading) in candidates)
+        {
+            int? entry = resolver is null
+                ? null
+                : await WaitingJourneyBattery.MandatoryChargeEntryPercentAsync(resolver, journey.VehicleKey, cancellationToken);
+            WaitingBatteryLevel level = WaitingJourneyBattery.Level(reading.Percent, entry, _options);
+            if (level is not (WaitingBatteryLevel.BelowDispatchMinimum or WaitingBatteryLevel.BelowRescueLine))
+            {
+                continue;
+            }
+
+            DateTimeOffset? since = waiting
+                ? journey.WaitingSince
+                : _board.Batteries.BelowSince(journey.AgvId, entry ?? _options.WaitingJourneyRescueBatteryPercent);
+            JourneyStopRow? stop = await CurrentStopAsync(dbContext, journey, cancellationToken);
+            alarms.Add(new Alarm(
+                ChargingDashboardDescriptions.AlarmBelowMandatoryOnTransportJourney,
+                journey.AgvId,
+                stop is null ? null : journey.MapId,
+                stop?.StationRiotId,
+                since,
+                ChargingDashboardDescriptions.DescribeTransportBelowTheLine(
+                    journey,
+                    new TransportBelowTheLine(
+                        reading.Percent, reading.ReadAt, reading.UnreadSince, entry, level,
+                        _options.WaitingJourneyRescueBatteryPercent, waiting, since),
+                    stop)));
+        }
+        return alarms;
+    }
+
+    /// <summary>
+    /// 这趟旅程用哪一次读数：停着等、落库有值的用落库那次；否则用分配板上这辆车最后一次读到的值（落库是空说明监看这一轮读不到，
+    /// 起点取分配板记的，没有就取落库的读数时刻）。哪里都没有读数时为空，不报。
+    /// </summary>
+    private TransportBatteryReading? ReadingOf(JourneyRuntimeRow journey, bool waiting)
+    {
+        if (waiting && journey is { WaitingBatteryPercent: int percent, WaitingBatteryObservedAt: { } readAt })
+        {
+            return new TransportBatteryReading(percent, readAt, UnreadSince: null);
+        }
+        if (_board.Batteries.Latest(journey.AgvId) is not { } latest)
+        {
+            return null;
+        }
+        DateTimeOffset? unreadSince = latest.UnreadSince;
+        if (unreadSince is null && waiting && journey.WaitingBatteryObservedAt is { } failedAt && failedAt > latest.ReadAt)
+        {
+            unreadSince = failedAt;
+        }
+        return new TransportBatteryReading(latest.Percent, latest.ReadAt, unreadSince);
+    }
+
+    private sealed record TransportBatteryReading(int Percent, DateTimeOffset ReadAt, DateTimeOffset? UnreadSince);
+
+    /// <summary>这趟旅程此刻的停靠；读不到（序位坏了、库里没有停靠）时为空，告警照报。</summary>
+    private static async Task<JourneyStopRow?> CurrentStopAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow journey,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken);
+            return stops.SequenceProblem is null ? stops.Current : null;
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
     }
 
     private static object Fact(Alarm alarm, DateTimeOffset now)

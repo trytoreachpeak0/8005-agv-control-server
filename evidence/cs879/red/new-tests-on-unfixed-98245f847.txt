@@ -1,0 +1,6 @@
+# 98245f847 (new tests on unfixed b82899e40 code): filter JourneyStopSequenceRaceTests + IntegrationSliceTraitArchitectureTests
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ARevisionWrittenAfterAnAppendOnAnotherConnectionLeavesContiguousSequences [2 s]
+   sequences: journey:D-8790|PICKUP=1, journey:D-8790|UNLOAD=2, journey:D-8794|PICKUP=3, B-UNLOAD=5, C-UNLOAD=6, D-PICKUP=6
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AnAppendWrittenAfterARevisionOnAnotherConnectionLeavesContiguousSequences [16 ms]
+   sequences: journey:D-8790|PICKUP=1, journey:D-8790|UNLOAD=2, B-UNLOAD=3, journey:D-8794|PICKUP=3, C-UNLOAD=4, D-PICKUP=6
+失败!  - 失败:     2，通过:     5，已跳过:     0，总计:     7，持续时间: 2 s - ControlServer.Tests.dll (net8.0)

@@ -534,7 +534,8 @@ SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
 # No later migration adds or deletes a record (checked through 20261011005905 for control-server#544; that last one,
 # ProtocolInboxReadIndexes, touches ProtocolInbox alone; 20261013041134_ProtocolInboxTypeNewestFirstIndex of
 # control-server#597 after it only adds an index on ProtocolInbox; 20261015144738_JourneyStopOperatorDepartedAt of
-# control-server#725 only adds a nullable column to JourneyStops); a store past the
+# control-server#725 only adds a nullable column to JourneyStops; 20261110075917_JourneyDemandsRedispatchIndex of
+# control-server#881 only adds an index on JourneyDemands and drops a hand-made one); a store past the
 # lease table's drop has nothing backfilled. Nothing the probe window does adds one either: a record is only inserted
 # with a claim -- an acceptance, a charging, idle-return or purpose transition -- and this run keeps the journey runtime
 # off and sends only session and OperationResult messages; releasing a claim closes its records, it adds none.

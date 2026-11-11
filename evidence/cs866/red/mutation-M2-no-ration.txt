@@ -1,0 +1,12 @@
+mutation: M2-no-ration
+file: src/ControlServer.Host/Runtime/Fleet/CheckpointWaitLedger.cs
+diff:
+-            now - last < BehindTheGateSampleInterval &&
++            now - last < BehindTheGateSampleInterval && vehicleKey.Length < 0 &&
+filter: FullyQualifiedName~ACheckpointHoldOnALegWithTheSessionNotReady|FullyQualifiedName~BehindTheReadinessGateACheckpoint|FullyQualifiedName~ALoadedVehicleWaitingAtItsUnload|FullyQualifiedName~ALoadedVehicleDrivingBelowTheLine|FullyQualifiedName~OnlyAWaitingJourneyThatCarriesDemands
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.BehindTheReadinessGateACheckpointIsAskedAboutAtMostOnceEveryHalfMinutePerVehicle [2 s]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   4
+失败!  - 失败:     1，通过:     4，已跳过:     0，总计:     5，持续时间: 11 s - ControlServer.Tests.dll (net8.0)

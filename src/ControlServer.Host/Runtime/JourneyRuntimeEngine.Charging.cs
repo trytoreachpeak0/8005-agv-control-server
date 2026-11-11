@@ -64,14 +64,34 @@ public sealed partial class JourneyRuntimeEngine
             "{StationId} ends as a confirmed failure. Should RIoT show that order running on the vehicle after all, it is " +
             "cancelled and alarmed (event 2180, basis OWN_CHARGE_ORDER_ABANDONED).");
 
-    private static readonly Action<ILogger, string, string, DateTimeOffset, int, Exception?> LogChargingEndNotProven =
-        LoggerMessage.Define<string, string, DateTimeOffset, int>(
+    private static readonly Action<ILogger, string, string, DateTimeOffset, int, string, Exception?> LogChargingEndNotProven =
+        LoggerMessage.Define<string, string, DateTimeOffset, int, string>(
             LogLevel.Warning,
             new EventId(2256, nameof(LogChargingEndNotProven)),
-            "Charging journey {JourneyId}: its order was cancelled or deleted in RIoT, and vehicle {VehicleKey} has not been " +
-            "proven stopped without an order since {Since} (it cannot be read, is offline, or reads moving). The CHARGING " +
-            "purpose and the reservation of charger {StationId} are kept until it is, so no other vehicle can be allocated " +
-            "that charger. Someone has to look at the vehicle (the manual release of a charger is control-server#406).");
+            "Charging journey {JourneyId}: its order was cancelled or deleted in RIoT after RIoT had bound a vehicle to it, and " +
+            "vehicle {VehicleKey} has not been proven stopped without an order since {Since} (it cannot be read, is offline, or " +
+            "reads moving). The CHARGING purpose and the reservation of charger {StationId} by charging cycle {CycleId} are kept " +
+            "until it is, so no other vehicle can be allocated that charger. Someone has to look at the vehicle; once it is " +
+            "stopped and off the charger, a manual station clearance frees the charger (control-server#406, #882).");
+
+    private static readonly Action<ILogger, string, int, string, string, int, string, Exception?> LogChargingEndedUndispatched =
+        LoggerMessage.Define<string, int, string, string, int, string>(
+            LogLevel.Warning,
+            new EventId(2286, nameof(LogChargingEndedUndispatched)),
+            "CHARGING_ORDER_ENDED_UNDISPATCHED: charge order {UpperId} ended in RIoT (orderState {OrderState}) before RIoT ever " +
+            "bound a vehicle to it (executeVehicleKey empty or '--'); charging journey {JourneyId} of vehicle {VehicleKey} ends " +
+            "as a confirmed failure and charger {StationId} is released in the same save, ending charging cycle {CycleId}. No " +
+            "vehicle ran the order, so none moved for it or was taken to the charger by it. Not rebuilt; the vehicle cools down " +
+            "and is allocated afresh if it still needs charging (control-server#882).");
+
+    private static readonly Action<ILogger, string, string, string, int, DateTimeOffset, Exception?> LogChargeOrderNotDispatched =
+        LoggerMessage.Define<string, string, string, int, DateTimeOffset>(
+            LogLevel.Warning,
+            new EventId(2284, nameof(LogChargeOrderNotDispatched)),
+            "CHARGING_ORDER_NOT_DISPATCHED: charge order {UpperId} (journey {JourneyId}, vehicle {VehicleKey}, charger {StationId}) " +
+            "has been QUEUEING in RIoT with no vehicle bound to run it since it was confirmed at {ConfirmedAt}. Nothing is " +
+            "cancelled, released or moved (REQ-0165, REQ-0169), and the charger stays this journey's. Look in RIoT why the order " +
+            "is not dispatched; to free the charger, cancel the order in RIoT, then confirm the charger clear (control-server#863).");
 
     private static readonly Action<ILogger, string, string, string, int, Exception?> LogChargingEnRoute =
         LoggerMessage.Define<string, string, string, int>(
@@ -134,6 +154,8 @@ public sealed partial class JourneyRuntimeEngine
     /// 不登记重建的那道判别在 <see cref="RecordOrderEndedInRiotAsync"/>。车还可能在动时保持一切、写
     /// <see cref="OrderEndedWithoutArrivalReason"/>；车证明停稳、没有活动订单之后按已确认失败收尾（<see cref="ChargingEnding"/>）。
     /// <b>收尾不放桩预占</b>：那要三项确认，由充电分配每轮开头的清扫做。
+    /// <b>例外：RIoT 从没把这张单派给车</b>（control-server#882，<see cref="EndUndispatchedChargingAsync"/>）：读到取消或删除的那一轮就按已确认失败收尾，
+    /// 桩预占同一次保存里放——没有车跑过它，车没有因为它动过、也没有被它带到桩上，停稳证明与三项确认防的事都不存在。
     /// </para>
     /// <para>
     /// <b>单到了终态 <c>SUCCESS</c></b>：充电动作已经接上，交给到桩之后那一段（批次9-07，<see cref="AdvanceAtChargerAsync"/>）：到桩、开始充电、充满。
@@ -357,12 +379,126 @@ public sealed partial class JourneyRuntimeEngine
         {
             if (order is { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Cancelled or RiotOrderState.Deleted })
             {
-                await EndChargingOnceStoppedAsync(runtime, stop, cancellationToken).ConfigureAwait(false);
+                if (order.ExecuteVehicleBound == false)
+                {
+                    // control-server#882: no vehicle ever ran it, so none moved for it or was taken to the charger by it.
+                    await EndUndispatchedChargingAsync(runtime, stop, cycle, order, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await EndChargingOnceStoppedAsync(runtime, stop, cycle, cancellationToken).ConfigureAwait(false);
+                }
             }
             return;
         }
 
+        if (await NameUndispatchedChargeOrderAsync(runtime, stop, cycle, order, now, cancellationToken).ConfigureAwait(false) ||
+            await NameVehicleLostOnTheWayAsync(runtime, stop, now, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 去桩途中 RIoT 读不到这辆车、或报它离线（control-server#863）：写 <see cref="ChargingExecutionReasons.VehicleObservationLost"/>，持续超过
+    /// <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 升级告警一次（与到桩之后同一个 <see cref="NameChargingLossAsync"/>），答真。车读回来就清掉，答假。
+    /// </summary>
+    /// <remarks>
+    /// 车可能还在路上动、也可能已经停在桩上（<c>REQ-0287</c>：按车辆仍可能占桩处理）：不取消单、不放桩、不发停止或任何命令、不改派。这个码在人工清桩的
+    /// <see cref="ManualStationClearance.HeldCodes"/> 里，人在 RIoT 上取消单之后走取消那条路，再确认清桩。在此之前这一段不读车，失联整段无声。
+    /// </remarks>
+    private async Task<bool> NameVehicleLostOnTheWayAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        RiotVehicleObservation? vehicle;
+        try
+        {
+            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            vehicle = null;
+        }
+
+        if (vehicle is not { Connected: true })
+        {
+            await NameChargingLossAsync(runtime, stop, ChargingExecutionReasons.VehicleObservationLost, now, cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+
+        if (string.Equals(runtime.BlockReasonCode, ChargingExecutionReasons.VehicleObservationLost, StringComparison.Ordinal))
+        {
+            await ClearChargingCodeAsync(runtime, now, cancellationToken).ConfigureAwait(false);
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 已确认的充电单在 RIoT 一直排队、没有绑执行车（control-server#863）：从确认建单起超过
+    /// <c>JourneyRuntime:ChargingOrderUndispatchedAlarmAfter</c> 写 <see cref="ChargingExecutionReasons.OrderNotDispatched"/>、告警一次，答真
+    /// （这一轮不往下走：车没在跑这张单，没有交管等待可判）。没到窗口答假；读到已绑车、不再排队或终态时清掉这个码、答假。
+    /// 读不出（<c>Unknown</c>，或排队但读不出绑没绑）不算变化：已点名的保留码、开始时刻与已报的键，答真；没点名的答假。
+    /// </summary>
+    /// <remarks>
+    /// 只点名：不取消单、不放桩、不动车。长期 <c>QUEUEING</c> 不凭停留时间推定失效（<c>REQ-0165</c>），原因未知时只告警转人工（<c>REQ-0168</c>；
+    /// 它点名的诊断接口不在调用白名单里），低电不授权取消排队单（<c>REQ-0169</c>）。人在 RIoT 上取消之后，取消那条路接手
+    /// （不重建）：单仍未绑车就被取消，周期当场结束、桩当场放（control-server#882，<see cref="EndUndispatchedChargingAsync"/>）。「未绑车」只认网关读到的 <c>executeVehicleKey</c> 为空或 <c>--</c>
+    /// （<see cref="RiotOrderObservation.ExecuteVehicleBound"/> 为假）；读不出绑没绑的不算。窗口从周期落库的 <c>OrderConfirmedAt</c> 算，重启不重新计时。
+    /// </remarks>
+    private async Task<bool> NameUndispatchedChargeOrderAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        ChargingCycleRow cycle,
+        RiotOrderObservation order,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        string alarmKey = ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.OrderNotDispatched);
+        bool named = string.Equals(runtime.BlockReasonCode, ChargingExecutionReasons.OrderNotDispatched, StringComparison.Ordinal);
+        if (order.Kind is not (RiotOrderObservationKind.Active or RiotOrderObservationKind.Terminal) ||
+            order is { Kind: RiotOrderObservationKind.Active, OrderState: RiotOrderState.Queueing, ExecuteVehicleBound: null })
+        {
+            // Independent review S1: a read that says nothing (Unknown, or queueing with the binding not read) is not "no longer
+            // queueing": a named order keeps its code, its since and the alarm said, and this round goes no further.
+            return named;
+        }
+        if (order is not { Kind: RiotOrderObservationKind.Active, OrderState: RiotOrderState.Queueing, ExecuteVehicleBound: false })
+        {
+            if (named)
+            {
+                dispatchRound.Charging.Board.Unsay(alarmKey);
+                runtime.SetBlockReason(null, now);
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return false;
+        }
+
+        DateTimeOffset confirmedAt = cycle.OrderConfirmedAt ?? now;
+        if (now - confirmedAt < runtimeOptions.ChargingOrderUndispatchedAlarmAfter)
+        {
+            return false;
+        }
+
+        if (!named)
+        {
+            runtime.SetBlockReason(ChargingExecutionReasons.OrderNotDispatched, now);
+            runtime.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        if (dispatchRound.Charging.Board.FirstTime(alarmKey))
+        {
+            LogChargeOrderNotDispatched(
+                logger, stop.UpperId, runtime.JourneyId, runtime.VehicleKey, stop.StationRiotId, confirmedAt, null);
+        }
+        return true;
     }
 
     /// <summary>
@@ -371,11 +507,14 @@ public sealed partial class JourneyRuntimeEngine
     /// </summary>
     /// <remarks>
     /// 「证明停稳」与空闲返回同一组事实：RIoT 车辆读数在线、空闲、速度为零、无在执行任务、新鲜，并且 RIoT 的运动安全读数为停止。任一不满足、
-    /// 或读不到，都不收尾——「取消即释放而车其实还在动」是这一段要堵的事。
+    /// 或读不到，都不收尾——「取消即释放而车其实还在动」是这一段要堵的事。只走 RIoT 派给过车（或读不出派没派）的单；没派给车的单
+    /// 走 <see cref="EndUndispatchedChargingAsync"/>。证明一直不来时，超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次（事件 2256，
+    /// 点名车、桩与周期），看板充电桩卡片同一时刻标超时（control-server#882）。
     /// </remarks>
     private async Task EndChargingOnceStoppedAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
+        ChargingCycleRow cycle,
         CancellationToken cancellationToken)
     {
         string notProvenKey = ChargingAllocationBoard.EndNotProvenKey(runtime.JourneyId);
@@ -388,7 +527,8 @@ public sealed partial class JourneyRuntimeEngine
                 timeProvider.GetUtcNow() - since > runtimeOptions.OwnOrderRebuildRepeatWindow &&
                 dispatchRound.Charging.Board.FirstTime(notProvenKey))
             {
-                LogChargingEndNotProven(logger, runtime.JourneyId, runtime.VehicleKey, since, stop.StationRiotId, null);
+                LogChargingEndNotProven(
+                    logger, runtime.JourneyId, runtime.VehicleKey, since, stop.StationRiotId, cycle.CycleId, null);
             }
             return;
         }
@@ -400,6 +540,58 @@ public sealed partial class JourneyRuntimeEngine
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         LogChargingEnded(
             logger, runtime.JourneyId, runtime.VehicleKey, ChargingExecutionReasons.OrderEnded, stop.StationRiotId, null);
+        await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 充电单在 RIoT 被取消或删除，而 RIoT 从没把它派给车（这一次读数 <see cref="RiotOrderObservation.ExecuteVehicleBound"/> 为假，control-server#882）：
+    /// 按已确认失败收尾（<see cref="ChargingExecutionReasons.OrderEndedUndispatched"/>），周期结束、<c>CHARGING</c> 用途与桩预占同一次保存里释放、旅程收尾；
+    /// 然后告诉车。不等车证明停稳，不重建，不发任何命令。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 「证明停稳」与 <c>REQ-0173</c> 的三项确认防的是「车可能还在动、可能停在桩上」。没有车跑过的单两样都造不成：它没让任何车动，也没把车带到桩上。
+    /// 这与单从没发出过的撤回（<see cref="WithdrawChargingAsync"/>）同一个理由，放桩也同一个写法。2026-11-06 agv01 的单就是这样：RIoT 排队两个多小时没派车，
+    /// 被取消之后车读 <c>MT_NA</c>、系统与定位 <c>ERROR</c>，证明永远不来，211 被这一趟占了五个多小时。
+    /// </para>
+    /// <para>
+    /// 只认网关读到的「没绑车」（<c>executeVehicleKey</c> 为空或 <c>--</c>）。读不出绑没绑的（<c>null</c>）照旧走 <see cref="EndChargingOnceStoppedAsync"/>。
+    /// 执行中被取消的单 RIoT 保留执行车（行为实验室 rounds 9、10、16 的取消样本），所以派出过的单不会被读成「没绑车」。
+    /// </para>
+    /// <para>
+    /// 下一辆车拿这个桩之前，分配照常核占用事实（没有车停在桩上、没有在跑的单以它为目标）。计入「两次即停」、之后有冷却：车仍需充电时冷却过后按正常链
+    /// 重新分配，是一个新的周期与单号。
+    /// </para>
+    /// </remarks>
+    private async Task EndUndispatchedChargingAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        ChargingCycleRow cycle,
+        RiotOrderObservation order,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        string reasonCode = ChargingExecutionReasons.OrderEndedUndispatched;
+        dispatchRound.Charging.Board.Unsay(ChargingAllocationBoard.EndNotProvenKey(runtime.JourneyId));
+        dispatchRound.Charging.Board.Unsay(
+            ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.OrderNotDispatched));
+        checkpointWaits.Clear(runtime.VehicleKey);
+        await ChargingEnding.StageAsync(dbContext, runtime, stop, reasonCode, now, cancellationToken).ConfigureAwait(false);
+        StationExclusivityRow? held = await dbContext.Set<StationExclusivityRow>()
+            .SingleOrDefaultAsync(
+                row => row.MapId == runtime.MapId && row.StationId == stop.StationRiotId &&
+                       row.StationKind == StationExclusivityKinds.Charger && row.JourneyId == runtime.JourneyId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (held is not null)
+        {
+            await FixedStationExclusivity.StageReleaseAsync(dbContext, held, now, reasonCode, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        LogChargingEndedUndispatched(
+            logger, stop.UpperId, order.OrderState ?? 0, runtime.JourneyId, runtime.VehicleKey, stop.StationRiotId, cycle.CycleId,
+            null);
         await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
     }
 

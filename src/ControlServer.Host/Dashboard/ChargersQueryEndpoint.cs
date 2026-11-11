@@ -165,6 +165,8 @@ internal sealed class ChargersQueryEndpoint : IDashboardQueryEndpoint
             : null;
         (string stage, DateTimeOffset? stageSince) = ChargingDashboardFacts.Stage(holding, cycle);
         TimeSpan? overdueBy = ChargingDashboardFacts.OverdueBy(stage, stageSince, now, _options.OwnOrderRebuildRepeatWindow);
+        string? stuckApproach = ChargingDashboardFacts.ReservedByAStuckApproach(
+            stage, journey, now, _options.OwnOrderRebuildRepeatWindow);
         ChargingStationAllocationHoldRow[] holds =
             [.. facts.OpenStationHolds.Where(hold => hold.MapId == mapId && hold.StationId == stationId)];
         return new
@@ -195,9 +197,9 @@ internal sealed class ChargersQueryEndpoint : IDashboardQueryEndpoint
                 : ChargingDashboardDescriptions.ChargerStages[stage],
             stageSince,
             stageSeconds = stageSince is { } start ? (long?)Math.Max(0, (now - start).TotalSeconds) : null,
-            overdue = overdueBy is not null,
+            overdue = overdueBy is not null || stuckApproach is not null,
             overdueDescription = overdueBy is null
-                ? null
+                ? stuckApproach
                 : $"已超过 {ChargingDashboardDescriptions.Minutes(_options.OwnOrderRebuildRepeatWindow)} 分钟告警窗口"
                   + $"（JourneyRuntime:OwnOrderRebuildRepeatWindow）仍没放：三项确认缺哪一项见服务端日志事件 "
                   + ChargingDashboardFacts.OverdueEventId(stage),

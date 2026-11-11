@@ -44,7 +44,6 @@ public sealed class HttpRiotMovementGatewayTests
     [Theory]
     [InlineData("--")]
     [InlineData(" -- ")]
-    [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
     [Trait("IntegrationSlice", "FP-IS-03")]
@@ -66,6 +65,52 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal(RiotOrderObservationKind.Active, result.Kind);
         Assert.Equal("VEHICLE-KEY-01", result.VehicleKey);
         Assert.Equal("ORDER-001", result.OrderId);
+        // control-server#863: not yet bound, which VehicleKey (the appointed one) cannot say.
+        Assert.False(result.ExecuteVehicleBound);
+    }
+
+    /// <summary>
+    /// control-server#882 review M1: an executeVehicleKey that is missing, JSON null or not a string says nothing about the
+    /// binding -- not "unbound". Read as false, a cancelled charge order shaped like this would free the charger without the
+    /// vehicle being proven stopped; read as null it waits for that proof like any order whose binding was not read. The
+    /// appointed key still identifies the order. The terminal case is 11-06's shape: cancelled (2), move 212 -> move 211 -> act.
+    /// </summary>
+    [Theory]
+    [InlineData(1, "missing")]
+    [InlineData(1, "null")]
+    [InlineData(1, "number")]
+    [InlineData(2, "missing")]
+    [InlineData(2, "null")]
+    [InlineData(2, "number")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    public async Task AnExecuteVehicleKeyThatIsNotReadSaysNothingAboutTheBinding(int orderState, string shape)
+    {
+        string json = FoundOrderJson(
+            orderState,
+            missionsJson: """[{"type":"move","mapId":29,"destination":212,"missionState":0},{"type":"move","mapId":29,"destination":211,"missionState":0},{"type":"act","missionState":0}]""",
+            endStationNo: 211,
+            appointedVehicle: "VEHICLE-KEY-01",
+            executeVehicle: null);
+        json = shape switch
+        {
+            "missing" => json.Replace("\"executeVehicleKey\":null,", "", StringComparison.Ordinal),
+            "number" => json.Replace("\"executeVehicleKey\":null", "\"executeVehicleKey\":0", StringComparison.Ordinal),
+            _ => json,
+        };
+        Assert.Equal(shape == "missing", !json.Contains("executeVehicleKey", StringComparison.Ordinal));
+        RecordingHandler handler = new((_, _) => JsonResponse(json));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            orderState == 1 ? RiotOrderObservationKind.Active : RiotOrderObservationKind.Terminal, result.Kind);
+        Assert.Equal(orderState, result.OrderState);
+        Assert.Equal("VEHICLE-KEY-01", result.VehicleKey);
+        Assert.Equal(211, result.DestinationStationId);
+        Assert.Null(result.ExecuteVehicleBound);
     }
 
     [Fact]
@@ -83,6 +128,7 @@ public sealed class HttpRiotMovementGatewayTests
             "UPPER-001", TestContext.Current.CancellationToken);
 
         Assert.Equal("EXECUTING-VEHICLE-KEY", result.VehicleKey);
+        Assert.True(result.ExecuteVehicleBound);
     }
 
     [Theory]

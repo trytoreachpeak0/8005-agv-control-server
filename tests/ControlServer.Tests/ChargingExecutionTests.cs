@@ -734,6 +734,48 @@ public sealed class ChargingExecutionTests
         }
     }
 
+    /// <summary>
+    /// 承诺了 211、被出发门挡着的车，等的这段时间里 RIoT 把它放到了两站之间（<c>currentPosition</c> 0，control-server#528）：出发前复核照旧撤回承诺、
+    /// 不建单，但撤回的原因是位置未知（<c>CHARGING_VEHICLE_POSITION_UNKNOWN</c>），不是从站 0 出发到不了 211（<c>CHARGER_UNREACHABLE</c>）。
+    /// </summary>
+    [Fact]
+    public async Task ACommitmentWhoseVehicleRiotPlacesAtNoStationIsWithdrawnAsPositionUnknown()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await RoundAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingExecutionReasons.DepartureNotProven, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = RiotVehicleObservation.NoStation };
+        await fleet.ReplaceSafetySnapshotAsync(AgvA);
+        await RoundAsync(fleet);
+
+        Assert.DoesNotContain(fleet.Riot.Creates, create => create.VehicleKey == KeyA);
+        JourneyRuntimeRow withdrawn = await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == before.JourneyId, Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, ChargingExecutionReasons.WithdrawnChargerNoLongerEligible),
+            (withdrawn.Stage, withdrawn.BlockReasonCode));
+        var line = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2254);
+        Assert.Contains(ChargingAllocationReasons.VehiclePositionUnknown, line.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ChargingAllocationReasons.ChargerUnreachable, line.Message, StringComparison.Ordinal);
+        // Review S3: the withdrawal frees the charger, the CHARGING purpose and the cycle in that save.
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Empty(await fleet.Context.Set<ChargingCycleRow>().AsNoTracking()
+            .Where(row => row.VehicleKey == KeyA && row.Phase != ChargingCyclePhases.Ended).ToArrayAsync(Token));
+
+        // And nothing is reserved again while RIoT goes on reading it at no station.
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(ChargingAllocationReasons.VehiclePositionUnknown, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        Assert.DoesNotContain(fleet.Riot.Creates, create => create.VehicleKey == KeyA);
+    }
+
     // ---- 出发前复核遇到路网暂时不可用（control-server#744）------------------------------------------------------------
 
     /// <summary>

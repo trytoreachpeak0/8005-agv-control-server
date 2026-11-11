@@ -134,6 +134,13 @@ namespace ControlServer.Tests;
 /// （<c>cancellation-before-sublot</c>、<c>station-deadline</c>），归属行再各 1 处，合计 9 处；实数 9 处。三份 <c>commanded-ending-*</c>
 /// 的旅程由 <c>JourneyMembershipSeed</c> 直接写成「已分配之后」的样子，不经受理，未动；四份看板基线不含这一列。
 /// </para>
+/// <para>
+/// <b>control-server#623（已出结果的 SlotOperationCommand 不再补发）改了 <c>fault-cargo-handoff</c> 与 <c>forced-mechanical-recovery</c>
+/// 两份基线的一处值，其余逐字未动。</b>两份第 26 行，装货命令 <c>db1cf8be…</c> 的 <c>AcknowledgedAt</c> 由 <c>NULL</c> 变为
+/// <c>'2026-08-26 01:00:00+00:00'</c>：这条装货的结果到了，交接或强制取出之后那一行原先永不确认——两份基线钉住的正是本票要修的缺陷本身，
+/// 所以是行为变了，同 cs#382 只能在本票分支上录。同 cs#754，基线是对原值逐处改写的（只改这一处），不是把本票分支的输出抄进来；
+/// 改写后两条测试转绿，说明全文只差这一处。逐行差异在 <c>evidence/cs623/wirepin/zerochangepin-diff-*.txt</c>。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {

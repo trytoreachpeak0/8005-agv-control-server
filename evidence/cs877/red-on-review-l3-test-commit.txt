@@ -1,0 +1,10 @@
+# Red on the review-L3 test commit (ChargingInterruptionTests + ManualStationClearanceTests, 120 selected)
+  失败 ControlServer.Tests.ChargingInterruptionTests.AFailedReadOfTheOtherSideAfterTheRecoveryStillAnswersSuccess [62 ms]
+  错误消息:
+   System.InvalidOperationException : cs877: injected read failure
+--
+  失败 ControlServer.Tests.ChargingInterruptionTests.InsideTheInboxTransactionTheHoldsLeftAreLoggedOnlyAfterItCommits [46 ms]
+  错误消息:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+                                                                                                                                                                                                                                                                                                                              ↓ (pos 1)
+失败!  - 失败:     2，通过:   118，已跳过:     0，总计:   120，持续时间: 18 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,17 @@
+# Review rework mutations on 532469678 (M5 and M9 of the review), each deleting one line of JourneyRuntimeEngine.ChargingCycle.cs and reverting only that file; filter: Charging* + UnableToCharge* classes
+== M5-vehicle-loss-keeps-run: delete src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ChargingCycle.cs:134
+-            board.BreakSampleRun(cycle.CycleId);
+  失败 ControlServer.Tests.ChargingCycleProgressTests.AfterTheVehicleObservationIsLostTheFirstReadingBackOnlyStartsObservingAgain(loss: "disconnected") [176 ms]
+  失败 ControlServer.Tests.ChargingCycleProgressTests.AfterTheVehicleObservationIsLostTheFirstReadingBackOnlyStartsObservingAgain(loss: "read-fails") [118 ms]
+  失败 ControlServer.Tests.ChargingInterruptionTests.AThresholdReadBeforeAGapDoesNotCompleteTheCycleAfterIt(gap: "read-fails") [149 ms]
+  失败 ControlServer.Tests.ChargingInterruptionTests.AThresholdReadBeforeAGapDoesNotCompleteTheCycleAfterIt(gap: "disconnected") [142 ms]
+失败!  - 失败:     4，通过:   366，已跳过:     0，总计:   370，持续时间: 24 s - ControlServer.Tests.dll (net8.0)
+== M9a-vehicle-loss-keeps-reached: delete src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ChargingCycle.cs:135
+-            board.ForgetCompletionReached(cycle.CycleId);
+  失败 ControlServer.Tests.ChargingInterruptionTests.AThresholdReadBeforeAGapDoesNotCompleteTheCycleAfterIt(gap: "read-fails") [176 ms]
+  失败 ControlServer.Tests.ChargingInterruptionTests.AThresholdReadBeforeAGapDoesNotCompleteTheCycleAfterIt(gap: "disconnected") [180 ms]
+失败!  - 失败:     2，通过:   368，已跳过:     0，总计:   370，持续时间: 22 s - ControlServer.Tests.dll (net8.0)
+== M9b-telemetry-loss-keeps-reached: delete src/ControlServer.Host/Runtime/JourneyRuntimeEngine.ChargingCycle.cs:337
+-            board.ForgetCompletionReached(cycle.CycleId);
+  失败 ControlServer.Tests.ChargingInterruptionTests.AThresholdReadBeforeAGapDoesNotCompleteTheCycleAfterIt(gap: "reading-stale") [158 ms]
+失败!  - 失败:     1，通过:   369，已跳过:     0，总计:   370，持续时间: 24 s - ControlServer.Tests.dll (net8.0)

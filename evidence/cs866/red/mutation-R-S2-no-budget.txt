@@ -1,0 +1,9 @@
+mutation: R-S2-no-budget
+file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+diff:
+-        using (CancellationTokenSource expiry = new(runtimeOptions.WaitingJourneyBatteryReadBudget, timeProvider))
++        using (CancellationTokenSource expiry = new(runtimeOptions.WaitingJourneyBatteryReadBudget * (runtime.AgvId.Length > 0 ? 1000 : 1), timeProvider))
+filter: FullyQualifiedName~ThePickupPlanReachesTheVehicleHeldAtACheckpoint|FullyQualifiedName~ATransportFailureAtACheckpoint|FullyQualifiedName~TwoVehiclesBehindTheReadinessGate|FullyQualifiedName~ALoadedVehicleBelowTheLineIsAlarmedWhileDriving|FullyQualifiedName~ALoadedVehicleWhoseBatteryCannotBeRead|FullyQualifiedName~OneFailedCheckpointReadDoesNotRestartTheWait|FullyQualifiedName~ACheckpointSamplePastItsBudget|FullyQualifiedName~ATransportBelowTheLineThatCannotBeRead|FullyQualifiedName~ACheckpointHoldOnALegWithTheSessionNotReady|FullyQualifiedName~BehindTheReadinessGateACheckpoint|FullyQualifiedName~ALoadedVehicleWaitingAtItsUnload|FullyQualifiedName~OnlyAWaitingJourneyThatCarriesDemands
+  失败 ControlServer.Tests.WaitingJourneyBatteryWatchTests.ACheckpointSamplePastItsBudgetBehindTheGateIsUnreadAndDoesNotHoldTheRoundBack [22 s]
+  错误消息:
+失败!  - 失败:     1，通过:    12，已跳过:     0，总计:    13，持续时间: 39 s - ControlServer.Tests.dll (net8.0)

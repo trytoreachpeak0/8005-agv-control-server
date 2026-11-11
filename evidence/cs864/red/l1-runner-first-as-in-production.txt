@@ -1,0 +1,81 @@
+# cs#864 red: production package 9c8c34a5 shape of the runner-side read (.First() instead of the cs#791 FirstOrDefault + null check),,# applied on 5928bccb8 to DispatchRoundRunner.cs only, run (filter AnAppendTo*), then git checkout -- that file. Reproduces the 10-21 and 10-23 10:55 'Sequence contains no elements'.
+  ControlServer.Domain -> src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FieldOps -> tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.SchemaConformance -> tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.SchemaCacheProbe -> tools\ControlServer.SchemaCacheProbe\bin\Debug\net8.0\win-x64\ControlServer.SchemaCacheProbe.dll
+  ControlServer.Tests -> tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-runner-read", ending: "cancelled") [4 s]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+             ↓ (pos 0)
+Collection: [Entry { EventId = LogVehicleRoundFailed, Level = Warning, Message = Vehicle 老厂前线新多仓位1 could not be served this round: InvalidOperationException. The round moved on to the remaining vehicles., Error = System.InvalidOperationException: Sequence contains no elements
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.AppendToJourneyAsync(EligibleVehicleOffer selected, JourneyExecutionPlan plan, DateTimeOffset intakeAt, Func`2 finalAdmission, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 1165
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.DispatchSelectedCoreAsync(DispatchRoundFacts round, EligibleVehicleOffer selected, Boolean participantUnderWay, HashSet`1 acceptedDemandIds, HashSet`1 claimsIntakeRefused, List`1 claimedHere, DateTimeOffset now, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 1066
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.DispatchSelectedAsync(DispatchRoundFacts round, CandidateOffer winner, HashSet`1 acceptedDemandIds, HashSet`1 claimsIntakeRefused, Dictionary`2 backlogByDemandId, DateTimeOffset now, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 927 }]
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.AssertNoRoundFault(FleetFixture fixture) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 311
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(String moment, String ending) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 70
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(String moment, String ending) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 100
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-store-transaction", ending: "cancelled") [119 ms]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+             ↓ (pos 0)
+Collection: [Entry { EventId = LogVehicleRoundFaulted, Level = Error, Message = Vehicle 老厂前线新多仓位1 broke one of this server's own invariants and was skipped: BusinessIdentityConflictException. The round moved on, but this is a defect rather than an unreachable peer -- it will not fix itself next round., Error = ControlServer.Domain.BusinessIdentityConflictException: Journey 'journey:10000000-0000-4000-8000-000000000000' is Completed and cannot take an appended demand.
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.StageAndCommitAppendAsync(AcceptedDemandSnapshot snapshot, JourneyAppendPlan plan, Boolean redispatch, IDbContextTransaction transaction, CancellationToken cancellationToken) in src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 872
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.AppendToJourneyAsync(AcceptedDemandSnapshot snapshot, JourneyAppendPlan plan, CancellationToken cancellationToken) in src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 827
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.AppendToJourneyAsync(AcceptedDemandSnapshot snapshot, JourneyAppendPlan plan, CancellationToken cancellationToken) in src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 831
+   at ControlServer.Application.DemandIntakeService.AcceptCoreAsync(AcceptedDemandSnapshot discovered, OrderIntent orderIntent, JourneyExecutionPlan journey, JourneyAppendPlan append, Func`2 finalAdmissionGate, CancellationToken cancellationToken) in src\ControlServer.Application\WireToGateOrchestration.cs:line 116
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.AppendToJourneyAsync(EligibleVehicleOffer selected, JourneyExecutionPlan plan, DateTimeOffset intakeAt, Func`2 finalAdmission, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 1194
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.DispatchSelectedCoreAsync(DispatchRoundFacts round, EligibleVehicleOffer selected, Boolean participantUnderWay, HashSet`1 acceptedDemandIds, HashSet`1 claimsIntakeRefused, List`1 claimedHere, DateTimeOffset now, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 1066
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.DispatchSelectedAsync(DispatchRoundFacts round, CandidateOffer winner, HashSet`1 acceptedDemandIds, HashSet`1 claimsIntakeRefused, Dictionary`2 backlogByDemandId, DateTimeOffset now, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 927 }]
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.AssertNoRoundFault(FleetFixture fixture) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 311
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(String moment, String ending) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 70
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(String moment, String ending) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 100
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-store-transaction", ending: "delivered") [111 ms]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+             ↓ (pos 0)
+Collection: [Entry { EventId = LogVehicleRoundFaulted, Level = Error, Message = Vehicle 老厂前线新多仓位1 broke one of this server's own invariants and was skipped: BusinessIdentityConflictException. The round moved on, but this is a defect rather than an unreachable peer -- it will not fix itself next round., Error = ControlServer.Domain.BusinessIdentityConflictException: Journey 'journey:10000000-0000-4000-8000-000000000000' is Completed and cannot take an appended demand.
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.StageAndCommitAppendAsync(AcceptedDemandSnapshot snapshot, JourneyAppendPlan plan, Boolean redispatch, IDbContextTransaction transaction, CancellationToken cancellationToken) in src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 872
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.AppendToJourneyAsync(AcceptedDemandSnapshot snapshot, JourneyAppendPlan plan, CancellationToken cancellationToken) in src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 827
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.AppendToJourneyAsync(AcceptedDemandSnapshot snapshot, JourneyAppendPlan plan, CancellationToken cancellationToken) in src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 831
+   at ControlServer.Application.DemandIntakeService.AcceptCoreAsync(AcceptedDemandSnapshot discovered, OrderIntent orderIntent, JourneyExecutionPlan journey, JourneyAppendPlan append, Func`2 finalAdmissionGate, CancellationToken cancellationToken) in src\ControlServer.Application\WireToGateOrchestration.cs:line 116
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.AppendToJourneyAsync(EligibleVehicleOffer selected, JourneyExecutionPlan plan, DateTimeOffset intakeAt, Func`2 finalAdmission, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 1194
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.DispatchSelectedCoreAsync(DispatchRoundFacts round, EligibleVehicleOffer selected, Boolean participantUnderWay, HashSet`1 acceptedDemandIds, HashSet`1 claimsIntakeRefused, List`1 claimedHere, DateTimeOffset now, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 1066
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.DispatchSelectedAsync(DispatchRoundFacts round, CandidateOffer winner, HashSet`1 acceptedDemandIds, HashSet`1 claimsIntakeRefused, Dictionary`2 backlogByDemandId, DateTimeOffset now, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 927 }]
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.AssertNoRoundFault(FleetFixture fixture) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 311
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(String moment, String ending) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 70
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(String moment, String ending) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 100
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(moment: "before-runner-read", ending: "delivered") [160 ms]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+             ↓ (pos 0)
+Collection: [Entry { EventId = LogVehicleRoundFailed, Level = Warning, Message = Vehicle 老厂前线新多仓位1 could not be served this round: InvalidOperationException. The round moved on to the remaining vehicles., Error = System.InvalidOperationException: Sequence contains no elements
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.AppendToJourneyAsync(EligibleVehicleOffer selected, JourneyExecutionPlan plan, DateTimeOffset intakeAt, Func`2 finalAdmission, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 1165
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.DispatchSelectedCoreAsync(DispatchRoundFacts round, EligibleVehicleOffer selected, Boolean participantUnderWay, HashSet`1 acceptedDemandIds, HashSet`1 claimsIntakeRefused, List`1 claimedHere, DateTimeOffset now, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 1066
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.DispatchSelectedAsync(DispatchRoundFacts round, CandidateOffer winner, HashSet`1 acceptedDemandIds, HashSet`1 claimsIntakeRefused, Dictionary`2 backlogByDemandId, DateTimeOffset now, CancellationToken cancellationToken) in src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 927 }]
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.AssertNoRoundFault(FleetFixture fixture) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 311
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(String moment, String ending) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 70
+   at ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyThatEndedBeforeItsCommitIsDroppedForTheRoundAndTheDemandWaitsForTheNext(String moment, String ending) in tests\ControlServer.Tests\MultiVehicleExecutionTests.AppendToEndedJourney.cs:line 100
+  Passed ControlServer.Tests.MultiVehicleExecutionTests.AnAppendToAJourneyStillRunningAtItsCommitIsTaken [324 ms]
+Test Run Failed.
+Total tests: 5
+     Passed: 1
+     Failed: 4
+ Total time: 9.5647 Seconds

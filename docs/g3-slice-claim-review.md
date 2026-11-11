@@ -212,6 +212,7 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | journey | `correctedSlotOutcomeReported`（G3-02-11） | FP-IS-02 | `CV-LOAD-CORRECTION`（`REPORT_CORRECTED_SLOT_OUTCOME`） | 报 COMPLETED，每个授权仓有货、锁上、输出复位 | |
 | journey | `correctionCreatesNoDuplicateCommit`（G3-02-12） | FP-IS-02 | `CV-LOAD-CORRECTION` finalState | 仍只有一笔装载、一份结果、一条命令 | |
 | journey | `correctionOnlyBeforeDepartureAndHoldsTheVehicle`（G3-02-13） | FP-IS-02 | `CV-LOAD-CORRECTION` 里没有对应的产品断言，依据是 REQ-0237 / ADR-cross-0054 | 修正时旅程在 AwaitingStationDeparture，收敛后等满离站期限才建单出发 | 疑点 30 |
+| journey | `cancellationRefusedWithADoorNotProvenLocked`（G3-02-20，control-server#837） | FP-IS-02 | `CV-LOAD-CANCELLATION-BASKET-LOADED`（wire-notes 第 94 行的检查顺序） | 第一个目标仓门开着时取消不成：车载端不给入口，或按了得到 REJECTED `LOCK_NOT_CLOSED`、`slots` 为空；服务端没有任何 AUTHORIZED、没有取消工作流，装载、需求与旅程阶段都没变 | 车载端不给入口时这条也过，服务端 `LOCK_NOT_CLOSED` 分支只在 L1 走到 |
 | journey | `onboardOffersLoadCancellationDuringLoad`（G3-02-21） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY`（前提） | 装载进行中 HMI 上出现可用的「取消装货」入口 | 疑点 31 |
 | journey | `cancellationAuthorizedExplicitly`（G3-02-22） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY`（`AUTHORIZE_CANCELLATION_EXPLICITLY`） | 应答为 AUTHORIZED，指向这笔装载，仓位范围为空（协议 6.0.0 起，control-server#830） | |
 | journey | `loadCancellationSequenceMatchesVector`（G3-02-23） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY` orderedExpectedMessages（`NEVER_CANCEL_UNILATERALLY`） | 四条消息各一次，车载端没有在授权之前报结果 | |
@@ -219,6 +220,7 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | journey | `allSlotsProvenEmpty`（G3-02-25） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY`（`PROVE_ALL_SLOTS_EMPTY`） | ALL_EMPTY，每仓空、锁上，与模拟器一致 | |
 | journey | `cancellationReconciledToEmptyFinalState`（G3-02-26） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY`（`RECONCILE_EMPTY_FINAL_STATE`） | 工作流 Reconciled，需求与装载 Cancelled，租约释放 | |
 | journey | `finalStateSurvivesLateLoadResult`（G3-02-27） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY` finalState | 原装载的迟到结果没有把收敛状态改回去，也没有落到 RecoveryRequired | |
+| journey | `serverHoldsReadingsTakenAfterTheDoorClosed`（G3-02-29，control-server#837） | FP-IS-02 | `CV-LOAD-CANCELLATION-ALL-EMPTY`（授权的前提，没有对应的产品断言） | 关好空仓门之后、按取消之前，车为关门报过 SafetyStateChanged，服务端收件箱里有一份晚于最后一条变化的 SafetyStateSnapshot（不判快照内容，空、锁上由之后的授权与 G3-02-25 体现） | 疑点 31：只是前提 |
 | journey | `onboardOffersLoadCancellationBeforeSublot`（G3-02-31，本票新增） | FP-IS-02 | `CV-LOAD-CANCELLATION-BEFORE-LOAD`（前提） | 录入请求挂着、还没录入子批时，HMI 上出现可用的「取消装货」入口 | 疑点 31 |
 | journey | `beforeLoadCancellationAuthorizedWithoutSlotOperation`（G3-02-32，本票新增） | FP-IS-02 | `CV-LOAD-CANCELLATION-BEFORE-LOAD`（`AUTHORIZE_CANCELLATION_WITHOUT_SLOT_OPERATION`） | 请求不带 attemptId，应答 AUTHORIZED，slots 为空 | |
 | journey | `beforeLoadCancellationSequenceMatchesVector`（G3-02-33，本票新增） | FP-IS-02 | `CV-LOAD-CANCELLATION-BEFORE-LOAD` orderedExpectedMessages | 四条消息各一次，没有在授权之前报结果 | |

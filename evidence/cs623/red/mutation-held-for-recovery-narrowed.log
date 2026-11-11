@@ -1,0 +1,13 @@
+# S2 mutation on a5f316a8d: SlotCommandOutbox.cs line 151 narrowed from 'status != Prepared' to 'status is Cancelled or Failed or Committed' (the reviewer's mutation).
+# Filter: SettledSlotCommandOutboxTests | RecoveryEndingReleasesBlockedJourneyTests. Only the new L1 goes red; file restored with git checkout afterwards.
+-            else if (operations.TryGetValue(attempt, out StationOperationStatus status) && status != StationOperationStatus.Prepared)
++            else if (operations.TryGetValue(attempt, out StationOperationStatus status) && status is StationOperationStatus.Cancelled or StationOperationStatus.Failed or StationOperationStatus.Committed)
+
+  失败 ControlServer.Tests.SettledSlotCommandOutboxTests.AnUnansweredCommandOfALoadHeldForRecoveryIsFenced [214 ms]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (0, 1)
+Actual:   Tuple (0, 0)
+  堆栈跟踪:
+
+失败!  - 失败:     1，通过:    66，已跳过:     0，总计:    67，持续时间: 1 m 32 s - ControlServer.Tests.dll (net8.0)

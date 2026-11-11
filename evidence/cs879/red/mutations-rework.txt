@@ -1,0 +1,84 @@
+# Rework mutations on f3fef3d29, each reverting only the mutated file; filter: FullyQualifiedName~JourneyStopSequenceRaceTests|FullyQualifiedName~ReconnectModelTests|FullyQualifiedName~AJourneyWithBrokenStopSequencesIsLeftAloneAndDoesNotStopTheRound
+== R1-hold-skips-in-flight-supervision (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-        if (await NameInFlightOrderWithoutThePeerAsync(runtime, currentMap, StopSequenceBrokenReason, cancellationToken)
++        if (false && await NameInFlightOrderWithoutThePeerAsync(runtime, currentMap, StopSequenceBrokenReason, cancellationToken)
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ABrokenPlanStillStopsAVehicleWhoseDoorIsNotLockedOnTheWay(behindTheReadinessGate: False) [174 ms]
+失败!  - 失败:     1，通过:    22，已跳过:     0，总计:    23，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== R2-append-ignores-basis (src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+-        if (plan.PlannedAgainst is not { } basis)
++        if (true || plan.PlannedAgainst is not { } basis)
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AnAppendPlannedAgainstAPlanThatHasSinceChangedIsRefused [16 ms]
+失败!  - 失败:     1，通过:    22，已跳过:     0，总计:    23，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== R3-append-merges-into-closed-stop (src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+-                target.Status is JourneyStopStatuses.Completed or JourneyStopStatuses.Removed)
++                false && target.Status is JourneyStopStatuses.Completed or JourneyStopStatuses.Removed)
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AnAppendPlannedBeforeARevisionDoesNotJoinAStopTheRevisionRemoved(withThePlanItWasPlannedAgainst: False) [30 ms]
+失败!  - 失败:     1，通过:    22，已跳过:     0，总计:    23，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== R4-placement-drops-basis (src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs)
+-                        PlannedAgainst = plan.PlannedAgainst,
++                        PlannedAgainst = null,
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AnAppendPlannedAgainstAPlanThatHasSinceChangedIsRefused [16 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AnAppendPlannedBeforeARevisionDoesNotJoinAStopTheRevisionRemoved(withThePlanItWasPlannedAgainst: True) [9 ms]
+失败!  - 失败:     2，通过:    21，已跳过:     0，总计:    23，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== R5-plan-carries-no-basis (src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs)
+-            PlannedAgainst: [.. stops.Stops.Select(stop => new JourneyStopBasis(stop.StopId, stop.Sequence, stop.Status))]);
++            PlannedAgainst: null);
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AnAppendPlannedAgainstAPlanThatHasSinceChangedIsRefused [17 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AnAppendPlannedBeforeARevisionDoesNotJoinAStopTheRevisionRemoved(withThePlanItWasPlannedAgainst: True) [10 ms]
+失败!  - 失败:     2，通过:    21，已跳过:     0，总计:    23，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== R6-release-does-not-skip (src/ControlServer.Host/Runtime/Release/DemandReleaseService.cs)
+-        if (stops.SequenceProblem is not null)
++        if (false && stops.SequenceProblem is not null)
+  失败 ControlServer.Tests.Batch7DemandReleaseServiceTests.AJourneyWithBrokenStopSequencesIsLeftAloneAndDoesNotStopTheRound [2 s]
+失败!  - 失败:     1，通过:    22，已跳过:     0，总计:    23，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== R7-gate-overwrites-code (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-            else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
+-                     !string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
++            else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime))
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ASessionDropDoesNotReplaceTheBrokenSequenceCodeNorLogItAgain [181 ms]
+失败!  - 失败:     1，通过:    22，已跳过:     0，总计:    23，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== R8-round-plans-into-broken (src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs)
+-        return stops.OpenStops.Count == 0 || stops.SequenceProblem is not null
++        return stops.OpenStops.Count == 0
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWhoseStopSequencesAreBrokenTakesNoAppendedDemand [202 ms]
+失败!  - 失败:     1，通过:    22，已跳过:     0，总计:    23，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== R9-no-counter-replay (src/ControlServer.Infrastructure/Persistence/JourneyStopsForWrite.cs)
+-            if (staged && property.Metadata.Name == nameof(JourneyStopRow.WorklistRefills))
++            if (false && staged && property.Metadata.Name == nameof(JourneyStopRow.WorklistRefills))
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AWorklistRefillAddedOnAnOlderCopyKeepsTheRefillsAnotherConnectionAdded(stagedBeforeTheOtherCommit: True) [18 ms]
+失败!  - 失败:     1，通过:    22，已跳过:     0，总计:    23，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== R10-single-stop-read-not-aligned (src/ControlServer.Infrastructure/Persistence/JourneyStopsForWrite.cs)
+-            AlignWithStore(entry, stored);
++            _ = stored;
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AWorklistRefillAddedOnAnOlderCopyKeepsTheRefillsAnotherConnectionAdded(stagedBeforeTheOtherCommit: False) [9 ms]
+失败!  - 失败:     1，通过:    22，已跳过:     0，总计:    23，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== R11-yield-reads-stale (src/ControlServer.Infrastructure/Persistence/StationYield.cs)
+-        return await JourneyStopsForWrite.LoadAsync(dbContext, journeyId, cancellationToken).ConfigureAwait(false);
++        JourneyStopRow[] stored = await dbContext.Set<JourneyStopRow>().Where(row => row.JourneyId == journeyId).ToArrayAsync(cancellationToken).ConfigureAwait(false);
++        return [.. stored.Concat(dbContext.Set<JourneyStopRow>().Local.Where(row => row.JourneyId == journeyId)).DistinctBy(row => row.StopId, StringComparer.Ordinal)];
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.TheStopsStationYieldReadsAreTheStopsAsTheyAreNotAsThisContextFirstSawThem [14 ms]
+失败!  - 失败:     1，通过:    22，已跳过:     0，总计:    23，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== R12-no-hold (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-        if (await HoldOnBrokenStopSequenceAsync(runtime, stops, currentMap, now, cancellationToken).ConfigureAwait(false))
++        if (false && await HoldOnBrokenStopSequenceAsync(runtime, stops, currentMap, now, cancellationToken).ConfigureAwait(false))
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWhoseStopSequencesAreBrokenTakesNoAppendedDemand [169 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWithBrokenStopSequencesIsHeldWithItsOwnReasonOnceAndResumesWhenTheyAreRepaired [163 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ASessionDropDoesNotReplaceTheBrokenSequenceCodeNorLogItAgain [133 ms]
+失败!  - 失败:     3，通过:    20，已跳过:     0，总计:    23，持续时间: 20 s - ControlServer.Tests.dll (net8.0)
+== R13-log-every-round (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
++        LogStopSequenceBroken(logger, runtime.AgvId, runtime.JourneyId, problem, null);
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWithBrokenStopSequencesIsHeldWithItsOwnReasonOnceAndResumesWhenTheyAreRepaired [163 ms]
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.ASessionDropDoesNotReplaceTheBrokenSequenceCodeNorLogItAgain [177 ms]
+失败!  - 失败:     2，通过:    21，已跳过:     0，总计:    23，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== R14-no-clear-on-repair (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-            if (string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) &&
++            if (false && string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) &&
+  失败 ControlServer.Tests.JourneyStopSequenceRaceTests.AJourneyWithBrokenStopSequencesIsHeldWithItsOwnReasonOnceAndResumesWhenTheyAreRepaired [186 ms]
+失败!  - 失败:     1，通过:    22，已跳过:     0，总计:    23，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+== R15-clear-ignores-other-staged (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+-                !dbContext.ChangeTracker.Entries()
++                !dbContext.ChangeTracker.Entries().Take(0)
+已通过! - 失败:     0，通过:    23，已跳过:     0，总计:    23，持续时间: 21 s - ControlServer.Tests.dll (net8.0)
+# done; tree clean: 0 changes
+# R15 SURVIVED: no test stages another change in the round the code is cleared; the rule is the one ClearFailedAdvanceAsync keeps, left as residual risk.
+# Not mutated, no direct test: the JourneyPlanChangedBeforeAppendException -> CandidateChanged mapping in WireToGateOrchestration, and the release service's per-journey catch (unreachable while the skip above it holds; kept as depth).

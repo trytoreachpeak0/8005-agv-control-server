@@ -745,6 +745,39 @@ public sealed class StagingDepartureRequestTests
             .DepartureRequestId);
     }
 
+    /// <summary>
+    /// control-server#874：车在路上开着本服务端自己的单时，真车载端的会话整段是 <c>RecoveryRequired</c>（<c>DEPARTURE_SAFETY_NOT_READY</c>）。
+    /// 这时点的出发，这几轮不答、也不丢，一直读得出来；会话回到就绪的那一轮答一次，之后的轮次不再答。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ARequestHeardWhileTheSessionIsNotReadyOnTheOwnOrderIsAnsweredOnceTheSessionIsReady()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+
+        string departureRequestId = await RequestDepartureAsync(fixture);
+        string resultId = CurrentStopDepartures.ResultMessageId(departureRequestId);
+        for (int round = 0; round < 3; round++)
+        {
+            await RunAsync(fixture);
+        }
+        Assert.Equal(SessionReadiness.RecoveryRequired, (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+        Assert.False(await fixture.Context.ProtocolOutbox.AsNoTracking().AnyAsync(row => row.MessageId == resultId, Token));
+        Assert.Equal(departureRequestId, Assert.Single(
+            await CurrentStopDepartures.UnansweredAsync(fixture.Context, fixture.Options.AgvId, Token)).DepartureRequestId);
+
+        await fixture.RestoreSessionReadyAsync();
+        await RunAsync(fixture);
+        Assert.Equal("REJECTED", (await ResultAsync(fixture, departureRequestId)).GetProperty("outcome").GetString());
+        Assert.Empty(await CurrentStopDepartures.UnansweredAsync(fixture.Context, fixture.Options.AgvId, Token));
+        await RunAsync(fixture);
+        await RunAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, CurrentStopDepartures.ResultType));
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------------------------
 
     private const string FourthDemand = "10000000-0000-4000-8000-000000000715";
