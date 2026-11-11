@@ -227,6 +227,8 @@ public static class DispatchAdmissionCriteria
         // control-server#828: which trial sublots the last round filtered outlives the per-round runner, so the log line fires on
         // change. Required by the runner's constructor for the same reason as the line above.
         services.AddSingleton<TrialSublotFilterLog>();
+        // control-server#884: each vehicle/demand pair's last verdict code outlives the per-round runner, so a change is logged once.
+        services.AddSingleton<DispatchVerdictTransitionLog>();
         // control-server#881: when the backlog was last swept outlives the per-round runner.
         services.AddSingleton<JourneyBacklogRetention>();
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like

@@ -1213,7 +1213,8 @@ internal static class JourneyRuntimeWorkerTestKit
                 IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy, vehicleFacts: Riot),
                 ChargingPolicy,
                 ChargingTestKit.Create(Context, Options, Clock, Riot, Peer, Riot),
-                TrialSublotLog);
+                TrialSublotLog,
+                VerdictTransitions);
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,
@@ -1277,6 +1278,9 @@ internal static class JourneyRuntimeWorkerTestKit
 
         /// <summary>试验机批号滤除日志的跨轮状态（control-server#828）：宿主里是单例，这里一个夹具一份，跨轮次保留。</summary>
         public TrialSublotFilterLog TrialSublotLog { get; } = new();
+
+        /// <summary>派车判定变化的跨轮状态（control-server#884）：宿主里是单例，这里一个夹具一份，跨轮次保留。</summary>
+        public DispatchVerdictTransitionLog VerdictTransitions { get; set; } = new();
 
         /// <summary>
         /// The door grace and the door fault's sub-cause across rounds (control-server#789): a singleton in the host. Replacing it
