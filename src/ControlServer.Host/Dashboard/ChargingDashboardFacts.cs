@@ -339,7 +339,7 @@ internal static class ChargingDashboardDescriptions
                 "电量低于强制充电线，但这辆车的充电资格暂停着（之前一次充电中断或充电无进展留下的，细节写明是哪一条）：清桩、桩的恢复都不会解除它，"
                 + "不给它分任何桩、它也不接搬运，电量会一直往下掉，直到这条暂停被单独解除",
             [AlarmBelowMandatoryOnTransportJourney] =
-                "电量低于强制充电线，但这辆车带着搬运旅程停着等（等人装卸、阻断，或在交通管制检查点排队）：有搬运用途的车不进充电队列，"
+                "电量低于强制充电线，但这辆车带着搬运旅程（在路上，或停着等人装卸、被阻断、在交通管制检查点排队）：有搬运用途的车不进充电队列，"
                 + "服务端不会自己撤单、也不会送它去充电，电量会一直往下掉，直到这趟旅程走完或有人处理。显示 30%～34% 的车几分钟内可能骤降断电",
             [JourneyRuntimeEngine.OnboardSessionLostReason] =
                 "车载端会话失联：这辆车正处在充电周期、清桩或人工充电等待中，车载端听不到了。服务端只阻断它的新业务，继续经 RIoT 观察，"
@@ -498,37 +498,44 @@ internal static class ChargingDashboardDescriptions
         $"{DescribeBattery(batteryPercent)}；RIoT 报它不在任何站上（currentPosition 0）或没报位置，分配不拿猜的位置去分桩";
 
     /// <summary>
-    /// <see cref="AlarmBelowMandatoryOnTransportJourney"/> 的细节（control-server#866）：电量与读数时刻、低于的那条线、旅程、阶段与原因码、卡在哪里、
-    /// 自何时起停着等。停着的阶段写「停在」当前停靠的站，路上的（检查点、单子停了）写「开往」它；停靠读不到时写读不到。
+    /// <see cref="AlarmBelowMandatoryOnTransportJourney"/> 的细节（control-server#866）：电量与读数时刻（读不到时自何时起）、低于的那条线、旅程、
+    /// 阶段与原因码、卡在哪里、自何时起。停着的阶段写「停在」当前停靠的站，路上的写「开往」它（停着等的路上阶段是检查点或单子停了，照样写开往）；
+    /// 停靠读不到时写读不到。
     /// </summary>
-    internal static string DescribeTransportBelowTheLine(
-        JourneyRuntimeRow journey,
-        int? mandatoryChargeEntryPercent,
-        WaitingBatteryLevel level,
-        int rescueBatteryPercent,
-        JourneyStopRow? stop)
+    internal static string DescribeTransportBelowTheLine(JourneyRuntimeRow journey, TransportBelowTheLine facts, JourneyStopRow? stop)
     {
-        string line = level == WaitingBatteryLevel.BelowRescueLine
-            ? string.Create(CultureInfo.InvariantCulture, $"已低于救命线 {rescueBatteryPercent}%")
-            : string.Create(CultureInfo.InvariantCulture, $"低于强制充电线 {mandatoryChargeEntryPercent}%");
-        if (level == WaitingBatteryLevel.BelowRescueLine && mandatoryChargeEntryPercent is int entry)
+        string line = facts.Level == WaitingBatteryLevel.BelowRescueLine
+            ? string.Create(CultureInfo.InvariantCulture, $"已低于救命线 {facts.RescuePercent}%")
+            : string.Create(CultureInfo.InvariantCulture, $"低于强制充电线 {facts.MandatoryChargeEntryPercent}%");
+        if (facts.Level == WaitingBatteryLevel.BelowRescueLine && facts.MandatoryChargeEntryPercent is int entry)
         {
             line += string.Create(CultureInfo.InvariantCulture, $"（强制充电线 {entry}%）");
         }
+        string unread = facts.UnreadSince is { } unreadSince
+            ? string.Create(CultureInfo.InvariantCulture, $"，自 {unreadSince:O} 起读不到新读数，这是最后一次读到的")
+            : string.Empty;
         string where = stop is null
             ? "当前停靠读不到"
             : JourneyWaitClassification.Of(journey.Stage) == JourneyStageActivity.Travelling
                 ? $"开往 {stop.StationId}（RIoT 站 {stop.StationRiotId.ToString(CultureInfo.InvariantCulture)}）途中"
                 : $"停在 {stop.StationId}（RIoT 站 {stop.StationRiotId.ToString(CultureInfo.InvariantCulture)}）";
         string reason = journey.BlockReasonCode is { } code ? $"，原因码 {code}" : string.Empty;
-        string since = journey.WaitingSince is { } start
-            ? string.Create(CultureInfo.InvariantCulture, $"，自 {start:O} 起停着等")
-            : string.Empty;
+        string since = (facts.Waiting, facts.Since) switch
+        {
+            (true, { } start) => string.Create(CultureInfo.InvariantCulture, $"，自 {start:O} 起停着等"),
+            (true, null) => string.Empty,
+            (false, { } below) => string.Create(CultureInfo.InvariantCulture, $"，行驶中，自 {below:O} 起读到低于线"),
+            (false, null) => "，行驶中，本进程没有读到它从线上降到线下的那一刻",
+        };
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"电量 {journey.WaitingBatteryPercent}%（读于 {journey.WaitingBatteryObservedAt:O}），{line}；旅程 {journey.JourneyId}，"
+            $"电量 {facts.Percent}%（读于 {facts.ReadAt:O}{unread}），{line}；旅程 {journey.JourneyId}，"
             + $"阶段 {journey.Stage}{reason}，{where}{since}");
     }
+
+    /// <summary>这一类告警这次读不出来时那一行的细节（control-server#866 审查 S4）：其余告警照出。</summary>
+    internal static string DescribeTransportBelowTheLineUnreadable(string errorType) =>
+        $"带单车电量这一项这次读不到（{errorType}）：哪辆带单的车低于强制充电线此刻看不出来，其余告警照常。刷新再看，一直读不到时联系系统维护人员";
 
     /// <summary>
     /// <see cref="AlarmBelowMandatoryEligibilityHeld"/> 的细节：电量，与这辆车此刻每一条未恢复的资格暂停——id、原因、写入时刻（control-server#877）。
@@ -621,6 +628,17 @@ internal static class ChargingDashboardDescriptions
     internal static string Minutes(TimeSpan span) =>
         ((long)Math.Round(span.TotalMinutes)).ToString(CultureInfo.InvariantCulture);
 }
+
+/// <summary>带单车低于强制充电线那一行要说的事实（control-server#866）。</summary>
+internal sealed record TransportBelowTheLine(
+    int Percent,
+    DateTimeOffset ReadAt,
+    DateTimeOffset? UnreadSince,
+    int? MandatoryChargeEntryPercent,
+    WaitingBatteryLevel Level,
+    int RescuePercent,
+    bool Waiting,
+    DateTimeOffset? Since);
 
 /// <summary>
 /// 充电看板一次读到的库里事实（批次9-10，control-server#408）：名册、周期、桩独占、暂停、清桩、人工充电等待、充电旅程与用途占有。

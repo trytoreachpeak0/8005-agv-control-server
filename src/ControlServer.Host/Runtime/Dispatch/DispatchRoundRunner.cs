@@ -581,6 +581,13 @@ public sealed class DispatchRoundRunner(
                 .ReadOnboardFactsAsync(vehicle.AgvId, linked.Token).ConfigureAwait(false);
             RiotVehicleObservation observation = await vehicleFacts
                 .ReadVehicleAsync(vehicle.VehicleKey, linked.Token).ConfigureAwait(false);
+            // control-server#866: kept for the dashboard's loaded-vehicle-below-the-line alarm, before the plan check below drops a
+            // vehicle on the move (RIoT reads it at no station while it drives). The read is the one this round makes anyway. A vehicle
+            // RIoT reports offline or disabled has no current battery, as the charging allocation registers it (REQ-0269).
+            chargingAllocation.Board.Batteries.Record(
+                vehicle.AgvId,
+                observation is { Connected: true, Enabled: true } ? observation.BatteryPercent : null,
+                timeProvider.GetUtcNow());
             EnRouteVehiclePlan? plan = underWay
                 ? await ReadEnRoutePlanAsync(vehicle, observation, linked.Token).ConfigureAwait(false)
                 : null;

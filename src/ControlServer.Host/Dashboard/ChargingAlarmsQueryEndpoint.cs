@@ -49,9 +49,9 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
 
     /// <summary>
     /// 挂在宿主上时用这一个：名册与告警窗口都从宿主的同一份运行时配置取，不要求宿主另外注册名册；分配板是充电分配写的那一块单例
-    /// （control-server#865：低于强制线又过不了出发门的车只在那里，不在库里）。
+    /// （control-server#865：低于强制线又过不了出发门的车只在那里，不在库里）。充电策略（每辆车的强制充电线）是作用域的，端点是宿主根上造的，
+    /// 所以每次请求开一个作用域取（control-server#866，同 <see cref="WaitingJourneysQueryEndpoint"/>）。
     /// </summary>
-    /// 充电策略（每辆车的强制充电线）是作用域的，端点是宿主根上造的，所以每次请求开一个作用域取（control-server#866，同 <see cref="WaitingJourneysQueryEndpoint"/>）。
     [ActivatorUtilitiesConstructor]
     public ChargingAlarmsQueryEndpoint(
         IOptions<JourneyRuntimeOptions> options, ChargingAllocationBoard board, IServiceScopeFactory scopes)
@@ -265,67 +265,127 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
     }
 
     /// <summary>
-    /// 带单车低于强制充电线（control-server#866）：未完成、带需求（不是空闲返回、不是充电）、此刻停着等
-    /// （<see cref="JourneyWaitClassification.IsWaiting"/>，与等人卡片和监看同一个判法）、监看落库的读数低于这辆车强制充电线（或救命线）的旅程，一条一行。
+    /// 带单车低于强制充电线（control-server#866）：未完成、带需求（不是空闲返回、不是充电）、电量低于这辆车强制充电线（或救命线）的旅程，一条一行，
+    /// 停着等的与在路上的都报（审查 S5）。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>只报停着等的。</b>正常在路上的车没有卡住，读数也不由监看记（监看只看等人的旅程）；到站、阻断、在检查点排队，都从等人那一刻起被监看，
-    /// 读数至多一分钟一记。读数随行带着读数时刻，看板不自己去问 RIoT：电量回到线上（或旅程不再等）的下一次读，告警就不在了。
+    /// <b>读数从哪来，看板自己不问 RIoT、引擎每轮也不为它多读一次：</b>停着等的（<see cref="JourneyWaitClassification.IsWaiting"/>，与等人卡片同一个判法）
+    /// 取 <see cref="WaitingJourneyWatch"/> 落库的那次；在路上的取派车轮为在途车本来就读的那一次（<see cref="VehicleBatteryReadings"/>，分配板上）。
+    /// 落库的读数是空（这一轮读不到）时，沿用分配板上最后一次读到的值照报，写明自何时起读不到（审查 M3）：车快断电时正是 RIoT 读不到的时候。
     /// </para>
     /// <para>
     /// 线与等人卡片一样判（<see cref="WaitingJourneyBattery.Level"/>）：低于强制充电线或救命线才报，等于线不报；没有已批准策略的车判不了强制线，只在救命线下报。
-    /// 停靠读不到（序位坏了、库里没有停靠）的旅程照样报，位置写读不到。
+    /// 停靠读不到（序位坏了、库里没有停靠）的旅程照样报，位置写读不到。<c>since</c>：停着等的是开始等的时刻，在路上的是本进程首次读到低于线的时刻（审查 L3）。
     /// </para>
     /// <para>
-    /// 只在看板请求时读：一次查未完成的旅程，策略与停靠只为要报的那几行读。不进派车轮，不进引擎的一轮。
+    /// 只在看板请求时读：一次查未完成的旅程，策略与停靠只为要报的那几行读。读不出来（审查 S4）时出一行说读不到，不让整张卡片报错。
     /// </para>
     /// </remarks>
     private async Task<List<Alarm>> TransportJourneysBelowTheLineAsync(
         ControlServerDbContext dbContext,
         CancellationToken cancellationToken)
     {
+        try
+        {
+            return await ReadTransportJourneysBelowTheLineAsync(dbContext, cancellationToken);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            return
+            [
+                new Alarm(
+                    ChargingDashboardDescriptions.AlarmBelowMandatoryOnTransportJourney,
+                    AgvId: null,
+                    MapId: null,
+                    StationId: null,
+                    Since: null,
+                    ChargingDashboardDescriptions.DescribeTransportBelowTheLineUnreadable(error.GetType().Name)),
+            ];
+        }
+    }
+
+    private async Task<List<Alarm>> ReadTransportJourneysBelowTheLineAsync(
+        ControlServerDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
         JourneyRuntimeRow[] journeys = await dbContext.JourneyRuntimes.AsNoTracking()
-            .Where(row => row.Stage != JourneyRuntimeStage.Completed && row.WaitingBatteryPercent != null)
+            .Where(row => row.Stage != JourneyRuntimeStage.Completed)
             .ToArrayAsync(cancellationToken);
-        JourneyRuntimeRow[] candidates =
-        [
-            .. journeys
-                .Where(row => !row.CarriesNoDemand() && JourneyWaitClassification.IsWaiting(row.Stage, row.BlockReasonCode))
-                .OrderBy(row => row.AgvId, StringComparer.Ordinal)
-                .ThenBy(row => row.JourneyId, StringComparer.Ordinal),
-        ];
+        List<(JourneyRuntimeRow Journey, bool Waiting, TransportBatteryReading Reading)> candidates = [];
+        foreach (JourneyRuntimeRow journey in journeys
+                     .Where(row => !row.CarriesNoDemand())
+                     .OrderBy(row => row.AgvId, StringComparer.Ordinal)
+                     .ThenBy(row => row.JourneyId, StringComparer.Ordinal))
+        {
+            bool waiting = JourneyWaitClassification.IsWaiting(journey.Stage, journey.BlockReasonCode);
+            if (ReadingOf(journey, waiting) is { } reading)
+            {
+                candidates.Add((journey, waiting, reading));
+            }
+        }
         List<Alarm> alarms = [];
-        if (candidates.Length == 0)
+        if (candidates.Count == 0)
         {
             return alarms;
         }
 
         await using AsyncServiceScope? scope = _scopes?.CreateAsyncScope();
         IChargingPolicyResolver? resolver = scope?.ServiceProvider.GetRequiredService<IChargingPolicyResolver>();
-        foreach (JourneyRuntimeRow journey in candidates)
+        foreach ((JourneyRuntimeRow journey, bool waiting, TransportBatteryReading reading) in candidates)
         {
             int? entry = resolver is null
                 ? null
                 : await WaitingJourneyBattery.MandatoryChargeEntryPercentAsync(resolver, journey.VehicleKey, cancellationToken);
-            WaitingBatteryLevel level = WaitingJourneyBattery.Level(journey.WaitingBatteryPercent, entry, _options);
+            WaitingBatteryLevel level = WaitingJourneyBattery.Level(reading.Percent, entry, _options);
             if (level is not (WaitingBatteryLevel.BelowDispatchMinimum or WaitingBatteryLevel.BelowRescueLine))
             {
                 continue;
             }
 
+            DateTimeOffset? since = waiting
+                ? journey.WaitingSince
+                : _board.Batteries.BelowSince(journey.AgvId, entry ?? _options.WaitingJourneyRescueBatteryPercent);
             JourneyStopRow? stop = await CurrentStopAsync(dbContext, journey, cancellationToken);
             alarms.Add(new Alarm(
                 ChargingDashboardDescriptions.AlarmBelowMandatoryOnTransportJourney,
                 journey.AgvId,
                 stop is null ? null : journey.MapId,
                 stop?.StationRiotId,
-                Since: null,
+                since,
                 ChargingDashboardDescriptions.DescribeTransportBelowTheLine(
-                    journey, entry, level, _options.WaitingJourneyRescueBatteryPercent, stop)));
+                    journey,
+                    new TransportBelowTheLine(
+                        reading.Percent, reading.ReadAt, reading.UnreadSince, entry, level,
+                        _options.WaitingJourneyRescueBatteryPercent, waiting, since),
+                    stop)));
         }
         return alarms;
     }
+
+    /// <summary>
+    /// 这趟旅程用哪一次读数：停着等、落库有值的用落库那次；否则用分配板上这辆车最后一次读到的值（落库是空说明监看这一轮读不到，
+    /// 起点取分配板记的，没有就取落库的读数时刻）。哪里都没有读数时为空，不报。
+    /// </summary>
+    private TransportBatteryReading? ReadingOf(JourneyRuntimeRow journey, bool waiting)
+    {
+        if (waiting && journey is { WaitingBatteryPercent: int percent, WaitingBatteryObservedAt: { } readAt })
+        {
+            return new TransportBatteryReading(percent, readAt, UnreadSince: null);
+        }
+        if (_board.Batteries.Latest(journey.AgvId) is not { } latest)
+        {
+            return null;
+        }
+        DateTimeOffset? unreadSince = latest.UnreadSince;
+        if (unreadSince is null && waiting && journey.WaitingBatteryObservedAt is { } failedAt && failedAt > latest.ReadAt)
+        {
+            unreadSince = failedAt;
+        }
+        return new TransportBatteryReading(latest.Percent, latest.ReadAt, unreadSince);
+    }
+
+    private sealed record TransportBatteryReading(int Percent, DateTimeOffset ReadAt, DateTimeOffset? UnreadSince);
 
     /// <summary>这趟旅程此刻的停靠；读不到（序位坏了、库里没有停靠）时为空，告警照报。</summary>
     private static async Task<JourneyStopRow?> CurrentStopAsync(

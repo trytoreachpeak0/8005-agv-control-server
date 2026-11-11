@@ -863,7 +863,7 @@ public sealed class WaitingJourneyBatteryWatchTests
     {
         ServiceCollection services = new();
         services.AddSingleton(Microsoft.Extensions.Options.Options.Create(fixture.Options));
-        services.AddSingleton(new ChargingAllocationBoard());
+        services.AddSingleton(fixture.ChargingBoard);
         services.AddScoped(_ => fixture.ChargingPolicy);
         await using ServiceProvider provider = services.BuildServiceProvider();
         ChargingAlarmsQueryEndpoint endpoint = ActivatorUtilities.CreateInstance<ChargingAlarmsQueryEndpoint>(provider);

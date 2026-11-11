@@ -111,6 +111,9 @@ internal static class JourneyRuntimeWorkerTestKit
         /// 与合入前的派车结论等价；要测「没有策略」的用例换掉它再调 <c>RecreateEngineAsync</c>，链随引擎重建。
         /// </summary>
         public IChargingPolicyResolver ChargingPolicy { get; set; } = TestChargingPolicies.AllApprovedAt(40);
+
+        /// <summary>The charging allocation board the engine's allocator writes, kept across engine rebuilds like the host's singleton (control-server#866).</summary>
+        public ControlServer.Host.Runtime.Charging.ChargingAllocationBoard ChargingBoard { get; } = new();
         public RecordingRiot Riot { get; }
         public RecordingPeer Peer { get; }
         public RecordingRouteCostProbe RouteCosts { get; }
@@ -1212,7 +1215,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 EngineLog,
                 IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy, vehicleFacts: Riot),
                 ChargingPolicy,
-                ChargingTestKit.Create(Context, Options, Clock, Riot, Peer, Riot),
+                ChargingTestKit.Create(Context, Options, Clock, Riot, Peer, Riot, board: ChargingBoard),
                 TrialSublotLog,
                 VerdictTransitions);
             return new JourneyRuntimeEngine(

@@ -596,7 +596,9 @@ public sealed partial class JourneyRuntimeEngine(
             // so it cannot replace the exception a failed round is carrying out of here.
             if (!cancellationToken.IsCancellationRequested)
             {
-                await new WaitingJourneyWatch(dbContext, vehicleFacts, chargingPolicy, runtimeOptions, timeProvider, logger)
+                await new WaitingJourneyWatch(
+                        dbContext, vehicleFacts, chargingPolicy, runtimeOptions, timeProvider, logger,
+                        dispatchRound.Charging.Board.Batteries)
                     .ObserveAsync(cancellationToken).ConfigureAwait(false);
                 await WatchOpenStopsAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -1177,7 +1179,9 @@ public sealed partial class JourneyRuntimeEngine(
         current.Stage != JourneyRuntimeStage.Completed &&
         !string.Equals(current.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal) &&
         !CarriesACodeThatNamesAWaitOnAPerson(current) &&
-        !(string.Equals(current.BlockReasonCode, JourneyWaitClassification.SessionNotReadyReason, StringComparison.Ordinal) &&
+        // control-server#866 review S3: behind the gate a checkpoint code stands where the session code would, and is kept alike.
+        !((string.Equals(current.BlockReasonCode, JourneyWaitClassification.SessionNotReadyReason, StringComparison.Ordinal) ||
+           IsCheckpointReason(current.BlockReasonCode)) &&
           IsTransportFailure(failure) &&
           await CurrentReadySessionAsync(current.AgvId, cancellationToken).ConfigureAwait(false) is null);
 
@@ -3258,11 +3262,35 @@ public sealed partial class JourneyRuntimeEngine(
     /// 2105 is logged when the wait goes past its budget, not every round after (control-server#866): behind the readiness
     /// gate the wait is now judged on a real onboard too, and 10-23's two hours at a checkpoint would have been a line every
     /// round. The code itself says it for as long as it lasts.
+    /// <para>
+    /// <b>A sample that could not be read keeps what stands</b> (review M2): the checkpoint code if one stands, and the ledger's
+    /// start either way, as <see cref="NameInFlightOrderWithoutThePeerAsync"/> keeps an order's code it cannot read. The gateway
+    /// answers an SDK failure with no movement state; taken for "not waiting", one failed read in ten minutes cleared the code,
+    /// restarted the wait and the waiting journey watch never reached its threshold -- 10-23 again. A sample past
+    /// <see cref="JourneyRuntimeOptions.WaitingJourneyBatteryReadBudget"/> is unread too (review S2): it is two RIoT reads with the
+    /// SDK's thirty-second timeout each, on the round that also dispatches; the watch's battery read is bounded the same way.
+    /// </para>
     /// </remarks>
     private async Task<string?> JudgeCheckpointWaitAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
     {
-        VehicleMotionSample sample = await motionFacts
-            .SampleMotionAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        string? standing = IsCheckpointReason(runtime.BlockReasonCode) ? runtime.BlockReasonCode : null;
+        VehicleMotionSample sample;
+        using (CancellationTokenSource expiry = new(runtimeOptions.WaitingJourneyBatteryReadBudget, timeProvider))
+        using (CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token))
+        {
+            try
+            {
+                sample = await motionFacts.SampleMotionAsync(runtime.VehicleKey, linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return standing;
+            }
+        }
+        if (sample.MovementState is null)
+        {
+            return standing;
+        }
         bool waiting = string.Equals(
             sample.MovementState, RiotMovementStates.WaitForCheckpoint, StringComparison.Ordinal);
         if (!waiting)
@@ -4077,8 +4105,12 @@ public sealed partial class JourneyRuntimeEngine(
         bool foreignOrderHoldsVehicle = (await ForeignOrders.ForeignRunningOrders
                 .HeldAgvIdsAsync(dbContext, cancellationToken).ConfigureAwait(false))
             .Contains(runtime.AgvId);
+        // control-server#866 review M1: a checkpoint code is what the gate writes in place of its own while the vehicle holds at a
+        // checkpoint; the session is down on the same own order, so it is explained the same way.
         if (!Dashboard.OwnMovementOrderExplanation.Explains(
-                runtime.BlockReasonCode,
+                IsCheckpointReason(runtime.BlockReasonCode)
+                    ? Dashboard.OwnMovementOrderExplanation.SessionNotReadyBlock
+                    : runtime.BlockReasonCode,
                 session.ReasonCode,
                 session.SafetyReasonCodesJson,
                 session.SafetyUnknownPresent,

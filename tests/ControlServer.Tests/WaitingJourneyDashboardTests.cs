@@ -245,9 +245,23 @@ public sealed class WaitingJourneyDashboardTests
             battery: 20, readAt: Now.AddSeconds(-2), reason: "SOME_BLOCK", journeyId: ChargingIdentity.JourneyIdPrefix + "D-CHARGE");
         await database.AddAsync("D-UNREAD", JourneyRuntimeStage.Blocked, stageStart: Now.AddMinutes(-40),
             battery: null, readAt: Now.AddSeconds(-2), reason: "UNLOAD_RESULT_REQUIRES_RECOVERY");
+        await database.AddAsync("D-NEVER-READ", JourneyRuntimeStage.Blocked, stageStart: Now.AddMinutes(-40),
+            battery: null, readAt: Now.AddSeconds(-2), reason: "UNLOAD_RESULT_REQUIRES_RECOVERY");
+        // Review M3: the last reading below the line stays reported once the reads fail; a vehicle never read has nothing to say.
+        Host.Runtime.Charging.ChargingAllocationBoard board = new();
+        board.Batteries.Record("AGV-D-UNREAD", 25, Now.AddMinutes(-10));
+        board.Batteries.Record("AGV-D-UNREAD", null, Now.AddMinutes(-5));
 
-        JsonElement alarm = Assert.Single(await TransportBelowLineAlarmsAsync(database, TestChargingPolicies.AllApproved));
-        Assert.Equal("AGV-D-LOW", alarm.GetProperty("agvId").GetString());
+        JsonElement[] alarms = await TransportBelowLineAlarmsAsync(database, TestChargingPolicies.AllApproved, board);
+        Assert.Equal(
+            ["AGV-D-LOW", "AGV-D-UNREAD"],
+            alarms.Select(row => row.GetProperty("agvId").GetString()).Order(StringComparer.Ordinal));
+        string unread = alarms.Single(row => row.GetProperty("agvId").GetString() == "AGV-D-UNREAD").GetProperty("detail").GetString()!;
+        Assert.Contains("电量 25%", unread, StringComparison.Ordinal);
+        Assert.Contains(
+            "自 " + Now.AddMinutes(-5).ToString("O", System.Globalization.CultureInfo.InvariantCulture) + " 起读不到", unread,
+            StringComparison.Ordinal);
+        JsonElement alarm = alarms.Single(row => row.GetProperty("agvId").GetString() == "AGV-D-LOW");
         string detail = alarm.GetProperty("detail").GetString()!;
         Assert.Contains("电量 29%", detail, StringComparison.Ordinal);
         Assert.Contains("强制充电线 30%", detail, StringComparison.Ordinal);
@@ -287,11 +301,14 @@ public sealed class WaitingJourneyDashboardTests
             throw new InvalidDataException("The charging policy store could not be read.");
     }
 
-    private static async Task<JsonElement[]> TransportBelowLineAlarmsAsync(DashboardDatabase database, IChargingPolicyResolver chargingPolicy)
+    private static async Task<JsonElement[]> TransportBelowLineAlarmsAsync(
+        DashboardDatabase database,
+        IChargingPolicyResolver chargingPolicy,
+        Host.Runtime.Charging.ChargingAllocationBoard? board = null)
     {
         ServiceCollection services = new();
         services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new JourneyRuntimeOptions()));
-        services.AddSingleton(new Host.Runtime.Charging.ChargingAllocationBoard());
+        services.AddSingleton(board ?? new Host.Runtime.Charging.ChargingAllocationBoard());
         services.AddScoped(_ => chargingPolicy);
         await using ServiceProvider provider = services.BuildServiceProvider();
         ChargingAlarmsQueryEndpoint endpoint = ActivatorUtilities.CreateInstance<ChargingAlarmsQueryEndpoint>(provider);
