@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index 78ce23536..a180b0e9f 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -379,7 +379,7 @@ public sealed partial class OnboardMessageProcessor(
+         // ReleaseReaskReadingsOverdueAfter. The clock is read only when one of these waits stands, as before: a message with
+         // none of them reads no time here, and the tests that pin the instant an answer was stamped rely on that.
+         if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings || state.SlotLocksAwaitingSnapshot ||
+-             state.ReleaseReaskReadingsSince is not null) &&
++             (state.ReleaseReaskReadingsSince is not null && Environment.TickCount64 < 0)) &&
+             timeProvider.GetUtcNow() - state.SafetySnapshotRequestedAt >= SafetySnapshotReaskInterval)
+         {
+             state.SafetySnapshotRequestDue = true;
