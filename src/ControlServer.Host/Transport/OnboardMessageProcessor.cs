@@ -1118,9 +1118,15 @@ public sealed partial class OnboardMessageProcessor(
                     JsonElement problem = payload.GetProperty("problem");
                     // One refusal carries an obligation after all (control-server#385 review M1): the vehicle refusing a
                     // repair release's HOLD_RELEASE check sends no result, so without this the release would wait forever.
-                    await recoveryCoordinator.ObserveReleaseCheckRefusedAsync(
-                        agvId, RequiredString(payload, "rejectedMessageId"), RequiredString(problem, "reasonCode"),
-                        cancellationToken).ConfigureAwait(false);
+                    // Refused as expired, the release waits for readings again (control-server#852): ask for them now --
+                    // nothing else would on this connection, its once-per-connection request having gone by.
+                    if (await recoveryCoordinator.ObserveReleaseCheckRefusedAsync(
+                            agvId, RequiredString(payload, "rejectedMessageId"), RequiredString(problem, "reasonCode"),
+                            cancellationToken).ConfigureAwait(false) == OnboardRecoveryCoordinator.ReleaseCheckRefusal.AskedAgain)
+                    {
+                        state.SafetySnapshotRequestDue = true;
+                        state.SafetySnapshotRequestReason = "PRE_MOVEMENT_RECONCILIATION";
+                    }
                     // And another (control-server#481): the vehicle refusing a replayed slot fault declaration command because
                     // it gave its answer up. Without this the declaration stays pending and its command is replayed for good.
                     await SlotFaultDeclarationResults.ObserveCommandRefusedAsync(

@@ -175,6 +175,29 @@ public sealed class OnboardRecoveryCoordinator(
             "Exception recovery session {SessionId} of vehicle {AgvId} closed, {GrantCode}: its recovery grant ended, was " +
             "revoked or no longer covers it, or the server restarted (control-server#797, REQ-0279).");
 
+    private static readonly Action<ILogger, string, string, int, Exception?> LogReleaseCheckAskedAgain =
+        LoggerMessage.Define<string, string, int>(
+            LogLevel.Information,
+            new EventId(8520, nameof(LogReleaseCheckAskedAgain)),
+            "Vehicle {AgvId}: repair release {WorkflowId}'s HOLD_RELEASE check {Attempt} was refused as " +
+            "PREDEPARTURE_CHECK_EXPIRED; the release waits for fresh readings and asks again (control-server#852).");
+
+    private static readonly Action<ILogger, string, string, int, Exception?> LogReleaseCheckReaskLimitReached =
+        LoggerMessage.Define<string, string, int>(
+            LogLevel.Warning,
+            new EventId(8521, nameof(LogReleaseCheckReaskLimitReached)),
+            "Vehicle {AgvId}: repair release {WorkflowId}'s HOLD_RELEASE check {Attempt} was refused as " +
+            "PREDEPARTURE_CHECK_EXPIRED, the last re-ask allowed; the release is spent as CHECK_EXPIRED_REASK_LIMIT and " +
+            "the vehicle stays held until a new session takes the release again (control-server#852).");
+
+    private static readonly Action<ILogger, string, string, string, Exception?> LogReleaseCheckNotAskedWithoutGrant =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(8522, nameof(LogReleaseCheckNotAskedWithoutGrant)),
+            "Vehicle {AgvId}: repair release {WorkflowId} needed its HOLD_RELEASE check asked again, and {GrantCode}: no " +
+            "recovery grant covers it; the release is spent as RECOVERY_GRANT_ENDED and the vehicle stays held " +
+            "(control-server#852, #797).");
+
     private static readonly Action<ILogger, string, Exception?> LogClosingSnapshotNotSent =
         LoggerMessage.Define<string>(
             LogLevel.Warning,
@@ -201,7 +224,8 @@ public sealed class OnboardRecoveryCoordinator(
     /// A repair release whose <c>HOLD_RELEASE</c> check the vehicle answered as something else -- another
     /// <c>checkPurpose</c>, or another check's id under its correlation: the release is spent like unproven readings, so a new
     /// session can take it again (control-server#385 review M1). A check the vehicle refused outright with a
-    /// <c>ProtocolProblem</c> is spent the same way, its outcome the vehicle's reason code.
+    /// <c>ProtocolProblem</c> is spent the same way, its outcome the vehicle's reason code -- except one refused as
+    /// <c>PREDEPARTURE_CHECK_EXPIRED</c>, which is asked again (control-server#852, <see cref="ObserveReleaseCheckRefusedAsync"/>).
     /// </summary>
     internal const string ReleaseCheckAnswerMismatchedOutcome = "CHECK_ANSWER_MISMATCHED";
 
@@ -2596,6 +2620,11 @@ public sealed class OnboardRecoveryCoordinator(
     /// <b>Only the held slots are read.</b> A slot outside the release is none of its business. A held slot missing from the
     /// snapshot is not proven.
     /// </para>
+    /// <para>
+    /// <b>A check refused as expired brings the release back here</b> (control-server#852): the next mid-session snapshot is
+    /// judged the same way, and a check under a new messageId and check id asks about its version -- unless the grant no
+    /// longer covers the release, which spends it under <see cref="GrantEndedOutcome"/>.
+    /// </para>
     /// </remarks>
     public async Task<string?> ObserveReleaseReadingsAsync(
         string agvId,
@@ -2609,6 +2638,26 @@ public sealed class OnboardRecoveryCoordinator(
             cancellationToken).ConfigureAwait(false);
         if (release is null) return null;
         DateTimeOffset now = timeProvider.GetUtcNow();
+        release.UpdatedAt = now;
+        // Asked again after the vehicle refused an earlier check as expired (control-server#852): the grant must still cover
+        // the release (#797) -- the first check is part of the release the grant admitted, a re-ask is a step it must still
+        // admit -- and the readings are judged below exactly as the first ones were. Each check of the release has a
+        // messageId and a check id of its own; how many were asked is read from the outbox by those ids (a keyed lookup of
+        // at most ReleaseCheckReaskLimit + 1 rows).
+        int attempt = await ReleaseChecksAskedAsync(release.WorkflowId, cancellationToken).ConfigureAwait(false);
+        if (attempt > 0 && ReleaseGrantRefusal(agvId) is { } ungranted)
+        {
+            await SpendReleaseUngrantedAsync(release, ungranted, now, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+        if (attempt > ReleaseCheckReaskLimit)
+        {
+            // Not reachable: the refusal that would make it so spends the release instead (ObserveReleaseCheckRefusedAsync).
+            release.State = RecoveryWorkflowState.RecoveryRequired;
+            release.Outcome = ReleaseCheckReaskLimitOutcome;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return null;
+        }
         Dictionary<int, JsonElement> states = snapshotPayload.GetProperty("slotStates").EnumerateArray()
             .ToDictionary(item => item.GetProperty("slotNo").GetInt32());
         bool proven = ParseSlots(release.SlotsJson).All(slot =>
@@ -2616,7 +2665,6 @@ public sealed class OnboardRecoveryCoordinator(
             RequiredString(state, "physicalState") == "EMPTY" &&
             RequiredString(state, "lockState") == "LOCKED" &&
             RequiredString(state, "unlockOutputState") == "RESET");
-        release.UpdatedAt = now;
         if (!proven)
         {
             release.State = RecoveryWorkflowState.RecoveryRequired;
@@ -2624,14 +2672,14 @@ public sealed class OnboardRecoveryCoordinator(
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return null;
         }
-        string checkMessageId = StableGuid(release.WorkflowId, "hold-release-check-message");
+        string checkMessageId = ReleaseCheckMessageId(release.WorkflowId, attempt);
         string? wire = await OnboardJourneyPublisher.StagePreDepartureSafetyCheckAsync(
             store,
             checkMessageId,
             agvId,
             sessionGeneration,
             new PreDepartureSafetyCheckCommand(
-                StableGuid(release.WorkflowId, "hold-release-check"),
+                ReleaseCheckId(release.WorkflowId, attempt),
                 PreDepartureCheckPurposes.HoldRelease,
                 DemandId: null,
                 MovementLegId: null,
@@ -2682,25 +2730,34 @@ public sealed class OnboardRecoveryCoordinator(
         // the onboard (c79b4c6f, WireToGateSessionClient.SendPreDepartureSafetyCheckResultAsync) puts the latter there, and
         // the runtime's departure reading takes both (FindSafeDepartureResultAsync). Both are derived from the release, so
         // they name one release at most.
+        // The check the release waits for now: an answer to one refused as expired and asked again (control-server#852)
+        // correlates to nothing here.
         RecoveryWorkflowRow? release = (await dbContext.RecoveryWorkflows
                 .Where(row => row.AgvId == agvId && row.WorkflowType == RepairReleaseAction &&
                               row.CommandMessageId != null && row.State == RecoveryWorkflowState.AwaitingResult)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .SingleOrDefault(row => row.CommandMessageId == correlationId ||
-                                    StableGuid(row.WorkflowId, "hold-release-check") == correlationId);
+                                    ReleaseCheckId(row.WorkflowId, BoundReleaseCheckAttempt(row)) == correlationId);
         if (release is null)
             return null;
 
         DateTimeOffset now = timeProvider.GetUtcNow();
+        int attempt = BoundReleaseCheckAttempt(release);
         bool ownAnswer = payload.TryGetProperty("checkPurpose", out JsonElement purpose) &&
                          purpose.ValueKind == JsonValueKind.String &&
                          purpose.GetString() == PreDepartureCheckPurposes.HoldRelease &&
-                         RequiredString(payload, "preDepartureSafetyCheckId") == StableGuid(release.WorkflowId, "hold-release-check");
+                         RequiredString(payload, "preDepartureSafetyCheckId") == ReleaseCheckId(release.WorkflowId, attempt);
         string outcome = ownAnswer ? RequiredString(payload, "outcome") : ReleaseCheckAnswerMismatchedOutcome;
         release.ResultMessageId = RequiredString(root, "messageId");
         if (outcome != "SAFE")
         {
             await SpendReleaseCheckAsync(release, outcome, now, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+        // A re-asked check lifts the hold only under a grant still covering the release (control-server#852, #797).
+        if (attempt > 0 && ReleaseGrantRefusal(agvId) is { } ungranted)
+        {
+            await SpendReleaseUngrantedAsync(release, ungranted, now, cancellationToken).ConfigureAwait(false);
             return null;
         }
         release.Outcome = outcome;
@@ -2728,10 +2785,26 @@ public sealed class OnboardRecoveryCoordinator(
     /// A <c>ProtocolProblem</c> the vehicle raised against a message of ours (control-server#385 review M1): when it
     /// refuses the <c>HOLD_RELEASE</c> check of a release still waiting for its answer -- the onboard answers a check it
     /// will not run, an expired safety version or a purpose it does not take, with <c>PREDEPARTURE_CHECK_EXPIRED</c> or
-    /// <c>ACTION_NOT_ALLOWED_IN_STATE</c> and no result -- that release is spent, its outcome the vehicle's reason code, and
-    /// a new session can take it again. Any other refused message is not this method's. Returns whether it spent one.
+    /// <c>ACTION_NOT_ALLOWED_IN_STATE</c> and no result -- that check is settled so it is never replayed. Any other refused
+    /// message is not this method's.
     /// </summary>
-    public async Task<bool> ObserveReleaseCheckRefusedAsync(
+    /// <remarks>
+    /// <para>
+    /// <b><c>ACTION_NOT_ALLOWED_IN_STATE</c>, or any code but the one below, spends the release</b>, its outcome the vehicle's
+    /// reason code, and a new session can take it again.
+    /// </para>
+    /// <para>
+    /// <b><c>PREDEPARTURE_CHECK_EXPIRED</c> asks again</b> (control-server#852, hmi#399 option C): the vehicle's accepted safety
+    /// version moved past the one the check asked about -- a roam's handshake always moves it (onboard-hmi#394). The release
+    /// goes back to waiting for readings (no command bound) and the caller asks the vehicle for a snapshot; the next
+    /// mid-session snapshot is judged as the first readings were (<see cref="ObserveReleaseReadingsAsync"/>) and a new check
+    /// asks about its version. The refused check's own basis is never reused: its readings are not re-judged, its messageId
+    /// is not re-sent with new content, and an answer to it arriving later correlates to nothing. Not asked again, and spent
+    /// instead, when the grant no longer covers the release (<see cref="GrantEndedOutcome"/>, control-server#797) or the
+    /// refused check was already the <see cref="ReleaseCheckReaskLimit"/>-th re-ask (<see cref="ReleaseCheckReaskLimitOutcome"/>).
+    /// </para>
+    /// </remarks>
+    public async Task<ReleaseCheckRefusal> ObserveReleaseCheckRefusedAsync(
         string agvId,
         string rejectedMessageId,
         string reasonCode,
@@ -2742,9 +2815,113 @@ public sealed class OnboardRecoveryCoordinator(
                    row.CommandMessageId == rejectedMessageId && row.State == RecoveryWorkflowState.AwaitingResult,
             cancellationToken).ConfigureAwait(false);
         if (release is null)
-            return false;
-        await SpendReleaseCheckAsync(release, reasonCode, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
-        return true;
+            return ReleaseCheckRefusal.NotARelease;
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        if (reasonCode != PredepartureCheckExpired)
+        {
+            await SpendReleaseCheckAsync(release, reasonCode, now, cancellationToken).ConfigureAwait(false);
+            return ReleaseCheckRefusal.Spent;
+        }
+        int attempt = BoundReleaseCheckAttempt(release);
+        if (attempt >= ReleaseCheckReaskLimit)
+        {
+            LogReleaseCheckReaskLimitReached(
+                logger ?? (ILogger)NullLogger.Instance, agvId, release.WorkflowId, attempt + 1, null);
+            await SpendReleaseCheckAsync(release, ReleaseCheckReaskLimitOutcome, now, cancellationToken).ConfigureAwait(false);
+            return ReleaseCheckRefusal.Spent;
+        }
+        if (ReleaseGrantRefusal(agvId) is { } ungranted)
+        {
+            await SpendReleaseUngrantedAsync(release, ungranted, now, cancellationToken).ConfigureAwait(false);
+            return ReleaseCheckRefusal.Spent;
+        }
+        await store.SettleAnsweredCommandAsync(release.CommandMessageId!, now, cancellationToken).ConfigureAwait(false);
+        release.CommandMessageId = null;
+        release.CommandMessageType = null;
+        release.CommandContentHash = null;
+        release.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        LogReleaseCheckAskedAgain(logger ?? (ILogger)NullLogger.Instance, agvId, release.WorkflowId, attempt + 1, null);
+        return ReleaseCheckRefusal.AskedAgain;
+    }
+
+    /// <summary>What <see cref="ObserveReleaseCheckRefusedAsync"/> did with a refusal (control-server#852).</summary>
+    public enum ReleaseCheckRefusal
+    {
+        /// <summary>The refused message is no waiting release's check.</summary>
+        NotARelease,
+
+        /// <summary>The release is spent: <c>RecoveryRequired</c>, the vehicle still held.</summary>
+        Spent,
+
+        /// <summary>The release waits for readings again; the caller asks the vehicle for a snapshot.</summary>
+        AskedAgain
+    }
+
+    private const string PredepartureCheckExpired = "PREDEPARTURE_CHECK_EXPIRED";
+
+    /// <summary>
+    /// The messageId of a release's <paramref name="attempt"/>-th check, the first being 0 (control-server#852). The first keeps
+    /// the id it always had, so a check staged before this change is still recognised.
+    /// </summary>
+    private static string ReleaseCheckMessageId(string workflowId, int attempt) =>
+        StableGuid(workflowId, attempt == 0 ? "hold-release-check-message" : $"hold-release-check-message|{attempt}");
+
+    /// <summary>The <c>preDepartureSafetyCheckId</c> of a release's <paramref name="attempt"/>-th check, as above.</summary>
+    private static string ReleaseCheckId(string workflowId, int attempt) =>
+        StableGuid(workflowId, attempt == 0 ? "hold-release-check" : $"hold-release-check|{attempt}");
+
+    /// <summary>Which of the release's checks its bound command is; 0 when none is bound or it is none of them.</summary>
+    private static int BoundReleaseCheckAttempt(RecoveryWorkflowRow release)
+    {
+        for (int attempt = 1; attempt <= ReleaseCheckReaskLimit; attempt++)
+        {
+            if (release.CommandMessageId == ReleaseCheckMessageId(release.WorkflowId, attempt))
+                return attempt;
+        }
+        return 0;
+    }
+
+    /// <summary>How many of the release's checks are on file -- the index the next one takes.</summary>
+    private async Task<int> ReleaseChecksAskedAsync(string workflowId, CancellationToken cancellationToken)
+    {
+        string[] ids = [.. Enumerable.Range(0, ReleaseCheckReaskLimit + 1).Select(attempt => ReleaseCheckMessageId(workflowId, attempt))];
+        return await dbContext.ProtocolOutbox.AsNoTracking()
+            .CountAsync(row => ids.Contains(row.MessageId), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Why the grant in effect does not cover a repair release of the vehicle now, or null when it does or none is required
+    /// (control-server#797): the release's session has no demand and so acts on no journey.
+    /// </summary>
+    private string? ReleaseGrantRefusal(string agvId)
+    {
+        if (!GrantRequired) return null;
+        RecoveryGrant? grant = recoveryGrants?.Current(agvId);
+        return grant is null ? RecoveryGrantCodes.Missing : grant.RefusalFor(RepairReleaseAction, journeyId: null);
+    }
+
+    /// <summary>
+    /// Spends a release a re-ask would have needed the grant for (control-server#852): its bound check, if any, settled; the
+    /// release <c>RecoveryRequired</c> under <see cref="GrantEndedOutcome"/>, the vehicle still held.
+    /// </summary>
+    private async Task SpendReleaseUngrantedAsync(
+        RecoveryWorkflowRow release,
+        string grantCode,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        LogReleaseCheckNotAskedWithoutGrant(
+            logger ?? (ILogger)NullLogger.Instance, release.AgvId, release.WorkflowId, grantCode, null);
+        if (release.CommandMessageId is not null)
+        {
+            await SpendReleaseCheckAsync(release, GrantEndedOutcome, now, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        release.Outcome = GrantEndedOutcome;
+        release.State = RecoveryWorkflowState.RecoveryRequired;
+        release.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -3450,7 +3627,10 @@ public sealed class OnboardRecoveryCoordinator(
     /// <summary>The per-vehicle proofs (control-server#797): a list of <c>{ vehicleKey, proofEnvironmentVariable }</c>.</summary>
     internal const string VehicleProofsKey = "Recovery:VehicleProofs";
 
-    /// <summary>The outcome a repair release awaiting its hardware record is spent under when its grant ends (control-server#797).</summary>
+    /// <summary>
+    /// The outcome a repair release awaiting its hardware record is spent under when its grant ends (control-server#797), and
+    /// one whose check would be asked again, or was, when no grant covers it any more (control-server#852).
+    /// </summary>
     internal const string GrantEndedOutcome = "RECOVERY_GRANT_ENDED";
 
     private bool GrantRequired => configuration.GetValue<bool>(RecoveryGrantOptions.RequiredKey);
