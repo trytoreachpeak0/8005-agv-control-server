@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Recovery;
@@ -243,6 +244,63 @@ public sealed partial class RecoveryStateMachineG2Tests
         finally
         {
             Environment.SetEnvironmentVariable(GrantProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The field shape behind hmi#399's probe cell <c>HOLD_RELEASE</c> (<c>ACheckAskedBeforeARoamIsAnsweredAfterItWhenNothingChanged</c>),
+    /// on this server: the release's check goes out, the vehicle roams before answering, and the reconnect's handshake
+    /// raises its accepted safety version (onboard-hmi#394). The check is replayed into the new session and the onboard
+    /// refuses it as <c>PREDEPARTURE_CHECK_EXPIRED</c> (<c>WireToGateSessionClient.SendProtocolProblemAsync</c>, the
+    /// check's messageId as <c>rejectedMessageId</c>). The server asks for readings, asks again about the new version, and
+    /// the SAFE answer lifts the hold -- in the session after the roam, with no new release.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    public async Task AReleaseCheckAskedBeforeARoamAndRefusedAfterItIsAskedAgainAndLiftsTheHold()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_REASK_ROAM";
+        const string proof = "repair-release-reask-roam-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            (RecordingPeer peer, OnboardMessageProcessor processor, OnboardConnectionState state) =
+                await HoldTheVehicleAsync(context, proofVariable, proof);
+            string first = await ReachReleaseCheckAsync(processor, peer, state, proof, "e8520000-0000-4000-8000-0000000005");
+
+            state = CurrentState(deferOutbound: true);
+            List<string> handshake = [.. await ReconnectAsync(processor, peer, state)];
+            await FinishHandshakeAsync(processor, peer, state, handshake);
+            long generation = state.SessionGeneration!.Value;
+            Assert.Contains(handshake, line => line.Contains(MessageIdOf(first), StringComparison.Ordinal));
+
+            string[] refused = await ExchangeAsync(processor, peer, state,
+                InSession(CheckRefused("e8520000-0000-4000-8000-000000000510", first), generation));
+            Assert.Single(refused, line => MessageType(line) == "SafetyStateSnapshotRequested");
+            string[] readings = await ExchangeAsync(processor, peer, state,
+                InSession(SlotReadings("e8520000-0000-4000-8000-000000000511", 10), generation));
+            string again = Assert.Single(readings, line => MessageType(line) == "PreDepartureSafetyCheck");
+            Assert.Equal(generation, JsonDocument.Parse(again).RootElement.GetProperty("sessionGeneration").GetInt64());
+            Assert.Equal(10, PayloadOf(again).GetProperty("expectedSafetyStateVersion").GetInt64());
+            Assert.NotEqual(MessageIdOf(first), MessageIdOf(again));
+
+            string[] answered = await ExchangeAsync(processor, peer, state,
+                InSession(HoldReleaseCheckResult("e8520000-0000-4000-8000-000000000512", again), generation));
+
+            Assert.Equal("READY", PayloadOf(Assert.Single(answered, line => MessageType(line) == "VehicleBusinessStateSnapshot"))
+                .GetProperty("readiness").GetString());
+            Assert.Equal((RecoveryWorkflowState.Reconciled, "SAFE"),
+                ((await ReleaseAsync(context)).State, (await ReleaseAsync(context)).Outcome));
+            Assert.Equal(ReleaseActionId, (await context.SlotDoorHolds.AsNoTracking().SingleAsync(token)).ReleasedByActionId);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
         }
     }
 
