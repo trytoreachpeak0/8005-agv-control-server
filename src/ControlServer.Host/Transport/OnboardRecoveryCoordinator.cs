@@ -206,6 +206,18 @@ public sealed class OnboardRecoveryCoordinator(
     internal const string ReleaseCheckAnswerMismatchedOutcome = "CHECK_ANSWER_MISMATCHED";
 
     /// <summary>
+    /// How many times a repair release's <c>HOLD_RELEASE</c> check is asked again after the vehicle refused it as
+    /// <c>PREDEPARTURE_CHECK_EXPIRED</c> (control-server#852): the first check and at most this many more.
+    /// </summary>
+    internal const int ReleaseCheckReaskLimit = 3;
+
+    /// <summary>
+    /// A repair release whose check the vehicle refused as expired once more after <see cref="ReleaseCheckReaskLimit"/>
+    /// re-asks: spent like any refused check, so a new session can take it again (control-server#852).
+    /// </summary>
+    internal const string ReleaseCheckReaskLimitOutcome = "CHECK_EXPIRED_REASK_LIMIT";
+
+    /// <summary>
     /// The outcome a resume is judged on when the vehicle refused its command (control-server#187). A resume's
     /// outcome is otherwise empty -- its account is the replacement OperationResult -- so this marks, in the store,
     /// that its session closed because the command was refused rather than because a result did not reconcile. The
