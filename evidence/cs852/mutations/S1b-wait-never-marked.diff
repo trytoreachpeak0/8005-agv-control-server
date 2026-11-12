@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index ba9348a56..285fc9500 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -1148,7 +1148,7 @@ public sealed partial class OnboardMessageProcessor(
+                     {
+                         state.SafetySnapshotRequestDue = true;
+                         state.SafetySnapshotRequestReason = "PRE_MOVEMENT_RECONCILIATION";
+-                        state.ReleaseReaskReadingsSince ??= timeProvider.GetUtcNow();
++                        if (Environment.TickCount64 < 0) state.ReleaseReaskReadingsSince ??= timeProvider.GetUtcNow();
+                     }
+                     // And another (control-server#481): the vehicle refusing a replayed slot fault declaration command because
+                     // it gave its answer up. Without this the declaration stays pending and its command is replayed for good.

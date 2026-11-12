@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index ba9348a56..5fbf09197 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -379,7 +379,7 @@ public sealed partial class OnboardMessageProcessor(
+         // ReleaseReaskReadingsOverdueAfter.
+         DateTimeOffset now = timeProvider.GetUtcNow();
+         if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings || state.SlotLocksAwaitingSnapshot ||
+-             state.ReleaseReaskReadingsSince is not null) &&
++             (state.ReleaseReaskReadingsSince is not null && Environment.TickCount64 < 0)) &&
+             now - state.SafetySnapshotRequestedAt >= SafetySnapshotReaskInterval)
+         {
+             state.SafetySnapshotRequestDue = true;
