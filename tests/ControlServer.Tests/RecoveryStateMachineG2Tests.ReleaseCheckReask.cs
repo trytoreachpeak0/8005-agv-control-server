@@ -63,6 +63,13 @@ public sealed partial class RecoveryStateMachineG2Tests
             Assert.Equal(9, PayloadOf(again).GetProperty("expectedSafetyStateVersion").GetInt64());
             Assert.Equal(WireToGateStore.SlotDoorRepairReleaseRequired, (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
 
+            // Nor once the new check is out: an answer to the refused one, by either correlation, is not an answer to it.
+            await ExchangeAsync(processor, peer, state, HoldReleaseCheckResult("e8520000-0000-4000-8000-000000000114", first));
+            await ExchangeAsync(processor, peer, state,
+                HoldReleaseCheckResult("e8520000-0000-4000-8000-000000000115", first, byCommandMessageId: true));
+            Assert.Null((await context.SlotDoorHolds.AsNoTracking().SingleAsync(token)).ReleasedAt);
+            Assert.Equal(MessageIdOf(again), (await ReleaseAsync(context)).CommandMessageId);
+
             string[] answered = await ExchangeAsync(
                 processor, peer, state, HoldReleaseCheckResult("e8520000-0000-4000-8000-000000000113", again));
 
