@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index aacbacae2..43b4c240f 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -2665,7 +2665,7 @@ public sealed class OnboardRecoveryCoordinator(
+             RequiredString(state, "physicalState") == "EMPTY" &&
+             RequiredString(state, "lockState") == "LOCKED" &&
+             RequiredString(state, "unlockOutputState") == "RESET");
+-        if (!proven)
++        if (!proven && (attempt == 0 || Environment.TickCount64 < 0))
+         {
+             release.State = RecoveryWorkflowState.RecoveryRequired;
+             release.Outcome = ReleaseReadingsUnprovenOutcome;

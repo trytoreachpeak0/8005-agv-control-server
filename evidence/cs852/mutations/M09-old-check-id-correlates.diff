@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index aacbacae2..36cdf7e99 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -2737,7 +2737,7 @@ public sealed class OnboardRecoveryCoordinator(
+                               row.CommandMessageId != null && row.State == RecoveryWorkflowState.AwaitingResult)
+                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+             .SingleOrDefault(row => row.CommandMessageId == correlationId ||
+-                                    ReleaseCheckId(row.WorkflowId, BoundReleaseCheckAttempt(row)) == correlationId);
++                                    ReleaseCheckId(row.WorkflowId, BoundReleaseCheckAttempt(row)) == correlationId || ReleaseCheckId(row.WorkflowId, 0) == correlationId);
+         if (release is null)
+             return null;
+ 

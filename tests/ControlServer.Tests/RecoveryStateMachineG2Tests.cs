@@ -5813,7 +5813,8 @@ public sealed partial class RecoveryStateMachineG2Tests
         OnboardConnectionState state,
         List<string> wire,
         Func<Task>? afterEachSnapshot = null,
-        bool departureSafe = true)
+        bool departureSafe = true,
+        long safetyStateVersion = 8)
     {
         long generation = state.SessionGeneration!.Value;
         afterEachSnapshot ??= () => Task.CompletedTask;
@@ -5827,7 +5828,7 @@ public sealed partial class RecoveryStateMachineG2Tests
             "SafetyStateSnapshot",
             new
             {
-                safetyStateVersion = 8,
+                safetyStateVersion,
                 safety = new
                 {
                     departureSafe,

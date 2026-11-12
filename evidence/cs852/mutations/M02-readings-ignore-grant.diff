@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index aacbacae2..1c7c8cab1 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -2645,7 +2645,7 @@ public sealed class OnboardRecoveryCoordinator(
+         // messageId and a check id of its own; how many were asked is read from the outbox by those ids (a keyed lookup of
+         // at most ReleaseCheckReaskLimit + 1 rows).
+         int attempt = await ReleaseChecksAskedAsync(release.WorkflowId, cancellationToken).ConfigureAwait(false);
+-        if (attempt > 0 && ReleaseGrantRefusal(agvId) is { } ungranted)
++        if (attempt > 0 && ReleaseGrantRefusal(agvId) is { } ungranted && Environment.TickCount64 < 0)
+         {
+             await SpendReleaseUngrantedAsync(release, ungranted, now, cancellationToken).ConfigureAwait(false);
+             return null;

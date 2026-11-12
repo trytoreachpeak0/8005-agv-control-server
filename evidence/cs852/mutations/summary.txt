@@ -1,0 +1,52 @@
+M01-refusal-ignores-grant exit=1 失败!  - 失败:     1，通过:   319，已跳过:     0，总计:   320，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+    AReleaseCheckIsAskedAgainOnlyUnderAGrantStillInEffect(when: "expired-before-refusal") [47 ms]
+M02-readings-ignore-grant exit=1 失败!  - 失败:     1，通过:   319，已跳过:     0，总计:   320，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+    AReleaseCheckIsAskedAgainOnlyUnderAGrantStillInEffect(when: "revoked-before-readings") [52 ms]
+M03-answer-ignores-grant exit=1 失败!  - 失败:     1，通过:   319，已跳过:     0，总计:   320，持续时间: 18 s - ControlServer.Tests.dll (net8.0)
+    AReleaseCheckIsAskedAgainOnlyUnderAGrantStillInEffect(when: "expired-before-answer") [51 ms]
+M04-no-reask-limit exit=1 失败!  - 失败:     1，通过:   319，已跳过:     0，总计:   320，持续时间: 18 s - ControlServer.Tests.dll (net8.0)
+    AReleaseCheckIsAskedAgainAtMostTheLimitAndThenSpent [54 ms]
+M05-fixed-check-message-id exit=1 失败!  - 失败:    20，通过:   300，已跳过:     0，总计:   320，持续时间: 18 s - ControlServer.Tests.dll (net8.0)
+    ASecondRecordOnARepairReleaseIsRefusedAndChangesNothing(first: "lifted") [298 ms]
+    AProblemWithAnotherMessageLeavesAWaitingReleaseAlone [95 ms]
+    AHoldReleaseAnswerIsRecognisedByEitherCorrelation(byCommandMessageId: False) [60 ms]
+    AHoldReleaseAnswerIsRecognisedByEitherCorrelation(byCommandMessageId: True) [50 ms]
+    OnlyASafeHoldReleaseAnswerToTheReleasesOwnCheckLiftsTheHold(purpose: "HOLD_RELEASE", outcome: "UNKNOWN", expected: RecoveryRequired) [47 ms]
+    OnlyASafeHoldReleaseAnswerToTheReleasesOwnCheckLiftsTheHold(purpose: "HOLD_RELEASE", outcome: "UNSAFE", expected: RecoveryRequired) [49 ms]
+    OnlyASafeHoldReleaseAnswerToTheReleasesOwnCheckLiftsTheHold(purpose: "DEPARTURE", outcome: "SAFE", expected: RecoveryRequired) [50 ms]
+    ARepairReleaseLiftsTheHoldsOnFileAtItsRecordOnceAndAResendRewritesNothing [45 ms]
+    AReleaseCheckIsAskedAgainOnlyUnderAGrantStillInEffect(when: "expired-before-answer") [46 ms]
+    AReleaseCheckIsAskedAgainOnlyUnderAGrantStillInEffect(when: "in-effect") [46 ms]
+    ARepairReleaseLeavesAHoldOnSlotsItDoesNotCoverAndTheVehicleStaysOutOfWork [39 ms]
+    ASafeHoldReleaseAnswerAfterARefusedSnapshotLiftsTheHoldButNotReadiness [51 ms]
+    ADoorUnprovenCancellationResultForADeliveredDemandHoldsTheVehicleUntilARepairRelease [47 ms]
+    AnExpiredReleaseCheckIsAskedAgainOnFreshReadingsUnderNewIdsAndItsSafeAnswerLiftsTheHold [49 ms]
+    ARefusedOrMisansweredReleaseCheckSpendsTheReleaseAndANewOneLiftsTheHold(answer: "ACTION_NOT_ALLOWED_IN_STATE") [57 ms]
+    ARefusedOrMisansweredReleaseCheckSpendsTheReleaseAndANewOneLiftsTheHold(answer: "ANOTHER_CHECK_ID") [57 ms]
+    ARefusedOrMisansweredReleaseCheckSpendsTheReleaseAndANewOneLiftsTheHold(answer: "DEPARTURE") [45 ms]
+    OnlyReadingsAfterTheRecordCountAndUnprovenFirstReadingsSpendTheRecord [63 ms]
+    ARepairReleaseLiftsTheHoldOnlyAfterItsRecordFreshReadingsAndASafeHoldReleaseCheck [73 ms]
+    AReleaseCheckIsAskedAgainAtMostTheLimitAndThenSpent [49 ms]
+M06-fixed-check-id exit=1 失败!  - 失败:     2，通过:   318，已跳过:     0，总计:   320，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+    AnExpiredReleaseCheckIsAskedAgainOnFreshReadingsUnderNewIdsAndItsSafeAnswerLiftsTheHold [50 ms]
+    AReleaseCheckIsAskedAgainAtMostTheLimitAndThenSpent [53 ms]
+M07-reask-skips-readings exit=1 失败!  - 失败:     1，通过:   319，已跳过:     0，总计:   320，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+    ReadingsThatChangedBeforeTheReleaseCheckIsAskedAgainSpendTheRelease [50 ms]
+M08-old-check-not-settled exit=1 失败!  - 失败:     2，通过:   318，已跳过:     0，总计:   320，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+    AnExpiredReleaseCheckIsAskedAgainOnFreshReadingsUnderNewIdsAndItsSafeAnswerLiftsTheHold [49 ms]
+    AReleaseCheckIsAskedAgainAtMostTheLimitAndThenSpent [62 ms]
+M09-old-check-id-correlates exit=1 失败!  - 失败:     1，通过:   319，已跳过:     0，总计:   320，持续时间: 18 s - ControlServer.Tests.dll (net8.0)
+    AnExpiredReleaseCheckIsAskedAgainOnFreshReadingsUnderNewIdsAndItsSafeAnswerLiftsTheHold [59 ms]
+M10-no-readings-request exit=1 失败!  - 失败:     1，通过:   319，已跳过:     0，总计:   320，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+    AnExpiredReleaseCheckIsAskedAgainOnFreshReadingsUnderNewIdsAndItsSafeAnswerLiftsTheHold [48 ms]
+M11-expired-spends-as-before exit=1 失败!  - 失败:     7，通过:   313，已跳过:     0，总计:   320，持续时间: 17 s - ControlServer.Tests.dll (net8.0)
+    AReleaseCheckIsAskedAgainOnlyUnderAGrantStillInEffect(when: "revoked-before-readings") [49 ms]
+    AReleaseCheckIsAskedAgainOnlyUnderAGrantStillInEffect(when: "expired-before-answer") [46 ms]
+    AReleaseCheckIsAskedAgainOnlyUnderAGrantStillInEffect(when: "expired-before-refusal") [46 ms]
+    AReleaseCheckIsAskedAgainOnlyUnderAGrantStillInEffect(when: "in-effect") [46 ms]
+    AnExpiredReleaseCheckIsAskedAgainOnFreshReadingsUnderNewIdsAndItsSafeAnswerLiftsTheHold [46 ms]
+    ReadingsThatChangedBeforeTheReleaseCheckIsAskedAgainSpendTheRelease [46 ms]
+    AReleaseCheckIsAskedAgainAtMostTheLimitAndThenSpent [45 ms]
+M12-not-allowed-asked-again exit=1 失败!  - 失败:     1，通过:   319，已跳过:     0，总计:   320，持续时间: 16 s - ControlServer.Tests.dll (net8.0)
+    ARefusedOrMisansweredReleaseCheckSpendsTheReleaseAndANewOneLiftsTheHold(answer: "ACTION_NOT_ALLOWED_IN_STATE") [44 ms]
+restore build exit=0

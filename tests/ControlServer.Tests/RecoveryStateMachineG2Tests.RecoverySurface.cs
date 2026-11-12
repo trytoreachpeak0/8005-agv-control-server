@@ -955,16 +955,16 @@ public sealed partial class RecoveryStateMachineG2Tests
 
     /// <summary>
     /// The vehicle does not answer the release's check with a SAFE HOLD_RELEASE result (control-server#385 review M1): it
-    /// refuses it with a <c>ProtocolProblem</c> -- the onboard's answer to a check whose safety version has moved on
-    /// (<c>PREDEPARTURE_CHECK_EXPIRED</c>) or whose purpose it will not run (<c>ACTION_NOT_ALLOWED_IN_STATE</c>), with no
-    /// result -- or answers it as a DEPARTURE check, or answers it under its correlation naming another check's id (review
-    /// S-b). Each spends the release: its check is settled and never replayed, the
-    /// vehicle stays held, and a new session is offered the release again and lifts the hold with it. No store edit.
+    /// refuses it with a <c>ProtocolProblem</c> -- the onboard's answer to a check whose purpose it will not run
+    /// (<c>ACTION_NOT_ALLOWED_IN_STATE</c>), with no result -- or answers it as a DEPARTURE check, or answers it under its
+    /// correlation naming another check's id (review S-b). Each spends the release: its check is settled and never replayed,
+    /// the vehicle stays held, and a new session is offered the release again and lifts the hold with it. No store edit.
+    /// A refusal as <c>PREDEPARTURE_CHECK_EXPIRED</c> no longer spends it: since control-server#852 the check is asked again
+    /// (RecoveryStateMachineG2Tests.ReleaseCheckReask.cs).
     /// </summary>
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
-    [InlineData("PREDEPARTURE_CHECK_EXPIRED")]
     [InlineData("ACTION_NOT_ALLOWED_IN_STATE")]
     [InlineData("DEPARTURE")]
     [InlineData("ANOTHER_CHECK_ID")]

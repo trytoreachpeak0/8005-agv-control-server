@@ -373,11 +373,24 @@ public sealed partial class OnboardMessageProcessor(
         // Spaced by SafetySnapshotReaskInterval so a heartbeat every two seconds does not become a request every two seconds.
         // A remaining-baskets skip waiting on stale readings (control-server#830, review M2) is asked for the same way: the
         // snapshot requested when the skip arrived goes unanswered for the same reason, every onboard SafetyStateChanged
-        // naming slots 1..8. So are slot locks a safety change may have changed (control-server#865).
-        if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings || state.SlotLocksAwaitingSnapshot) &&
+        // naming slots 1..8. So are slot locks a safety change may have changed (control-server#865). So is a repair release
+        // whose HOLD_RELEASE check was refused as expired and asked again (control-server#852, review S1): until a mid-session
+        // snapshot comes, it can neither be lifted nor taken again by a new session, and it says so once it has waited
+        // ReleaseReaskReadingsOverdueAfter. The clock is read only when one of these waits stands, as before: a message with
+        // none of them reads no time here, and the tests that pin the instant an answer was stamped rely on that.
+        if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings || state.SlotLocksAwaitingSnapshot ||
+             state.ReleaseReaskReadingsSince is not null) &&
             timeProvider.GetUtcNow() - state.SafetySnapshotRequestedAt >= SafetySnapshotReaskInterval)
         {
             state.SafetySnapshotRequestDue = true;
+            if (state.ReleaseReaskReadingsSince is not null)
+                state.SafetySnapshotRequestReason ??= "PRE_MOVEMENT_RECONCILIATION";
+        }
+        if (state.ReleaseReaskReadingsSince is { } waitingSince && !state.ReleaseReaskReadingsOverdueLogged &&
+            timeProvider.GetUtcNow() - waitingSince is var waited && waited >= ReleaseReaskReadingsOverdueAfter)
+        {
+            state.ReleaseReaskReadingsOverdueLogged = true;
+            LogReleaseReaskReadingsOverdue(logger, agvId, (long)waited.TotalSeconds);
         }
         return AppendSafetySnapshotRequest(capturedResponse, state);
     }
@@ -386,6 +399,12 @@ public sealed partial class OnboardMessageProcessor(
     /// How long an untrusted safety baseline waits before the server asks again for a snapshot (control-server#478).
     /// </summary>
     internal static readonly TimeSpan SafetySnapshotReaskInterval = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// How long a repair release asked again (control-server#852) may wait for readings on this connection before a warning
+    /// says so (review S1). The asking itself goes on at <see cref="SafetySnapshotReaskInterval"/>.
+    /// </summary>
+    internal static readonly TimeSpan ReleaseReaskReadingsOverdueAfter = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Asks the vehicle for a fresh SafetyStateSnapshot when this message made one due (REQ-0358,
@@ -619,6 +638,9 @@ public sealed partial class OnboardMessageProcessor(
                     }
                     // A repair release waiting for readings takes the first mid-session snapshot as its readings
                     // (control-server#385): proven, the HOLD_RELEASE check is staged with this answer and goes out after it.
+                    // The readings a re-ask waited for have come (control-server#852): this connection stops asking.
+                    state.ReleaseReaskReadingsSince = null;
+                    state.ReleaseReaskReadingsOverdueLogged = false;
                     string? holdReleaseCheck = await recoveryCoordinator.ObserveReleaseReadingsAsync(
                         agvId, generation, payload, cancellationToken).ConfigureAwait(false);
                     SessionReadinessDecision snapshotDecision = await store.DecideReadinessAsync(
@@ -1118,9 +1140,16 @@ public sealed partial class OnboardMessageProcessor(
                     JsonElement problem = payload.GetProperty("problem");
                     // One refusal carries an obligation after all (control-server#385 review M1): the vehicle refusing a
                     // repair release's HOLD_RELEASE check sends no result, so without this the release would wait forever.
-                    await recoveryCoordinator.ObserveReleaseCheckRefusedAsync(
-                        agvId, RequiredString(payload, "rejectedMessageId"), RequiredString(problem, "reasonCode"),
-                        cancellationToken).ConfigureAwait(false);
+                    // Refused as expired, the release waits for readings again (control-server#852): ask for them now --
+                    // nothing else would on this connection, its once-per-connection request having gone by.
+                    if (await recoveryCoordinator.ObserveReleaseCheckRefusedAsync(
+                            agvId, RequiredString(payload, "rejectedMessageId"), RequiredString(problem, "reasonCode"),
+                            cancellationToken).ConfigureAwait(false) == OnboardRecoveryCoordinator.ReleaseCheckRefusal.AskedAgain)
+                    {
+                        state.SafetySnapshotRequestDue = true;
+                        state.SafetySnapshotRequestReason = "PRE_MOVEMENT_RECONCILIATION";
+                        state.ReleaseReaskReadingsSince ??= timeProvider.GetUtcNow();
+                    }
                     // And another (control-server#481): the vehicle refusing a replayed slot fault declaration command because
                     // it gave its answer up. Without this the declaration stays pending and its command is replayed for good.
                     await SlotFaultDeclarationResults.ObserveCommandRefusedAsync(
@@ -1833,6 +1862,13 @@ public sealed partial class OnboardMessageProcessor(
         int retry,
         Exception error);
 
+    [LoggerMessage(EventId = 1109, Level = LogLevel.Warning,
+        Message = "Vehicle {AgvId}: a repair release whose HOLD_RELEASE check was refused as expired and asked again has " +
+                  "waited {WaitedSeconds} s for readings on this connection; the vehicle has not answered the snapshot " +
+                  "requests. The release can neither be lifted nor taken again until a snapshot comes or the vehicle " +
+                  "reconnects; the server keeps asking (control-server#852).")]
+    private static partial void LogReleaseReaskReadingsOverdue(ILogger logger, string agvId, long waitedSeconds);
+
     [LoggerMessage(EventId = 1108, Level = LogLevel.Error,
         Message = "Database fault on {MessageType} {MessageId} from {AgvId} (processing began: {ProcessingBegan}); its " +
                   "transaction rolled back, nothing of it was kept, and the connection ends.")]
@@ -2006,6 +2042,16 @@ public sealed class OnboardConnectionState
     /// (control-server#385). A new connection starts false, which is what makes a reconnect ask again.
     /// </summary>
     public bool ReleaseReadingsRequested { get; set; }
+
+    /// <summary>
+    /// Since when a repair release on this connection, its check refused as expired and asked again (control-server#852),
+    /// has waited for a mid-session snapshot; null when none waits. Asked for again at
+    /// <see cref="OnboardMessageProcessor.SafetySnapshotReaskInterval"/> until a snapshot clears it (review S1).
+    /// </summary>
+    public DateTimeOffset? ReleaseReaskReadingsSince { get; set; }
+
+    /// <summary>The overdue warning for <see cref="ReleaseReaskReadingsSince"/> has been written on this connection.</summary>
+    public bool ReleaseReaskReadingsOverdueLogged { get; set; }
 
     /// <summary>
     /// A safety message was refused on this connection and no SafetyStateSnapshot has been accepted since, so the

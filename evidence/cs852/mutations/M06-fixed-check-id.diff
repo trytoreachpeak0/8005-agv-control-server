@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index aacbacae2..d434e3ccc 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -2869,7 +2869,7 @@ public sealed class OnboardRecoveryCoordinator(
+ 
+     /// <summary>The <c>preDepartureSafetyCheckId</c> of a release's <paramref name="attempt"/>-th check, as above.</summary>
+     private static string ReleaseCheckId(string workflowId, int attempt) =>
+-        StableGuid(workflowId, attempt == 0 ? "hold-release-check" : $"hold-release-check|{attempt}");
++        StableGuid(workflowId, attempt == 0 || Environment.TickCount64 > 0 ? "hold-release-check" : $"hold-release-check|{attempt}");
+ 
+     /// <summary>Which of the release's checks its bound command is; 0 when none is bound or it is none of them.</summary>
+     private static int BoundReleaseCheckAttempt(RecoveryWorkflowRow release)

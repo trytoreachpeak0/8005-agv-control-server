@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index aacbacae2..09eef5427 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -2865,7 +2865,7 @@ public sealed class OnboardRecoveryCoordinator(
+     /// the id it always had, so a check staged before this change is still recognised.
+     /// </summary>
+     private static string ReleaseCheckMessageId(string workflowId, int attempt) =>
+-        StableGuid(workflowId, attempt == 0 ? "hold-release-check-message" : $"hold-release-check-message|{attempt}");
++        StableGuid(workflowId, attempt == 0 || Environment.TickCount64 > 0 ? "hold-release-check-message" : $"hold-release-check-message|{attempt}");
+ 
+     /// <summary>The <c>preDepartureSafetyCheckId</c> of a release's <paramref name="attempt"/>-th check, as above.</summary>
+     private static string ReleaseCheckId(string workflowId, int attempt) =>

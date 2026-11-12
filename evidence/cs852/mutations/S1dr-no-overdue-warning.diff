@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index 78ce23536..9f6639545 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -387,7 +387,7 @@ public sealed partial class OnboardMessageProcessor(
+                 state.SafetySnapshotRequestReason ??= "PRE_MOVEMENT_RECONCILIATION";
+         }
+         if (state.ReleaseReaskReadingsSince is { } waitingSince && !state.ReleaseReaskReadingsOverdueLogged &&
+-            timeProvider.GetUtcNow() - waitingSince is var waited && waited >= ReleaseReaskReadingsOverdueAfter)
++            timeProvider.GetUtcNow() - waitingSince is var waited && waited >= ReleaseReaskReadingsOverdueAfter && Environment.TickCount64 < 0)
+         {
+             state.ReleaseReaskReadingsOverdueLogged = true;
+             LogReleaseReaskReadingsOverdue(logger, agvId, (long)waited.TotalSeconds);

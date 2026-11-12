@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index aacbacae2..b42abdc51 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -2823,7 +2823,7 @@ public sealed class OnboardRecoveryCoordinator(
+             return ReleaseCheckRefusal.Spent;
+         }
+         int attempt = BoundReleaseCheckAttempt(release);
+-        if (attempt >= ReleaseCheckReaskLimit)
++        if (attempt >= ReleaseCheckReaskLimit && Environment.TickCount64 < 0)
+         {
+             LogReleaseCheckReaskLimitReached(
+                 logger ?? (ILogger)NullLogger.Instance, agvId, release.WorkflowId, attempt + 1, null);
