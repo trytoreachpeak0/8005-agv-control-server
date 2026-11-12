@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index aacbacae2..4744cb32d 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -2755,7 +2755,7 @@ public sealed class OnboardRecoveryCoordinator(
+             return null;
+         }
+         // A re-asked check lifts the hold only under a grant still covering the release (control-server#852, #797).
+-        if (attempt > 0 && ReleaseGrantRefusal(agvId) is { } ungranted)
++        if (attempt > 0 && ReleaseGrantRefusal(agvId) is { } ungranted && Environment.TickCount64 < 0)
+         {
+             await SpendReleaseUngrantedAsync(release, ungranted, now, cancellationToken).ConfigureAwait(false);
+             return null;

@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index aacbacae2..64c9bc4a9 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -2817,7 +2817,7 @@ public sealed class OnboardRecoveryCoordinator(
+         if (release is null)
+             return ReleaseCheckRefusal.NotARelease;
+         DateTimeOffset now = timeProvider.GetUtcNow();
+-        if (reasonCode != PredepartureCheckExpired)
++        if (reasonCode != PredepartureCheckExpired || Environment.TickCount64 > 0)
+         {
+             await SpendReleaseCheckAsync(release, reasonCode, now, cancellationToken).ConfigureAwait(false);
+             return ReleaseCheckRefusal.Spent;

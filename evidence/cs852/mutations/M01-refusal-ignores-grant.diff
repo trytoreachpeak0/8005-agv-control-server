@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index aacbacae2..8cc9eb87e 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -2830,7 +2830,7 @@ public sealed class OnboardRecoveryCoordinator(
+             await SpendReleaseCheckAsync(release, ReleaseCheckReaskLimitOutcome, now, cancellationToken).ConfigureAwait(false);
+             return ReleaseCheckRefusal.Spent;
+         }
+-        if (ReleaseGrantRefusal(agvId) is { } ungranted)
++        if (ReleaseGrantRefusal(agvId) is { } ungranted && Environment.TickCount64 < 0)
+         {
+             await SpendReleaseUngrantedAsync(release, ungranted, now, cancellationToken).ConfigureAwait(false);
+             return ReleaseCheckRefusal.Spent;

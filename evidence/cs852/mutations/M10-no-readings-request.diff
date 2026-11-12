@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index a97313b90..0784980fb 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -1122,7 +1122,7 @@ public sealed partial class OnboardMessageProcessor(
+                     // nothing else would on this connection, its once-per-connection request having gone by.
+                     if (await recoveryCoordinator.ObserveReleaseCheckRefusedAsync(
+                             agvId, RequiredString(payload, "rejectedMessageId"), RequiredString(problem, "reasonCode"),
+-                            cancellationToken).ConfigureAwait(false) == OnboardRecoveryCoordinator.ReleaseCheckRefusal.AskedAgain)
++                            cancellationToken).ConfigureAwait(false) == OnboardRecoveryCoordinator.ReleaseCheckRefusal.AskedAgain && Environment.TickCount64 < 0)
+                     {
+                         state.SafetySnapshotRequestDue = true;
+                         state.SafetySnapshotRequestReason = "PRE_MOVEMENT_RECONCILIATION";
