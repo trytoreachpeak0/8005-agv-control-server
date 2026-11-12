@@ -6,6 +6,7 @@ using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace ControlServer.Tests;
 
@@ -147,8 +148,11 @@ public sealed partial class RecoveryStateMachineG2Tests
             await using SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
-            (RecordingPeer peer, OnboardMessageProcessor processor, OnboardConnectionState state) =
-                await HoldTheVehicleAsync(context, proofVariable, proof);
+            (RecordingPeer peer, _, OnboardConnectionState state) = await HoldTheVehicleAsync(context, proofVariable, proof);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), new FixedTimeProvider(Now), Configuration(proofVariable), peer,
+                recoveryLogger: log);
             string check = await ReachReleaseCheckAsync(processor, peer, state, proof, "e8520000-0000-4000-8000-0000000003");
             List<string> asked = [check];
 
@@ -170,6 +174,11 @@ public sealed partial class RecoveryStateMachineG2Tests
                 (RecoveryWorkflowState.RecoveryRequired, OnboardRecoveryCoordinator.ReleaseCheckReaskLimitOutcome),
                 (spent.State, spent.Outcome));
             Assert.DoesNotContain(last, line => MessageType(line) == "SafetyStateSnapshotRequested");
+            // Each re-ask is logged as information, the spend at the limit once as a warning naming the release (review L2).
+            Assert.Equal(OnboardRecoveryCoordinator.ReleaseCheckReaskLimit, log.Entries.Count(entry => entry.EventId.Id == 8520));
+            (LogLevel Level, EventId EventId, string Message) limit = Assert.Single(log.Entries, entry => entry.EventId.Id == 8521);
+            Assert.Equal(LogLevel.Warning, limit.Level);
+            Assert.Contains(ReleaseActionId, limit.Message, StringComparison.Ordinal);
             Assert.All(await context.ProtocolOutbox.AsNoTracking()
                     .Where(row => row.MessageType == "PreDepartureSafetyCheck").ToArrayAsync(token),
                 row => Assert.NotNull(row.AcknowledgedAt));
@@ -275,8 +284,11 @@ public sealed partial class RecoveryStateMachineG2Tests
 
             state = CurrentState(deferOutbound: true);
             List<string> handshake = [.. await ReconnectAsync(processor, peer, state)];
-            await FinishHandshakeAsync(processor, peer, state, handshake);
+            // The handshake's snapshot goes out one version past the one the check asked about, as the real onboard's does
+            // (onboard-hmi#394), which is why it refuses the replayed check (review L1).
+            await FinishHandshakeAsync(processor, peer, state, handshake, safetyStateVersion: 9);
             long generation = state.SessionGeneration!.Value;
+            Assert.Equal(9, state.SafetyRevision);
             Assert.Contains(handshake, line => line.Contains(MessageIdOf(first), StringComparison.Ordinal));
 
             string[] refused = await ExchangeAsync(processor, peer, state,
@@ -297,6 +309,238 @@ public sealed partial class RecoveryStateMachineG2Tests
             Assert.Equal((RecoveryWorkflowState.Reconciled, "SAFE"),
                 ((await ReleaseAsync(context)).State, (await ReleaseAsync(context)).Outcome));
             Assert.Equal(ReleaseActionId, (await context.SlotDoorHolds.AsNoTracking().SingleAsync(token)).ReleasedByActionId);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The vehicle does not answer the readings request the re-ask sent -- the onboard leaves a snapshot request unanswered
+    /// while it holds an unacknowledged <c>SafetyStateChanged</c> (review S1). The connection asks again at
+    /// <see cref="OnboardMessageProcessor.SafetySnapshotReaskInterval"/> on the vehicle's next messages, says once in a
+    /// warning when the wait passes <see cref="OnboardMessageProcessor.ReleaseReaskReadingsOverdueAfter"/>, and stops asking
+    /// once a snapshot came; the release then goes on as usual.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    public async Task AReleaseWaitingForReaskReadingsAsksAgainUntilTheVehicleAnswers()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_REASK_UNANSWERED";
+        const string proof = "repair-release-reask-unanswered-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            (RecordingPeer peer, _, OnboardConnectionState state) = await HoldTheVehicleAsync(context, proofVariable, proof);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardMessageProcessor> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable), peer, logger: log);
+            string first = await ReachReleaseCheckAsync(processor, peer, state, proof, "e8520000-0000-4000-8000-0000000006");
+            int heartbeat = 0;
+            async Task<string[]> HeartbeatAfterAsync(TimeSpan wait)
+            {
+                clock.Current += wait;
+                heartbeat++;
+                return await ExchangeAsync(processor, peer, state, Envelope(
+                    $"e8520000-0000-4000-8000-0000000006{heartbeat:00}", "Heartbeat", new { sequence = heartbeat }));
+            }
+            static string? RequestReason(string[] wire) =>
+                wire.SingleOrDefault(line => MessageType(line) == "SafetyStateSnapshotRequested") is { } request
+                    ? PayloadOf(request).GetProperty("reason").GetString()
+                    : null;
+            int Overdue() => log.Entries.Count(entry => entry.EventId.Id == 1109);
+
+            Assert.Equal("PRE_MOVEMENT_RECONCILIATION",
+                RequestReason(await ExchangeAsync(processor, peer, state, CheckRefused("e8520000-0000-4000-8000-000000000690", first))));
+            // Unanswered: not asked again within the interval, asked again after it.
+            Assert.Null(RequestReason(await HeartbeatAfterAsync(TimeSpan.FromSeconds(1))));
+            Assert.Equal("PRE_MOVEMENT_RECONCILIATION", RequestReason(await HeartbeatAfterAsync(TimeSpan.FromSeconds(5))));
+            Assert.Equal(0, Overdue());
+            // Still unanswered past the limit: one warning naming the release's vehicle, the asking goes on.
+            Assert.Equal("PRE_MOVEMENT_RECONCILIATION",
+                RequestReason(await HeartbeatAfterAsync(OnboardMessageProcessor.ReleaseReaskReadingsOverdueAfter)));
+            (LogLevel Level, EventId EventId, string Message) overdue = Assert.Single(log.Entries, entry => entry.EventId.Id == 1109);
+            Assert.Equal(LogLevel.Warning, overdue.Level);
+            Assert.Contains(AgvId, overdue.Message, StringComparison.Ordinal);
+            Assert.Equal("PRE_MOVEMENT_RECONCILIATION", RequestReason(await HeartbeatAfterAsync(TimeSpan.FromSeconds(6))));
+            Assert.Equal(1, Overdue());
+
+            // Answered: the release goes on, and the connection stops asking.
+            string again = Assert.Single(
+                await ExchangeAsync(processor, peer, state, SlotReadings("e8520000-0000-4000-8000-000000000691", 9)),
+                line => MessageType(line) == "PreDepartureSafetyCheck");
+            Assert.Null(RequestReason(await HeartbeatAfterAsync(TimeSpan.FromSeconds(10))));
+            await ExchangeAsync(processor, peer, state, HoldReleaseCheckResult("e8520000-0000-4000-8000-000000000692", again));
+            Assert.Equal((RecoveryWorkflowState.Reconciled, "SAFE"),
+                ((await ReleaseAsync(context)).State, (await ReleaseAsync(context)).Outcome));
+            Assert.Null(RequestReason(await HeartbeatAfterAsync(OnboardMessageProcessor.ReleaseReaskReadingsOverdueAfter)));
+            Assert.Equal(1, Overdue());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A refusal counts once (review probe P1): the same refusal line again is an inbox duplicate, a second refusal of the
+    /// refused check under a new messageId is no release's any more, and a stale refusal of it after the new check is out
+    /// leaves the new one bound and unsettled -- the new check's SAFE answer still lifts the hold.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    public async Task ARepeatedOrStaleRefusalOfAReleaseCheckIsNotCountedAgain()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_REASK_DUPLICATE";
+        const string proof = "repair-release-reask-duplicate-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            (RecordingPeer peer, OnboardMessageProcessor processor, OnboardConnectionState state) =
+                await HoldTheVehicleAsync(context, proofVariable, proof);
+            string first = await ReachReleaseCheckAsync(processor, peer, state, proof, "e8520000-0000-4000-8000-0000000007");
+
+            string refusal = CheckRefused("e8520000-0000-4000-8000-000000000710", first);
+            Assert.Single(await ExchangeAsync(processor, peer, state, refusal),
+                line => MessageType(line) == "SafetyStateSnapshotRequested");
+            Assert.DoesNotContain(await ExchangeAsync(processor, peer, state, refusal),
+                line => MessageType(line) == "SafetyStateSnapshotRequested");
+            Assert.DoesNotContain(
+                await ExchangeAsync(processor, peer, state, CheckRefused("e8520000-0000-4000-8000-000000000711", first)),
+                line => MessageType(line) == "SafetyStateSnapshotRequested");
+            RecoveryWorkflowRow waiting = await ReleaseAsync(context);
+            Assert.Equal((RecoveryWorkflowState.AwaitingResult, (string?)null), (waiting.State, waiting.CommandMessageId));
+
+            string again = Assert.Single(
+                await ExchangeAsync(processor, peer, state, SlotReadings("e8520000-0000-4000-8000-000000000712", 9)),
+                line => MessageType(line) == "PreDepartureSafetyCheck");
+            await ExchangeAsync(processor, peer, state, CheckRefused("e8520000-0000-4000-8000-000000000713", first));
+            RecoveryWorkflowRow bound = await ReleaseAsync(context);
+            Assert.Equal((RecoveryWorkflowState.AwaitingResult, MessageIdOf(again)), (bound.State, bound.CommandMessageId));
+            Assert.Null((await context.ProtocolOutbox.AsNoTracking()
+                .SingleAsync(row => row.MessageId == MessageIdOf(again), token)).AcknowledgedAt);
+            Assert.Equal(2, await context.ProtocolOutbox.AsNoTracking()
+                .CountAsync(row => row.MessageType == "PreDepartureSafetyCheck", token));
+
+            await ExchangeAsync(processor, peer, state, HoldReleaseCheckResult("e8520000-0000-4000-8000-000000000714", again));
+            Assert.Equal((RecoveryWorkflowState.Reconciled, "SAFE"),
+                ((await ReleaseAsync(context)).State, (await ReleaseAsync(context)).Outcome));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The server restarts while the release waits for its re-ask readings, and the vehicle reconnects (review probe P2):
+    /// the refused check is not replayed, the new connection asks for readings on its first message past the handshake, and
+    /// the check asked on them -- new ids, the new session -- lifts the hold.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    public async Task AfterARestartTheReleaseWaitingForReaskReadingsAsksForThemInTheNewSession()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_REASK_RESTART";
+        const string proof = "repair-release-reask-restart-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            string first;
+            await using (ControlServerDbContext before = await CreateContextAsync(connection))
+            {
+                (RecordingPeer peer, OnboardMessageProcessor processor, OnboardConnectionState state) =
+                    await HoldTheVehicleAsync(before, proofVariable, proof);
+                first = await ReachReleaseCheckAsync(processor, peer, state, proof, "e8520000-0000-4000-8000-0000000008");
+                await ExchangeAsync(processor, peer, state, CheckRefused("e8520000-0000-4000-8000-000000000810", first));
+            }
+
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            RecordingPeer restartedPeer = new(context);
+            OnboardMessageProcessor restarted = Processor(context, restartedPeer, proofVariable);
+            OnboardConnectionState reconnected = CurrentState(deferOutbound: true);
+            List<string> handshake = [.. await ReconnectAsync(restarted, restartedPeer, reconnected)];
+            await FinishHandshakeAsync(restarted, restartedPeer, reconnected, handshake, safetyStateVersion: 9);
+            long generation = reconnected.SessionGeneration!.Value;
+            Assert.DoesNotContain(handshake, line => line.Contains(MessageIdOf(first), StringComparison.Ordinal));
+            Assert.DoesNotContain(handshake, line => MessageType(line) == "PreDepartureSafetyCheck");
+
+            string[] next = await ExchangeAsync(restarted, restartedPeer, reconnected, InSession(Envelope(
+                "e8520000-0000-4000-8000-000000000811",
+                "OnboardAlarmSnapshot",
+                new { alarmSnapshotRevision = 2, observedAt = Now, alarms = Array.Empty<object>() }), generation));
+            Assert.Equal("PRE_MOVEMENT_RECONCILIATION",
+                PayloadOf(Assert.Single(next, line => MessageType(line) == "SafetyStateSnapshotRequested"))
+                    .GetProperty("reason").GetString());
+
+            string again = Assert.Single(
+                await ExchangeAsync(restarted, restartedPeer, reconnected,
+                    InSession(SlotReadings("e8520000-0000-4000-8000-000000000812", 10), generation)),
+                line => MessageType(line) == "PreDepartureSafetyCheck");
+            Assert.NotEqual(MessageIdOf(first), MessageIdOf(again));
+            Assert.NotEqual(CheckIdOf(first), CheckIdOf(again));
+            Assert.Equal(generation, JsonDocument.Parse(again).RootElement.GetProperty("sessionGeneration").GetInt64());
+            Assert.Equal(10, PayloadOf(again).GetProperty("expectedSafetyStateVersion").GetInt64());
+
+            await ExchangeAsync(restarted, restartedPeer, reconnected,
+                InSession(HoldReleaseCheckResult("e8520000-0000-4000-8000-000000000813", again), generation));
+            Assert.Equal((RecoveryWorkflowState.Reconciled, "SAFE"),
+                ((await ReleaseAsync(context)).State, (await ReleaseAsync(context)).Outcome));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A re-asked check answered UNSAFE spends the release as the first check's UNSAFE answer would (review probe P3): the
+    /// onboard answers from the present IO, so readings that changed after they were judged end here.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    public async Task AnUnsafeAnswerToAReaskedReleaseCheckSpendsTheRelease()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_REASK_UNSAFE";
+        const string proof = "repair-release-reask-unsafe-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            (RecordingPeer peer, OnboardMessageProcessor processor, OnboardConnectionState state) =
+                await HoldTheVehicleAsync(context, proofVariable, proof);
+            string first = await ReachReleaseCheckAsync(processor, peer, state, proof, "e8520000-0000-4000-8000-0000000009");
+            await ExchangeAsync(processor, peer, state, CheckRefused("e8520000-0000-4000-8000-000000000910", first));
+            string again = Assert.Single(
+                await ExchangeAsync(processor, peer, state, SlotReadings("e8520000-0000-4000-8000-000000000911", 9)),
+                line => MessageType(line) == "PreDepartureSafetyCheck");
+
+            await ExchangeAsync(processor, peer, state,
+                HoldReleaseCheckResult("e8520000-0000-4000-8000-000000000912", again, outcome: "UNSAFE"));
+
+            RecoveryWorkflowRow spent = await ReleaseAsync(context);
+            Assert.Equal((RecoveryWorkflowState.RecoveryRequired, "UNSAFE"), (spent.State, spent.Outcome));
+            Assert.Null((await context.SlotDoorHolds.AsNoTracking().SingleAsync(token)).ReleasedAt);
         }
         finally
         {
@@ -326,7 +570,11 @@ public sealed partial class RecoveryStateMachineG2Tests
             line => MessageType(line) == "PreDepartureSafetyCheck");
     }
 
-    /// <summary>The vehicle's <c>PREDEPARTURE_CHECK_EXPIRED</c> refusal of <paramref name="check"/>, with no result.</summary>
+    /// <summary>
+    /// The vehicle's <c>PREDEPARTURE_CHECK_EXPIRED</c> refusal of <paramref name="check"/>, with no result, as the onboard
+    /// writes it (<c>WireToGateSessionClient.CreateProtocolProblem</c>): correlated to the refused message, with the
+    /// expected protocol identity (review L1).
+    /// </summary>
     private static string CheckRefused(string messageId, string check, string reasonCode = "PREDEPARTURE_CHECK_EXPIRED") => Envelope(
         messageId,
         "ProtocolProblem",
@@ -334,8 +582,12 @@ public sealed partial class RecoveryStateMachineG2Tests
         {
             rejectedMessageId = MessageIdOf(check),
             rejectedMessageType = "PreDepartureSafetyCheck",
-            problem = new { reasonCode, fieldPath = (string?)null, displayMessage = (string?)null }
-        });
+            problem = new { reasonCode, fieldPath = (string?)null, displayMessage = (string?)null },
+            expectedProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+            expectedProfileId = ProtocolCandidateIdentity.ProfileId,
+            expectedProtocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256
+        },
+        MessageIdOf(check));
 
     private static Task<RecoveryWorkflowRow> ReleaseAsync(ControlServerDbContext context) =>
         context.RecoveryWorkflows.AsNoTracking()

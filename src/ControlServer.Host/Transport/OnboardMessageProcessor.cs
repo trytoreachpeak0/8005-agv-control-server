@@ -388,6 +388,12 @@ public sealed partial class OnboardMessageProcessor(
     internal static readonly TimeSpan SafetySnapshotReaskInterval = TimeSpan.FromSeconds(5);
 
     /// <summary>
+    /// How long a repair release asked again (control-server#852) may wait for readings on this connection before a warning
+    /// says so (review S1). The asking itself goes on at <see cref="SafetySnapshotReaskInterval"/>.
+    /// </summary>
+    internal static readonly TimeSpan ReleaseReaskReadingsOverdueAfter = TimeSpan.FromMinutes(2);
+
+    /// <summary>
     /// Asks the vehicle for a fresh SafetyStateSnapshot when this message made one due (REQ-0358,
     /// control-server#142): an expected-action-overdue alarm newly appeared, or a safety change named a
     /// slot that is overdue. The dashboard shows that slot's lock, light curtain and unlock output, and
