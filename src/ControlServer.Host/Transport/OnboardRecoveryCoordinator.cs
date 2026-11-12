@@ -2883,6 +2883,12 @@ public sealed class OnboardRecoveryCoordinator(
     }
 
     /// <summary>How many of the release's checks are on file -- the index the next one takes.</summary>
+    /// <remarks>
+    /// <b>Relies on a release's check rows never being deleted from <c>ProtocolOutbox</c></b> (review L3): nothing deletes
+    /// outbox rows today. Delete one and the count falls short, the next check takes an id already on file, its staging is
+    /// skipped, and the release waits for a check that never went out. A future outbox cleanup must leave
+    /// <c>PreDepartureSafetyCheck</c> rows of repair releases alone, or count the attempts somewhere else first.
+    /// </remarks>
     private async Task<int> ReleaseChecksAskedAsync(string workflowId, CancellationToken cancellationToken)
     {
         string[] ids = [.. Enumerable.Range(0, ReleaseCheckReaskLimit + 1).Select(attempt => ReleaseCheckMessageId(workflowId, attempt))];
