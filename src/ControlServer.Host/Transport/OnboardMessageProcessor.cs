@@ -376,21 +376,21 @@ public sealed partial class OnboardMessageProcessor(
         // naming slots 1..8. So are slot locks a safety change may have changed (control-server#865). So is a repair release
         // whose HOLD_RELEASE check was refused as expired and asked again (control-server#852, review S1): until a mid-session
         // snapshot comes, it can neither be lifted nor taken again by a new session, and it says so once it has waited
-        // ReleaseReaskReadingsOverdueAfter.
-        DateTimeOffset now = timeProvider.GetUtcNow();
+        // ReleaseReaskReadingsOverdueAfter. The clock is read only when one of these waits stands, as before: a message with
+        // none of them reads no time here, and the tests that pin the instant an answer was stamped rely on that.
         if ((state.SafetyBaselineUntrusted || state.RemainingBasketsSkipAwaitingReadings || state.SlotLocksAwaitingSnapshot ||
              state.ReleaseReaskReadingsSince is not null) &&
-            now - state.SafetySnapshotRequestedAt >= SafetySnapshotReaskInterval)
+            timeProvider.GetUtcNow() - state.SafetySnapshotRequestedAt >= SafetySnapshotReaskInterval)
         {
             state.SafetySnapshotRequestDue = true;
             if (state.ReleaseReaskReadingsSince is not null)
                 state.SafetySnapshotRequestReason ??= "PRE_MOVEMENT_RECONCILIATION";
         }
         if (state.ReleaseReaskReadingsSince is { } waitingSince && !state.ReleaseReaskReadingsOverdueLogged &&
-            now - waitingSince >= ReleaseReaskReadingsOverdueAfter)
+            timeProvider.GetUtcNow() - waitingSince is var waited && waited >= ReleaseReaskReadingsOverdueAfter)
         {
             state.ReleaseReaskReadingsOverdueLogged = true;
-            LogReleaseReaskReadingsOverdue(logger, agvId, (long)(now - waitingSince).TotalSeconds);
+            LogReleaseReaskReadingsOverdue(logger, agvId, (long)waited.TotalSeconds);
         }
         return AppendSafetySnapshotRequest(capturedResponse, state);
     }
