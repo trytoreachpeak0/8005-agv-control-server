@@ -349,7 +349,7 @@ public sealed partial class RecoveryStateMachineG2Tests
                 clock.Current += wait;
                 heartbeat++;
                 return await ExchangeAsync(processor, peer, state, Envelope(
-                    $"e8520000-0000-4000-8000-0000000006{heartbeat:00}", "Heartbeat", new { sequence = heartbeat }));
+                    $"e8520000-0000-4000-8000-00000000065{heartbeat:x}", "Heartbeat", new { sequence = heartbeat }));
             }
             static string? RequestReason(string[] wire) =>
                 wire.SingleOrDefault(line => MessageType(line) == "SafetyStateSnapshotRequested") is { } request
