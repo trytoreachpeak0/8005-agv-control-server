@@ -426,7 +426,7 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
         return (recorded, gateCreates);
     }
 
-    private static async Task<VehicleFaultRecoveryDecision> ClearAsync(RuntimeFixture fixture)
+    internal static async Task<VehicleFaultRecoveryDecision> ClearAsync(RuntimeFixture fixture)
     {
         fixture.Context.ChangeTracker.Clear();
         VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture) { HasUnfinishedOrder = false })
@@ -450,7 +450,7 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
                 "quote(ClearedReason) AS Value FROM VehicleFaultStates WHERE AgvId = 'agv-legacy'")
             .SingleAsync(Token);
 
-    private static async Task<RuntimeFixture> GateArrivalWaitAsync()
+    internal static async Task<RuntimeFixture> GateArrivalWaitAsync()
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, createdAt: Now.AddMinutes(-10)));
@@ -480,7 +480,7 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
         fixture.Context.ChangeTracker.Clear();
     }
 
-    private static async Task<bool> HeldUnderGenerationAsync(RuntimeFixture fixture, string upperId, long generation)
+    internal static async Task<bool> HeldUnderGenerationAsync(RuntimeFixture fixture, string upperId, long generation)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.RiotOrderCommandAudit.AsNoTracking().AnyAsync(
@@ -488,31 +488,31 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
             Token);
     }
 
-    private static async Task<VehicleFaultStateRow> FaultAsync(RuntimeFixture fixture)
+    internal static async Task<VehicleFaultStateRow> FaultAsync(RuntimeFixture fixture)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
     }
 
-    private static async Task<OwnOrderRebuildRow[]> RebuildsAsync(RuntimeFixture fixture)
+    internal static async Task<OwnOrderRebuildRow[]> RebuildsAsync(RuntimeFixture fixture)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token);
     }
 
-    private static async Task<int> CountAsync(RuntimeFixture fixture, string commandType)
+    internal static async Task<int> CountAsync(RuntimeFixture fixture, string commandType)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.RiotOrderCommandAudit.AsNoTracking().CountAsync(row => row.CommandType == commandType, Token);
     }
 
-    private static async Task<string> OrderIdAsync(RuntimeFixture fixture, string upperId)
+    internal static async Task<string> OrderIdAsync(RuntimeFixture fixture, string upperId)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return (await reading.OrderIntents.AsNoTracking().SingleAsync(row => row.UpperId == upperId, Token)).OrderId!;
     }
 
-    private static async Task DriveOneRoundAsync(RuntimeFixture fixture)
+    internal static async Task DriveOneRoundAsync(RuntimeFixture fixture)
     {
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.HearFromPeerAsync();
@@ -521,6 +521,6 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
         fixture.Context.ChangeTracker.Clear();
     }
 
-    private static Task ReportLockedAsync(RuntimeFixture fixture) =>
+    internal static Task ReportLockedAsync(RuntimeFixture fixture) =>
         fixture.ReportSafetySummaryAsync(allTargetSlotsLocked: true, unknownPresent: false, ["ACTION_NOT_ALLOWED_IN_STATE"]);
 }

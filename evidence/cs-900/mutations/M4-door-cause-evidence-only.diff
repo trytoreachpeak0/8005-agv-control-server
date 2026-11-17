@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs b/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs
+index 2a1201070..c263ffd2d 100644
+--- a/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs
++++ b/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs
+@@ -266,7 +266,7 @@ public static class EmergencyStopDoorCause
+         VehicleFaultFact? fault = await faults.ReadAsync(agvId, cancellationToken).ConfigureAwait(false);
+         if (fault is { Level: not VehicleFaultLevel.None } &&
+             string.Equals(
+-                fault.OriginSymptomCode ?? fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal))
++                fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal))
+         {
+             return true;
+         }

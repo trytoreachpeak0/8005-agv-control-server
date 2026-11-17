@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
+index 69e9dadaa..999ddc1d7 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
+@@ -150,7 +150,7 @@ public sealed partial class JourneyRuntimeEngine
+                 runtime.AgvId, starts.Where(start => doors.UnknownSince is not DateTimeOffset current || start < current));
+         }
+ 
+-        bool doorFaultInEffect = await DoorFaultInEffectAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
++        bool doorFaultInEffect = await dbContext.VehicleFaultStates.AsNoTracking().AnyAsync(row => row.AgvId == runtime.AgvId && row.Level != VehicleFaultLevel.None && row.EvidenceCode == VehicleFaultEvidence.DoorNotProvenLocked, cancellationToken).ConfigureAwait(false);
+         // Only what a live onboard reports raises the symptom; a vehicle not heard from stays with control-server#234's code
+         // (see InTransitDoorVerdict.ReadUnknown). A slot that cannot be read is graced first (CP-0017): no fault, no command,
+         // an alarm. A fault already raised is still driven every round, silent or not.

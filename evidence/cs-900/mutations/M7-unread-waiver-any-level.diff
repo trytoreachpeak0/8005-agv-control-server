@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs b/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs
+index efb7ea2b7..7b8a96b53 100644
+--- a/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs
++++ b/src/ControlServer.Host/Runtime/LoadedEmergencyStopRelease.cs
+@@ -253,8 +253,7 @@ public static class EmergencyStopDoorCause
+         // repaired lock -- the door supervision follows such a fault by its origin since control-server#900, and without this its
+         // episode, kept through the escalation, would waive the confirmation it asked for before.
+         if (doorReadings?.OnlyUnreadAndLockedSince(subject.AgvId) == true &&
+-            (await faults.ReadAsync(subject.AgvId, cancellationToken).ConfigureAwait(false))?.Level ==
+-                VehicleFaultLevel.SuspectedBlocked &&
++            true &&
+             await NoDoorReadNotLockedInTransitAsync(dbContext, faults, subject, cancellationToken)
+                 .ConfigureAwait(false))
+         {

@@ -150,13 +150,7 @@ public sealed partial class JourneyRuntimeEngine
                 runtime.AgvId, starts.Where(start => doors.UnknownSince is not DateTimeOffset current || start < current));
         }
 
-        bool doorFaultInEffect = await dbContext.VehicleFaultStates.AsNoTracking()
-            .AnyAsync(
-                row => row.AgvId == runtime.AgvId &&
-                       row.Level != VehicleFaultLevel.None &&
-                       row.EvidenceCode == VehicleFaultEvidence.DoorNotProvenLocked,
-                cancellationToken)
-            .ConfigureAwait(false);
+        bool doorFaultInEffect = await DoorFaultInEffectAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
         // Only what a live onboard reports raises the symptom; a vehicle not heard from stays with control-server#234's code
         // (see InTransitDoorVerdict.ReadUnknown). A slot that cannot be read is graced first (CP-0017): no fault, no command,
         // an alarm. A fault already raised is still driven every round, silent or not.
@@ -248,6 +242,11 @@ public sealed partial class JourneyRuntimeEngine
     /// latch, went unasked for good -- a latched vehicle was never released, and the rebuild waited on the fault forever.
     /// </para>
     /// <para>
+    /// A door fault is one whose generation began on the doors, escalated or not (<see cref="DoorFaultInEffectAsync"/>,
+    /// control-server#900): before that, a fault escalated by a button held at the vehicle was never evaluated again once its
+    /// order was cancelled, and a generation stopped between recording its level and its hold never held the order.
+    /// </para>
+    /// <para>
     /// It supervises only: no journey code is written, the rebuild keeps its own. A person releases the stop through the
     /// class-three entry and clears the fault (CP-0011: the doors reading locked again release nothing); the rebuild the engine
     /// recorded goes on from there.
@@ -267,13 +266,7 @@ public sealed partial class JourneyRuntimeEngine
         JourneyStopRow stop,
         CancellationToken cancellationToken)
     {
-        bool doorFaultInEffect = await dbContext.VehicleFaultStates.AsNoTracking()
-            .AnyAsync(
-                row => row.AgvId == runtime.AgvId &&
-                       row.Level != VehicleFaultLevel.None &&
-                       row.EvidenceCode == VehicleFaultEvidence.DoorNotProvenLocked,
-                cancellationToken)
-            .ConfigureAwait(false);
+        bool doorFaultInEffect = await DoorFaultInEffectAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
         if (!doorFaultInEffect)
         {
             return;
@@ -301,6 +294,33 @@ public sealed partial class JourneyRuntimeEngine
             context,
             cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Whether a fault raised for this vehicle's doors stands (control-server#900): judged on the symptom its generation began on,
+    /// not on the evidence code standing now.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An escalation rewrites the evidence code -- <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c> while a button is held, from the first
+    /// observation on when the button was held first -- and the generation keeps its origin through it
+    /// (<see cref="VehicleFaultFact.OriginSymptomCode"/>, control-server#897). Judged on the evidence code alone, a door fault
+    /// stopped being driven once a button had been pressed: its doors reading locked again handed it to nothing, so a held order
+    /// RIoT ran without a continue went unstopped and unnamed, and after the order was cancelled the fault was never evaluated
+    /// again (agv03, 2026-11-15). A row written before the column has no origin and is judged on its evidence code as before.
+    /// The same reading as the clearance's (<c>VehicleFaultRecoveryService.DoorFaultHeldThisOrderAsync</c>).
+    /// </para>
+    /// <para>
+    /// A fault that began on another symptom is not a door fault here, whatever its evidence code: the doors' supervision does
+    /// not take it over.
+    /// </para>
+    /// </remarks>
+    private Task<bool> DoorFaultInEffectAsync(string agvId, CancellationToken cancellationToken) =>
+        dbContext.VehicleFaultStates.AsNoTracking()
+            .AnyAsync(
+                row => row.AgvId == agvId &&
+                       row.Level != VehicleFaultLevel.None &&
+                       (row.OriginSymptomCode ?? row.EvidenceCode) == VehicleFaultEvidence.DoorNotProvenLocked,
+                cancellationToken);
 
     /// <summary>
     /// The order and the cargo a fault on an in-flight order is about: the same for every symptom that meets a vehicle on the move,

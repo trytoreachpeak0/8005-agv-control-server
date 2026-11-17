@@ -226,7 +226,9 @@ public sealed class LoadedEmergencyStopRelease(
 /// overwrites it (control-server#539 review M-2: the fault's evidence code becomes <c>VEHICLE_ORDER_FAILED</c> when the held
 /// order fails afterwards, and <see cref="VehicleFaultEvidence.EmergencyCanNotRecover"/> while a button is held). The standing
 /// fault and the journey's block code are asked as well, for a stop raised before causes were recorded; any one of the three
-/// makes the confirmation required, never fewer.
+/// makes the confirmation required, never fewer. The fault is asked by the symptom its generation began on, for the same
+/// reason (<see cref="VehicleFaultFact.OriginSymptomCode"/>, control-server#900); a row from before that column by its
+/// evidence code.
 /// </remarks>
 public static class EmergencyStopDoorCause
 {
@@ -246,8 +248,13 @@ public static class EmergencyStopDoorCause
         // for no repaired lock -- the lock did not break, and the person confirms the cause removed, which for it is the reading
         // back. Known only to the process that saw the whole fault (InTransitDoorReadings), and only when the whole inbox since
         // the leg began read no door not locked either (cs#839 third re-review, the same last check as the automatic release);
-        // anything else asks as before.
+        // anything else asks as before. Only for a fault still at the first level (cs#901 review M1): one a held button
+        // escalated is a person's, as for the automatic release (VehicleFaultCoordinator.DoorReadingRelease), and asks for the
+        // repaired lock -- the door supervision follows such a fault by its origin since control-server#900, and without this its
+        // episode, kept through the escalation, would waive the confirmation it asked for before.
         if (doorReadings?.OnlyUnreadAndLockedSince(subject.AgvId) == true &&
+            (await faults.ReadAsync(subject.AgvId, cancellationToken).ConfigureAwait(false))?.Level ==
+                VehicleFaultLevel.SuspectedBlocked &&
             await NoDoorReadNotLockedInTransitAsync(dbContext, faults, subject, cancellationToken)
                 .ConfigureAwait(false))
         {
@@ -263,7 +270,8 @@ public static class EmergencyStopDoorCause
         string agvId = subject.AgvId;
         VehicleFaultFact? fault = await faults.ReadAsync(agvId, cancellationToken).ConfigureAwait(false);
         if (fault is { Level: not VehicleFaultLevel.None } &&
-            string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal))
+            string.Equals(
+                fault.OriginSymptomCode ?? fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal))
         {
             return true;
         }

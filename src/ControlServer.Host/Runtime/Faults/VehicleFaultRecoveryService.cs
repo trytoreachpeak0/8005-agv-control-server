@@ -818,8 +818,11 @@ public sealed partial class VehicleFaultRecoveryService(
     /// <b>The order is this generation's hold on it.</b> Every evaluation of a fault on an in-flight order arms an <c>OrderHold</c>
     /// audit row for the order's upperId under the fault's generation before anything is sent (the same mark
     /// <see cref="TerminalIntentCarriesThisFaultAsync"/> reads), so a hold for the current intent's upperId under the generation
-    /// standing now says this fault was raised, or evaluated, while this order was the one running. A door fault raised on another
-    /// order does not let a clearance through over this one.
+    /// standing now says this generation was <b>evaluated against this order</b> -- not that it began while this order ran
+    /// (cs#901 review L3). The engine's supervision of an order ended in RIoT (<c>SuperviseDoorFaultOnEndedOrderAsync</c>) evaluates
+    /// a standing door fault against the journey's current order too, and the hold it arms reads back Failed: a door fault raised
+    /// on another order, whose current order is then cancelled, passes here after that round. Such a clearance clears the fault
+    /// only (<c>NONE</c>) and the engine's one recorded rebuild runs, as for a fault raised on the order itself.
     /// </para>
     /// </remarks>
     private async Task<bool> DoorFaultHeldThisOrderAsync(

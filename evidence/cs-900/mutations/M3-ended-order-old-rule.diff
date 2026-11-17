@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
+index 69e9dadaa..c42f73a11 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
+@@ -266,7 +266,7 @@ public sealed partial class JourneyRuntimeEngine
+         JourneyStopRow stop,
+         CancellationToken cancellationToken)
+     {
+-        bool doorFaultInEffect = await DoorFaultInEffectAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
++        bool doorFaultInEffect = await dbContext.VehicleFaultStates.AsNoTracking().AnyAsync(row => row.AgvId == runtime.AgvId && row.Level != VehicleFaultLevel.None && row.EvidenceCode == VehicleFaultEvidence.DoorNotProvenLocked, cancellationToken).ConfigureAwait(false);
+         if (!doorFaultInEffect)
+         {
+             return;
