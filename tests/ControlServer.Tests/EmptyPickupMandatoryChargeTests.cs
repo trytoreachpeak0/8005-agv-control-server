@@ -36,8 +36,7 @@ public sealed class EmptyPickupMandatoryChargeTests
 
     /// <summary>
     /// 现场序列：第一站等录入时电量跌破强制充电线，没人扫码，期限到。车不去第二站：第二站的需求退回待派（仍是 <c>Accepted</c>、释放改派、不抑制），
-    /// 旅程收尾、三套占用放开，下一轮充电分配把这辆车当空闲车排进充电（这里名册上只有一台谁也到不了的桩，所以结论是「此刻没有可用的桩」，
-    /// 不是「车有用途」）。
+    /// 旅程收尾、三套占用放开，下一轮充电分配把这辆车当要充电的空闲车往下判（这个夹具没有路网，所以结论是「路网不可用」，不是「车有用途」）。
     /// </summary>
     /// <remarks>
     /// 改前：期限一到车照常发离站核验去第二站，旅程不收尾，充电分配每轮判 <c>CHARGING_VEHICLE_HAS_PURPOSE</c>——正是那晚的样子。
@@ -78,13 +77,12 @@ public sealed class EmptyPickupMandatoryChargeTests
             fixture.EngineLog.Entries,
             entry => entry.Message.Contains("went back to the backlog instead of being visited", StringComparison.Ordinal));
 
-        // 车成了空闲车：下一轮充电分配把它当成要充电的车（名册上只有一台到不了的桩，所以是「没有可用的桩」，不是「车有用途」），
-        // 派车不再给它搬运，第二站那条需求的积压行说的是强制充电。
-        await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, fixture.Options.MapId, fixture.Clock.GetUtcNow());
+        // 车成了空闲车：充电分配把它当成要充电的车，往下判桩与路线。这个夹具没有路网，所以结论停在「路网不可用」；改前它在更前面就停下，
+        // 结论是「车有用途」（CHARGING_VEHICLE_HAS_PURPOSE）。派车不再给它搬运，第二站那条需求的积压行说的是强制充电。
         await fixture.HearFromPeerAsync();
         await TickAndRunAsync(fixture);
         Assert.Equal(
-            ChargingAllocationReasons.NoChargerAvailable,
+            ChargingAllocationReasons.RouteGraphUnavailable,
             fixture.ChargingBoard.Verdicts[fixture.Options.AgvId].Reason);
         Assert.Equal(1, await fixture.Context.JourneyRuntimes.CountAsync(Token));
         Assert.Equal(DispatchReasonCodes.MandatoryChargeRequired, (await fixture.BacklogAsync(SecondDemandId)).ReasonCode);
@@ -155,6 +153,8 @@ public sealed class EmptyPickupMandatoryChargeTests
             await ArriveAtPickupAsync(fixture, FirstDemandId);
             Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
             fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+            // 名册上登记一台桩（ChargingTestKit）：名册为空时车一放开就会被置人工充电等待，那是另一条规则，结论就看不到车是不是进了充电分配。
+            await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, fixture.Options.MapId, fixture.Clock.GetUtcNow());
             return fixture;
         }
         catch

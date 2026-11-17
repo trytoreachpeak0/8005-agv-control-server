@@ -2003,6 +2003,13 @@ public sealed partial class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
+                // 空车取货旅程低于强制充电线（control-server#883，方案 B）：这一站已经等完，后面的取货站不去了，需求放回待派，车去充电。
+                // 放了就与本轮上面暂存的改动同一次保存；不放就什么也没写，照常往下走。
+                if (await TryReleaseEmptyPickupJourneyBelowChargeLineAsync(runtime, stops, session, now, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    return;
+                }
                 runtime.StationDepartureWaitStartedAt = null;
                 // 卸货停靠的这两个 id 受理时没有写过——在本票之前它永远是旅程的终点，没有「离开之前」可言。
                 // 多停靠计划里它后面还能有停靠，所以第一次要离站时补上并落库。
