@@ -294,8 +294,8 @@ public sealed partial class JourneyRuntimeEngine(
 
     /// <summary>
     /// 空车取货旅程低于强制充电线、当前这一站结束之后不再去后面的取货站时，旅程的收尾原因码（control-server#883）。后面那几条需求不终结，
-    /// 按释放改派退回积压（<see cref="DemandReleaseReasons.Released"/>），这个码只说这趟旅程为什么结束。车上说 <c>DEMAND_RELEASED</c>
-    /// （<see cref="StopEndedReasons"/>）。
+    /// 按释放改派退回积压（<see cref="DemandReleaseReasons.Released"/>），这个码只说这趟旅程为什么结束。按它换算车上说 <c>DEMAND_RELEASED</c>
+    /// （<see cref="StopEndedReasons"/>），但本站已以空清单结束过时收尾清单沿用那一版的原因（审查 M-3）。
     /// </summary>
     public const string EmptyPickupChargingRequiredReason = "EMPTY_PICKUP_CHARGING_REQUIRED";
 

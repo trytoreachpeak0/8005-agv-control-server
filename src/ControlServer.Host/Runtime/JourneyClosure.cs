@@ -53,10 +53,25 @@ internal static class JourneyClosure
     /// <summary>
     /// 旅程收尾：阶段写成 Completed、阻断原因写成 <paramref name="reasonCode"/>（正常卸完为 null），并把三张收尾快照暂存进同一次改动。
     /// </summary>
+    public static Task StageAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow runtime,
+        string? reasonCode,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken) =>
+        StageAsync(dbContext, runtime, reasonCode, stopEndedReason: null, endedAt, cancellationToken);
+
+    /// <inheritdoc cref="StageAsync(ControlServerDbContext, JourneyRuntimeRow, string?, DateTimeOffset, CancellationToken)"/>
+    /// <param name="stopEndedReason">
+    /// 收尾清单上车要显示的站级原因（协议取值）；为空即按 <paramref name="reasonCode"/> 经 <see cref="StopEndedReasons.ForEnding"/> 换算。
+    /// 本站已经以别的原因结束、发过空清单时由调用方给出那一版的原因，旅程的收尾码不改车上那一句（control-server#883 审查 M-3，
+    /// 与 cs#703 审查 L2 同一条规矩：本站有终结并告警的，不说「任务释放」）。
+    /// </param>
     public static async Task StageAsync(
         ControlServerDbContext dbContext,
         JourneyRuntimeRow runtime,
         string? reasonCode,
+        string? stopEndedReason,
         DateTimeOffset endedAt,
         CancellationToken cancellationToken)
     {
@@ -82,7 +97,7 @@ internal static class JourneyClosure
         await SlotCommandOutbox.ConcludeAsync(dbContext, runtime.AgvId, endedAt, cancellationToken).ConfigureAwait(false);
         // 已被车确认过的更高一版盖过的快照退役（control-server#750 规则 A）。收尾快照此刻只暂存、查不到，规则 B 留给启动修复。
         await SupersededSnapshotOutbox.FenceAcknowledgedOverAsync(dbContext, runtime.AgvId, endedAt, cancellationToken).ConfigureAwait(false);
-        await StageSnapshotsAsync(dbContext, runtime, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
+        await StageSnapshotsAsync(dbContext, runtime, reasonCode, stopEndedReason, endedAt, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -475,6 +490,7 @@ internal static class JourneyClosure
         ControlServerDbContext dbContext,
         JourneyRuntimeRow runtime,
         string? reasonCode,
+        string? stopEndedReason,
         DateTimeOffset endedAt,
         CancellationToken cancellationToken)
     {
@@ -510,7 +526,7 @@ internal static class JourneyClosure
             runtime.AgvId,
             session.SessionGeneration,
             new CurrentStopWorklistProjection(
-                closingStop.StationId, worklistRevision, null, null, [], StopEndedReasons.ForEnding(reasonCode)),
+                closingStop.StationId, worklistRevision, null, null, [], stopEndedReason ?? StopEndedReasons.ForEnding(reasonCode)),
             endedAt,
             cancellationToken).ConfigureAwait(false);
         await OnboardJourneyPublisher.StageUpcomingStopPlanAsync(

@@ -40,7 +40,7 @@ namespace ControlServer.Host.Runtime;
 /// <para>
 /// <b>收尾</b>与站点期限放回最后一条那一支相同（<see cref="PickupStopTermination.StageJourneyClosureAsync(JourneyRuntimeRow, string?, string, DateTimeOffset, CancellationToken)"/>）：
 /// 车就停在这一站，不修订计划；租约、订单占用与用途声明一起放，下一轮充电分配看到的是一辆空闲车。后面那几站的单还没建（下一段的单在离站时才建），
-/// 所以没有 RIoT 订单要取消。收尾原因 <see cref="EmptyPickupChargingRequiredReason"/>，车上说 <c>DEMAND_RELEASED</c>。
+/// 所以没有 RIoT 订单要取消。收尾原因 <see cref="EmptyPickupChargingRequiredReason"/>。车上收尾清单的站级原因沿用本站已发空清单的那一句（没人扫码时是 <c>STATION_DEADLINE_EXPIRED</c>），本站没发过才说 <c>DEMAND_RELEASED</c>（审查 M-3）。
 /// </para>
 /// <para>
 /// <b>与待送点缺电同样的几道闸</b>：读不到电量、读数过期、没有冻结的策略版本都不动（<see cref="MandatoryChargeBatteryAsync"/>）；仓门没证明关着不放
@@ -124,8 +124,12 @@ public sealed partial class JourneyRuntimeEngine
             (await TrackedStopAsync(currentStopId, cancellationToken).ConfigureAwait(false)).WorklistRefills +=
                 releasedFromCurrentStop;
         }
+        // 车上那一句沿用本站已发的空清单（审查 M-3）：本站没人扫码按站点期限结束时，那条需求已终结并告警，车上说的是「本站因超时结束」；
+        // 收尾若改说「任务释放」，现场会以为这一站的任务还会回来（cs#703 审查 L2 同一条规矩）。本站没发过空清单才说 DEMAND_RELEASED。
+        string? endedReasonOnVehicle = await StopEndWorklist
+            .EndedReasonAtCurrentStopAsync(dbContext, runtime, locked, cancellationToken).ConfigureAwait(false);
         await new PickupStopTermination(dbContext).StageJourneyClosureAsync(
-            runtime, sublotRequestMessageId, EmptyPickupChargingRequiredReason, now, cancellationToken)
+            runtime, sublotRequestMessageId, EmptyPickupChargingRequiredReason, endedReasonOnVehicle, now, cancellationToken)
             .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         if (transaction is not null)

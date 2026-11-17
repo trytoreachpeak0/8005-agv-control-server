@@ -1,8 +1,10 @@
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Release;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
@@ -31,6 +33,15 @@ namespace ControlServer.Tests;
 public sealed class EmptyPickupMandatoryChargeTests
 {
     private const string SecondPickupArea = "N1-2";
+
+    /// <summary>第三条的 AREA，与第二条同解析到站 13。</summary>
+    private const string ThirdPickupArea = "N1-3";
+
+    private const int SecondPickupStationRiotId = 13;
+
+    private const string ThirdDemandId = "10000000-0000-4000-8000-000000000883";
+
+    private const string ThirdSublot = "SUBLOT-883";
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
@@ -76,6 +87,11 @@ public sealed class EmptyPickupMandatoryChargeTests
         Assert.Contains(
             fixture.EngineLog.Entries,
             entry => entry.Message.Contains("went back to the backlog instead of being visited", StringComparison.Ordinal));
+
+        // 车上最后一版清单（收尾那一张）仍是第一站、仍说「本站因超时结束」（审查 M-3）：那条需求已终结并挂了人工搬运告警，
+        // 改说「本站因任务释放结束」会让现场以为这一站的任务还会回来（cs#703 审查 L2 同一条规矩）。
+        (string station, string? reason) = await LatestWorklistAsync(fixture);
+        Assert.Equal((firstStop.StationId, (string?)"STATION_DEADLINE_EXPIRED"), (station, reason));
 
         // 车成了空闲车：充电分配把它当成要充电的车，往下判桩与路线。这个夹具没有路网，所以结论停在「路网不可用」；改前它在更前面就停下，
         // 结论是「车有用途」（CHARGING_VEHICLE_HAS_PURPOSE）。派车不再给它搬运，第二站那条需求的积压行说的是强制充电。
@@ -137,8 +153,85 @@ public sealed class EmptyPickupMandatoryChargeTests
             entry => entry.Message.Contains("went back to the backlog instead of being visited", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 仓门闸（审查 M-2，与 cs#709 的待送点缺电同一道闸）：本站按期限结束之后、离站那一轮车报锁没关上，规则不收尾、不撤第二站——
+    /// 放了，车就会被派去充电，而门没证明关着的车不能被派走。
+    /// </summary>
+    /// <remarks>闸不过时规则只是让开，车照常离站（审查 L-1，调度接受现状）；这里只钉「不收尾、不撤」。</remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task ADoorNotProvenClosedAtDepartureKeepsTheRuleFromEndingTheJourney()
+    {
+        await using RuntimeFixture fixture = await WaitAtTheFirstOfTwoMachinePickupsAsync();
+        await DropBelowTheLineAsync(fixture, batteryPercent: 10);
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+
+        await fixture.SetSafetyEvidenceAsync(unknownPresent: false, reasonCodes: ["LOCK_NOT_CLOSED"]);
+        for (int round = 0; round < 2; round++)
+        {
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+        }
+
+        JourneyRuntimeRow journey = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.NotEqual(JourneyRuntimeEngine.EmptyPickupChargingRequiredReason, journey.BlockReasonCode);
+        Assert.NotEqual(JourneyRuntimeStage.Completed, journey.Stage);
+        Assert.Null((await MembershipAsync(fixture, SecondDemandId)).RemovedAt);
+        Assert.True(await fixture.Context.Set<VehiclePurposeClaimRow>().AnyAsync(Token), "The vehicle was let go with a door open.");
+    }
+
+    /// <summary>
+    /// 并发（审查 M-1）：规则在锁外读完游标、正读电量的那一刻，另一个连接把第二条需求释放改派了（释放服务的那一步；旅程上还剩第三条，
+    /// 不收尾）。进锁之后按锁内重读的游标只撤剩下的第三条、旅程照常收尾，不去再撤一条已经不在旅程上的需求。
+    /// </summary>
+    /// <remarks>
+    /// 第二、三条在同一个取货站（13）。版本守护（<c>GuardedJourneyId</c>）只在并发写者改了旅程行本身时才拦得住，释放一条非最后的需求不经旅程行，
+    /// 所以锁内重读不是冗余的。注入点是规则读电量那一次（按调用栈认），不是这一轮别处的读车。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task ADemandReleasedElsewhereWhileTheRuleDecidesIsNotWithdrawnAgain()
+    {
+        await using RuntimeFixture fixture = await WaitAtTheFirstOfTwoMachinePickupsAsync(withThirdDemandAtTheSecondStation: true);
+        await DropBelowTheLineAsync(fixture, batteryPercent: 10);
+        bool released = false;
+        fixture.Riot.BeforeReadVehicle = () =>
+        {
+            fixture.Clock.Advance(TimeSpan.FromMilliseconds(1));
+            if (released ||
+                !Environment.StackTrace.Contains("TryReleaseEmptyPickupJourneyBelowChargeLineAsync", StringComparison.Ordinal))
+            {
+                return;
+            }
+            released = true;
+            using ControlServerDbContext elsewhere = fixture.OpenConnectionContext();
+            JourneyDemandRow membership = elsewhere.Set<JourneyDemandRow>()
+                .Single(row => row.DemandId == SecondDemandId && row.RemovedAt == null);
+            DemandReleaseService.StageReleasedMembershipAsync(elsewhere, membership, fixture.Clock.GetUtcNow(), Token)
+                .GetAwaiter().GetResult();
+            elsewhere.SaveChanges();
+        };
+
+        await LetTheStationDeadlinePassAsync(fixture);
+
+        Assert.True(released, "The release was never injected while the rule was deciding.");
+        JourneyRuntimeRow journey = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.Completed, journey.Stage);
+        Assert.Equal(JourneyRuntimeEngine.EmptyPickupChargingRequiredReason, journey.BlockReasonCode);
+        Assert.Equal(DemandJourneyLookup.ReleasedForRedispatchReason, (await MembershipAsync(fixture, ThirdDemandId)).RemovalReason);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await DemandAsync(fixture, SecondDemandId)).Status);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await DemandAsync(fixture, ThirdDemandId)).Status);
+    }
+
     /// <summary>两条机台需求、两个取货站（12、13），车到了第一站在等录入。离站期限 10 秒。</summary>
-    private static async Task<RuntimeFixture> WaitAtTheFirstOfTwoMachinePickupsAsync()
+    /// <param name="withThirdDemandAtTheSecondStation">再追加第三条，取货也在第二站（13）。</param>
+    private static async Task<RuntimeFixture> WaitAtTheFirstOfTwoMachinePickupsAsync(bool withThirdDemandAtTheSecondStation = false)
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         try
@@ -148,8 +241,14 @@ public sealed class EmptyPickupMandatoryChargeTests
                 fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
             fixture.BoxCounts.Set(FirstSublot, 7);
             fixture.BoxCounts.Set(SecondSublot, 7);
+            fixture.BoxCounts.Set(ThirdSublot, 7);
             await TickAndRunAsync(fixture);
             await Batch7ThreeStopJourneyTests.AppendSecondDemandAsync(fixture);
+            if (withThirdDemandAtTheSecondStation)
+            {
+                await Batch7ThreeStopJourneyTests.AppendDemandAsync(
+                    fixture, ThirdDemandId, ThirdSublot, ThirdPickupArea, SecondPickupStationRiotId);
+            }
             await ArriveAtPickupAsync(fixture, FirstDemandId);
             Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
             fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
@@ -193,6 +292,31 @@ public sealed class EmptyPickupMandatoryChargeTests
             .SingleAsync(row => row.StopId == stop.StopId, Token)).DepartureSafetyCheckMessageId;
         return checkId is not null &&
             await fixture.Context.ProtocolOutbox.AsNoTracking().AnyAsync(row => row.MessageId == checkId, Token);
+    }
+
+    /// <summary>修订号最高的那一版清单（此刻排给车的那一版）的站点与站级原因。</summary>
+    private static async Task<(string Station, string? Reason)> LatestWorklistAsync(RuntimeFixture fixture)
+    {
+        string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "CurrentStopWorklistSnapshot")
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(Token);
+        long best = long.MinValue;
+        (string, string?)? latest = null;
+        foreach (string json in payloads)
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement payload = document.RootElement.GetProperty("payload");
+            long revision = payload.GetProperty("worklistRevision").GetInt64();
+            if (revision <= best)
+            {
+                continue;
+            }
+            best = revision;
+            JsonElement reason = payload.GetProperty("stopEndedReason");
+            latest = (payload.GetProperty("stationId").GetString()!, reason.ValueKind == JsonValueKind.Null ? null : reason.GetString());
+        }
+        return latest ?? throw new InvalidOperationException("No worklist was ever staged.");
     }
 
     private static Task<AcceptedDemandRow> DemandAsync(RuntimeFixture fixture, string demandId) =>
