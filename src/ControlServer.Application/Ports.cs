@@ -594,7 +594,8 @@ public sealed record VehicleFaultFact(
     DateTimeOffset? StopProvenAt,
     DateTimeOffset? EscalatedAt,
     DateTimeOffset? ClearedAt,
-    string? ClearedReason);
+    string? ClearedReason,
+    string? OriginSymptomCode = null);
 
 /// <summary>A faulted vehicle's cargo binding (REQ-0238).</summary>
 public sealed record FaultedCargoBinding(
@@ -624,6 +625,22 @@ public interface IVehicleFaultStore
         VehicleFaultLevel level,
         string evidenceCode,
         bool evidenceOnAutoConfirmWhitelist,
+        DateTimeOffset at,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// <see cref="RecordLevelAsync(string, VehicleFaultLevel, string, bool, DateTimeOffset, CancellationToken)"/>, naming the
+    /// symptom this server observed. A new generation keeps it as <see cref="VehicleFaultFact.OriginSymptomCode"/>, which nothing
+    /// within the generation rewrites (control-server#897): the evidence code is rewritten on escalation, so it cannot say what
+    /// the fault was raised for. No default implementation (cs#899 review L5): one that forwarded to the overload above would
+    /// drop the origin without a word.
+    /// </summary>
+    Task<VehicleFaultFact> RecordLevelAsync(
+        string agvId,
+        VehicleFaultLevel level,
+        string evidenceCode,
+        bool evidenceOnAutoConfirmWhitelist,
+        string originSymptomCode,
         DateTimeOffset at,
         CancellationToken cancellationToken);
 

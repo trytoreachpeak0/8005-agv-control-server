@@ -284,6 +284,12 @@ public sealed class VehicleFaultStateRow
     public string? EvidenceCode { get; set; }
     /// <summary>Whether <see cref="EvidenceCode"/> is on REQ-0233's closed automatic-confirmation whitelist.</summary>
     public bool EvidenceOnAutoConfirmWhitelist { get; set; }
+    /// <summary>
+    /// The symptom this server observed when the generation began (control-server#897). Unlike <see cref="EvidenceCode"/> it is
+    /// not rewritten within the generation -- an escalation records <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c> over a door fault's
+    /// evidence -- so it is what says a fault was raised for the doors. Null on a row written before the column existed.
+    /// </summary>
+    public string? OriginSymptomCode { get; set; }
     public DateTimeOffset? EnteredAt { get; set; }
     public DateTimeOffset? LastEvaluatedAt { get; set; }
     /// <summary>

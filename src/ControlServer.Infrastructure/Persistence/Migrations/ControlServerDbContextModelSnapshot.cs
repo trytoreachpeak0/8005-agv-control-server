@@ -4576,6 +4576,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("OriginSymptomCode")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("StopProven")
                         .HasColumnType("INTEGER");
 

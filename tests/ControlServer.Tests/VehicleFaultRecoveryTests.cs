@@ -1833,6 +1833,7 @@ public sealed class VehicleFaultRecoveryTests
             return Task.FromResult(new RiotVehicleEmergencyObservation(
                 deviceKey,
                 EmergencyUnreadable ? null
+                    : fixture.ButtonHeld ? RiotVehicleEmergencyObservation.CanNotRecover
                     : fixture.EmergencyLatched ? RiotVehicleEmergencyObservation.CanRecover
                     : RiotVehicleEmergencyObservation.Ok,
                 fixture.Clock.GetUtcNow()));
@@ -1911,6 +1912,11 @@ public sealed class VehicleFaultRecoveryTests
             string agvId, VehicleFaultLevel level, string evidenceCode, bool evidenceOnAutoConfirmWhitelist, DateTimeOffset at,
             CancellationToken cancellationToken) =>
             inner.RecordLevelAsync(agvId, level, evidenceCode, evidenceOnAutoConfirmWhitelist, at, cancellationToken);
+
+        public Task<VehicleFaultFact> RecordLevelAsync(
+            string agvId, VehicleFaultLevel level, string evidenceCode, bool evidenceOnAutoConfirmWhitelist, string originSymptomCode,
+            DateTimeOffset at, CancellationToken cancellationToken) =>
+            inner.RecordLevelAsync(agvId, level, evidenceCode, evidenceOnAutoConfirmWhitelist, originSymptomCode, at, cancellationToken);
 
         public Task RecordStopProofAsync(string agvId, long faultGeneration, bool proven, DateTimeOffset at, CancellationToken cancellationToken) =>
             inner.RecordStopProofAsync(agvId, faultGeneration, proven, at, cancellationToken);

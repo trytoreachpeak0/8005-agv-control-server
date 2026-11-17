@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/Migrations/20261117085542_VehicleFaultOriginSymptomCode.cs b/src/ControlServer.Infrastructure/Persistence/Migrations/20261117085542_VehicleFaultOriginSymptomCode.cs
+index fe394fada..4e60d39b5 100644
+--- a/src/ControlServer.Infrastructure/Persistence/Migrations/20261117085542_VehicleFaultOriginSymptomCode.cs
++++ b/src/ControlServer.Infrastructure/Persistence/Migrations/20261117085542_VehicleFaultOriginSymptomCode.cs
+@@ -24,9 +24,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
+         /// <inheritdoc />
+         protected override void Down(MigrationBuilder migrationBuilder)
+         {
+-            migrationBuilder.DropColumn(
+-                name: "OriginSymptomCode",
+-                table: "VehicleFaultStates");
+         }
+     }
+ }
