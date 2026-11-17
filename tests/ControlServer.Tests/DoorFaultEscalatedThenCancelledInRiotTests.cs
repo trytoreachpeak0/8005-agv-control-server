@@ -5,6 +5,8 @@ using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
@@ -32,77 +34,35 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
+
     /// <summary>
-    /// 现场序列：门锁故障（运行中的单被按住、急停）→ 车上急停按下，故障升级、依据改写 → 单在 RIoT 被取消，引擎记重建、等故障清除 →
+    /// 迁移之前的最后一个迁移：本票的迁移紧跟在它后面（迁移纪律台账也这么登记）。
+    /// </summary>
+    private const string PreviousMigration = "20261110075917_JourneyDemandsRedispatchIndex";
+
+    /// <summary>
+    /// 现场序列：门锁故障（运行中的单被按住）→ 车上急停按下，故障升级、依据改写 → 单在 RIoT 被取消，引擎记重建、等故障清除 →
     /// 有货急停人工解除 → 人工清除成功，只清故障、不记第二次重建 → 重建过了护栏（延迟、车况、#349 的仓位读数）才建，建且只建一张开往卸货站的单。
     /// 修前在「人工清除」那一步红：<c>Refused / FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c>。
     /// </summary>
-    [Fact]
+    /// <remarks>
+    /// 两种先后（调度 Coordinator14 2026-11-17 要求）：<c>after</c> 是现场的样子——服务端先记门锁故障、写下起源症状，之后按钮才按下、依据被改写；
+    /// <c>before</c> 是按钮在服务端第一次看到门锁之前就按着——这一代故障一开始依据就是 <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c>，从来没有过门锁的依据码，
+    /// 只有起源症状记着门锁。修前两格都红；只看「第一个依据码」的修法会在 <c>before</c> 这一格红。
+    /// </remarks>
+    [Theory]
+    [InlineData("after")]
+    [InlineData("before")]
     [Trait("Requirement", "REQ-0246")]
     [Trait("Requirement", "REQ-0360")]
-    public async Task ADoorFaultEscalatedByAHeldButtonClearsAfterItsOrderIsCancelledInRiotAndTheOneRebuildRuns()
+    public async Task ADoorFaultEscalatedByAHeldButtonClearsAfterItsOrderIsCancelledInRiotAndTheOneRebuildRuns(string escalation)
     {
         await using RuntimeFixture fixture = await GateArrivalWaitAsync();
-        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
-        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
-
-        // 一：行驶中门锁没锁 -> 门锁故障，同一轮按住这张单、急停；RIoT 停住单，闩锁锁上。
-        fixture.Riot.MovementState = "MT_RUNNING";
-        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
-        await fixture.ReportSafetySummaryAsync(
-            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
-        await DriveOneRoundAsync(fixture);
-        string orderId = await OrderIdAsync(fixture, upperId);
-        fixture.Riot.SetOrderState(upperId, RiotOrderState.Paused, terminal: false);
-        fixture.Riot.MovementState = "MT_PAUSED";
-        fixture.EmergencyLatched = true;
-        fixture.UnfinishedOrderIds = [orderId];
-        await DriveOneRoundAsync(fixture);
-        VehicleFaultStateRow doorFault = await FaultAsync(fixture);
-        Assert.Equal(
-            (VehicleFaultLevel.SuspectedBlocked, VehicleFaultEvidence.DoorNotProvenLocked),
-            (doorFault.Level, doorFault.EvidenceCode));
-        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
-
-        // 二：有人按下车上急停 -> 升级为 ConfirmedIsolated，依据改写成 CAN_NOT_RECOVER；同一代故障。
-        fixture.ButtonHeld = true;
-        await DriveOneRoundAsync(fixture);
-        VehicleFaultStateRow escalated = await FaultAsync(fixture);
-        Assert.Equal(
-            (VehicleFaultLevel.ConfirmedIsolated, VehicleFaultEvidence.EmergencyCanNotRecover, doorFault.FaultGeneration),
-            (escalated.Level, escalated.EvidenceCode, escalated.FaultGeneration));
-        Assert.Equal(VehicleFaultEvidence.DoorNotProvenLocked, escalated.OriginSymptomCode);
-
-        // 三：按钮松开（CAN_RECOVER）；按住的单被人在 RIoT 取消 -> 引擎记重建，过了延迟仍等故障清除，一张单都不建。
-        fixture.ButtonHeld = false;
-        fixture.Riot.SetOrderState(upperId, RiotOrderState.Cancelled, terminal: true);
-        fixture.UnfinishedOrderIds = [];
-        await ReportLockedAsync(fixture);
-        await DriveOneRoundAsync(fixture);
-        OwnOrderRebuildRow recorded = Assert.Single(await RebuildsAsync(fixture));
-        Assert.Equal((OwnOrderRebuildSources.CancelledInRiot, OwnOrderRebuildStates.Pending), (recorded.Source, recorded.State));
-        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
-        await DriveOneRoundAsync(fixture);
-        OwnOrderRebuildRow waiting = Assert.Single(await RebuildsAsync(fixture));
-        Assert.True(fixture.Clock.GetUtcNow() > waiting.DueAt);
-        Assert.Contains("VEHICLE_FAULT_IN_EFFECT", waiting.WaitingReason, StringComparison.Ordinal);
-        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
-
-        // 四：有货急停人工解除（确认门锁已检修），闩锁读回 OK。
-        await fixture.ReleaseByAPersonAsync();
-        fixture.EmergencyLatched = false;
-        for (int round = 0; round < 3; round++)
-        {
-            await DriveOneRoundAsync(fixture);
-        }
-
-        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
-        Assert.Equal(VehicleFaultLevel.ConfirmedIsolated, (await FaultAsync(fixture)).Level);
+        (OwnOrderRebuildRow recorded, int gateCreates) =
+            await DoorFaultedEscalatedCancelledAndReleasedAsync(fixture, buttonFirst: escalation == "before");
 
         // 五：人工清除。修前在这里拒（FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT）。只清故障，不记第二次重建。
-        VehicleFaultRecoveryDecision cleared = await VehicleFaultRecoveryTests.Service(fixture, new(fixture) { HasUnfinishedOrder = false })
-            .RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token);
-        fixture.Context.ChangeTracker.Clear();
+        VehicleFaultRecoveryDecision cleared = await ClearAsync(fixture);
         Assert.True(VehicleFaultRecoveryOutcome.Cleared == cleared.Outcome, string.Join(", ", cleared.Reasons));
         Assert.Equal(VehicleFaultRecoveryDispositions.None, cleared.Disposition);
         Assert.Equal(VehicleFaultLevel.None, (await FaultAsync(fixture)).Level);
@@ -128,6 +88,120 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
         OwnOrderRebuildRow rebuilt = Assert.Single(await RebuildsAsync(fixture));
         Assert.Equal((recorded.RebuildId, OwnOrderRebuildStates.Rebuilt), (rebuilt.RebuildId, rebuilt.State));
         Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    /// <summary>
+    /// 部署之前已经记下的故障行，<c>OriginSymptomCode</c> 是空的：按今天的规则判，只看依据码。所以上线前已经卡在这条死锁上的车，这次修复
+    /// 解不开——依据已被改写，清除照旧拒。现场的出路是核实这一代故障确是门锁故障（它的急停原因、门锁告警）之后，只把空的
+    /// <c>OriginSymptomCode</c> 补成门锁的症状码，不动依据码；清除随即接受，走引擎已登记的那一条重建。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task AFaultRowFromBeforeTheColumnIsJudgedOnItsEvidenceAndClearsOnceItsOriginIsFilledIn()
+    {
+        await using RuntimeFixture fixture = await GateArrivalWaitAsync();
+        (OwnOrderRebuildRow recorded, _) = await DoorFaultedEscalatedCancelledAndReleasedAsync(fixture, buttonFirst: false);
+
+        // 部署前的行：起源症状为空，依据已是 CAN_NOT_RECOVER。
+        Assert.Equal(1, await fixture.Context.Database.ExecuteSqlRawAsync(
+            "UPDATE VehicleFaultStates SET OriginSymptomCode = NULL", Token));
+        VehicleFaultRecoveryDecision refused = await ClearAsync(fixture);
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, refused.Outcome);
+        Assert.Equal(["FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT"], refused.Reasons);
+
+        // 现场的出路：只补空的起源症状，依据码不动。
+        Assert.Equal(1, await fixture.Context.Database.ExecuteSqlRawAsync(
+            "UPDATE VehicleFaultStates SET OriginSymptomCode = 'VEHICLE_DOOR_NOT_PROVEN_LOCKED' " +
+            "WHERE Level = 'ConfirmedIsolated' AND EvidenceCode = 'RIOT_EMERGENCY_CAN_NOT_RECOVER' AND OriginSymptomCode IS NULL",
+            Token));
+        VehicleFaultRecoveryDecision cleared = await ClearAsync(fixture);
+        Assert.True(VehicleFaultRecoveryOutcome.Cleared == cleared.Outcome, string.Join(", ", cleared.Reasons));
+        Assert.Equal(VehicleFaultRecoveryDispositions.None, cleared.Disposition);
+        Assert.Equal(recorded.RebuildId, Assert.Single(await RebuildsAsync(fixture)).RebuildId);
+    }
+
+    /// <summary>
+    /// 同一辆车：上一代是门锁故障（按住了取货单），人清除了；下一代以别的症状记在开往卸货站的单上，按钮按着、依据同样是 CAN_NOT_RECOVER。
+    /// 这张单被人在 RIoT 取消之后清除照旧拒绝：新一代的起源症状是它自己的，不继承上一代的门锁。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task ASecondFaultOnTheSameVehicleDoesNotInheritTheDoorOriginOfTheFirst()
+    {
+        await using RuntimeFixture fixture = await GateArrivalWaitAsync();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        string upperId = runtime.GateUpperId!;
+        string pickupUpperId = runtime.PickupUpperId;
+        SiteRiot site = new(fixture) { HasUnfinishedOrder = false };
+
+        await ObserveAsync(
+            fixture, site, VehicleFaultEvidence.DoorNotProvenLocked,
+            new RiotOrderCommandTarget(fixture.Options.AgvId, pickupUpperId, await OrderIdAsync(fixture, pickupUpperId)));
+        VehicleFaultStateRow first = await FaultAsync(fixture);
+        Assert.Equal(VehicleFaultEvidence.DoorNotProvenLocked, first.OriginSymptomCode);
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            await new VehicleFaultStore(writing).ClearAsync(
+                fixture.Options.AgvId, first.FaultGeneration, "L1_CLEARED", fixture.Clock.GetUtcNow(), Token);
+        }
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.ButtonHeld = true;
+        await ObserveAsync(
+            fixture, site, "L1_CONSTRUCTED_SYMPTOM",
+            new RiotOrderCommandTarget(fixture.Options.AgvId, upperId, await OrderIdAsync(fixture, upperId)));
+        VehicleFaultStateRow second = await FaultAsync(fixture);
+        Assert.Equal(
+            (first.FaultGeneration + 1, VehicleFaultEvidence.EmergencyCanNotRecover, "L1_CONSTRUCTED_SYMPTOM"),
+            (second.FaultGeneration, second.EvidenceCode, second.OriginSymptomCode));
+        Assert.True(await HeldUnderGenerationAsync(fixture, upperId, second.FaultGeneration));
+
+        fixture.ButtonHeld = false;
+        fixture.Riot.SetOrderState(upperId, RiotOrderState.Cancelled, terminal: true);
+        VehicleFaultRecoveryDecision clearance = await VehicleFaultRecoveryTests.Service(fixture, site)
+            .RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, clearance.Outcome);
+        Assert.Contains("FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT", clearance.Reasons);
+    }
+
+    /// <summary>
+    /// 迁移只加一列可空的 <c>OriginSymptomCode</c>：降回上一个迁移时列消失、已有的故障行不丢；再升上来，那一行的这一列是空的、其余不变。
+    /// 模型快照与模型一致。
+    /// </summary>
+    [Fact]
+    public async Task TheMigrationAddsOneNullableColumnAndGoesDownAndUpWithoutTouchingAFaultRow()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(migrate: true);
+        DatabaseFacade database = fixture.Context.Database;
+        Assert.False(database.HasPendingModelChanges());
+        string[] migrations = [.. database.GetMigrations()];
+        Assert.Equal(PreviousMigration, migrations[^2]);
+        Assert.EndsWith("_VehicleFaultOriginSymptomCode", migrations[^1], StringComparison.Ordinal);
+        Assert.Equal(0L, await ScalarAsync(fixture, "SELECT \"notnull\" AS Value FROM pragma_table_info('VehicleFaultStates') WHERE name = 'OriginSymptomCode'"));
+
+        IMigrator migrator = fixture.Context.GetService<IMigrator>();
+        await migrator.MigrateAsync(PreviousMigration, Token);
+        Assert.Equal(0L, await ColumnCountAsync(fixture));
+        await database.ExecuteSqlRawAsync(
+            "INSERT INTO VehicleFaultStates (AgvId, Level, FaultGeneration, EvidenceCode, EvidenceOnAutoConfirmWhitelist, EnteredAt, " +
+            "LastEvaluatedAt, StopProven) VALUES ('agv-legacy', 'ConfirmedIsolated', 2, 'RIOT_EMERGENCY_CAN_NOT_RECOVER', 1, " +
+            "'2026-11-15 07:46:01+00:00', '2026-11-15 08:14:24+00:00', 0)",
+            Token);
+        string before = await LegacyRowAsync(fixture);
+
+        await database.MigrateAsync(Token);
+        Assert.Equal(1L, await ColumnCountAsync(fixture));
+        Assert.Equal(before, await LegacyRowAsync(fixture));
+        Assert.Equal(1L, await ScalarAsync(fixture, "SELECT COUNT(*) AS Value FROM VehicleFaultStates WHERE AgvId = 'agv-legacy' AND OriginSymptomCode IS NULL"));
+
+        await migrator.MigrateAsync(PreviousMigration, Token);
+        Assert.Equal(0L, await ColumnCountAsync(fixture));
+        Assert.Equal(before, await LegacyRowAsync(fixture));
+
+        await database.MigrateAsync(Token);
+        Assert.Equal(1L, await ColumnCountAsync(fixture));
+        Assert.Equal(before, await LegacyRowAsync(fixture));
     }
 
     /// <summary>
@@ -195,6 +269,109 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
     }
 
     // ---- 夹具 ----------------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 现场序列的前四步，停在人工清除之前：门锁故障按住运行中的单 → 按钮按下、依据改写（<paramref name="buttonFirst"/> 时按钮在第一次观测前就按着）
+    /// → 单在 RIoT 被取消、引擎记重建，过了到期仍等故障清除 → 有货急停人工解除。返回那一条重建记录与此前开往卸货站的建单数。
+    /// </summary>
+    private static async Task<(OwnOrderRebuildRow Recorded, int GateCreates)> DoorFaultedEscalatedCancelledAndReleasedAsync(
+        RuntimeFixture fixture, bool buttonFirst)
+    {
+        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+
+        // 一：行驶中门锁没锁 -> 门锁故障，同一轮按住这张单；RIoT 停住单，闩锁锁上。
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+        fixture.ButtonHeld = buttonFirst;
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await DriveOneRoundAsync(fixture);
+        string orderId = await OrderIdAsync(fixture, upperId);
+        fixture.Riot.SetOrderState(upperId, RiotOrderState.Paused, terminal: false);
+        fixture.Riot.MovementState = "MT_PAUSED";
+        fixture.EmergencyLatched = true;
+        fixture.UnfinishedOrderIds = [orderId];
+        await DriveOneRoundAsync(fixture);
+        VehicleFaultStateRow first = await FaultAsync(fixture);
+        Assert.Equal(VehicleFaultEvidence.DoorNotProvenLocked, first.OriginSymptomCode);
+        Assert.True(await HeldUnderGenerationAsync(fixture, upperId, first.FaultGeneration));
+        if (buttonFirst)
+        {
+            // 按钮先按着：这一代故障从一开始依据就是 CAN_NOT_RECOVER，从没有过门锁的依据码；服务端只在那个闩锁上记下本服务端的一类。
+            Assert.Equal(
+                (VehicleFaultLevel.ConfirmedIsolated, VehicleFaultEvidence.EmergencyCanNotRecover),
+                (first.Level, first.EvidenceCode));
+            Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        }
+        else
+        {
+            Assert.Equal(
+                (VehicleFaultLevel.SuspectedBlocked, VehicleFaultEvidence.DoorNotProvenLocked),
+                (first.Level, first.EvidenceCode));
+            Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+
+            // 二：有人按下车上急停 -> 升级为 ConfirmedIsolated，依据改写成 CAN_NOT_RECOVER；同一代故障，起源症状不变。
+            fixture.ButtonHeld = true;
+            await DriveOneRoundAsync(fixture);
+            VehicleFaultStateRow escalated = await FaultAsync(fixture);
+            Assert.Equal(
+                (VehicleFaultLevel.ConfirmedIsolated, VehicleFaultEvidence.EmergencyCanNotRecover, first.FaultGeneration,
+                    VehicleFaultEvidence.DoorNotProvenLocked),
+                (escalated.Level, escalated.EvidenceCode, escalated.FaultGeneration, escalated.OriginSymptomCode));
+        }
+
+        // 三：按钮松开（CAN_RECOVER）；按住的单被人在 RIoT 取消 -> 引擎记重建，过了到期仍等故障清除，一张单都不建。
+        fixture.ButtonHeld = false;
+        fixture.Riot.SetOrderState(upperId, RiotOrderState.Cancelled, terminal: true);
+        fixture.UnfinishedOrderIds = [];
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        OwnOrderRebuildRow recorded = Assert.Single(await RebuildsAsync(fixture));
+        Assert.Equal((OwnOrderRebuildSources.CancelledInRiot, OwnOrderRebuildStates.Pending), (recorded.Source, recorded.State));
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        await DriveOneRoundAsync(fixture);
+        OwnOrderRebuildRow waiting = Assert.Single(await RebuildsAsync(fixture));
+        Assert.True(fixture.Clock.GetUtcNow() > waiting.DueAt);
+        Assert.Contains("VEHICLE_FAULT_IN_EFFECT", waiting.WaitingReason, StringComparison.Ordinal);
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+
+        // 四：有货急停人工解除（确认门锁已检修），闩锁读回 OK。故障仍在，仍不建。
+        await fixture.ReleaseByAPersonAsync();
+        fixture.EmergencyLatched = false;
+        for (int round = 0; round < 3; round++)
+        {
+            await DriveOneRoundAsync(fixture);
+        }
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal(VehicleFaultLevel.ConfirmedIsolated, (await FaultAsync(fixture)).Level);
+        return (recorded, gateCreates);
+    }
+
+    private static async Task<VehicleFaultRecoveryDecision> ClearAsync(RuntimeFixture fixture)
+    {
+        fixture.Context.ChangeTracker.Clear();
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture) { HasUnfinishedOrder = false })
+            .RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token);
+        fixture.Context.ChangeTracker.Clear();
+        return decision;
+    }
+
+    private static Task<long> ColumnCountAsync(RuntimeFixture fixture) =>
+        ScalarAsync(fixture, "SELECT COUNT(*) AS Value FROM pragma_table_info('VehicleFaultStates') WHERE name = 'OriginSymptomCode'");
+
+    private static Task<long> ScalarAsync(RuntimeFixture fixture, string sql) =>
+        fixture.Context.Database.SqlQueryRaw<long>(sql).SingleAsync(Token);
+
+    /// <summary>The legacy row over the columns the previous migration has, so the two schemas compare.</summary>
+    private static Task<string> LegacyRowAsync(RuntimeFixture fixture) =>
+        fixture.Context.Database.SqlQueryRaw<string>(
+                "SELECT quote(AgvId) || '|' || quote(Level) || '|' || quote(FaultGeneration) || '|' || quote(EvidenceCode) || '|' || " +
+                "quote(EvidenceOnAutoConfirmWhitelist) || '|' || quote(EnteredAt) || '|' || quote(LastEvaluatedAt) || '|' || " +
+                "quote(StopProven) || '|' || quote(StopProvenAt) || '|' || quote(EscalatedAt) || '|' || quote(ClearedAt) || '|' || " +
+                "quote(ClearedReason) AS Value FROM VehicleFaultStates WHERE AgvId = 'agv-legacy'")
+            .SingleAsync(Token);
 
     private static async Task<RuntimeFixture> GateArrivalWaitAsync()
     {
