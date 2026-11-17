@@ -1,0 +1,12 @@
+# M6-release-but-suppress
+file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.EmptyPickupCharging.cs
+-            await DemandReleaseService.StageReleasedMembershipAsync(dbContext, membership, now, cancellationToken)
++            dbContext.Set<TransportDemandSuppressionRow>().Add(new TransportDemandSuppressionRow { TransportDemandKey = (await dbContext.AcceptedDemands.SingleAsync(row => row.DemandId == membership.DemandId, cancellationToken)).TransportDemandKey, DemandId = membership.DemandId, ReasonCode = StationTimeoutCancellationReason, SuppressedAt = now }); await DemandReleaseService.StageReleasedMembershipAsync(dbContext, membership, now, cancellationToken)
+
+exit=1
+  失败 ControlServer.Tests.EmptyPickupMandatoryChargeTests.AnEmptyPickupJourneyBelowTheLineFinishesTheCurrentStopThenGivesUpTheRestAndGoesToCharge [311 ms]
+  错误消息:
+   Assert.Single() Failure: The collection contained 2 items
+Collection: [TransportDemandSuppression { TransportDemandKey = SUBLOT-001|WIRE_TO_GATE, DemandId = 10000000-0000-4000-8000-000000000001, ReasonCode = CANCELLED_BY_STATION_TIMEOUT, SuppressedAt = 2026/8/26 1:00:14 +00:00 }, TransportDemandSuppression { TransportDemandKey = SUBLOT-002|WIRE_TO_GATE, DemandId = 10000000-0000-4000-8000-000000000002, ReasonCode = CANCELLED_BY_STATION_TIMEOUT, SuppressedAt = 2026/8/26 1:00:15 +00:00 }]
+--
+失败!  - 失败:     1，通过:     2，已跳过:     0，总计:     3，持续时间: 12 s - ControlServer.Tests.dll (net8.0)

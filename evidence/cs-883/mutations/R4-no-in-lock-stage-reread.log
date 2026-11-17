@@ -1,0 +1,7 @@
+# R4-no-in-lock-stage-reread
+file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.EmptyPickupCharging.cs
+-        if (stageNow != JourneyRuntimeStage.AwaitingStationDeparture)
++        if (false && stageNow != JourneyRuntimeStage.AwaitingStationDeparture)
+
+exit=0
+已通过! - 失败:     0，通过:     5，已跳过:     0，总计:     5，持续时间: 16 s - ControlServer.Tests.dll (net8.0)

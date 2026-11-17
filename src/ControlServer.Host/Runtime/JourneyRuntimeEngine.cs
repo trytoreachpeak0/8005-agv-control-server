@@ -293,6 +293,13 @@ public sealed partial class JourneyRuntimeEngine(
     public const string CargoHoldingTruncationReason = "RELEASED_AT_CARGO_HOLDING_DEADLINE";
 
     /// <summary>
+    /// 空车取货旅程低于强制充电线、当前这一站结束之后不再去后面的取货站时，旅程的收尾原因码（control-server#883）。后面那几条需求不终结，
+    /// 按释放改派退回积压（<see cref="DemandReleaseReasons.Released"/>），这个码只说这趟旅程为什么结束。按它换算车上说 <c>DEMAND_RELEASED</c>
+    /// （<see cref="StopEndedReasons"/>），但本站已以空清单结束过时收尾清单沿用那一版的原因（审查 M-3）。
+    /// </summary>
+    public const string EmptyPickupChargingRequiredReason = "EMPTY_PICKUP_CHARGING_REQUIRED";
+
+    /// <summary>
     /// The load stop has run out its station departure deadline with a slot door still not closed
     /// (ADR-cross-0058 decision 4). The stop does not end; the duty moves to someone shutting the door.
     /// </summary>
@@ -1994,6 +2001,13 @@ public sealed partial class JourneyRuntimeEngine(
                 if (await store.SlotDoorHeldAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false))
                 {
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+                // 空车取货旅程低于强制充电线（control-server#883，方案 B）：这一站已经等完，后面的取货站不去了，需求放回待派，车去充电。
+                // 放了就与本轮上面暂存的改动同一次保存；不放就什么也没写，照常往下走。
+                if (await TryReleaseEmptyPickupJourneyBelowChargeLineAsync(runtime, stops, session, now, cancellationToken)
+                        .ConfigureAwait(false))
+                {
                     return;
                 }
                 runtime.StationDepartureWaitStartedAt = null;

@@ -299,10 +299,21 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
     /// <remarks>
     /// <paramref name="currentSublotRequestMessageId"/> 是本停靠此刻那一版录入请求，见上面那段「同名不同源」。
     /// </remarks>
+    public Task StageJourneyClosureAsync(
+        JourneyRuntimeRow runtime,
+        string? currentSublotRequestMessageId,
+        string reasonCode,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken) =>
+        StageJourneyClosureAsync(runtime, currentSublotRequestMessageId, reasonCode, stopEndedReason: null, endedAt, cancellationToken);
+
+    /// <inheritdoc cref="StageJourneyClosureAsync(JourneyRuntimeRow, string?, string, DateTimeOffset, CancellationToken)"/>
+    /// <param name="stopEndedReason">收尾清单上车要显示的站级原因；为空按 <paramref name="reasonCode"/> 换算（见 <see cref="JourneyClosure"/>）。</param>
     public async Task StageJourneyClosureAsync(
         JourneyRuntimeRow runtime,
         string? currentSublotRequestMessageId,
         string reasonCode,
+        string? stopEndedReason,
         DateTimeOffset endedAt,
         CancellationToken cancellationToken)
     {
@@ -329,6 +340,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
 
         runtime.StationDepartureWaitStartedAt = null;
         // 阶段、原因码与车要收的收尾快照，同一个出口（control-server#323）。
-        await JourneyClosure.StageAsync(dbContext, runtime, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
+        await JourneyClosure.StageAsync(dbContext, runtime, reasonCode, stopEndedReason, endedAt, cancellationToken)
+            .ConfigureAwait(false);
     }
 }

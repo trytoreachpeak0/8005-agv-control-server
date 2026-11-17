@@ -1,0 +1,11 @@
+# M1-no-call
+file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+-                if (await TryReleaseEmptyPickupJourneyBelowChargeLineAsync(runtime, stops, session, now, cancellationToken)
++                if (false && await TryReleaseEmptyPickupJourneyBelowChargeLineAsync(runtime, stops, session, now, cancellationToken)
+
+exit=1
+  失败 ControlServer.Tests.EmptyPickupMandatoryChargeTests.AnEmptyPickupJourneyBelowTheLineFinishesTheCurrentStopThenGivesUpTheRestAndGoesToCharge [4 s]
+  错误消息:
+   The empty vehicle below the line was asked to leave for the next pickup. stage=AwaitingDepartureSafety block=
+--
+失败!  - 失败:     1，通过:     2，已跳过:     0，总计:     3，持续时间: 17 s - ControlServer.Tests.dll (net8.0)

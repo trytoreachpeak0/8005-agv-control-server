@@ -209,6 +209,41 @@ internal static class StopEndWorklist
         await LateSublotSubmission.SendStaleAnswersAsync(publisher, dbContext, agvId, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 当前停靠已经以一张空清单结束过（旅程继续）时，那一版清单上的站级原因（协议取值）；本站没发过空清单为空。
+    /// </summary>
+    /// <remarks>
+    /// 给「本站结束之后、离开之前旅程才收尾」的那条来路用（control-server#883）：收尾清单沿用这一句，不让旅程的收尾码改掉车上已经显示的
+    /// 本站原因（审查 M-3）。定位与 <see cref="PendingIdAsync"/> 同一个算法：空清单暂存时把本站「当前号」推到它之上一号。
+    /// </remarks>
+    internal static async Task<string?> EndedReasonAtCurrentStopAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        CancellationToken cancellationToken)
+    {
+        if (stops.OpenStops.Count == 0 || stops.OutstandingAtCurrentStop.Count > 0 || stops.Current.WorklistRefills == 0)
+        {
+            return null;
+        }
+        long revision = stops.WorklistRevisionAt(runtime.WorklistRevision, stops.Current) - 1;
+        string messageId = stops.WorklistMessageIdAt(runtime.WorklistRevision, stops.Current, revision);
+        string? payloadJson = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageId == messageId)
+            .Select(row => row.PayloadJson)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (payloadJson is null)
+        {
+            return null;
+        }
+        using JsonDocument document = JsonDocument.Parse(payloadJson);
+        JsonElement payload = document.RootElement.GetProperty("payload");
+        return payload.GetProperty("items").GetArrayLength() == 0 &&
+               payload.GetProperty("stopEndedReason") is { ValueKind: JsonValueKind.String } reason
+            ? reason.GetString()
+            : null;
+    }
+
     private static async Task<string?> PendingIdAsync(
         ControlServerDbContext dbContext,
         string agvId,
