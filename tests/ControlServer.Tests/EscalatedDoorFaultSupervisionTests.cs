@@ -7,6 +7,7 @@ using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 using D = ControlServer.Tests.DoorFaultEscalatedThenCancelledInRiotTests;
+using G = ControlServer.Tests.InTransitDoorUnknownGraceTests;
 
 namespace ControlServer.Tests;
 
@@ -224,6 +225,116 @@ public sealed class EscalatedDoorFaultSupervisionTests
     }
 
     /// <summary>
+    /// cs#901 审查 M1：故障只因门锁「读不到」引起（CP-0017），之后按钮按下、升级为 <c>ConfirmedIsolated</c>；按钮松开，门锁读回锁闭超过 10 秒。
+    /// 人经三类入口解除时仍要确认门锁已检修，和本票之前一样——升级后的故障是人的事，「读不到、又读回锁闭」的豁免只给第一级的故障。
+    /// </summary>
+    /// <remarks>
+    /// 本票让门锁监看按起因认升级后的故障，这一路的 episode 因此跨过升级留了下来（<c>OnlyUnreadAndLockedSince</c> 为真，下面先断言它）；
+    /// 不加级别条件，<c>EmergencyStopDoorCause</c> 就在最前面放行，不再要人确认。审查探针 P1 入库。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0356")]
+    public async Task AnEscalatedUnreadDoorFaultStillAsksForARepairedLockOnceItsDoorsReadLockedAgain()
+    {
+        await using RuntimeFixture fixture = await D.GateArrivalWaitAsync();
+        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+        await G.ReportLockedAsync(fixture);
+        await G.DriveOneRoundAsync(fixture);
+        await G.ReportUnknownAsync(fixture);
+        for (int round = 0; round < 4; round++)
+        {
+            await G.DriveOneRoundAsync(fixture);
+        }
+
+        string orderId = await D.OrderIdAsync(fixture, upperId);
+        fixture.Riot.SetOrderState(upperId, RiotOrderState.Paused, terminal: false);
+        fixture.Riot.MovementState = "MT_PAUSED";
+        fixture.EmergencyLatched = true;
+        fixture.UnfinishedOrderIds = [orderId];
+        await G.DriveOneRoundAsync(fixture);
+        fixture.ButtonHeld = true;
+        await G.DriveOneRoundAsync(fixture);
+        fixture.ButtonHeld = false;
+        await G.ReportLockedAsync(fixture);
+        for (int round = 0; round < 15; round++)
+        {
+            await G.DriveOneRoundAsync(fixture);
+        }
+
+        VehicleFaultStateRow fault = await D.FaultAsync(fixture);
+        Assert.Equal(
+            (VehicleFaultLevel.ConfirmedIsolated, VehicleFaultEvidence.EmergencyCanNotRecover, VehicleFaultEvidence.DoorNotProvenLocked),
+            (fault.Level, fault.EvidenceCode, fault.OriginSymptomCode));
+        Assert.Equal(0, await D.CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        Assert.True(fixture.DoorReadings.OnlyUnreadAndLockedSince(fixture.Options.AgvId));
+
+        await using ControlServerDbContext context = new(fixture.DbOptionsForTests);
+        bool doorCause = await EmergencyStopDoorCause.ReadAsync(
+            context,
+            new VehicleFaultStore(context),
+            fixture.CreateEmergencyStopSupervisor(context),
+            new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey),
+            Token,
+            fixture.DoorReadings);
+        Assert.True(doorCause, "an escalated stop no longer asks for a repaired lock");
+    }
+
+    /// <summary>
+    /// cs#901 审查 L1：另一台车挂着起因是门锁的升级故障，本车行驶中门锁读锁闭：本车的门锁路径不动——不记故障、不按住、不急停。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task AnotherVehiclesDoorFaultDoesNotDriveThisVehiclesDoorSupervision()
+    {
+        await using RuntimeFixture fixture = await D.GateArrivalWaitAsync();
+        await AddFaultRowAsync(
+            fixture, "agv-other", VehicleFaultLevel.ConfirmedIsolated, VehicleFaultEvidence.EmergencyCanNotRecover,
+            VehicleFaultEvidence.DoorNotProvenLocked);
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+        await D.ReportLockedAsync(fixture);
+        for (int round = 0; round < 3; round++)
+        {
+            await D.DriveOneRoundAsync(fixture);
+        }
+
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.False(await reading.VehicleFaultStates.AsNoTracking()
+            .AnyAsync(row => row.AgvId == fixture.Options.AgvId && row.Level != VehicleFaultLevel.None, Token));
+        Assert.Equal(0, await D.CountAsync(fixture, RiotCommandTypeNames.OrderHold));
+        Assert.Equal(0, await D.CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+    }
+
+    /// <summary>
+    /// cs#901 审查 L2：部署前记下的门锁故障行（<c>OriginSymptomCode</c> 为空、依据码是门锁），单在 RIoT 被取消：照依据码认它，监看照样每轮评估。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task AFaultRowFromBeforeTheColumnIsStillSupervisedOnItsEvidenceAfterItsOrderIsCancelled()
+    {
+        await using RuntimeFixture fixture = await D.GateArrivalWaitAsync();
+        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+        fixture.Riot.MovementState = "MT_PAUSED";
+        fixture.EmergencyLatched = true;
+        fixture.Riot.SetOrderState(upperId, RiotOrderState.Cancelled, terminal: true);
+        fixture.UnfinishedOrderIds = [];
+        await AddFaultRowAsync(
+            fixture, fixture.Options.AgvId, VehicleFaultLevel.SuspectedBlocked, VehicleFaultEvidence.DoorNotProvenLocked, origin: null);
+        await D.ReportLockedAsync(fixture);
+
+        DateTimeOffset? before = (await D.FaultAsync(fixture)).LastEvaluatedAt;
+        await D.DriveOneRoundAsync(fixture);
+        await D.DriveOneRoundAsync(fixture);
+
+        VehicleFaultStateRow evaluated = await D.FaultAsync(fixture);
+        Assert.Null(evaluated.OriginSymptomCode);
+        Assert.True(evaluated.LastEvaluatedAt > before, $"LastEvaluatedAt stayed at {before}");
+    }
+
+    /// <summary>
     /// 行驶中门锁没锁 -> 门锁故障按住单；按钮按下（<paramref name="buttonFirst"/> 时第一次观测前就按着），故障升级、依据改写；RIoT 停住单（PAUSED）、闩锁锁着；
     /// 门锁读回锁闭，按钮松开（CAN_RECOVER）。返回单的 upperId 与此时的急停次数。
     /// </summary>
@@ -299,5 +410,22 @@ public sealed class EscalatedDoorFaultSupervisionTests
         fixture.Context.ChangeTracker.Clear();
         Assert.False(await D.HeldUnderGenerationAsync(fixture, upperId, generation));
         return generation;
+    }
+
+    private static async Task AddFaultRowAsync(
+        RuntimeFixture fixture, string agvId, VehicleFaultLevel level, string evidence, string? origin)
+    {
+        await using ControlServerDbContext context = new(fixture.DbOptionsForTests);
+        context.VehicleFaultStates.Add(new VehicleFaultStateRow
+        {
+            AgvId = agvId,
+            Level = level,
+            FaultGeneration = 1,
+            EvidenceCode = evidence,
+            OriginSymptomCode = origin,
+            EnteredAt = fixture.Clock.GetUtcNow(),
+            LastEvaluatedAt = fixture.Clock.GetUtcNow(),
+        });
+        await context.SaveChangesAsync(Token);
     }
 }

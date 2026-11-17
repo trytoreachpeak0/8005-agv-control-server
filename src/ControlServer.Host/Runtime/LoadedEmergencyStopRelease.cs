@@ -248,8 +248,13 @@ public static class EmergencyStopDoorCause
         // for no repaired lock -- the lock did not break, and the person confirms the cause removed, which for it is the reading
         // back. Known only to the process that saw the whole fault (InTransitDoorReadings), and only when the whole inbox since
         // the leg began read no door not locked either (cs#839 third re-review, the same last check as the automatic release);
-        // anything else asks as before.
+        // anything else asks as before. Only for a fault still at the first level (cs#901 review M1): one a held button
+        // escalated is a person's, as for the automatic release (VehicleFaultCoordinator.DoorReadingRelease), and asks for the
+        // repaired lock -- the door supervision follows such a fault by its origin since control-server#900, and without this its
+        // episode, kept through the escalation, would waive the confirmation it asked for before.
         if (doorReadings?.OnlyUnreadAndLockedSince(subject.AgvId) == true &&
+            (await faults.ReadAsync(subject.AgvId, cancellationToken).ConfigureAwait(false))?.Level ==
+                VehicleFaultLevel.SuspectedBlocked &&
             await NoDoorReadNotLockedInTransitAsync(dbContext, faults, subject, cancellationToken)
                 .ConfigureAwait(false))
         {
