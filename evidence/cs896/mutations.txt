@@ -14,3 +14,8 @@ ControlServer.Tests.WorklistEqpDisplayOnlyTests.TheServerDecidesNothingByTheWork
 ControlServer.Tests.WorklistEqpDisplayOnlyTests.ADemandWithoutAnEqpIsListedWithAnExplicitNullAndBlocksNothing [FAIL]
 ControlServer.Tests.WorklistEqpDisplayOnlyTests.TheServerDecidesNothingByTheWorklistEqp [FAIL]
 失败!  - 失败:     2，通过:     6，已跳过:     0，总计:     8，持续时间: 7 s - ControlServer.Tests.dll (net8.0)
+
+== M10-trim (review L1; ?.Eqp?.Trim(), whitespace-only becomes null) after the L1 cases were added
+ControlServer.Tests.WorklistEqpDisplayOnlyTests.EveryWorklistItemCarriesTheEqpRecordedAtAcceptanceVerbatim(acceptedEqp: "   ") [FAIL]
+ControlServer.Tests.WorklistEqpDisplayOnlyTests.EveryWorklistItemCarriesTheEqpRecordedAtAcceptanceVerbatim(acceptedEqp: "  N1-03 机台 07\t ") [FAIL]
+失败!  - 失败:     2，通过:     3，已跳过:     0，总计:     5，持续时间: 13 s - ControlServer.Tests.dll (net8.0)

@@ -39,13 +39,20 @@ public sealed partial class WorklistEqpDisplayOnlyTests
     /// 一趟机台取货旅程，取货停靠与卸货停靠两张有项的清单，每条 item 的 <c>eqp</c> 都是受理时记下的那个值，逐字：
     /// 空格与中文都不动。
     /// </summary>
-    [Fact]
+    /// <remarks>
+    /// 后两个取值是审查 L1 补的：只在中间有空格的值测不到修剪，把 <c>eqp</c> 修剪掉、或把只有空白的值当成 null 的实现
+    /// 都能放过第一个取值。票意是原样复制，协议只拒空串（<c>minLength: 1</c>），首尾空白与全空白都照原样发出。
+    /// </remarks>
+    [Theory]
+    [InlineData(AcceptedEqp)]
+    [InlineData("  N1-03 机台 07\t ")]
+    [InlineData("   ")]
     [Trait("IntegrationSlice", "FP-IS-09")]
     [Trait("ProtocolVector", "CV-WORKLIST-EQP-DISPLAY-ONLY")]
-    public async Task EveryWorklistItemCarriesTheEqpRecordedAtAcceptanceVerbatim()
+    public async Task EveryWorklistItemCarriesTheEqpRecordedAtAcceptanceVerbatim(string acceptedEqp)
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        JourneyRuntimeRow runtime = await RunJourneyWithAcceptedEqpAsync(fixture, AcceptedEqp);
+        JourneyRuntimeRow runtime = await RunJourneyWithAcceptedEqpAsync(fixture, acceptedEqp);
         Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
 
         JsonElement[] items = await WorklistItemsAsync(fixture);
@@ -54,7 +61,7 @@ public sealed partial class WorklistEqpDisplayOnlyTests
         {
             Assert.Equal(FirstDemandId, item.GetProperty("demandId").GetString());
             Assert.Equal(JsonValueKind.String, item.GetProperty("eqp").ValueKind);
-            Assert.Equal(AcceptedEqp, item.GetProperty("eqp").GetString());
+            Assert.Equal(acceptedEqp, item.GetProperty("eqp").GetString());
         });
     }
 
