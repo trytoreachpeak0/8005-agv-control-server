@@ -472,16 +472,27 @@ public sealed class VehicleFaultStore(ControlServerDbContext dbContext) : IVehic
         return row is null ? null : ToFact(row);
     }
 
-    public async Task<VehicleFaultFact> RecordLevelAsync(
+    public Task<VehicleFaultFact> RecordLevelAsync(
         string agvId,
         VehicleFaultLevel level,
         string evidenceCode,
         bool evidenceOnAutoConfirmWhitelist,
         DateTimeOffset at,
+        CancellationToken cancellationToken) =>
+        RecordLevelAsync(agvId, level, evidenceCode, evidenceOnAutoConfirmWhitelist, evidenceCode, at, cancellationToken);
+
+    public async Task<VehicleFaultFact> RecordLevelAsync(
+        string agvId,
+        VehicleFaultLevel level,
+        string evidenceCode,
+        bool evidenceOnAutoConfirmWhitelist,
+        string originSymptomCode,
+        DateTimeOffset at,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         ArgumentException.ThrowIfNullOrWhiteSpace(evidenceCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(originSymptomCode);
 
         VehicleFaultStateRow? row = await dbContext.VehicleFaultStates
             .SingleOrDefaultAsync(state => state.AgvId == agvId, cancellationToken)
@@ -510,6 +521,8 @@ public sealed class VehicleFaultStore(ControlServerDbContext dbContext) : IVehic
             row.EscalatedAt = null;
             row.ClearedAt = null;
             row.ClearedReason = null;
+            // control-server#897: what the generation was raised for, kept through every escalation within it.
+            row.OriginSymptomCode = originSymptomCode;
         }
 
         row.Level = level;
@@ -685,7 +698,8 @@ public sealed class VehicleFaultStore(ControlServerDbContext dbContext) : IVehic
         row.StopProvenAt,
         row.EscalatedAt,
         row.ClearedAt,
-        row.ClearedReason);
+        row.ClearedReason,
+        row.OriginSymptomCode);
 
     private static FaultedCargoBinding ToBinding(FaultedVehicleCargoRow row) => new(
         row.CargoBindingId,

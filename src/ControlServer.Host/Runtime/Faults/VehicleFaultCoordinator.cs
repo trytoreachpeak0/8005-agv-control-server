@@ -769,6 +769,7 @@ public sealed class VehicleFaultCoordinator(
             level,
             evidenceCode,
             VehicleFaultEvidence.IsAutoConfirmable(evidenceCode),
+            cause,
             now,
             cancellationToken).ConfigureAwait(false);
         LogFaultLevel(logger, subject.AgvId, level.ToString(), evidenceCode, fault.FaultGeneration, null);
