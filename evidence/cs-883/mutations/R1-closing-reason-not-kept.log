@@ -1,0 +1,12 @@
+# R1-closing-reason-not-kept
+file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.EmptyPickupCharging.cs
+-            runtime, sublotRequestMessageId, EmptyPickupChargingRequiredReason, endedReasonOnVehicle, now, cancellationToken)
++            runtime, sublotRequestMessageId, EmptyPickupChargingRequiredReason, null, now, cancellationToken)
+
+exit=1
+  失败 ControlServer.Tests.EmptyPickupMandatoryChargeTests.AnEmptyPickupJourneyBelowTheLineFinishesTheCurrentStopThenGivesUpTheRestAndGoesToCharge [203 ms]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("N1-1", "STATION_DEADLINE_EXPIRED")
+--
+失败!  - 失败:     1，通过:     4，已跳过:     0，总计:     5，持续时间: 17 s - ControlServer.Tests.dll (net8.0)

@@ -27,4 +27,18 @@ The empty vehicle below the line was asked to leave for the next pickup. stage=A
 
 M6 单独证明「撤下的需求不被压制」由抑制表断言自己钉住，不靠前面的状态断言。
 
-未覆盖：写锁内重读阶段与游标（并发窗口）那两处判断没有专门的变异；与 cs#709 待送点缺电同一写法。
+## 审查返工（`cf5e9a6fd`，审查 M-1、M-2、M-3）
+
+新增两条用例：`ADoorNotProvenClosedAtDepartureKeepsTheRuleFromEndingTheJourney`（M-2）、`ADemandReleasedElsewhereWhileTheRuleDecidesIsNotWithdrawnAgain`（M-1）。现场序列那条多断言一句：收尾清单仍在第一站、仍说 `STATION_DEADLINE_EXPIRED`（M-3）。
+
+变异做法同上（临时 worktree `cf5e9a6fd`，只改 `JourneyRuntimeEngine.EmptyPickupCharging.cs` 一处，跑完还原并核对干净）：
+
+| 变异 | 改了什么 | 结果 |
+| --- | --- | --- |
+| R1 | 收尾不沿用本站空清单的原因（传 null，即返工前的行为） | 红：现场序列，收尾清单是 `DEMAND_RELEASED` 而非 `STATION_DEADLINE_EXPIRED`。这就是 M-3 的「改前红」 |
+| R2 | 去掉仓门闸（审查 MC） | 红：仓门用例，旅程以 `EMPTY_PICKUP_CHARGING_REQUIRED` 收尾 |
+| R3 | 撤的需求从锁外游标取（审查 ME） | 红：并发用例，引擎抛 `Sequence contains no elements`（锁外游标里那条已被别处释放） |
+| R4 | 去掉锁内重读阶段（审查 MA） | 存活 |
+| R5 | 去掉锁内游标判定（审查 MB） | 存活 |
+
+R4、R5 存活：注入的并发释放不改旅程阶段，也不会让剩下的需求不再全是待装，所以这两道判断在这条用例里不起作用。调度裁定要求 MB 或 ME 之一变红，ME（R3）已红。在线闸（MD）与 `Accepted` 判定（MF）仍无专门用例（裁定不强求）。

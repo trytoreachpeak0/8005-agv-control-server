@@ -1,0 +1,11 @@
+# R3-leaving-from-unlocked-cursor
+file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.EmptyPickupCharging.cs
+-        string[] leaving = [.. locked.Demands.Select(item => item.Demand.DemandId)];
++        string[] leaving = [.. stops.Demands.Select(item => item.Demand.DemandId)];
+
+exit=1
+  失败 ControlServer.Tests.EmptyPickupMandatoryChargeTests.ADemandReleasedElsewhereWhileTheRuleDecidesIsNotWithdrawnAgain [227 ms]
+  错误消息:
+   System.InvalidOperationException : Sequence contains no elements.
+--
+失败!  - 失败:     1，通过:     4，已跳过:     0，总计:     5，持续时间: 16 s - ControlServer.Tests.dll (net8.0)
