@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
+index 69e9dadaa..611afb717 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.InTransitDoors.cs
+@@ -319,7 +319,7 @@ public sealed partial class JourneyRuntimeEngine
+             .AnyAsync(
+                 row => row.AgvId == agvId &&
+                        row.Level != VehicleFaultLevel.None &&
+-                       (row.OriginSymptomCode ?? row.EvidenceCode) == VehicleFaultEvidence.DoorNotProvenLocked,
++                       row.OriginSymptomCode == VehicleFaultEvidence.DoorNotProvenLocked,
+                 cancellationToken);
+ 
+     /// <summary>

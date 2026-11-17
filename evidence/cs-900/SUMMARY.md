@@ -41,3 +41,13 @@ restored. Failing tests per mutation in `mutations/M*.result.txt`.
 | M4 | `LoadedEmergencyStopRelease.cs` | door-cause fallback on `EvidenceCode` only | `escalated-door` |
 | M5 | same | door-cause fallback on `OriginSymptomCode` only (no fallback for a pre-column row) | `legacy-door` |
 | M6 | `JourneyRuntimeEngine.InTransitDoors.cs` | any standing fault counts as a door fault | both never-a-door-fault rows |
+
+## Rework after the review of #901 (M1, L1, L2)
+
+On `33a572b65`, same 4 class groups (201 tests), one file each, restored after.
+
+| Mutation | File | What it does | Red |
+| --- | --- | --- | --- |
+| M7 | `LoadedEmergencyStopRelease.cs` | the unread-and-locked waiver at any fault level (the review's M1) | `AnEscalatedUnreadDoorFaultStillAsksForARepairedLockOnceItsDoorsReadLockedAgain` |
+| R1 | `JourneyRuntimeEngine.InTransitDoors.cs` | `DoorFaultInEffectAsync` without its vehicle filter (the review's L1) | `AnotherVehiclesDoorFaultDoesNotDriveThisVehiclesDoorSupervision` |
+| R4 | same | `OriginSymptomCode` only, no fallback for a pre-column row (the review's L2) | `AFaultRowFromBeforeTheColumnIsStillSupervisedOnItsEvidenceAfterItsOrderIsCancelled` |
