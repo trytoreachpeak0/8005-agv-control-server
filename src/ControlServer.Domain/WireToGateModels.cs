@@ -199,13 +199,19 @@ public static class LoadingClosedReasons
     public const string ChargingRequired = "CHARGING_REQUIRED";
 }
 
+/// <param name="Eqp">
+/// 这条需求受理时记下的 MES <c>EQP</c>，原样；没有（null 或空串）就是 null（协议 7.0.0 候选，protocol#29，control-server#896）。
+/// 只给车载屏在取货扫码清单与卸货清单的 sublot 旁显示，服务端不拿它判断任何事（<c>CV-WORKLIST-EQP-DISPLAY-ONLY</c>）。
+/// 位置参数且没有默认值，是有意的：每个构造清单项的地方都得说出这一项的机台号，协议里它必填可空、不可省略。
+/// </param>
 public sealed record CurrentStopWorklistItem(
     string DemandId,
     string TransportDemandKey,
     string Sublot,
     string WorkType,
     string StopRole,
-    int ExpectedBasketCount);
+    int ExpectedBasketCount,
+    string? Eqp);
 
 /// <remarks>
 /// <see cref="StationDepartureDeadlineAt"/> is when the station departure wait (ADR-cross-0055) runs

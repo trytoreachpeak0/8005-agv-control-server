@@ -882,7 +882,9 @@ public sealed class OnboardJourneyPublisher(
                 item.Sublot,
                 item.WorkType,
                 item.StopRole,
-                item.ExpectedBasketCount
+                item.ExpectedBasketCount,
+                // 必填可空：没有机台号时写出 null，不省略字段（protocol#29）。只显示用，服务端不据此判断。
+                item.Eqp
             }),
             projection.StopEndedReason
         };

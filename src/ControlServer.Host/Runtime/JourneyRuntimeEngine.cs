@@ -5213,8 +5213,27 @@ public sealed partial class JourneyRuntimeEngine(
                 item.Demand.WorkType,
                 // 协议这一栏说的是「在这个停靠上对这条需求做什么」：取货停靠装货，卸货停靠卸货。
                 stop.StopRole == JourneyStopRoles.Pickup ? "PICKUP" : "DROPOFF",
-                item.Membership.ExpectedBasketCount))],
+                item.Membership.ExpectedBasketCount,
+                AcceptedEqp(item.Demand)))],
             StopEndedReason: null);
+
+    /// <summary>
+    /// 清单项的 <c>eqp</c>：这条需求受理时记在需求行上的 MES <c>EQP</c>，原样（control-server#896，protocol#29）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>读需求行，不读目录。</b>需求行上的 MES 字段是受理那一刻写下的（<c>WireToGateStore.NewAcceptedDemandRow</c>），此后不随目录轮询改写，
+    /// 所以操作员眼前那一行不会因为 MES 后来改了机台号而变掉；同一版清单重发时内容也就不变。
+    /// </para>
+    /// <para>
+    /// <b>没有就是 null。</b>MES 字段整组缺失（受理时目录没给）、<c>Eqp</c> 为 null 或空串，都发 null：协议里「没有」只有 null 一种写法，
+    /// 空串不收。其余一律原样，不修剪、不改写。这个值只给车载屏显示，服务端任何判断都不读它（<c>CV-WORKLIST-EQP-DISPLAY-ONLY</c>）。
+    /// </para>
+    /// </remarks>
+    private static string? AcceptedEqp(AcceptedDemandRow demand) =>
+        JsonSerializer.Deserialize<LiveMesFieldSet>(demand.LiveMesFieldsJson, SerializerOptions)?.Eqp is { Length: > 0 } eqp
+            ? eqp
+            : null;
 
     // The activePurpose of a transport journey. An idle return (batch 8-19, control-server#390) sends IDLE_RETURN from its own
     // branch (JourneyRuntimeEngine.IdleReturn.cs, JourneyPlanBuilder.IdleReturnBusinessState), and a charging journey (batch

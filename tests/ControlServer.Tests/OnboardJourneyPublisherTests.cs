@@ -135,7 +135,7 @@ public sealed class OnboardJourneyPublisherTests
                 operationSessionId,
                 null,
                 [new CurrentStopWorklistItem(
-                    demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)],
+                    demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2, "EQP-01")],
                 StopEndedReason: null),
             TestContext.Current.CancellationToken);
         await publisher.PublishUpcomingStopPlanAsync(
