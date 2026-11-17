@@ -4,6 +4,7 @@ using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -39,6 +40,24 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
     /// 迁移之前的最后一个迁移：本票的迁移紧跟在它后面（迁移纪律台账也这么登记）。
     /// </summary>
     private const string PreviousMigration = "20261110075917_JourneyDemandsRedispatchIndex";
+
+    // ---- 现场出路：PR 正文「Vehicles already stuck when this is deployed」一节逐字引用这三句，正文改了这里要跟着改 ----------------
+
+    /// <summary>部署时只读预查：有没有在效的故障行没有起源症状（即部署前记下的、可能需要这条出路的车）。</summary>
+    internal const string FieldWayOutDeploymentCheck =
+        "SELECT COUNT(*) AS Value FROM VehicleFaultStates WHERE Level <> 'None' AND OriginSymptomCode IS NULL";
+
+    /// <summary>
+    /// 改库前只读预查：这一代故障按住过旅程现在等的那张单。没有这一行，补了起源也解不开（清除还要看这一行），不必改库。
+    /// </summary>
+    internal const string FieldWayOutHoldCheck =
+        "SELECT COUNT(*) AS Value FROM RiotOrderCommandAudit " +
+        "WHERE CommandType = 'OrderHold' AND TargetUpperId = @upperId AND FaultGeneration = @generation";
+
+    /// <summary>出路本身：只补空的起源症状，限这辆车、这一代、仍在效，依据码不动。</summary>
+    internal const string FieldWayOutUpdate =
+        "UPDATE VehicleFaultStates SET OriginSymptomCode = 'VEHICLE_DOOR_NOT_PROVEN_LOCKED' " +
+        "WHERE AgvId = @agvId AND FaultGeneration = @generation AND Level <> 'None' AND OriginSymptomCode IS NULL";
 
     /// <summary>
     /// 现场序列：门锁故障（运行中的单被按住）→ 车上急停按下，故障升级、依据改写 → 单在 RIoT 被取消，引擎记重建、等故障清除 →
@@ -95,6 +114,10 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
     /// 解不开——依据已被改写，清除照旧拒。现场的出路是核实这一代故障确是门锁故障（它的急停原因、门锁告警）之后，只把空的
     /// <c>OriginSymptomCode</c> 补成门锁的症状码，不动依据码；清除随即接受，走引擎已登记的那一条重建。
     /// </summary>
+    /// <remarks>
+    /// 执行的是 PR 正文里的原句（<see cref="FieldWayOutDeploymentCheck"/>、<see cref="FieldWayOutHoldCheck"/>、<see cref="FieldWayOutUpdate"/>，
+    /// 审查 cs#899 意见 (a)(b)）：两条预查各读到这辆车；代数写错改 0 行、写对改 1 行。
+    /// </remarks>
     [Fact]
     [Trait("Requirement", "REQ-0360")]
     public async Task AFaultRowFromBeforeTheColumnIsJudgedOnItsEvidenceAndClearsOnceItsOriginIsFilledIn()
@@ -109,11 +132,22 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
         Assert.Equal(VehicleFaultRecoveryOutcome.Refused, refused.Outcome);
         Assert.Equal(["FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT"], refused.Reasons);
 
-        // 现场的出路：只补空的起源症状，依据码不动。
-        Assert.Equal(1, await fixture.Context.Database.ExecuteSqlRawAsync(
-            "UPDATE VehicleFaultStates SET OriginSymptomCode = 'VEHICLE_DOOR_NOT_PROVEN_LOCKED' " +
-            "WHERE Level = 'ConfirmedIsolated' AND EvidenceCode = 'RIOT_EMERGENCY_CAN_NOT_RECOVER' AND OriginSymptomCode IS NULL",
+        // 现场的出路，照 PR 正文原句：两条只读预查，再只补空的起源症状。
+        VehicleFaultStateRow stuck = await FaultAsync(fixture);
+        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+        Assert.Equal(1L, await fixture.Context.Database.SqlQueryRaw<long>(FieldWayOutDeploymentCheck).SingleAsync(Token));
+        Assert.Equal(1L, await fixture.Context.Database.SqlQueryRaw<long>(
+                FieldWayOutHoldCheck, new SqliteParameter("@upperId", upperId), new SqliteParameter("@generation", stuck.FaultGeneration))
+            .SingleAsync(Token));
+        Assert.Equal(0, await fixture.Context.Database.ExecuteSqlRawAsync(
+            FieldWayOutUpdate,
+            [new SqliteParameter("@agvId", fixture.Options.AgvId), new SqliteParameter("@generation", stuck.FaultGeneration + 1)],
             Token));
+        Assert.Equal(1, await fixture.Context.Database.ExecuteSqlRawAsync(
+            FieldWayOutUpdate,
+            [new SqliteParameter("@agvId", fixture.Options.AgvId), new SqliteParameter("@generation", stuck.FaultGeneration)],
+            Token));
+        Assert.Equal(VehicleFaultEvidence.EmergencyCanNotRecover, (await FaultAsync(fixture)).EvidenceCode);
         VehicleFaultRecoveryDecision cleared = await ClearAsync(fixture);
         Assert.True(VehicleFaultRecoveryOutcome.Cleared == cleared.Outcome, string.Join(", ", cleared.Reasons));
         Assert.Equal(VehicleFaultRecoveryDispositions.None, cleared.Disposition);
@@ -157,6 +191,49 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
         Assert.True(await HeldUnderGenerationAsync(fixture, upperId, second.FaultGeneration));
 
         fixture.ButtonHeld = false;
+        fixture.Riot.SetOrderState(upperId, RiotOrderState.Cancelled, terminal: true);
+        VehicleFaultRecoveryDecision clearance = await VehicleFaultRecoveryTests.Service(fixture, site)
+            .RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, clearance.Outcome);
+        Assert.Contains("FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT", clearance.Reasons);
+    }
+
+    /// <summary>
+    /// 同一辆车、同一张单：上一代是门锁故障、按住过开往卸货站的单，人清除了；这一代又是门锁故障，但按住的是取货单，开往卸货站的单在这一代
+    /// 下从没被按住过。它被人在 RIoT 取消之后清除照旧拒绝：「按住过这张单」只认这一代的按住，上一代的不算（审查 cs#899 L2，变异 R2）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task AHoldFromAnEarlierGenerationDoesNotLetTheCurrentOneClearOverTheSameOrderCancelledInRiot()
+    {
+        await using RuntimeFixture fixture = await GateArrivalWaitAsync();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        string upperId = runtime.GateUpperId!;
+        string pickupUpperId = runtime.PickupUpperId;
+        SiteRiot site = new(fixture) { HasUnfinishedOrder = false };
+
+        await ObserveAsync(
+            fixture, site, VehicleFaultEvidence.DoorNotProvenLocked,
+            new RiotOrderCommandTarget(fixture.Options.AgvId, upperId, await OrderIdAsync(fixture, upperId)));
+        VehicleFaultStateRow first = await FaultAsync(fixture);
+        Assert.True(await HeldUnderGenerationAsync(fixture, upperId, first.FaultGeneration));
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            await new VehicleFaultStore(writing).ClearAsync(
+                fixture.Options.AgvId, first.FaultGeneration, "L1_CLEARED", fixture.Clock.GetUtcNow(), Token);
+        }
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await ObserveAsync(
+            fixture, site, VehicleFaultEvidence.DoorNotProvenLocked,
+            new RiotOrderCommandTarget(fixture.Options.AgvId, pickupUpperId, await OrderIdAsync(fixture, pickupUpperId)));
+        VehicleFaultStateRow second = await FaultAsync(fixture);
+        Assert.Equal(
+            (first.FaultGeneration + 1, VehicleFaultEvidence.DoorNotProvenLocked),
+            (second.FaultGeneration, second.OriginSymptomCode));
+        Assert.False(await HeldUnderGenerationAsync(fixture, upperId, second.FaultGeneration));
+
         fixture.Riot.SetOrderState(upperId, RiotOrderState.Cancelled, terminal: true);
         VehicleFaultRecoveryDecision clearance = await VehicleFaultRecoveryTests.Service(fixture, site)
             .RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token);

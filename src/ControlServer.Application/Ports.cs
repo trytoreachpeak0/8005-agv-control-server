@@ -632,7 +632,8 @@ public interface IVehicleFaultStore
     /// <see cref="RecordLevelAsync(string, VehicleFaultLevel, string, bool, DateTimeOffset, CancellationToken)"/>, naming the
     /// symptom this server observed. A new generation keeps it as <see cref="VehicleFaultFact.OriginSymptomCode"/>, which nothing
     /// within the generation rewrites (control-server#897): the evidence code is rewritten on escalation, so it cannot say what
-    /// the fault was raised for.
+    /// the fault was raised for. No default implementation (cs#899 review L5): one that forwarded to the overload above would
+    /// drop the origin without a word.
     /// </summary>
     Task<VehicleFaultFact> RecordLevelAsync(
         string agvId,
@@ -641,8 +642,7 @@ public interface IVehicleFaultStore
         bool evidenceOnAutoConfirmWhitelist,
         string originSymptomCode,
         DateTimeOffset at,
-        CancellationToken cancellationToken) =>
-        RecordLevelAsync(agvId, level, evidenceCode, evidenceOnAutoConfirmWhitelist, at, cancellationToken);
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Records whether the vehicle is currently proven stopped. The caller owns the combined-
