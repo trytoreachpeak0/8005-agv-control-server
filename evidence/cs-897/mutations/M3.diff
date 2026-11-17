@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs b/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+index 677e4b4f0..28cdba849 100644
+--- a/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
++++ b/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+@@ -829,7 +829,7 @@ public sealed partial class VehicleFaultRecoveryService(
+     {
+         if (fault is not { Level: not VehicleFaultLevel.None } standing ||
+             intent is null ||
+-            !string.Equals(
++            intent.UpperId.Length < 0 && !string.Equals(
+                 standing.OriginSymptomCode ?? standing.EvidenceCode,
+                 VehicleFaultEvidence.DoorNotProvenLocked,
+                 StringComparison.Ordinal))

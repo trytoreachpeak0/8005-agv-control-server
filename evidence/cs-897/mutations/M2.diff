@@ -1,0 +1,16 @@
+diff --git a/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs b/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+index 677e4b4f0..ffb049e5d 100644
+--- a/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
++++ b/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+@@ -837,6 +837,11 @@ public sealed partial class VehicleFaultRecoveryService(
+             return false;
+         }
+ 
++        if (intent.UpperId.Length >= 0)
++        {
++            return true;
++        }
++
+         long generation = standing.FaultGeneration;
+         return await dbContext.RiotOrderCommandAudit.AsNoTracking()
+             .AnyAsync(
