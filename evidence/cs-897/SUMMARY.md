@@ -32,6 +32,7 @@ M1-M3 on `5240e2ad3` with `DoorFaultEscalatedThenCancelledInRiotTests`, `Emergen
 | M4 | `Batch2CapabilityStores.cs` | overwrite the origin on every evaluation | `TheOriginSymptomIsKeptThroughAnEscalationAndRenewedByTheNextGeneration` |
 | M5 | `Batch2CapabilityStores.cs` | a new generation keeps the previous origin (`??=`) | the store test, and `ASecondFaultOnTheSameVehicleDoesNotInheritTheDoorOriginOfTheFirst` |
 | M6 | migration | `Down` leaves the column | `TheMigrationAddsOneNullableColumnAndGoesDownAndUpWithoutTouchingAFaultRow` |
+| R2 | `VehicleFaultRecoveryService.cs:844` | the hold check matches any generation (`R2.diff`; the reviewer's survivor, cs#899 L2) | `AHoldFromAnEarlierGenerationDoesNotLetTheCurrentOneClearOverTheSameOrderCancelledInRiot` (on `2745679bd`, 35 tests) |
 
 M4 is not caught by the engine-driven tests: under today's callers a door fault escalates while being
 re-observed on the door symptom, so the clearance sees the same origin either way. The store test
