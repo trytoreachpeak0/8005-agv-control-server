@@ -226,7 +226,9 @@ public sealed class LoadedEmergencyStopRelease(
 /// overwrites it (control-server#539 review M-2: the fault's evidence code becomes <c>VEHICLE_ORDER_FAILED</c> when the held
 /// order fails afterwards, and <see cref="VehicleFaultEvidence.EmergencyCanNotRecover"/> while a button is held). The standing
 /// fault and the journey's block code are asked as well, for a stop raised before causes were recorded; any one of the three
-/// makes the confirmation required, never fewer.
+/// makes the confirmation required, never fewer. The fault is asked by the symptom its generation began on, for the same
+/// reason (<see cref="VehicleFaultFact.OriginSymptomCode"/>, control-server#900); a row from before that column by its
+/// evidence code.
 /// </remarks>
 public static class EmergencyStopDoorCause
 {
@@ -263,7 +265,8 @@ public static class EmergencyStopDoorCause
         string agvId = subject.AgvId;
         VehicleFaultFact? fault = await faults.ReadAsync(agvId, cancellationToken).ConfigureAwait(false);
         if (fault is { Level: not VehicleFaultLevel.None } &&
-            string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal))
+            string.Equals(
+                fault.OriginSymptomCode ?? fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal))
         {
             return true;
         }

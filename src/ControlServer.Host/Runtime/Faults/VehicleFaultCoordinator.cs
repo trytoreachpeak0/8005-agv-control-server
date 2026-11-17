@@ -1229,9 +1229,10 @@ public sealed class VehicleFaultCoordinator(
     /// <remarks>
     /// <para>
     /// Until then the evaluation was driven only from <see cref="ObserveAsync"/>, which runs when a round sees a symptom on a
-    /// journey's order. A stop can stay open after the symptom is gone from view: a door fault whose evidence became
-    /// <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c> while a button was held is no longer recognised as a door fault once the doors
-    /// read locked, and an order that went HANG, SUCCESS or out of the journey takes no symptom path at all. Nobody then
+    /// journey's order. A stop can stay open after the symptom is gone from view: an order that went HANG, SUCCESS or out of the
+    /// journey takes no symptom path at all, and until control-server#900 a door fault whose evidence became
+    /// <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c> while a button was held was no longer recognised as a door fault once the doors
+    /// read locked (it is now, by its origin symptom). Nobody then
     /// re-triggered a latch released at RIoT (REQ-0248 as revised), and the open stop kept the fault's own exits shut
     /// (<c>FAULT_RECOVERY_EMERGENCY_STOP_OPEN</c>) while the class-three entries wanted <c>CAN_RECOVER</c>: the vehicle was
     /// stuck.

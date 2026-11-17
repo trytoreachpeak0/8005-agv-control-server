@@ -258,8 +258,9 @@ public sealed class InTransitDoorReadings(IOptions<VehicleFaultOptions> options)
             case InTransitDoorState.SlotStateUnknown:
                 if (episode is { Handed: true })
                 {
-                    // The fault this episode was handed to is no longer standing -- cleared by a person, or its evidence
-                    // overwritten -- and the doors have not read locked since: no new grace.
+                    // The fault this episode was handed to is no longer standing -- cleared by a person (an escalation that
+                    // rewrites its evidence no longer ends it here, control-server#900) -- and the doors have not read locked
+                    // since: no new grace.
                     return Hand(episode, HandAfterFault);
                 }
 
