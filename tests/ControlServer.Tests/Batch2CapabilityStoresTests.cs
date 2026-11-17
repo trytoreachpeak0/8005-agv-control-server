@@ -239,6 +239,37 @@ public sealed class Batch2CapabilityStoresTests
         Assert.False(reentered.StopProven);
     }
 
+    /// <summary>
+    /// control-server#897: the symptom a generation began on survives every escalation within it, whatever the escalation
+    /// records as its evidence and whatever symptom it was observed on; a new generation takes its own.
+    /// </summary>
+    [Fact]
+    public async Task TheOriginSymptomIsKeptThroughAnEscalationAndRenewedByTheNextGeneration()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using Fixture fixture = await Fixture.CreateAsync();
+        VehicleFaultStore store = new(fixture.Context);
+
+        VehicleFaultFact door = await store.RecordLevelAsync(
+            "agv01", VehicleFaultLevel.SuspectedBlocked, "VEHICLE_DOOR_NOT_PROVEN_LOCKED", false,
+            "VEHICLE_DOOR_NOT_PROVEN_LOCKED", Now, token);
+        VehicleFaultFact escalated = await store.RecordLevelAsync(
+            "agv01", VehicleFaultLevel.ConfirmedIsolated, "RIOT_EMERGENCY_CAN_NOT_RECOVER", true,
+            "OPERATOR_CONFIRMED", Now.AddSeconds(30), token);
+
+        Assert.Equal(
+            (door.FaultGeneration, "RIOT_EMERGENCY_CAN_NOT_RECOVER", "VEHICLE_DOOR_NOT_PROVEN_LOCKED"),
+            (escalated.FaultGeneration, escalated.EvidenceCode, escalated.OriginSymptomCode));
+        Assert.Equal(
+            "VEHICLE_DOOR_NOT_PROVEN_LOCKED", (await store.ReadAsync("agv01", token))!.OriginSymptomCode);
+
+        await store.ClearAsync("agv01", door.FaultGeneration, "CAUSE_REMOVED_AND_SAFETY_PROVEN", Now.AddMinutes(2), token);
+        VehicleFaultFact next = await store.RecordLevelAsync(
+            "agv01", VehicleFaultLevel.SuspectedBlocked, "VEHICLE_ORDER_FAILED", false, Now.AddMinutes(3), token);
+        Assert.Equal(
+            (door.FaultGeneration + 1, "VEHICLE_ORDER_FAILED"), (next.FaultGeneration, next.OriginSymptomCode));
+    }
+
     [Fact]
     public async Task StopProofAndEscalationAreRecordedAgainstTheirOwnGeneration()
     {

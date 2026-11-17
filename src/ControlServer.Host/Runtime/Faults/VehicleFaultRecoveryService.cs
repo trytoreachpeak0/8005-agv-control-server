@@ -176,10 +176,14 @@ public sealed record VehicleFaultRecoveryDecision(
 /// <para>
 /// <b>Only FAILED, never CANCELLED or DELETED</b> (independent review M1). An order of this server's that someone cancelled
 /// or deleted in RIoT is rebuilt by the engine on its own, as its first source of control-server#318, with no fault and no
-/// person; a clearance must not be a second way into that. No fault other than the doors' is recorded on such an order, so the refusal
-/// (<c>FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c>) is reachable only past a door fault, which clears without a second rebuild
-/// (control-server#335 review P1, <see cref="EndedInRiotUnderADoorFault"/>); it is pinned so that the two
-/// sources cannot come to handle one ending twice.
+/// person; a clearance must not be a second way into that. The one exception is a fault raised for the doors while that very
+/// order was running (control-server#335 review P1): the engine held the order, someone ended it in RIoT afterwards, and the fault
+/// clears without a second rebuild (<see cref="EndedInRiotUnderADoorFault"/>). "Raised for the doors" is the symptom the generation
+/// began on (<c>OriginSymptomCode</c>), not the evidence code standing now: an escalation rewrites that -- a button held on the
+/// vehicle makes it <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c> -- and until control-server#897 a door fault escalated that way refused its
+/// clearance here while its rebuild waited for the clearance (agv03, 2026-11-15). "While that order was running" is this generation's
+/// own hold on it in the command audit. Every other fault on a cancelled or deleted order is refused
+/// (<c>FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c>), so that the two sources cannot come to handle one ending twice.
 /// </para>
 /// <para>
 /// <b>Clearing the fault is not enough on its own.</b> The journey still waits in its arrival stage on the FAILED order,
@@ -364,7 +368,9 @@ public sealed partial class VehicleFaultRecoveryService(
 
         reasons.AddRange(EmergencyReasons(reading.Emergency, standing.StopOpen));
         reasons.AddRange(VehicleOrderReasons(reading.Orders));
-        reasons.AddRange(CurrentOrderReasons(reading, standing.Fault));
+        bool doorFaultHeldThisOrder = await DoorFaultHeldThisOrderAsync(standing.Fault, standing.Intent, cancellationToken)
+            .ConfigureAwait(false);
+        reasons.AddRange(CurrentOrderReasons(reading, doorFaultHeldThisOrder));
         if (reasons.Count > 0)
         {
             return Refused(reasons, standing.Fault?.FaultGeneration);
@@ -376,7 +382,7 @@ public sealed partial class VehicleFaultRecoveryService(
         // A door fault on an order someone then cancelled or deleted in RIoT (control-server#335 review P1): that ending is the
         // engine's to rebuild -- it recorded it as control-server#318's first source when it saw it -- so only the fault is
         // cleared here. Disposing of the journey as for a FAILED order would record a second rebuild of the same ending.
-        string disposition = EndedInRiotUnderADoorFault(reading, standing.Fault)
+        string disposition = EndedInRiotUnderADoorFault(reading, doorFaultHeldThisOrder)
             ? VehicleFaultRecoveryDispositions.None
             : await DisposeOfTheJourneyAsync(
                     subject.AgvId, standing.Journey, standing.Intent, standing.Fault!, request.OperatorId!, now, cancellationToken)
@@ -781,18 +787,64 @@ public sealed partial class VehicleFaultRecoveryService(
         journey.Stage is JourneyRuntimeStage.AwaitingPickupArrival or JourneyRuntimeStage.AwaitingGateArrival;
 
     /// <summary>
-    /// The one CANCELLED or DELETED order a clearance accepts: the fault standing is the doors' (control-server#335 review P1).
+    /// The one CANCELLED or DELETED order a clearance accepts: the fault standing was raised for the doors while this order was
+    /// running (control-server#335 review P1, control-server#897).
     /// </summary>
     /// <remarks>
     /// A door fault is raised while the order is still running and held, so unlike a FAILED order its ending is not what the
     /// fault is about: someone ended the held order in RIoT afterwards, and the engine recorded that ending to be rebuilt. The
-    /// fault then had no way out -- this refusal was written as unreachable, and this ticket made it reachable. Every other
+    /// fault then had no way out -- this refusal was written as unreachable, and control-server#335 made it reachable. Every other
     /// criterion still applies: no latch, no stop of this server's open, no unfinished order on the vehicle.
     /// </remarks>
-    private static bool EndedInRiotUnderADoorFault(Reading reading, VehicleFaultFact? fault) =>
+    private static bool EndedInRiotUnderADoorFault(Reading reading, bool doorFaultHeldThisOrder) =>
         reading.Order is { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Cancelled or RiotOrderState.Deleted } &&
-        fault is { Level: not VehicleFaultLevel.None } &&
-        string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal);
+        doorFaultHeldThisOrder;
+
+    /// <summary>
+    /// Whether the fault standing was raised for the doors and held the order the journey waits on now (control-server#897).
+    /// This server's tables only, so it is read under the gate.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The doors are the symptom the generation began on</b>, which the fault row keeps through every escalation within it
+    /// (<see cref="VehicleFaultFact.OriginSymptomCode"/>). The evidence code standing now cannot say it: an escalation records
+    /// <c>RIOT_EMERGENCY_CAN_NOT_RECOVER</c> over it while a button is held, and the order failing afterwards records
+    /// <c>VEHICLE_ORDER_FAILED</c>. A row written before the column existed has none, and is judged on its evidence code as before.
+    /// Other durable records were weighed and not used: a stop's cause is recorded only when the fault escalated to a stop, and a
+    /// hold's receipt carries the evidence code at the time -- already the button's when it was held first -- and is written only
+    /// once the call returns.
+    /// </para>
+    /// <para>
+    /// <b>The order is this generation's hold on it.</b> Every evaluation of a fault on an in-flight order arms an <c>OrderHold</c>
+    /// audit row for the order's upperId under the fault's generation before anything is sent (the same mark
+    /// <see cref="TerminalIntentCarriesThisFaultAsync"/> reads), so a hold for the current intent's upperId under the generation
+    /// standing now says this fault was raised, or evaluated, while this order was the one running. A door fault raised on another
+    /// order does not let a clearance through over this one.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> DoorFaultHeldThisOrderAsync(
+        VehicleFaultFact? fault,
+        OrderIntentRow? intent,
+        CancellationToken cancellationToken)
+    {
+        if (fault is not { Level: not VehicleFaultLevel.None } standing ||
+            intent is null ||
+            !string.Equals(
+                standing.OriginSymptomCode ?? standing.EvidenceCode,
+                VehicleFaultEvidence.DoorNotProvenLocked,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        long generation = standing.FaultGeneration;
+        return await dbContext.RiotOrderCommandAudit.AsNoTracking()
+            .AnyAsync(
+                row => row.CommandType == RiotCommandTypeNames.OrderHold && row.TargetUpperId == intent.UpperId &&
+                       row.FaultGeneration == generation,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     /// <summary>What the person has to supply: who they are, and that the cause has been removed on site.</summary>
     private static IEnumerable<string> PersonReasons(VehicleFaultRecoveryRequest request)
@@ -845,7 +897,7 @@ public sealed partial class VehicleFaultRecoveryService(
     /// SUSPENDED -- has not ended. An order that could not be read, or that RIoT does not know, has not been shown to have
     /// ended either.
     /// </summary>
-    private static IEnumerable<string> CurrentOrderReasons(Reading reading, VehicleFaultFact? fault)
+    private static IEnumerable<string> CurrentOrderReasons(Reading reading, bool doorFaultHeldThisOrder)
     {
         if (reading.Journey is not { } journey || !WaitsOnAnOrder(journey))
         {
@@ -857,7 +909,7 @@ public sealed partial class VehicleFaultRecoveryService(
             case { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Failed }:
                 yield break;
             case { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Cancelled or RiotOrderState.Deleted }:
-                if (!EndedInRiotUnderADoorFault(reading, fault))
+                if (!EndedInRiotUnderADoorFault(reading, doorFaultHeldThisOrder))
                 {
                     yield return "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT";
                 }
