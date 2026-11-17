@@ -293,6 +293,13 @@ public sealed partial class JourneyRuntimeEngine(
     public const string CargoHoldingTruncationReason = "RELEASED_AT_CARGO_HOLDING_DEADLINE";
 
     /// <summary>
+    /// 空车取货旅程低于强制充电线、当前这一站结束之后不再去后面的取货站时，旅程的收尾原因码（control-server#883）。后面那几条需求不终结，
+    /// 按释放改派退回积压（<see cref="DemandReleaseReasons.Released"/>），这个码只说这趟旅程为什么结束。车上说 <c>DEMAND_RELEASED</c>
+    /// （<see cref="StopEndedReasons"/>）。
+    /// </summary>
+    public const string EmptyPickupChargingRequiredReason = "EMPTY_PICKUP_CHARGING_REQUIRED";
+
+    /// <summary>
     /// The load stop has run out its station departure deadline with a slot door still not closed
     /// (ADR-cross-0058 decision 4). The stop does not end; the duty moves to someone shutting the door.
     /// </summary>

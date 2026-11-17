@@ -39,6 +39,8 @@ public sealed class StopEndedReasonsTests
         { VehicleFaultRecoveryService.TripTerminatedReason, "TRIP_TERMINATED" },
         // 人工撤下（control-server#771）：车上没装的都放回待派、会重新派车，所以与释放改派说同一句。
         { ControlServer.Host.Runtime.Withdrawal.JourneyWithdrawal.WithdrawnReason, "DEMAND_RELEASED" },
+        // 空车取货旅程低于强制充电线（control-server#883）：后面没去的取货站撤回、需求放回待派。车上没货，不说 CHARGING_REQUIRED（「先送车上的货」）。
+        { JourneyRuntimeEngine.EmptyPickupChargingRequiredReason, "DEMAND_RELEASED" },
         // 协议 4.0.0 候选（control-server#713）：待送点因客户出发、或因缺电而结束一站，需求放回待派，空清单说这两个，不说 DEMAND_RELEASED。
         { CurrentStopDepartures.OperatorDepartedReason, "OPERATOR_DEPARTED" },
         { CurrentStopDepartures.ChargingRequiredReason, "CHARGING_REQUIRED" },
