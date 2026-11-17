@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/Batch2CapabilityStores.cs b/src/ControlServer.Infrastructure/Persistence/Batch2CapabilityStores.cs
+index af0e3c5c5..f64f4364f 100644
+--- a/src/ControlServer.Infrastructure/Persistence/Batch2CapabilityStores.cs
++++ b/src/ControlServer.Infrastructure/Persistence/Batch2CapabilityStores.cs
+@@ -522,7 +522,7 @@ public sealed class VehicleFaultStore(ControlServerDbContext dbContext) : IVehic
+             row.ClearedAt = null;
+             row.ClearedReason = null;
+             // control-server#897: what the generation was raised for, kept through every escalation within it.
+-            row.OriginSymptomCode = originSymptomCode;
++            row.OriginSymptomCode ??= originSymptomCode;
+         }
+ 
+         row.Level = level;
