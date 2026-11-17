@@ -84,7 +84,7 @@ public sealed class StopEndedReasonsTests
     public void TheWorklistPayloadRefusesAnEmptyListWithoutAReasonAndAListWithItemsWithOne()
     {
         CurrentStopWorklistItem item = new(
-            "00000000-0000-4000-8000-000000000001", "KEY-1", "SUBLOT-1", "LOAD", "PICKUP", 7);
+            "00000000-0000-4000-8000-000000000001", "KEY-1", "SUBLOT-1", "LOAD", "PICKUP", 7, Eqp: null);
 
         Assert.Throws<InvalidDataException>(() => OnboardJourneyPublisher.ValidateCurrentStopWorklist(
             new CurrentStopWorklistProjection("12", 3, null, null, [], StopEndedReason: null)));

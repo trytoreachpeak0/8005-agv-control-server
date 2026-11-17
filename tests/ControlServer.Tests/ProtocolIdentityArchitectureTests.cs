@@ -113,7 +113,8 @@ public sealed class ProtocolIdentityArchitectureTests
     /// again since <c>8005-agv-control-server#737</c> moved to the unreleased <c>5.0.0</c> candidate, and asserts
     /// <c>APPROVED_RELEASE</c> again since <see cref="ProtocolCandidateIdentity.Tag"/> was released on 2026-10-18
     /// (<c>8005-agv-control-server#767</c>) and this identity was flipped to it, and asserts a candidate again since
-    /// <c>8005-agv-control-server#830</c> moved to the unreleased <c>6.0.0</c> candidate. Each flip is made deliberately because
+    /// <c>8005-agv-control-server#830</c> moved to the unreleased <c>6.0.0</c> candidate, and still asserts one since
+    /// <c>8005-agv-control-server#896</c> moved to the unreleased <c>7.0.0</c> candidate. Each flip is made deliberately because
     /// no other test says what the status is: <c>TheShippedSettingsMirrorTheIdentityConstants</c>
     /// below compares the two copies to each other, so a stale value kept in both would ship
     /// silently.

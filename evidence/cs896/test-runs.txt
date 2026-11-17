@@ -1,0 +1,15 @@
+== red at 5831242f4 (tests + re-pin, no implementation)
+ControlServer.Tests.ProtocolPayloadShapeArchitectureTests.EverySnapshotThePublisherSendsMatchesItsFrozenSchema [FAIL]
+ControlServer.Tests.WorklistEqpDisplayOnlyTests.EveryWorklistItemCarriesTheEqpRecordedAtAcceptanceVerbatim [FAIL]
+ControlServer.Tests.WorklistEqpDisplayOnlyTests.ADemandWithoutAnEqpIsListedWithAnExplicitNullAndBlocksNothing [FAIL]
+ControlServer.Tests.WorklistEqpDisplayOnlyTests.TheServerDecidesNothingByTheWorklistEqp [FAIL]
+失败!  - 失败:     4，通过:    81，已跳过:     0，总计:    85，持续时间: 9 s - ControlServer.Tests.dll (net8.0)
+   The server sends payloads its own frozen schemas reject: CurrentStopWorklistSnapshot.payload.items[0] omits required eqp
+   System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
+   Assert.NotEqual() Failure: Strings are equal
+
+== green at 823824a26: new class + every *ArchitectureTests + OnboardJourneyPublisherTests + StopEndedReasonsTests
+已通过! - 失败:     0，通过:   126，已跳过:     0，总计:   126，持续时间: 11 s - ControlServer.Tests.dll (net8.0)
+
+== green at 823824a26: broad filter Journey|Worklist|Wire|Protocol|Stop|Staging|Onboard|Architecture|Batch7|Sublot|ZeroChange
+已通过! - 失败:     0，通过:  2453，已跳过:     0，总计:  2453，持续时间: 4 m 14 s - ControlServer.Tests.dll (net8.0)

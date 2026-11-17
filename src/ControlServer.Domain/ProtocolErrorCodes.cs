@@ -16,9 +16,9 @@ namespace ControlServer.Domain;
 /// <para>
 /// **This list and the identity beside it name the same candidate.** The 65 values below are
 /// <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate manifest
-/// <c>a52876be2ddcc9b8cdd1f1e3b7b7ddbe70d31a307f1d3f017d7a1eb95ffd77b1</c>
-/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, release <c>6.0.0</c>,
-/// <c>protocolVersion: 7</c>), and <see cref="ProtocolCandidateIdentity"/>
+/// <c>44fa0b273810fb2d5326068c03f9647bfd8fdc1c5f01e27a5177b0e0473fe7cb</c>
+/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, release <c>7.0.0</c>,
+/// <c>protocolVersion: 8</c>), and <see cref="ProtocolCandidateIdentity"/>
 /// names that same commit. The <c>2.0.0</c> candidate appended four:
 /// <c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c>, <c>SUBLOT_BOX_COUNT_UNAVAILABLE</c> and
 /// <c>PACKAGE_CAPACITY_UNRESOLVED</c> (<c>8005-agv-program#93</c>), and <c>OPERATOR_TIMEOUT</c>
@@ -32,7 +32,8 @@ namespace ControlServer.Domain;
 /// <c>5.0.0</c> candidate (<c>8005-agv-control-server#737</c>). The <c>6.0.0</c> candidate
 /// (<c>8005-agv-control-server#830</c>, CP-0021) appended three: <c>REMAINING_BASKETS_SKIPPED</c> (a slot result
 /// reason the vehicle sends), <c>REMAINING_BASKETS_SKIP_NOTHING_LOADED</c> and <c>LOAD_CANCELLATION_BASKET_LOADED</c>
-/// (refusals the server sends).
+/// (refusals the server sends). The <c>7.0.0</c> candidate (<c>8005-agv-control-server#896</c>, the worklist item
+/// <c>eqp</c>) appended none.
 /// </para>
 /// <para>
 /// **Re-sync this list whenever the protocol's error surface moves**, which from here means either a

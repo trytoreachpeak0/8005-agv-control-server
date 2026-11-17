@@ -37,16 +37,23 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `98f172642937994ed01668d81fe41e69cf089e10`（protocol PR #27 为 protocol#26 合入 `fp/v2-candidate` 的合并提交，内容提交 `13f52e67`；tag `protocol-v6.0.0` 尚不存在，用户 10-21 定两端与真装置跑通后再发布） |
-| 取用日期 | 2026-10-21 |
+| 来源提交 | `a1facf8674b05c67bfbddc14db4a163e8da2782a`（protocol PR #30 为 protocol#29 合入 `fp/v2-candidate` 的合并提交，内容提交 `2d26048f`；tag `protocol-v7.0.0` 尚不存在，部署时由调度问用户再发布） |
+| 取用日期 | 2026-11-16 |
 
 | 来源路径 | 内容 |
 | --- | --- |
-| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 61、去重 57 |
-| `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 6.0.0`、`protocolVersion 7`、`profileId AGV_FULL_PRODUCT`、69 条消息、11 条 denylist |
-| `schemas/`（整棵树） | 75 个文件，`$id` 段 `agv-full-product/v7` |
+| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 62、去重 58 |
+| `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 7.0.0`、`protocolVersion 8`、`profileId AGV_FULL_PRODUCT`、69 条消息、11 条 denylist |
+| `schemas/`（整棵树） | 75 个文件，`$id` 段 `agv-full-product/v8` |
 
-2026-10-21 由 `8005-agv-control-server#830` 刷新到 `98f17264`（protocol PR #27 的合并提交；与车载端 `8005-agv-onboard-hmi#388` 同包）：
+2026-11-16 由 `8005-agv-control-server#896` 刷新到 `a1facf86`（protocol PR #30 的合并提交；与车载端 `8005-agv-onboard-hmi#417` 同包）：
+protocol#29 给 `CurrentStopWorklistSnapshot` 的每条 item 加了必填可空的 `eqp`（受理时记下的 MES `EQP`，只用于车载屏两张清单的显示，两端不得据此判断），
+`FP-IS-09` 加向量 `CV-WORKLIST-EQP-DISPLAY-ONLY`；item 是闭合对象，所以升大版本 7.0.0、`protocolVersion 8`，消息面与错误码不变。
+三份文件用 `git archive` 从合并提交的对象导出，逐个与 manifest 文件表 SHA-256 核对（75 个 schema 与 `index.json`，76 项全部命中）后整份拷入，
+manifest SHA-256 为 `44fa0b27…`。tag `protocol-v7.0.0` 尚不存在，身份是 `SUPERSEDING_CANDIDATE`，在它上面跑出的证据一律是 `UNRELEASED_CANDIDATE`。
+换装须在关闸且所有旅程 `Completed` 之后：车载端按 `worklistRevision` 保存已应用的清单，同一 revision 内容不同会判 `SNAPSHOT_REVISION_CONTENT_CONFLICT`。
+
+再早一份是 `98f17264`（10-21 取用，11-10 以 tag `protocol-v6.0.0` 上线生产）。2026-10-21 由 `8005-agv-control-server#830` 刷新到 `98f17264`（protocol PR #27 的合并提交；与车载端 `8005-agv-onboard-hmi#388` 同包）：
 protocol#26 按 CP-0021 加了 `RemainingBasketsSkipRequested`／`RemainingBasketsSkipResult`、`OperationResult` 的 `COMPLETED_REMAINING_SKIPPED`、
 三个错误码（`REMAINING_BASKETS_SKIPPED`、`REMAINING_BASKETS_SKIP_NOTHING_LOADED`、`LOAD_CANCELLATION_BASKET_LOADED`），`LoadCancellationAuthorization`
 的 `AUTHORIZED` 只能带空 `slots`；闭合面变了，所以升大版本 6.0.0、`protocolVersion 7`。三份文件用 `git archive` 从合并提交的对象导出，
