@@ -23,9 +23,10 @@ namespace ControlServer.Domain;
 /// <para>
 /// <b>Bound by <c>8005-agv-control-server#896</c>, to ship in one package with <c>8005-agv-onboard-hmi#417</c>.</b>
 /// Neither end may reach the field alone: there is no negotiation, so a server on this identity and a vehicle on
-/// <c>protocol-v6.0.0</c> refuse each other (<c>INCOMPATIBLE_EXACT_IDENTITY_REQUIRED</c>). The switch is made with the
-/// dispatch gate closed and every journey <c>Completed</c>, because the vehicle keys an applied worklist by its
-/// <c>worklistRevision</c> and refuses the same revision with different content. Evidence produced on this identity
+/// <c>protocol-v6.0.0</c> refuse each other (<c>INCOMPATIBLE_EXACT_IDENTITY_REQUIRED</c>). Both outboxes are drained
+/// before the two are replaced together, and the switch is made with the dispatch gate closed and every journey
+/// <c>Completed</c>, because the vehicle keys an applied worklist by its <c>worklistRevision</c> and refuses the same
+/// revision with different content. Evidence produced on this identity
 /// is <c>UNRELEASED_CANDIDATE</c>; evidence bound to <c>protocol-v6.0.0</c> stops being current when this candidate
 /// is bound.
 /// </para>
