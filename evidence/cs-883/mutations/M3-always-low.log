@@ -1,0 +1,12 @@
+# M3-always-low
+file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.EmptyPickupCharging.cs
+-        if (await MandatoryChargeBatteryAsync(runtime, cancellationToken).ConfigureAwait(false) is not { } low)
++        if (((int Percent, int EntryThreshold)?)(10, 40) is not { } low)
+
+exit=1
+  失败 ControlServer.Tests.EmptyPickupMandatoryChargeTests.AboveTheLineTheEmptyVehicleGoesOnToTheNextPickupAsBefore [198 ms]
+  错误消息:
+   Assert.NotEqual() Failure: Values are equal
+Expected: Not Completed
+--
+失败!  - 失败:     1，通过:     2，已跳过:     0，总计:     3，持续时间: 9 s - ControlServer.Tests.dll (net8.0)
