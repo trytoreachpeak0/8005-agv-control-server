@@ -2397,7 +2397,9 @@ public sealed partial class MultiVehicleExecutionTests
 
         /// <summary>
         /// Asked at every vehicle read, given the vehicle key: true hangs that read like <see cref="HangOn"/>. For a test that hangs
-        /// only a later read of the round (control-server#799: the dispatch round's re-read before acceptance).
+        /// only some of a vehicle's reads and lets the others answer -- control-server#799 review L-b hangs only the reads made
+        /// through <c>JourneyRuntimeEngine.ReadVehicleOrNullAsync</c>, so that a second read when a clearance move ends in RIoT
+        /// would show (<c>ChargingClearanceToWaitingPointTests.AMoveEndedInRiotIsJudgedOnTheReadingThatProvedItStopped</c>).
         /// </summary>
         public Func<string, bool>? HangWhen { get; set; }
 

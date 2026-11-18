@@ -41,8 +41,10 @@ internal static class RiotVehicleReadBudget
     }
 
     /// <summary>
-    /// RIoT's vehicle safety reading within <paramref name="budget"/>, or null when the budget ran out first. Only where it is
-    /// read together with the vehicle, in one try (<c>ProvenStoppedVehicleAsync</c>, <c>JudgeEndedIdleReturnOrderAsync</c>).
+    /// RIoT's vehicle safety reading within <paramref name="budget"/>, or null when the budget ran out first. Where it is read
+    /// together with the vehicle, in one try (<c>ProvenStoppedVehicleAsync</c>, <c>JudgeEndedIdleReturnOrderAsync</c>), and in
+    /// <c>NonBusinessDepartureGate.RiotStandstillGapsAsync</c> (the own-order rebuild's departure check and the charging
+    /// allocation before it commits; control-server#799 review M-2).
     /// </summary>
     public static Task<RiotVehicleSafetyObservation?> ReadVehicleSafetyWithinAsync(
         this IRiotVehicleSafetyFacts vehicleSafety,

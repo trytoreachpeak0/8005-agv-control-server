@@ -89,4 +89,39 @@ public sealed partial class ChargingClearanceToWaitingPointTests
         Assert.Null(await StationAsync(fleet, 300));
         Assert.Equal(ChargingExecutionReasons.ClearanceMoveEnded, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
     }
+
+    /// <summary>
+    /// 审查 M-4 的回归看守（增量审查 L-b）：清桩移动单在 RIoT 里被取消，车已停稳在等待点 300 上。车在不在点上，按证明停稳那一次读数判——在点上，
+    /// 保持一切，不放 300 的预占。证明停稳的两次读照常答；之后再经 <c>ReadVehicleOrNullAsync</c> 读的车一律挂住、被预算截断。
+    /// </summary>
+    /// <remarks>
+    /// 把 <c>JudgeClearanceMoveEndedInRiotAsync</c> 改回第二次读车：那一次读被截断、答空，被当成「不在点上」，结束移动、放掉车正停着的 300——这条红。
+    /// 只挂经 <c>ReadVehicleOrNullAsync</c> 的读（看调用栈），不按第几次计数：同一轮里这辆车被读几次、谁先谁后，随推进与派车轮而变。
+    /// </remarks>
+    [Fact]
+    public async Task AMoveEndedInRiotIsJudgedOnTheReadingThatProvedItStopped()
+    {
+        await using FleetFixture fleet = await ClearanceFleetAsync(points: [Point214, Point300]);
+        JourneyRuntimeRow journey = await OldOrderEndedAsync(fleet);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, 300));
+        fleet.Riot.CancelOrder(ClearanceMoveShape.UpperIdFor(journey.JourneyId, 1));
+        StandOn(fleet, 300);
+        fleet.Options.RiotVehicleReadBudget = RiotVehicleReadBudgetTests.ShortReadBudget;
+        fleet.Riot.HangWhen = key =>
+            key == KeyA &&
+            new System.Diagnostics.StackTrace().ToString().Contains("ReadVehicleOrNullAsync", StringComparison.Ordinal);
+
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+        fleet.Riot.HangWhen = null;
+
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, 300));
+        Assert.Empty(await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()
+            .Where(row => row.StationId == 300 && row.ReleaseReason == ClearanceMoveReleaseReasons.Ended).ToArrayAsync(Token));
+        Assert.NotEqual(ChargingExecutionReasons.ClearanceMoveEnded, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+    }
 }
