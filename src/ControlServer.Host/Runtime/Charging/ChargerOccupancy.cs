@@ -121,7 +121,15 @@ public sealed class ChargerOccupancyReader(
             RiotVehicleObservation observed;
             try
             {
-                observed = await vehicleFacts.ReadVehicleAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false);
+                // control-server#799: within JourneyRuntime:RiotVehicleReadBudget; past it, unreadable like the catch below.
+                if (await vehicleFacts.ReadVehicleWithinAsync(
+                            vehicle.VehicleKey, _runtime.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                        .ConfigureAwait(false) is not { } read)
+                {
+                    unknown.Add(($"{vehicle.AgvId}[{vehicle.VehicleKey}]:VEHICLE_POSITION_UNREADABLE", "ReadBudgetExceeded"));
+                    continue;
+                }
+                observed = read;
             }
             catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                           !cancellationToken.IsCancellationRequested)

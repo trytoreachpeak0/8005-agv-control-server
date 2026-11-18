@@ -579,8 +579,14 @@ public sealed class DispatchRoundRunner(
                 .ConfigureAwait(false);
             OnboardDispatchFacts? onboard = await onboardFacts
                 .ReadOnboardFactsAsync(vehicle.AgvId, linked.Token).ConfigureAwait(false);
+            // control-server#799: within the read budget as well as the vehicle's round budget (thirty seconds by default, which
+            // a RIoT that stopped answering used to cost every vehicle every round). Past the read budget the vehicle reads as
+            // the gateway's unread vehicle, as when RIoT fails: not connected, so nothing is dispatched to it. The round
+            // budget running out first is the catch below, as before.
             RiotVehicleObservation observation = await vehicleFacts
-                .ReadVehicleAsync(vehicle.VehicleKey, linked.Token).ConfigureAwait(false);
+                    .ReadVehicleWithinAsync(vehicle.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, linked.Token)
+                    .ConfigureAwait(false) ??
+                RiotVehicleReadBudget.Unread(vehicle.VehicleKey, timeProvider.GetUtcNow());
             // control-server#866: kept for the dashboard's loaded-vehicle-below-the-line alarm, before the plan check below drops a
             // vehicle on the move (RIoT reads it at no station while it drives). The read is the one this round makes anyway. A vehicle
             // RIoT reports offline or disabled has no current battery, as the charging allocation registers it (REQ-0269).
@@ -1564,9 +1570,11 @@ public sealed class DispatchRoundRunner(
             return false;
         }
 
-        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
-            fleetVehicle.VehicleKey,
-            cancellationToken).ConfigureAwait(false);
+        // control-server#799: past the read budget, the gateway's unread vehicle, which no admission chain finds ready.
+        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleWithinAsync(
+                    fleetVehicle.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false) ??
+            RiotVehicleReadBudget.Unread(fleetVehicle.VehicleKey, timeProvider.GetUtcNow());
         DispatchVehicleFacts facts = new(
             fleetVehicle.VehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow(),
             Plan: roundFacts.Plan, BatteryPolicy: roundFacts.BatteryPolicy, ChargingCycle: roundFacts.ChargingCycle);

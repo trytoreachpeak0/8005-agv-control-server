@@ -1614,6 +1614,7 @@ public sealed class ChargingExecutionTests
     [Theory]
     [InlineData("listing-incomplete", "the charger is not confirmed free (CHARGER_OCCUPANCY_UNKNOWN; unknown: ORDER_LISTING_INCOMPLETE (page 3 of 3 does not add up")]
     [InlineData("vehicle-unreadable", "the vehicle cannot be read from RIoT (offline, or its position is missing; unknown: ")]
+    [InlineData("vehicle-read-hangs", "the vehicle cannot be read from RIoT (offline, or its position is missing; unknown: ")]
     public async Task AReservationThatCannotBeReleasedForAnUnknownFactNamesTheFact(string unknown, string named)
     {
         await using FleetFixture fleet = await FleetAsync();
@@ -1635,6 +1636,11 @@ public sealed class ChargingExecutionTests
             fleet.Riot.OrderListingIncompleteReason =
                 "page 3 of 3 does not add up (current 3, total 252 against 252, 51 records against 52, size 100)";
         }
+        else if (unknown == "vehicle-read-hangs")
+        {
+            // control-server#799: a read cut off at its budget is unreadable like a read that failed.
+            RiotVehicleReadBudgetTests.HangVehicleReads(fleet, KeyA);
+        }
         else
         {
             fleet.Riot.FailOn = KeyA;
@@ -1648,6 +1654,10 @@ public sealed class ChargingExecutionTests
         if (unknown == "vehicle-unreadable")
         {
             Assert.Contains($"[{KeyA}]:VEHICLE_POSITION_UNREADABLE (HttpRequestException)", alarm.Message, StringComparison.Ordinal);
+        }
+        if (unknown == "vehicle-read-hangs")
+        {
+            Assert.Contains($"[{KeyA}]:VEHICLE_POSITION_UNREADABLE (ReadBudgetExceeded)", alarm.Message, StringComparison.Ordinal);
         }
         Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
     }

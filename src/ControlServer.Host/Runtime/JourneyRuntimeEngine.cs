@@ -651,7 +651,8 @@ public sealed partial class JourneyRuntimeEngine(
         // vehicle already heading for it without a reservation, before this round dispatches anything against it -- that
         // vehicle comes before any new task. Not behind the Map catalog read: departure is read off RIoT's vehicle position,
         // and which stations are public off the Map's active binding set.
-        FixedStationExclusivitySweep fixedStationSweep = new(dbContext, vehicleFacts, timeProvider, logger, _fixedStationWarnings);
+        FixedStationExclusivitySweep fixedStationSweep = new(
+            dbContext, vehicleFacts, timeProvider, logger, _fixedStationWarnings, runtimeOptions.RiotVehicleReadBudget);
         await fixedStationSweep.ReleaseDepartedAsync(cancellationToken).ConfigureAwait(false);
         TaskTypeStationBindingSetVersion? publicStationBindings = await _taskTypeStations.Bindings
             .ReadActiveAsync(runtimeOptions.MapId, cancellationToken).ConfigureAwait(false);
@@ -2580,8 +2581,11 @@ public sealed partial class JourneyRuntimeEngine(
         {
             return new ArrivalCheck(false, purpose, intent, order, null);
         }
-        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
-            .ConfigureAwait(false);
+        // control-server#799: past the read budget it reads as the gateway's unread vehicle, which is not an arrival.
+        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleWithinAsync(
+                    runtime.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false) ??
+            RiotVehicleReadBudget.Unread(runtime.VehicleKey, timeProvider.GetUtcNow());
         OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(runtime.AgvId, cancellationToken)
             .ConfigureAwait(false);
         DateTimeOffset now = timeProvider.GetUtcNow();

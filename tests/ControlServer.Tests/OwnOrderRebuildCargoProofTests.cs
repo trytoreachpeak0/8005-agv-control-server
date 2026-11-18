@@ -459,6 +459,7 @@ public sealed class OwnOrderRebuildCargoProofTests
     /// </remarks>
     [Theory]
     [InlineData("riot-unreadable")]
+    [InlineData("riot-read-hangs")]
     [InlineData("emergency")]
     [InlineData("session-not-ready")]
     [Trait("Requirement", "REQ-0360")]
@@ -699,6 +700,10 @@ public sealed class OwnOrderRebuildCargoProofTests
             case "riot-unreadable":
                 fixture.Riot.BeforeReadVehicle = () => throw new HttpRequestException("L1: RIoT vehicle read failed");
                 break;
+            case "riot-read-hangs":
+                // control-server#799: a read cut off at its budget holds the rebuild as RIoT unreadable.
+                RiotVehicleReadBudgetTests.HangVehicleReads(fixture);
+                break;
             case "emergency":
                 Latch(fixture);
                 break;
@@ -713,6 +718,9 @@ public sealed class OwnOrderRebuildCargoProofTests
         {
             case "riot-unreadable":
                 fixture.Riot.BeforeReadVehicle = null;
+                break;
+            case "riot-read-hangs":
+                fixture.Riot.ReadVehicleDelay = null;
                 break;
             case "emergency":
                 Unlatch(fixture);

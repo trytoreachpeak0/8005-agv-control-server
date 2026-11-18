@@ -260,6 +260,20 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan SlotCommandPositionReadBudget { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
+    /// How long one RIoT vehicle read made by the journey runtime's round may take before it counts as not read
+    /// (control-server#799). Two seconds by default; must be positive and below the onboard session timeout
+    /// (<c>SessionLiveness.Timeout</c>, six seconds).
+    /// </summary>
+    /// <remarks>
+    /// The gateway's own timeout is thirty seconds, and the round advances one vehicle after another, with every vehicle's
+    /// emergency stop watch and REQ-0248 re-trigger at its end: without this, a RIoT that stopped answering held the round
+    /// back one gateway timeout for every read it made. A read past the budget takes the same branch as a read that failed
+    /// at that call site; none of them lets anything through on it. Kept below the shortest emergency stop deadline the
+    /// round serves, the three-second door grace of CP-0017 (<c>VehicleFault:DoorUnknownGrace</c>), by default.
+    /// </remarks>
+    public TimeSpan RiotVehicleReadBudget { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// How long after one of this server's own orders ended -- cancelled or deleted in RIoT, or its FAILED fault cleared by a
     /// person -- the server waits before it rebuilds the order for the same vehicle and the same demand (control-server#318,
     /// the first of its three guards). Thirty seconds by default, the user's decision of 2026-09-22: time for whoever is by
@@ -550,6 +564,13 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.SlotCommandPositionReadBudget > TimeSpan.FromSeconds(10))
         {
             failures.Add("SlotCommandPositionReadBudget must be positive and at most 10 s.");
+        }
+        if (options.RiotVehicleReadBudget <= TimeSpan.Zero ||
+            options.RiotVehicleReadBudget >= ControlServer.Infrastructure.Persistence.SessionLiveness.Timeout)
+        {
+            failures.Add(
+                "RiotVehicleReadBudget must be positive and below the onboard session timeout " +
+                $"({ControlServer.Infrastructure.Persistence.SessionLiveness.Timeout.TotalSeconds:0} s).");
         }
         if (options.UnableToChargeOldOrderCancelSettleWindow <= TimeSpan.Zero ||
             options.UnableToChargeOldOrderCancelSettleWindow > TimeSpan.FromMinutes(10))

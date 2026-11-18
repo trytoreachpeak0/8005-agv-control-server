@@ -690,7 +690,8 @@ public sealed class Batch8FixedStationSingleOccupancyTests
             null!,
             new FixedClock(At.AddMinutes(5)),
             logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
-            warnings ?? new FixedStationSweepWarnings());
+            warnings ?? new FixedStationSweepWarnings(),
+            new JourneyRuntimeOptions().RiotVehicleReadBudget);
 
     private static async Task<StationExclusivity?> HeldAtAsync(Batch7JourneyFixture fixture, int station)
     {

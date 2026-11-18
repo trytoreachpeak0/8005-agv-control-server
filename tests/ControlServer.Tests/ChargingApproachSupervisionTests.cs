@@ -241,6 +241,7 @@ public sealed class ChargingApproachSupervisionTests
     /// </summary>
     [Theory]
     [InlineData("read-fails")]
+    [InlineData("read-hangs")]
     [InlineData("disconnected")]
     public async Task AVehicleLostOnTheWayIsNamedAlarmedOncePastTheWindowKeepsEverythingAndIsClearedWhenItIsBack(string loss)
     {
@@ -252,6 +253,11 @@ public sealed class ChargingApproachSupervisionTests
         if (loss == "read-fails")
         {
             fleet.Riot.FailOn = KeyA;
+        }
+        else if (loss == "read-hangs")
+        {
+            // control-server#799: a read cut off at its budget is lost the same way.
+            RiotVehicleReadBudgetTests.HangVehicleReads(fleet, KeyA);
         }
         else
         {
@@ -281,6 +287,7 @@ public sealed class ChargingApproachSupervisionTests
         Assert.Single(fleet.Riot.Creates);
 
         fleet.Riot.FailOn = null;
+        fleet.Riot.HangOn = null;
         fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12 };
         await RoundAsync(fleet);
         Assert.Null((await ChargingExecutionTests.ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);

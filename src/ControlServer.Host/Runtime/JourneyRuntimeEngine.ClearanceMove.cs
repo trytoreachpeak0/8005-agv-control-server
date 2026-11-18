@@ -838,7 +838,10 @@ public sealed partial class JourneyRuntimeEngine
     {
         try
         {
-            return await vehicleFacts.ReadVehicleAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
+            // control-server#799: past the read budget it is null, the same as a read that failed.
+            return await vehicleFacts.ReadVehicleWithinAsync(
+                    vehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                       !cancellationToken.IsCancellationRequested)

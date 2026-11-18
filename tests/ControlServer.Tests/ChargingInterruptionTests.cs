@@ -219,7 +219,7 @@ public sealed class ChargingInterruptionTests
         Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id is 2276 or 2278);
     }
 
-    public static TheoryData<string> GapShapes => ["reading-stale", "read-fails", "disconnected"];
+    public static TheoryData<string> GapShapes => ["reading-stale", "read-fails", "read-hangs", "disconnected"];
 
     /// <summary>
     /// 缺口之前读到的阈值不拿来判满（control-server#876 审查 M1，<c>REQ-0287</c>）：缺口后第一个读数 100%（还不能判），接着又断一次，恢复后电量
@@ -234,6 +234,7 @@ public sealed class ChargingInterruptionTests
         Gap(fleet, gap);
         await RoundAsync(fleet);
         fleet.Riot.FailOn = null;
+        fleet.Riot.HangOn = null;
         AtCharger(fleet, KeyA, 100, Charging);
         await RoundAsync(fleet);
         Assert.Equal(ChargingCycleWireStates.Charging, (await CycleAsync(fleet)).WireState);
@@ -241,6 +242,7 @@ public sealed class ChargingInterruptionTests
         Gap(fleet, gap);
         await LongRoundAsync(fleet, TimeSpan.FromMinutes(10));
         fleet.Riot.FailOn = null;
+        fleet.Riot.HangOn = null;
         AtCharger(fleet, KeyA, 40, NotCharging);
         for (int round = 0; round < 4; round++)
         {
@@ -266,6 +268,10 @@ public sealed class ChargingInterruptionTests
                 break;
             case "read-fails":
                 fleet.Riot.FailOn = KeyA;
+                break;
+            case "read-hangs":
+                // control-server#799: a read cut off at its budget is a gap like a read that failed.
+                RiotVehicleReadBudgetTests.HangVehicleReads(fleet, KeyA);
                 break;
             case "disconnected":
                 fleet.Riot.VehicleOverrides[KeyA] = seen => seen with

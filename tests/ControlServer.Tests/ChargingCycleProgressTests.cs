@@ -576,7 +576,8 @@ public sealed class ChargingCycleProgressTests
         Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2248);
     }
 
-    public static TheoryData<string> MissingDepartureConfirmations => ["still-charging", "still-on-the-charger", "charger-not-free", "vehicle-unreadable"];
+    public static TheoryData<string> MissingDepartureConfirmations =>
+        ["still-charging", "still-on-the-charger", "charger-not-free", "vehicle-unreadable", "vehicle-read-hangs"];
 
     /// <summary>三项确认缺任何一项都不释放（车读不到也不算离开）；补上那一项后才释放。</summary>
     [Theory]
@@ -607,6 +608,11 @@ public sealed class ChargingCycleProgressTests
         {
             fleet.Riot.FailOn = KeyA;
         }
+        if (missing == "vehicle-read-hangs")
+        {
+            // control-server#799: a read cut off at its budget is no departure either.
+            RiotVehicleReadBudgetTests.HangVehicleReads(fleet, KeyA);
+        }
         for (int round = 0; round < 4; round++)
         {
             await RoundAsync(fleet);
@@ -616,6 +622,7 @@ public sealed class ChargingCycleProgressTests
         Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet, KeyA)).WireState);
 
         fleet.Riot.FailOn = null;
+        fleet.Riot.HangOn = null;
         fleet.Riot.OrderListingIncomplete = false;
         fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12, BatteryState = NotCharging };
         await RoundAsync(fleet);

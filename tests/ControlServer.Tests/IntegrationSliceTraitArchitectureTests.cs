@@ -219,6 +219,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["RiotRouteGraphTransportTests"] = "7.5 #6, RouteGraphSnapshot engine (control-server#661 the six route-graph reads through the Host's own SDK registration: a body stalled after the headers times out, text/plain fails, both mark the snapshot refresh-failed); single-ended server-to-RIoT",
             ["RiotSdkPackageProvenanceTests"] = "vendored SDK package provenance; not a protocol fact",
             ["RiotSdkRegistrationTests"] = "SDK composition-root wiring; no wire message",
+            ["RiotVehicleReadBudgetTests"] = "control-server#799 the journey runtime round's RIoT vehicle reads cut off at their budget and taken as not read; server-internal, no wire message",
             ["RiotUpperIdShapeTests"] = "control-server#616 every upperId this server sends RIoT fits the length RIoT is known to accept, stays unique and keeps the own prefix; single-ended server-to-RIoT, no wire message",
             ["RollbackAndImpactPreviewTests"] = "batch 3 rollback and impact preview; a rollback is a new activation of an existing frozen version, server-internal",
             ["RouteGraphDispatchTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
