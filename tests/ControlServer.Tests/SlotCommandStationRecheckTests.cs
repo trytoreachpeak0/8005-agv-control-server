@@ -358,6 +358,10 @@ public sealed class SlotCommandStationRecheckTests
     {
         await using RuntimeFixture fixture = await ReachSublotWaitAsync();
         fixture.Options.SlotCommandPositionReadBudget = TimeSpan.FromMilliseconds(200);
+        // control-server#799: the round's other vehicle reads are bounded by RiotVehicleReadBudget now, four seconds by default.
+        // One more of them cut off in the measured round than in the baseline would add four seconds and reach the
+        // threshold on its own (PR #903's CI); kept as short as the position read, the comparison is about that read alone.
+        fixture.Options.RiotVehicleReadBudget = TimeSpan.FromMilliseconds(200);
         await fixture.RecreateEngineAsync();
         fixture.Riot.ReadVehicleDelay = token => Task.Delay(TimeSpan.FromSeconds(8), token);
         TimeSpan baseline = await TimedRoundAsync(fixture);
@@ -394,6 +398,10 @@ public sealed class SlotCommandStationRecheckTests
         await LoadBothAndArriveAtTheUnloadStopAsync(fixture);
         (string first, string second) = await UnloadOrderAsync(fixture);
         fixture.Options.SlotCommandPositionReadBudget = TimeSpan.FromMilliseconds(200);
+        // control-server#799: the round's other vehicle reads are bounded by RiotVehicleReadBudget now, four seconds by default.
+        // One more of them cut off in the measured round than in the baseline would add four seconds and reach the
+        // threshold on its own (PR #903's CI); kept as short as the position read, the comparison is about that read alone.
+        fixture.Options.RiotVehicleReadBudget = TimeSpan.FromMilliseconds(200);
         await fixture.RecreateEngineAsync();
         fixture.Riot.ReadVehicleDelay = token => Task.Delay(TimeSpan.FromSeconds(8), token);
         TimeSpan baseline = await TimedRoundAsync(fixture);
