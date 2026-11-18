@@ -114,16 +114,19 @@ public sealed class Batch8StationExclusivityManualReleaseTests
     }
 
     /// <summary>
-    /// control-server#799：离点清扫读车有预算（<c>JourneyRuntime:RiotVehicleReadBudget</c>）。RIoT 十秒后才答「车已在别的站」，预算 200 毫秒：
-    /// 这一次按读不到处理——读不到不是离开的证据，站照旧由 A 持有，清扫也不再多等那十秒。同一份读数按时答回来，下一次清扫照常放。
+    /// control-server#799：离点清扫读车有预算（<c>JourneyRuntime:RiotVehicleReadBudget</c>）。RIoT 三十秒后才答「车已在别的站」，预算 200 毫秒：
+    /// 这一次按读不到处理——读不到不是离开的证据，站照旧由 A 持有，清扫也不再多等那三十秒。同一份读数按时答回来，下一次清扫照常放。
     /// </summary>
-    /// <remarks>去掉清扫这一处的预算，清扫等满十秒、读到车在别的站，把站放掉：这条红。</remarks>
+    /// <remarks>
+    /// 去掉清扫这一处的预算，清扫等满三十秒、读到车在别的站，把站放掉：这条红。耗时只判「远短于三十秒」：CI 负载下 200 毫秒的计时器实测拖到 5 秒才触发
+    /// （PR #903 的第一次 CI）。
+    /// </remarks>
     [Fact]
     public async Task AHolderWhoseReadDoesNotComeBackWithinTheBudgetKeepsItsStation()
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         await SeedFinishedHolderAtGateAsync(fixture);
-        Facts late = new(Seen(connected: true, station: Machine)) { During = () => Task.Delay(TimeSpan.FromSeconds(10)) };
+        Facts late = new(Seen(connected: true, station: Machine)) { During = () => Task.Delay(TimeSpan.FromSeconds(30)) };
 
         System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
         await Sweep(fixture.NewContext(), late, readBudget: TimeSpan.FromMilliseconds(200)).ReleaseDepartedAsync(Token);
@@ -133,7 +136,7 @@ public sealed class Batch8StationExclusivityManualReleaseTests
         StationExclusivity? held = await HeldAtAsync(fixture, Gate);
         Assert.NotNull(held);
         Assert.Equal(KeyA, held.VehicleKey);
-        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"The sweep waited {elapsed.Elapsed} for a read past its budget.");
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(15), $"The sweep waited {elapsed.Elapsed} for a read past its budget.");
 
         await Sweep(fixture.NewContext(), new Facts(Seen(connected: true, station: Machine))).ReleaseDepartedAsync(Token);
         Assert.Null(await HeldAtAsync(fixture, Gate));
