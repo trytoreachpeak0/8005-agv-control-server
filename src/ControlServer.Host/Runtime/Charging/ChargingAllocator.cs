@@ -862,7 +862,9 @@ public sealed class ChargingAllocator(
         try
         {
             departureGaps.AddRange(await NonBusinessDepartureGate
-                .RiotStandstillGapsAsync(vehicleSafety, vehicle.VehicleKey, cancellationToken).ConfigureAwait(false));
+                .RiotStandstillGapsAsync(
+                    vehicleSafety, vehicle.VehicleKey, _runtime.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false));
         }
         catch (Exception error) when (NonBusinessDepartureGate.IsUnreadable(error, cancellationToken))
         {

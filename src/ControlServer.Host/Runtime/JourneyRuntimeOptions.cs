@@ -265,11 +265,19 @@ public sealed class JourneyRuntimeOptions
     /// (<c>SessionLiveness.Timeout</c>, six seconds).
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The gateway's own timeout is thirty seconds, and the round advances one vehicle after another, with every vehicle's
-    /// emergency stop watch and REQ-0248 re-trigger at its end: without this, a RIoT that stopped answering held the round
-    /// back one gateway timeout for every read it made. A read past the budget takes the same branch as a read that failed
-    /// at that call site; none of them lets anything through on it. Kept below the shortest emergency stop deadline the
-    /// round serves, the three-second door grace of CP-0017 (<c>VehicleFault:DoorUnknownGrace</c>), by default.
+    /// emergency stop watch and REQ-0248 re-trigger at its end: without this, a RIoT whose vehicle reads stopped answering held
+    /// the round back one gateway timeout for every vehicle read it made. A read past the budget takes the same branch as a
+    /// read that failed at that call site, whatever that branch is.
+    /// </para>
+    /// <para>
+    /// What the watch at the end of the round is delayed by is the sum of the reads cut off in that round, one budget each,
+    /// and that grows with the fleet; it was measured on one vehicle only. This bounds vehicle reads alone: when all of RIoT
+    /// stops answering, the round's other RIoT reads (order reconciliation, the emergency stop watch's own reads, the order
+    /// listing, the Map catalog) still take the gateway's timeout. The default is shorter than the default door grace of
+    /// CP-0017 (<c>VehicleFault:DoorUnknownGrace</c>, three seconds); nothing checks that the two stay so.
+    /// </para>
     /// </remarks>
     public TimeSpan RiotVehicleReadBudget { get; set; } = TimeSpan.FromSeconds(2);
 

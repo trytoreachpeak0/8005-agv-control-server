@@ -114,10 +114,6 @@ public sealed class Batch8StationExclusivityManualReleaseTests
     }
 
     /// <summary>
-    /// 反过来：清扫读到行、正在读 RIoT（车在线、报在机台，离点证据成立）的那一刻，人工释放先放了。清扫删到 0 行，不再写经过、不记释放日志；
-    /// 经过是人工释放、只关一次。
-    /// </summary>
-    /// <summary>
     /// control-server#799：离点清扫读车有预算（<c>JourneyRuntime:RiotVehicleReadBudget</c>）。RIoT 十秒后才答「车已在别的站」，预算 200 毫秒：
     /// 这一次按读不到处理——读不到不是离开的证据，站照旧由 A 持有，清扫也不再多等那十秒。同一份读数按时答回来，下一次清扫照常放。
     /// </summary>
@@ -134,13 +130,19 @@ public sealed class Batch8StationExclusivityManualReleaseTests
         elapsed.Stop();
 
         Assert.True(late.DuringRan, "The sweep never read the holder, so this proves nothing.");
-        Assert.Equal(KeyA, (await HeldAtAsync(fixture, Gate))!.VehicleKey);
+        StationExclusivity? held = await HeldAtAsync(fixture, Gate);
+        Assert.NotNull(held);
+        Assert.Equal(KeyA, held.VehicleKey);
         Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"The sweep waited {elapsed.Elapsed} for a read past its budget.");
 
         await Sweep(fixture.NewContext(), new Facts(Seen(connected: true, station: Machine))).ReleaseDepartedAsync(Token);
         Assert.Null(await HeldAtAsync(fixture, Gate));
     }
 
+    /// <summary>
+    /// 反过来：清扫读到行、正在读 RIoT（车在线、报在机台，离点证据成立）的那一刻，人工释放先放了。清扫删到 0 行，不再写经过、不记释放日志；
+    /// 经过是人工释放、只关一次。
+    /// </summary>
     [Fact]
     public async Task AManualReleaseBetweenTheSweepsReadAndItsDeleteWinsAndTheSweepWritesNothing()
     {

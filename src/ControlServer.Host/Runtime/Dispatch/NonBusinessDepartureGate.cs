@@ -45,14 +45,24 @@ public static class NonBusinessDepartureGate
     /// RIoT 一半：服务端自己的安全读数说车停着、什么也没挡着。不是停止时答 RIoT 给的原因（没有就答 <c>RIOT_VEHICLE_NOT_STOPPED</c>）。
     /// 读失败照原样抛出：调用方把它记成 <c>RIOT_VEHICLE_SAFETY_UNREADABLE</c>（<see cref="IsUnreadable"/>）。
     /// </summary>
+    /// <remarks>
+    /// 读数受 <paramref name="readBudget"/>（<c>JourneyRuntime:RiotVehicleReadBudget</c>）截断（control-server#799 审查 M-2）：两个调用方都在推进轮里。
+    /// 超时答 <see cref="RiotSafetyUnreadable"/>，与读失败同一个码，调用方照样扣住。
+    /// </remarks>
     public static async Task<IReadOnlyList<string>> RiotStandstillGapsAsync(
         IRiotVehicleSafetyFacts vehicleSafety,
         string vehicleKey,
+        TimeSpan readBudget,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(vehicleSafety);
-        RiotVehicleSafetyObservation safety = await vehicleSafety
-            .ReadVehicleSafetyAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
+        if (await vehicleSafety
+                .ReadVehicleSafetyWithinAsync(vehicleKey, readBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false) is not { } safety)
+        {
+            return [RiotSafetyUnreadable];
+        }
         return safety.MotionState == RiotVehicleMotionState.Stopped
             ? []
             : safety.ReasonCodes.Count > 0 ? safety.ReasonCodes : ["RIOT_VEHICLE_NOT_STOPPED"];

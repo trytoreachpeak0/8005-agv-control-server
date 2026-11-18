@@ -2352,16 +2352,21 @@ public sealed partial class MultiVehicleExecutionTests
         /// RIoT's vehicle safety read (control-server#318's second guard): every vehicle stopped and nothing in the way, unless
         /// <see cref="SafetyReasons"/> names something.
         /// </summary>
-        public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
+        public async Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
+            if (string.Equals(HangSafetyOn, vehicleKey, StringComparison.Ordinal))
+            {
+                await HangAsync(nameof(HangSafetyOn), hook => HangCeilingReached = hook, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             string[] reasons = SafetyReasonsByVehicle.GetValueOrDefault(vehicleKey) ?? SafetyReasons;
-            return Task.FromResult(new RiotVehicleSafetyObservation(
+            return new RiotVehicleSafetyObservation(
                 vehicleKey,
                 reasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
                 clock.GetUtcNow(),
                 "L1",
-                reasons));
+                reasons);
         }
 
         /// <summary>What the safety read names for every vehicle; empty means stopped with nothing in the way.</summary>
@@ -2389,6 +2394,18 @@ public sealed partial class MultiVehicleExecutionTests
 
         /// <summary>The hook that reached <see cref="HangCeiling"/>, or null; <see cref="FleetFixture"/> fails the test on it.</summary>
         public string? HangCeilingReached { get; private set; }
+
+        /// <summary>
+        /// Asked at every vehicle read, given the vehicle key: true hangs that read like <see cref="HangOn"/>. For a test that hangs
+        /// only a later read of the round (control-server#799: the dispatch round's re-read before acceptance).
+        /// </summary>
+        public Func<string, bool>? HangWhen { get; set; }
+
+        /// <summary>
+        /// The vehicle key whose vehicle safety reads do not come back, or null (control-server#799 review M-2). Waits like
+        /// <see cref="HangOn"/>; the caller's read budget ends it.
+        /// </summary>
+        public string? HangSafetyOn { get; set; }
 
         /// <summary>What RIoT reports in movementState; null reads as Unknown.</summary>
         public string? MovementState { get; set; }
@@ -2426,6 +2443,12 @@ public sealed partial class MultiVehicleExecutionTests
             if (string.Equals(HangOn, vehicleKey, StringComparison.Ordinal))
             {
                 await HangAsync(nameof(HangOn), hook => HangCeilingReached = hook, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (HangWhen?.Invoke(vehicleKey) == true)
+            {
+                await HangAsync(nameof(HangWhen), hook => HangCeilingReached = hook, cancellationToken)
                     .ConfigureAwait(false);
             }
 

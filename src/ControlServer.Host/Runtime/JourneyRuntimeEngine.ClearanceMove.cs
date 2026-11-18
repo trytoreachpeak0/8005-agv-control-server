@@ -555,13 +555,15 @@ public sealed partial class JourneyRuntimeEngine
         ChargingCycleRow? cycle,
         CancellationToken cancellationToken)
     {
-        if (await ProvenStoppedWithoutOrderAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false) is null)
+        // control-server#799 review M-4: where it stands is judged on the reading that proved it stopped, not on a second read --
+        // a second read that did not come back read as "not on the point" and ended the move, releasing the point it may stand on.
+        if (await ProvenStoppedVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false) is not { } proven)
         {
             await HoldClearanceMoveAsync(runtime, move, "ORDER_ENDED_IN_RIOT_STOP_NOT_PROVEN", cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        RiotVehicleObservation? vehicle = await ReadVehicleOrNullAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        RiotVehicleObservation vehicle = proven.Vehicle;
         if (vehicle is { CurrentStationId: int at } && at == move.StationRiotId)
         {
             if (cycle is null)

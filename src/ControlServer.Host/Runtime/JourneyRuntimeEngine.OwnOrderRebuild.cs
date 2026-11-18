@@ -1211,7 +1211,9 @@ public sealed partial class JourneyRuntimeEngine
 
             // The same read the charging allocation makes before it commits (control-server#404 review S-a).
             reasons.AddRange(await Dispatch.NonBusinessDepartureGate
-                .RiotStandstillGapsAsync(vehicleSafety, runtime.VehicleKey, cancellationToken).ConfigureAwait(false));
+                .RiotStandstillGapsAsync(
+                    vehicleSafety, runtime.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false));
         }
         catch (Exception error) when (Dispatch.NonBusinessDepartureGate.IsUnreadable(error, cancellationToken))
         {

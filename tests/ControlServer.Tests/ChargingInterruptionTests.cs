@@ -1357,6 +1357,36 @@ public sealed class ChargingInterruptionTests
         Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2280);
     }
 
+    /// <summary>
+    /// control-server#799 审查 M-1（变异 M6）：清桩中判「车还在充吗」的那一次读车超时，按读不到处理——不算还在充，码换回
+    /// <c>CHARGING_NO_PROGRESS_CONFIRMED</c>；桩照旧占用，什么也不放（清桩仍要人确认）。读数回来、车仍在充，码换回还在充。
+    /// </summary>
+    [Fact]
+    public async Task AStillChargingCheckWhoseReadIsCutOffAtItsBudgetIsNotStillChargingAndReleasesNothing()
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        await ChargingAsync(fleet, battery: 50);
+        for (int round = 0; round < 40 && (await StationHoldsAsync(fleet)).Length == 0; round++)
+        {
+            AtCharger(fleet, KeyA, 50 + (round / 10), Charging);
+            await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        }
+        for (int minute = 0; minute < 15; minute++)
+        {
+            await LongRoundAsync(fleet, TimeSpan.FromMinutes(1));
+        }
+        Assert.Equal(ChargingExecutionReasons.ClearingVehicleStillCharging, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        RiotVehicleReadBudgetTests.HangVehicleReads(fleet, KeyA);
+        await RoundAsync(fleet);
+        fleet.Riot.HangOn = null;
+
+        Assert.Equal(ChargingExecutionReasons.NoProgressClearing, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Equal((KeyA, StationExclusivityStates.Occupied), await HolderAsync(fleet, Near.StationId));
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingExecutionReasons.ClearingVehicleStillCharging, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+    }
+
     // ---- 重放、重启、崩溃点、与人工清桩同一刻 ----------------------------------------------------------------------------
 
     /// <summary>
