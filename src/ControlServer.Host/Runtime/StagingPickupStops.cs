@@ -36,7 +36,7 @@ internal static class StagingPickupStops
         HashSet<string> staging = new(StringComparer.Ordinal);
         foreach (JourneyStopRow stop in stops.Stops)
         {
-            if (await IsStagingPickupAsync(dbContext, stop, stops.AllAtStop(stop), cancellationToken).ConfigureAwait(false))
+            if (await IsStagingPickupAsync(dbContext, stop, EverAtStop(stops, stop), cancellationToken).ConfigureAwait(false))
             {
                 staging.Add(stop.StopId);
             }
@@ -66,8 +66,21 @@ internal static class StagingPickupStops
             return false;
         }
         JourneyStopRow current = stops.Current;
-        return await IsStagingPickupAsync(dbContext, current, stops.AllAtStop(current), cancellationToken).ConfigureAwait(false);
+        return await IsStagingPickupAsync(dbContext, current, EverAtStop(stops, current), cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// 认停靠用的归属：此刻挂着的，<b>加上已被移除的</b>（control-server#904）。
+    /// </summary>
+    /// <remarks>
+    /// 停靠是不是待送点，是这个停靠落库时就定了的事实（为哪条需求、在哪一站开），不随它上面的需求被放回改派而变。只看未移除的归属时，
+    /// 同站追加单独开的那个停靠上唯一一条在装货中取消、放回（control-server#713）之后，这个停靠就认不出了：引擎此前在同一个实例里跨轮
+    /// 记着认过的停靠，测试夹具复用一个引擎所以看不出；生产里引擎每轮取自新的 scope，取消之后的那一轮重新认，认成机台取货，
+    /// #713 的续跑接不住，每轮抛（11-19 agv02 在 217）。已移除的需求冻结的绑定不会被删、也不重冻（<c>DemandTaskTypeStationFreezeStore.FreezeAsync</c>
+    /// 已有就返回已有的），所以按它认出的站与它挂着时认出的是同一个。
+    /// </remarks>
+    private static IReadOnlyList<JourneyStopDemand> EverAtStop(JourneyStopCursor stops, JourneyStopRow stop) =>
+        [.. stops.AllAtStop(stop), .. stops.LeftAtStop(stop)];
 
     private static async Task<bool> IsStagingPickupAsync(
         ControlServerDbContext dbContext,

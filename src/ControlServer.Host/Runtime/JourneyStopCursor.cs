@@ -47,9 +47,11 @@ internal sealed class JourneyStopCursor
         IReadOnlyList<JourneyStopRow> stops,
         IReadOnlyList<JourneyStopDemand> allDemands,
         bool everCarriedMoreThanOneDemand,
-        IReadOnlySet<string> demandsThatLeft)
+        IReadOnlySet<string> demandsThatLeft,
+        IReadOnlyList<JourneyStopDemand> leftDemands)
     {
         DemandsThatLeft = demandsThatLeft;
+        _leftDemands = leftDemands;
         _runtime = runtime;
         Stops = stops;
         AllDemands = allDemands;
@@ -80,6 +82,19 @@ internal sealed class JourneyStopCursor
 
     /// <summary>曾经挂在这趟旅程上、归属已被移除的需求（批次7-10，control-server#215）。</summary>
     public IReadOnlySet<string> DemandsThatLeft { get; }
+
+    private readonly IReadOnlyList<JourneyStopDemand> _leftDemands;
+
+    /// <summary>
+    /// 曾经挂在这个停靠上、归属已被移除的需求（control-server#904）。只给「这个停靠是什么」这类按停靠落库事实判的地方用
+    /// （<see cref="StagingPickupStops"/>）：一个停靠的角色与站点落库后不变，它上面的需求被放回改派，不改变它是为谁、在哪一站开的。
+    /// 推进、清单、版数都不读它——它们数的是「此刻还挂着的」。
+    /// </summary>
+    public IReadOnlyList<JourneyStopDemand> LeftAtStop(JourneyStopRow stop)
+    {
+        ArgumentNullException.ThrowIfNull(stop);
+        return [.. _leftDemands.Where(demand => StopIdOf(demand.Membership, stop.StopRole) == stop.StopId)];
+    }
 
     /// <summary>
     /// 旅程此刻还带着的需求：归属未被移除，且需求本身还没终结（<see cref="DemandJourneyLookup.OpenDemands"/> 的那个定义）。
@@ -509,7 +524,8 @@ internal sealed class JourneyStopCursor
             everCarried.Length > 1,
             new HashSet<string>(
                 everCarried.Where(row => row.Membership.RemovedAt != null).Select(row => row.Membership.DemandId),
-                StringComparer.Ordinal));
+                StringComparer.Ordinal),
+            [.. everCarried.Where(row => row.Membership.RemovedAt != null)]);
     }
 
     /// <summary>

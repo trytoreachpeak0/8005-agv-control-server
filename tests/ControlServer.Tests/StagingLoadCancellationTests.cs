@@ -644,6 +644,9 @@ public sealed class StagingLoadCancellationTests
             afterCancel.Stage == JourneyRuntimeStage.AwaitingStationDeparture && afterCancel.BlockReasonCode != JourneyRuntimeEngine.AdvanceFailedReason,
             $"The journey did not carry on after the cancellation: {afterCancel.Stage}, block {afterCancel.BlockReasonCode}.");
         Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.Level >= Microsoft.Extensions.Logging.LogLevel.Error);
+        // 推进段之外读期限的地方（装货结果回执、看板、恢复协调器）用的是另一个入口，它同样要认得出这个只剩已移除归属的停靠。
+        Assert.True(await StagingPickupStops.CurrentStopIsStagingAsync(
+            fixture.Context, afterCancel, fixture.Options.StagingDepartureRules, Token));
         JourneyDemandRow released = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
             .SingleAsync(row => row.DemandId == cancelled, Token);
         Assert.Equal(DemandJourneyLookup.ReleasedForRedispatchReason, released.RemovalReason);
