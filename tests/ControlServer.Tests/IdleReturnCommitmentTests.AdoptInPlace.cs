@@ -244,7 +244,7 @@ public sealed partial class IdleReturnCommitmentTests
     /// <summary>每轮开头的离点清扫，RIoT 报这辆车在线、停在 <paramref name="station"/>。</summary>
     private static FixedStationExclusivitySweep DepartureSweep(Harness harness, string vehicleKey, int station) =>
         new(harness.Db.NewContext(), new StandingFacts(vehicleKey, station), TimeProvider.System, NullLogger.Instance,
-            new FixedStationSweepWarnings());
+            new FixedStationSweepWarnings(), new JourneyRuntimeOptions().RiotVehicleReadBudget);
 
     private sealed class StandingFacts(string vehicleKey, int station) : IRiotVehicleFacts
     {

@@ -43,7 +43,8 @@ internal sealed class FixedStationExclusivitySweep(
     IRiotVehicleFacts vehicleFacts,
     TimeProvider timeProvider,
     ILogger logger,
-    FixedStationSweepWarnings warnings)
+    FixedStationSweepWarnings warnings,
+    TimeSpan vehicleReadBudget)
 {
     /// <summary>车正开往一个被别的车预占或占用着的公共站点、自己没取得预占时记的原因码。</summary>
     public const string HeldOnApproachReason = "FIXED_TASK_STATION_HELD_ON_APPROACH";
@@ -288,8 +289,13 @@ internal sealed class FixedStationExclusivitySweep(
             }
         }
 
-        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(row.VehicleKey, cancellationToken)
-            .ConfigureAwait(false);
+        // control-server#799: within JourneyRuntime:RiotVehicleReadBudget. Past it the vehicle is not read, which is not
+        // departure evidence: the station stays held.
+        if (await vehicleFacts.ReadVehicleWithinAsync(row.VehicleKey, vehicleReadBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false) is not { } vehicle)
+        {
+            return false;
+        }
         // control-server#801: RIoT's currentPosition 0 is no station, not another one -- a vehicle just off the point is still
         // in its way. Left means read standing at another station, as for a charger.
         return vehicle.Connected &&

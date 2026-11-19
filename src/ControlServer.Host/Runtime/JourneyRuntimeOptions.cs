@@ -260,6 +260,36 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan SlotCommandPositionReadBudget { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
+    /// How long one RIoT vehicle read made by the journey runtime's round may take before it counts as not read
+    /// (control-server#799). Four seconds by default; must be positive and below the onboard session timeout
+    /// (<c>SessionLiveness.Timeout</c>, six seconds).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The gateway's own timeout is thirty seconds, and the round advances one vehicle after another, with every vehicle's
+    /// emergency stop watch and REQ-0248 re-trigger at its end: without this, a RIoT whose vehicle reads stopped answering held
+    /// the round back one gateway timeout for every vehicle read it made. A read past the budget takes the same branch as a
+    /// read that failed at that call site, whatever that branch is.
+    /// </para>
+    /// <para>
+    /// What the watch at the end of the round is delayed by is the sum of the reads cut off in that round, one budget each,
+    /// and that grows with the fleet; it was measured on one vehicle only. This bounds vehicle reads alone: when all of RIoT
+    /// stops answering, the round's other RIoT reads (order reconciliation, the emergency stop watch's own reads, the order
+    /// listing, the Map catalog) still take the gateway's timeout. Four seconds is longer than the door grace of CP-0017
+    /// (<c>VehicleFault:DoorUnknownGrace</c>, three seconds by default); the two are not related.
+    /// </para>
+    /// <para>
+    /// Why four and not two (the first value, PR #903's CI): a RIoT that answers in two seconds is slow, not gone, and a vehicle
+    /// read cut off is a vehicle not dispatched, not proven arrived, not proven stopped. The L2 scenario
+    /// <c>route-graph-staleness</c> makes every call of the stand-in RIoT take 2000 ms to age the route graph out; at a
+    /// two-second budget every vehicle read was cut off and the vehicle read as unavailable. Whoever lowers this budget looks
+    /// at that scenario first. The cost: one round on one vehicle with every vehicle read hanging is about twelve seconds at
+    /// worst (three reads cut off), not six.
+    /// </para>
+    /// </remarks>
+    public TimeSpan RiotVehicleReadBudget { get; set; } = TimeSpan.FromSeconds(4);
+
+    /// <summary>
     /// How long after one of this server's own orders ended -- cancelled or deleted in RIoT, or its FAILED fault cleared by a
     /// person -- the server waits before it rebuilds the order for the same vehicle and the same demand (control-server#318,
     /// the first of its three guards). Thirty seconds by default, the user's decision of 2026-09-22: time for whoever is by
@@ -550,6 +580,13 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.SlotCommandPositionReadBudget > TimeSpan.FromSeconds(10))
         {
             failures.Add("SlotCommandPositionReadBudget must be positive and at most 10 s.");
+        }
+        if (options.RiotVehicleReadBudget <= TimeSpan.Zero ||
+            options.RiotVehicleReadBudget >= ControlServer.Infrastructure.Persistence.SessionLiveness.Timeout)
+        {
+            failures.Add(
+                "RiotVehicleReadBudget must be positive and below the onboard session timeout " +
+                $"({ControlServer.Infrastructure.Persistence.SessionLiveness.Timeout.TotalSeconds:0} s).");
         }
         if (options.UnableToChargeOldOrderCancelSettleWindow <= TimeSpan.Zero ||
             options.UnableToChargeOldOrderCancelSettleWindow > TimeSpan.FromMinutes(10))

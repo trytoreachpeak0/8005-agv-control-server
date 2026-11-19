@@ -219,7 +219,7 @@ public sealed class ChargingInterruptionTests
         Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id is 2276 or 2278);
     }
 
-    public static TheoryData<string> GapShapes => ["reading-stale", "read-fails", "disconnected"];
+    public static TheoryData<string> GapShapes => ["reading-stale", "read-fails", "read-hangs", "disconnected"];
 
     /// <summary>
     /// 缺口之前读到的阈值不拿来判满（control-server#876 审查 M1，<c>REQ-0287</c>）：缺口后第一个读数 100%（还不能判），接着又断一次，恢复后电量
@@ -234,6 +234,7 @@ public sealed class ChargingInterruptionTests
         Gap(fleet, gap);
         await RoundAsync(fleet);
         fleet.Riot.FailOn = null;
+        fleet.Riot.HangOn = null;
         AtCharger(fleet, KeyA, 100, Charging);
         await RoundAsync(fleet);
         Assert.Equal(ChargingCycleWireStates.Charging, (await CycleAsync(fleet)).WireState);
@@ -241,6 +242,7 @@ public sealed class ChargingInterruptionTests
         Gap(fleet, gap);
         await LongRoundAsync(fleet, TimeSpan.FromMinutes(10));
         fleet.Riot.FailOn = null;
+        fleet.Riot.HangOn = null;
         AtCharger(fleet, KeyA, 40, NotCharging);
         for (int round = 0; round < 4; round++)
         {
@@ -266,6 +268,10 @@ public sealed class ChargingInterruptionTests
                 break;
             case "read-fails":
                 fleet.Riot.FailOn = KeyA;
+                break;
+            case "read-hangs":
+                // control-server#799: a read cut off at its budget is a gap like a read that failed.
+                RiotVehicleReadBudgetTests.HangVehicleReads(fleet, KeyA);
                 break;
             case "disconnected":
                 fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
@@ -1349,6 +1355,36 @@ public sealed class ChargingInterruptionTests
             ClearanceRequest("00000000-0000-4000-8000-000000000408"), Token);
         Assert.True(confirmed.StationReleased);
         Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2280);
+    }
+
+    /// <summary>
+    /// control-server#799 审查 M-1（变异 M6）：清桩中判「车还在充吗」的那一次读车超时，按读不到处理——不算还在充，码换回
+    /// <c>CHARGING_NO_PROGRESS_CONFIRMED</c>；桩照旧占用，什么也不放（清桩仍要人确认）。读数回来、车仍在充，码换回还在充。
+    /// </summary>
+    [Fact]
+    public async Task AStillChargingCheckWhoseReadIsCutOffAtItsBudgetIsNotStillChargingAndReleasesNothing()
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        await ChargingAsync(fleet, battery: 50);
+        for (int round = 0; round < 40 && (await StationHoldsAsync(fleet)).Length == 0; round++)
+        {
+            AtCharger(fleet, KeyA, 50 + (round / 10), Charging);
+            await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        }
+        for (int minute = 0; minute < 15; minute++)
+        {
+            await LongRoundAsync(fleet, TimeSpan.FromMinutes(1));
+        }
+        Assert.Equal(ChargingExecutionReasons.ClearingVehicleStillCharging, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        RiotVehicleReadBudgetTests.HangVehicleReads(fleet, KeyA);
+        await RoundAsync(fleet);
+        fleet.Riot.HangOn = null;
+
+        Assert.Equal(ChargingExecutionReasons.NoProgressClearing, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Equal((KeyA, StationExclusivityStates.Occupied), await HolderAsync(fleet, Near.StationId));
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingExecutionReasons.ClearingVehicleStillCharging, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
     }
 
     // ---- 重放、重启、崩溃点、与人工清桩同一刻 ----------------------------------------------------------------------------

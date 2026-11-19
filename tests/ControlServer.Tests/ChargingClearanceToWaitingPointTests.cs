@@ -168,6 +168,7 @@ public sealed partial class ChargingClearanceToWaitingPointTests
         "emergency-stop",
         "fault-in-effect",
         "vehicle-off-the-charger",
+        "vehicle-read-hangs",
     ];
 
     /// <summary>
@@ -209,6 +210,12 @@ public sealed partial class ChargingClearanceToWaitingPointTests
             case "vehicle-off-the-charger":
                 fleet.Riot.CancelOrder(journey.PickupUpperId);
                 fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 300, BatteryState = "NO_CHARGE" };
+                expected = ChargingExecutionReasons.ClearanceVehicleOffCharger;
+                break;
+            case "vehicle-read-hangs":
+                // control-server#799: the vehicle on its charger, but the read cut off at its budget does not show it.
+                fleet.Riot.CancelOrder(journey.PickupUpperId);
+                RiotVehicleReadBudgetTests.HangVehicleReads(fleet, KeyA);
                 expected = ChargingExecutionReasons.ClearanceVehicleOffCharger;
                 break;
         }

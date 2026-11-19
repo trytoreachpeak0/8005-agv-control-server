@@ -295,6 +295,42 @@ public sealed class StagingPickupNoCountdownTests
     }
 
     /// <summary>
+    /// control-server#799 审查 M-1：待送点一篮没装、电量其实已在线下，但读电量那一次读车超时（<c>JourneyRuntime:RiotVehicleReadBudget</c>），按读不到处理——
+    /// 不按缺电放回，车照旧等录入（cs#709 的判法：读不到不是缺电的证据）。钉住现行行为（调度 11-18 接受）。读数回来的那一轮照常放回。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AFlatBatteryWhoseReadIsCutOffAtItsBudgetKeepsTheStagingStopWaiting()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        JourneyRuntimeRow waiting = await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 10 };
+        RiotVehicleReadBudgetTests.HangVehicleReads(fixture);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyAsync(fixture, waiting.JourneyId)).Stage);
+        Assert.True(await fixture.Context.Set<VehiclePurposeClaimRow>().AnyAsync(Token));
+        Assert.Null(Assert.Single(await MembershipsAsync(fixture)).RemovedAt);
+
+        fixture.Riot.ReadVehicleDelay = null;
+        fixture.Riot.BeforeReadVehicle = () => fixture.Clock.Advance(TimeSpan.FromMilliseconds(1));
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Riot.BeforeReadVehicle = null;
+
+        JourneyRuntimeRow released = await JourneyAsync(fixture, waiting.JourneyId);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, CurrentStopDepartures.ChargingRequiredReason),
+            (released.Stage, released.BlockReasonCode));
+    }
+
+    /// <summary>
     /// 验收 5 的另一半，自 control-server#713 起改为「先送货再充电」（CP-0013，用户 10-14 改定）：车上已经有货、电量跌到线下，不走一篮没装那一支
     /// （不收尾、货仍有需求认领），而是按自动出发离站去送——装货阶段以 <c>CHARGING_REQUIRED</c> 关闭、发离站核验。详细的断言在
     /// <c>StagingChargingRequiredDepartureTests</c>。

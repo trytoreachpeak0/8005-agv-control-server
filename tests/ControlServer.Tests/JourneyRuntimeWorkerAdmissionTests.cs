@@ -629,6 +629,38 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Null(backlog.AcceptedAt);
     }
 
+    /// <summary>
+    /// control-server#799 审查 M-1：受理前最后一次重读车（<c>FinalDynamicFactsReadyAsync</c>）超时，按网关读失败的「未连接」读数判——复核不过，
+    /// 不受理、不派车，积压行写 <c>FINAL_DYNAMIC_FACTS_NOT_READY</c>。这一轮第一次读车（派车轮逐车那一读）照常答。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task AFinalVehicleReReadCutOffAtItsBudgetDoesNotAcceptOrDispatch()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.RiotVehicleReadBudget = RiotVehicleReadBudgetTests.ShortReadBudget;
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        int reads = 0;
+        fixture.Riot.ReadVehicleDelay = token => Interlocked.Increment(ref reads) >= 2
+            ? Task.Delay(TimeSpan.FromSeconds(60), token)
+            : Task.CompletedTask;
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Riot.ReadVehicleDelay = null;
+
+        Assert.True(Volatile.Read(ref reads) >= 2, "The final re-read was never made, so this proves nothing.");
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("FINAL_DYNAMIC_FACTS_NOT_READY", backlog.ReasonCode);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task FinalCatalogRefreshThatExpiresDynamicFactsDoesNotAcceptOrDispatch()

@@ -494,6 +494,30 @@ public sealed class ManualStationClearanceTests : IDisposable
     }
 
     /// <summary>
+    /// control-server#799 审查 M-1：完成清桩前那一次复核读车超时（<c>JourneyRuntime:RiotVehicleReadBudget</c>），按读不到处理——不算「车还在桩上」，
+    /// 按人已按下的确认完成清桩、放桩。RIoT 此刻其实会报车停回桩上（同上一条），只是读数没在预算内回来。钉住现行行为（调度 11-18 接受）：要改成扣住，
+    /// 先改这一条。
+    /// </summary>
+    [Fact]
+    public async Task AClearanceRecheckWhoseVehicleReadIsCutOffAtItsBudgetCompletesOnThePersonsConfirmation()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+        MovedOff(fleet);
+        Assert.False((await Clearance(fleet).DecideAsync(Request("00000000-0000-4000-8000-000000000a41"), Token)).StationReleased);
+
+        AtTheCharger(fleet);
+        RiotVehicleReadBudgetTests.HangVehicleReads(fleet, KeyA);
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundsAsync(fleet, 3);
+        fleet.Riot.HangOn = null;
+
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.NotNull((await ClearanceRowAsync(fleet)).CompletedAt);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2274);
+    }
+
+    /// <summary>
     /// 审查 W1（审查员探针 Q5）：重核的另一半是「在充电」。旧单 <c>HANG</c> 时确认；车读在 300（不在原桩）但电池状态 <c>CHARGING</c>，旧单取消：
     /// 不完成、不放桩，码是 <see cref="ChargingExecutionReasons.ClearanceChargerNotVacant"/>，2274 恰好一次；读到不再充电的那一轮完成。
     /// </summary>

@@ -459,6 +459,8 @@ public sealed class OwnOrderRebuildCargoProofTests
     /// </remarks>
     [Theory]
     [InlineData("riot-unreadable")]
+    [InlineData("riot-read-hangs")]
+    [InlineData("riot-safety-read-hangs")]
     [InlineData("emergency")]
     [InlineData("session-not-ready")]
     [Trait("Requirement", "REQ-0360")]
@@ -699,6 +701,19 @@ public sealed class OwnOrderRebuildCargoProofTests
             case "riot-unreadable":
                 fixture.Riot.BeforeReadVehicle = () => throw new HttpRequestException("L1: RIoT vehicle read failed");
                 break;
+            case "riot-read-hangs":
+                // control-server#799: a read cut off at its budget holds the rebuild as RIoT unreadable.
+                RiotVehicleReadBudgetTests.HangVehicleReads(fixture);
+                break;
+            case "riot-safety-read-hangs":
+                // control-server#799 review M-2: so does the standstill read after it.
+                fixture.Options.RiotVehicleReadBudget = RiotVehicleReadBudgetTests.ShortReadBudget;
+                fixture.Riot.SafetyRead = async (_, token) =>
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(60), token);
+                    throw new InvalidOperationException("L1: a safety read that hung for a minute was not cut off.");
+                };
+                break;
             case "emergency":
                 Latch(fixture);
                 break;
@@ -713,6 +728,12 @@ public sealed class OwnOrderRebuildCargoProofTests
         {
             case "riot-unreadable":
                 fixture.Riot.BeforeReadVehicle = null;
+                break;
+            case "riot-read-hangs":
+                fixture.Riot.ReadVehicleDelay = null;
+                break;
+            case "riot-safety-read-hangs":
+                fixture.Riot.SafetyRead = null;
                 break;
             case "emergency":
                 Unlatch(fixture);

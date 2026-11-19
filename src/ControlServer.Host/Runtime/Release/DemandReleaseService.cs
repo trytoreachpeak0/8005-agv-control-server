@@ -678,8 +678,12 @@ public sealed class DemandReleaseService(
     {
         try
         {
+            // control-server#799: within JourneyRuntime:RiotVehicleReadBudget -- this runs in the worker loop right after the
+            // engine's round, before the next one. Past it, the gateway's unread shape, which the check below takes as not read.
             RiotVehicleObservation observation = await vehicleFacts
-                .ReadVehicleAsync(journey.VehicleKey, cancellationToken).ConfigureAwait(false);
+                    .ReadVehicleWithinAsync(journey.VehicleKey, _options.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                    .ConfigureAwait(false) ??
+                RiotVehicleReadBudget.Unread(journey.VehicleKey, timeProvider.GetUtcNow());
             // 网关对 SDK 失败不抛，而是返回这个形状（HttpRiotMovementGateway.UnknownVehicle）。这里把它也当作「没读到」
             // 早退，只为日志里记下一次读不到；<b>保证不在这里</b>：DemandReleaseRules.VehicleNoLongerEligible 只在观测在线时
             // 判观测派生的判据，这一行删掉或网关换了失败形状，一次失败读取照样不会成为释放理由（服务端自己的事实照常判）。

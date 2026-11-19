@@ -601,7 +601,14 @@ public sealed partial class JourneyRuntimeEngine
         RiotVehicleObservation vehicle;
         try
         {
-            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+            // control-server#799: past the read budget the battery is not known, as for a read that failed.
+            if (await vehicleFacts.ReadVehicleWithinAsync(
+                        runtime.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                    .ConfigureAwait(false) is not { } read)
+            {
+                return RebuildBattery.NotKnown;
+            }
+            vehicle = read;
         }
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                       !cancellationToken.IsCancellationRequested)
@@ -1186,8 +1193,16 @@ public sealed partial class JourneyRuntimeEngine
         {
             // A move order names a station of this journey's Map; a vehicle standing on another one cannot be sent there. Only a
             // read that saw the vehicle online and on some map says so: a failed read reports neither.
-            RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
+            // control-server#799: a read past its budget is what the catch below names, RIoT unreadable -- not a read that
+            // reports nothing, which adds no reason here.
+            RiotVehicleObservation? vehicle = await vehicleFacts.ReadVehicleWithinAsync(
+                    runtime.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
                 .ConfigureAwait(false);
+            if (vehicle is null)
+            {
+                reasons.Add(Dispatch.NonBusinessDepartureGate.RiotSafetyUnreadable);
+                return [.. reasons];
+            }
             if (vehicle is { Connected: true } && !string.IsNullOrEmpty(vehicle.CurrentMap) &&
                 !string.Equals(vehicle.CurrentMap, runtime.MapIdentity, StringComparison.Ordinal))
             {
@@ -1196,7 +1211,9 @@ public sealed partial class JourneyRuntimeEngine
 
             // The same read the charging allocation makes before it commits (control-server#404 review S-a).
             reasons.AddRange(await Dispatch.NonBusinessDepartureGate
-                .RiotStandstillGapsAsync(vehicleSafety, runtime.VehicleKey, cancellationToken).ConfigureAwait(false));
+                .RiotStandstillGapsAsync(
+                    vehicleSafety, runtime.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false));
         }
         catch (Exception error) when (Dispatch.NonBusinessDepartureGate.IsUnreadable(error, cancellationToken))
         {

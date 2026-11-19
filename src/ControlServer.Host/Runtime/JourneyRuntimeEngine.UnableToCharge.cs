@@ -128,7 +128,10 @@ public sealed partial class JourneyRuntimeEngine
         RiotVehicleObservation? vehicle;
         try
         {
-            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+            // control-server#799: past the read budget it is null, the same as a read that failed here.
+            vehicle = await vehicleFacts.ReadVehicleWithinAsync(
+                    runtime.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                       !cancellationToken.IsCancellationRequested)
@@ -405,7 +408,10 @@ public sealed partial class JourneyRuntimeEngine
         RiotVehicleObservation? vehicle;
         try
         {
-            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+            // control-server#799: past the read budget it is null, the same as a read that failed here.
+            vehicle = await vehicleFacts.ReadVehicleWithinAsync(
+                    runtime.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                       !cancellationToken.IsCancellationRequested)

@@ -1061,7 +1061,8 @@ public sealed class ChargingExecutionTests
         Assert.Single(await fleet.Context.JourneyRuntimes.AsNoTracking().Where(row => row.VehicleKey == KeyA).ToArrayAsync(Token));
     }
 
-    public static TheoryData<string> GapsOnlyTheDepartureGateSaw => ["slot-unlocked", "blocking-fact", "riot-not-stopped"];
+    public static TheoryData<string> GapsOnlyTheDepartureGateSaw =>
+        ["slot-unlocked", "blocking-fact", "riot-not-stopped", "riot-safety-read-hangs"];
 
     /// <summary>
     /// 出发前安全门比分配侧多判的三样（增量审查 S-a）：会话最新一张安全快照里某个仓位没锁、安全摘要带阻断原因、服务端自己读 RIoT 读不到停稳。
@@ -1085,6 +1086,12 @@ public sealed class ChargingExecutionTests
             case "blocking-fact":
                 await fleet.ReplaceSafetySnapshotAsync(AgvA, reasonCodes: ["SLOT_DOOR_SENSOR_FAULT"]);
                 missing = "SLOT_DOOR_SENSOR_FAULT";
+                break;
+            case "riot-safety-read-hangs":
+                // control-server#799 review M-2: the standstill read cut off at its budget is unreadable, and holds the same way.
+                fleet.Options.RiotVehicleReadBudget = RiotVehicleReadBudgetTests.ShortReadBudget;
+                fleet.Riot.HangSafetyOn = KeyA;
+                missing = Host.Runtime.Dispatch.NonBusinessDepartureGate.RiotSafetyUnreadable;
                 break;
             default:
                 fleet.Riot.SafetyReasons = ["RIOT_EMERGENCY_NOT_OK"];
@@ -1117,6 +1124,10 @@ public sealed class ChargingExecutionTests
         if (gap == "riot-not-stopped")
         {
             fleet.Riot.SafetyReasons = [];
+        }
+        else if (gap == "riot-safety-read-hangs")
+        {
+            fleet.Riot.HangSafetyOn = null;
         }
         else
         {
@@ -1614,6 +1625,7 @@ public sealed class ChargingExecutionTests
     [Theory]
     [InlineData("listing-incomplete", "the charger is not confirmed free (CHARGER_OCCUPANCY_UNKNOWN; unknown: ORDER_LISTING_INCOMPLETE (page 3 of 3 does not add up")]
     [InlineData("vehicle-unreadable", "the vehicle cannot be read from RIoT (offline, or its position is missing; unknown: ")]
+    [InlineData("vehicle-read-hangs", "the vehicle cannot be read from RIoT (offline, or its position is missing; unknown: ")]
     public async Task AReservationThatCannotBeReleasedForAnUnknownFactNamesTheFact(string unknown, string named)
     {
         await using FleetFixture fleet = await FleetAsync();
@@ -1635,6 +1647,11 @@ public sealed class ChargingExecutionTests
             fleet.Riot.OrderListingIncompleteReason =
                 "page 3 of 3 does not add up (current 3, total 252 against 252, 51 records against 52, size 100)";
         }
+        else if (unknown == "vehicle-read-hangs")
+        {
+            // control-server#799: a read cut off at its budget is unreadable like a read that failed.
+            RiotVehicleReadBudgetTests.HangVehicleReads(fleet, KeyA);
+        }
         else
         {
             fleet.Riot.FailOn = KeyA;
@@ -1648,6 +1665,10 @@ public sealed class ChargingExecutionTests
         if (unknown == "vehicle-unreadable")
         {
             Assert.Contains($"[{KeyA}]:VEHICLE_POSITION_UNREADABLE (HttpRequestException)", alarm.Message, StringComparison.Ordinal);
+        }
+        if (unknown == "vehicle-read-hangs")
+        {
+            Assert.Contains($"[{KeyA}]:VEHICLE_POSITION_UNREADABLE (ReadBudgetExceeded)", alarm.Message, StringComparison.Ordinal);
         }
         Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
     }

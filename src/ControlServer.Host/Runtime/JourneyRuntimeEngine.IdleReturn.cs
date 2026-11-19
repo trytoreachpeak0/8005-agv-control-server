@@ -387,10 +387,12 @@ public sealed partial class JourneyRuntimeEngine
         JourneyStopRow stop,
         CancellationToken cancellationToken)
     {
-        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
+        // control-server#799: past the read budget the arrival is not proven, as for any reading that does not show it.
+        RiotVehicleObservation? vehicle = await vehicleFacts.ReadVehicleWithinAsync(
+                runtime.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
             .ConfigureAwait(false);
         // The same vehicle half as a charger arrival (batch 9-07): one definition for both non-business stops.
-        return StandsStillAt(vehicle, runtime, stop.StationRiotId, timeProvider.GetUtcNow());
+        return vehicle is not null && StandsStillAt(vehicle, runtime, stop.StationRiotId, timeProvider.GetUtcNow());
     }
 
     /// <summary>
@@ -623,8 +625,22 @@ public sealed partial class JourneyRuntimeEngine
         RiotVehicleSafetyObservation safety;
         try
         {
-            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
-            safety = await vehicleSafety.ReadVehicleSafetyAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+            // control-server#799: either read past its budget is not read, and holds the idle return like a failed read.
+            RiotVehicleObservation? read = await vehicleFacts.ReadVehicleWithinAsync(
+                    runtime.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                .ConfigureAwait(false);
+            RiotVehicleSafetyObservation? readSafety = read is null
+                ? null
+                : await vehicleSafety.ReadVehicleSafetyWithinAsync(
+                        runtime.VehicleKey, runtimeOptions.RiotVehicleReadBudget, timeProvider, cancellationToken)
+                    .ConfigureAwait(false);
+            if (read is null || readSafety is null)
+            {
+                await HoldIdleReturnAsync(runtime, holdCode, now, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            vehicle = read;
+            safety = readSafety;
         }
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                       !cancellationToken.IsCancellationRequested)
