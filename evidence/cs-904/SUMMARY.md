@@ -31,3 +31,23 @@ Committed first; each mutation edits only `StagingPickupStops.cs`, rebuilds with
 Not mutated: a `LeftAtStop` that ignores the stop filter. It is equivalent in effect: recognition also requires a
 pickup stop at the demand's bound staging station, so a removed staging membership from another stop can only make
 a pickup at the same staging station staging, which it already is.
+
+## Rework after review (PR #905 review M1, M2, L1, question 3)
+
+### M1: revision checks only look at rows sent after the cancellation
+
+Review M5 probe (`StopEndWorklist.cs`: `revision = 1;` before the stop-end worklist is staged,
+`mutations/M5-stop-end-worklist-revision-1.diff`), on `d49fa7143` with `--no-incremental`, `StagingLoadCancellationTests`:
+
+- `ACancellationDuringAnAppendedStagingLoadIsCarriedThroughWithAFreshEngineEachRound`: red,
+  `A worklist sent after the cancellation went back to revision 1; the vehicle held 3.`
+- `ACancellationDuringASecondSameStationAppendIsCarriedThroughWithAFreshEngineEachRound`: red,
+  `A worklist sent after the cancellation went back to revision 1; the vehicle held 5.`
+- also red: `AStaleDepartureAtAStagingStopIsRefusedEvenWithoutASubstantiveChange` (existing).
+
+Before the rework both new cases stayed green under the same probe (review M5).
+
+### Question 3: engine instance-state guard
+
+`JourneyRuntimeEngineInstanceStateArchitectureTests` on `d49fa7143` (field still present) is red and names exactly
+`stagingPickupStops (HashSet`1)`; captured primary-constructor parameters and the allow-listed fields pass.

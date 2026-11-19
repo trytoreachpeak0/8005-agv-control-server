@@ -45,6 +45,9 @@ public sealed class JourneyRuntimeEngineInstanceStateArchitectureTests
             "injected (?? new): host singleton the processor's heartbeat also reads (control-server#837)",
         ["_doorReadings"] =
             "injected (?? new): host singleton holding the in-transit door grace the worker also reads (control-server#789)",
+        ["stagingPickupStops"] =
+            "the journey being advanced: replaced whole at each recognition, not accumulated, nothing kept across rounds (control-server#904); "
+            + "this guard cannot tell an accumulating write from a replacing one, see PR #905 residual risks",
         ["runtimeOptions"] =
             "injected: options.Value, read-only configuration",
         ["_taskTypeStations"] =
