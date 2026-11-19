@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 470d61c8c..ecda6a4b4 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1454,7 +1454,7 @@ public sealed partial class JourneyRuntimeEngine(
+             // 等装货结果而本站说不清的码（control-server#906）同理：每次重连重记一次 Error 2348，人要做的事也没变。
+             else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
+                      !string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) &&
+-                     !string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
++                     !string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason + "-M9", StringComparison.Ordinal))
+             {
+                 runtime.SetBlockReason(
+                     await ReasonBehindTheReadinessGateAsync(runtime, now, cancellationToken).ConfigureAwait(false), now);

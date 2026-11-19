@@ -47,5 +47,29 @@ M1-M10 ran on `c3b75cc02`; M11 and M0 on `a0c320397`.
 | M11 | M5 and M6 together | red: the append case (second demand appended); the hold case (route-graph invariant breach in that fixture) |
 | M7 | release service releases from the held journey | **survived** (no case) |
 | M8 | the code is not a wait on a person | red: `ReconnectModelTests.TheModelsWaitOnPersonCodesAreExactlyTheProductsSet` |
-| M9 | readiness gate overwrites it with the session code | **survived** (no case) |
+| M9 | readiness gate overwrites it with the session code | survived before the rework; red after it (M9b below) |
 | M10 | no dashboard description | red: `Batch7CargoHoldingDashboardTests` for this code |
+
+## Rework after review (PR #907 review M1, M2, L1-L3)
+
+### M1: the readiness gate keeps the code (M9 now red)
+
+New case `LoadEndedAtASecondPickupTests.AHeldLoadWaitKeepsItsReasonAndItsStartThroughASessionDrop` (`0ecc71a62`):
+held on `LOAD_RESULT_WITH_NOTHING_LOADING`, the session drops to not ready for one round (the
+`OwnOrderRebuildTests.DropSessionOnOwnOrderAsync` shape) and is restored; the code and `BlockReasonSince` stay the same
+through both rounds and exactly one Error 2348 is logged.
+
+M9b (`JourneyRuntimeEngine.cs:1457`, the gate's exclusion of this code, on `0ecc71a62`, `--no-incremental`,
+LoadEndedAtASecondPickupTests): red, only the new case -- during the drop the code became the session code
+(`mutations/M9b-gate-overwrites-with-session-case.diff`). M9 survived before this case.
+
+### M2, L1: wording only (`c6c1c9f89`)
+
+- `DemandReleaseService` skip: the reason is now "no plan revision while a person checks and repairs the journey"; the
+  held stop's own demand is already refused by `DemandReleaseRules.Decide` (AfterArrival), so the skip only delays
+  pending demands at later stops. No case (ruling).
+- Dashboard text, event 2348 and remarks say "no new messages" instead of "no messages".
+
+Targeted after the rework: StagingLoadCancellationTests, LoadEndedAtASecondPickupTests, *ArchitectureTests,
+ReconnectModelTests, Batch7CargoHoldingDashboardTests, *Release*, BlockedJourney*: 949/949. `dotnet format
+--verify-no-changes` on the four reworked files: exit 0.
