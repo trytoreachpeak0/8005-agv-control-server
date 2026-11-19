@@ -632,8 +632,9 @@ public sealed class StagingLoadCancellationTests
         string journeyId = (await fixture.RuntimeAsync()).JourneyId;
         Dictionary<string, int> sequencesBefore = await StopSequencesAsync(fixture, journeyId);
         string cancelledStopId = (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, cancelled)).PickupStopId;
-        long planBefore = await HighestRevisionSentAsync(fixture, "UpcomingStopPlanSnapshot", "planRevision");
-        long worklistBefore = await HighestRevisionSentAsync(fixture, "CurrentStopWorklistSnapshot", "worklistRevision");
+        HashSet<string> outboxBefore = [.. await fixture.Context.ProtocolOutbox.AsNoTracking().Select(row => row.MessageId).ToArrayAsync(Token)];
+        long planBefore = (await RevisionsSentAsync(fixture, PlanType, PlanField, outboxBefore, afterOnly: false)).Max(sent => sent.Revision);
+        long worklistBefore = (await RevisionsSentAsync(fixture, WorklistType, WorklistField, outboxBefore, afterOnly: false)).Max(sent => sent.Revision);
 
         await CancelDuringTheLoadAsync(fixture, cancelled, load);
         await fixture.RecreateEngineAsync();
@@ -680,30 +681,58 @@ public sealed class StagingLoadCancellationTests
             (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, loaded[0])).UnloadStopId,
             (await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, loaded[0])).StopId);
         Assert.Equal(sequencesBefore, await StopSequencesAsync(fixture, journeyId));
-        Assert.True(await HighestRevisionSentAsync(fixture, "UpcomingStopPlanSnapshot", "planRevision") >= planBefore);
-        Assert.True(await HighestRevisionSentAsync(fixture, "CurrentStopWorklistSnapshot", "worklistRevision") >= worklistBefore);
+        // 号不倒退只看取消之后新建的发件箱行（PR #905 审查 M1）：发件箱只标 FencedAt 不删行，拿全部行的最大号比，取消前的行也算，恒真。
+        // 清单：取消之后每一版的号都严格大于取消前车上那一版——车拒收不升号的清单（同号换内容）与倒退的号。
+        SentRevision[] worklistsAfter = await RevisionsSentAsync(fixture, WorklistType, WorklistField, outboxBefore, afterOnly: true);
+        Assert.NotEmpty(worklistsAfter);
+        Assert.All(worklistsAfter, sent => Assert.True(
+            sent.Revision > worklistBefore,
+            $"A worklist sent after the cancellation went back to revision {sent.Revision}; the vehicle held {worklistBefore}."));
+        // 计划：取消之后每一版不低于取消前的号，而且同一个号（取消前后合起来）只对应一种内容。
+        SentRevision[] plansAfter = await RevisionsSentAsync(fixture, PlanType, PlanField, outboxBefore, afterOnly: true);
+        Assert.All(plansAfter, sent => Assert.True(
+            sent.Revision >= planBefore,
+            $"A plan sent after the cancellation went back to revision {sent.Revision}; the vehicle held {planBefore}."));
+        SentRevision[] plansEver = await RevisionsSentAsync(fixture, PlanType, PlanField, outboxBefore, afterOnly: false);
+        Assert.All(
+            plansEver.Concat(plansAfter).GroupBy(sent => sent.Revision),
+            group => Assert.True(
+                group.Select(sent => sent.Payload).Distinct(StringComparer.Ordinal).Count() == 1,
+                $"Plan revision {group.Key} was sent with more than one content."));
         Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.Level >= Microsoft.Extensions.Logging.LogLevel.Error);
     }
+
+    private const string PlanType = "UpcomingStopPlanSnapshot";
+    private const string PlanField = "planRevision";
+    private const string WorklistType = "CurrentStopWorklistSnapshot";
+    private const string WorklistField = "worklistRevision";
+
+    private sealed record SentRevision(long Revision, string Payload);
 
     private static async Task<Dictionary<string, int>> StopSequencesAsync(RuntimeFixture fixture, string journeyId) =>
         await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
             .Where(row => row.JourneyId == journeyId)
             .ToDictionaryAsync(row => row.StopId, row => row.Sequence, StringComparer.Ordinal, Token);
 
-    /// <summary>某类报文里发过的最高修订号；一条都没发过为 0。</summary>
-    private static async Task<long> HighestRevisionSentAsync(RuntimeFixture fixture, string messageType, string field)
+    /// <summary>
+    /// 某类报文的修订号与内容（信封之外的 <c>payload</c>）：<paramref name="afterOnly"/> 为真只取 <paramref name="before"/> 里没有的发件箱行
+    /// （取消之后新建的），否则只取 <paramref name="before"/> 里的。
+    /// </summary>
+    private static async Task<SentRevision[]> RevisionsSentAsync(
+        RuntimeFixture fixture, string messageType, string field, HashSet<string> before, bool afterOnly)
     {
-        string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
+        var rows = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .Where(row => row.MessageType == messageType)
-            .Select(row => row.PayloadJson)
+            .Select(row => new { row.MessageId, row.PayloadJson })
             .ToArrayAsync(Token);
-        long highest = 0;
-        foreach (string json in payloads)
+        List<SentRevision> sent = [];
+        foreach (var row in rows.Where(row => before.Contains(row.MessageId) != afterOnly))
         {
-            using JsonDocument document = JsonDocument.Parse(json);
-            highest = Math.Max(highest, document.RootElement.GetProperty("payload").GetProperty(field).GetInt64());
+            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            JsonElement payload = document.RootElement.GetProperty("payload");
+            sent.Add(new SentRevision(payload.GetProperty(field).GetInt64(), payload.GetRawText()));
         }
-        return highest;
+        return [.. sent];
     }
 
     private const string UndoCancellationId = "71300000-0000-4000-8000-000000000726";
