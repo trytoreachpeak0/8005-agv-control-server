@@ -179,6 +179,47 @@ public sealed class LoadEndedAtASecondPickupTests
         Assert.Equal((JourneyRuntimeStage.AwaitingLoadResult, (string?)null), (resumed.Stage, resumed.BlockReasonCode));
     }
 
+    /// <summary>
+    /// control-server#906：停在 <c>LOAD_RESULT_WITH_NOTHING_LOADING</c> 上的旅程不接途中追加。它在等人核对、改库；追加会给同一趟旅程重新编号、
+    /// 发新计划，改的正是要人去核的那份数据。同一个夹具、同样两条需求，<c>MultiVehicleExecutionTests.AnInTransitVehicleTakesAnAppendedDemandIntoItsExistingJourney</c>
+    /// 那一条追加进来了（判别力，照 <c>JourneyStopSequenceRaceTests.AJourneyWhoseStopSequencesAreBrokenTakesNoAppendedDemand</c> 的写法）。
+    /// </summary>
+    /// <remarks>
+    /// 引擎不把它放进可追加的车（underWay），派车轮读在途计划时也不给它计划：两道各自独立，单拆一道另一道兜着，所以变异要两道一起拆。
+    /// 「说不清」的形状直接改库造：阶段改成等装货结果，而取货停靠上那一条还是待装。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AJourneyHeldOnALoadResultNothingExplainsTakesNoAppendedDemand()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using MultiVehicleExecutionTests.FleetFixture fixture = await MultiVehicleExecutionTests.FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([MultiVehicleExecutionTests.FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow journey = await fixture.JourneyOfAsync(MultiVehicleExecutionTests.FleetFixture.AgvIds[0]);
+        (await fixture.Context.JourneyRuntimes.SingleAsync(row => row.JourneyId == journey.JourneyId, token)).Stage =
+            JourneyRuntimeStage.AwaitingLoadResult;
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+
+        fixture.Catalog.Set(
+        [
+            MultiVehicleExecutionTests.FleetFixture.Demand(0, "N1-1", 0),
+            MultiVehicleExecutionTests.FleetFixture.Demand(1, "N1-2", 1)
+        ]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyRuntimeRow only = Assert.Single(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(token));
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingLoadResult, "LOAD_RESULT_WITH_NOTHING_LOADING"),
+            (only.Stage, only.BlockReasonCode));
+        JourneyDemandRow membership = Assert.Single(
+            await fixture.Context.Set<JourneyDemandRow>().AsNoTracking().ToArrayAsync(token));
+        Assert.Equal(MultiVehicleExecutionTests.FleetFixture.Demand(0, "N1-1", 0).DemandId, membership.DemandId);
+    }
+
     private static async Task SetSecondMembershipStatusAsync(RuntimeFixture fixture, string status)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
