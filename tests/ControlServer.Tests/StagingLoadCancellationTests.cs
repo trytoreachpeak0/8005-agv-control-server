@@ -111,6 +111,55 @@ public sealed class StagingLoadCancellationTests
     }
 
     /// <summary>
+    /// control-server#904（11-19 agv02 在 217 卡约两小时的形状）：同上一格，但取消之后每一轮都是一个新引擎——生产里引擎按轮取自新的 scope
+    /// （<c>JourneyRuntimeWorker</c>），不带上一轮认过的待送点停靠。第 2 个停靠上唯一的归属已被放回、移除，按未移除的归属认不出它是待送点，
+    /// #713「装货中取消、按释放放回」的续跑接不住，每轮抛 <c>waits for a load result with no demand loading at its stop</c>、
+    /// <c>JOURNEY_ADVANCE_FAILED</c>。修好之后：本站收尾、持货等单，持货期限到了带着 A 离站去卸，停靠序号不变、计划与清单的号不倒退。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancellationDuringAnAppendedStagingLoadIsCarriedThroughWithAFreshEngineEachRound()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await LoadTheBasketAsync(fixture);
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        await MoveToTheAppendedStopAsync(fixture, SecondDemand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        StationOperationRow load = await StartLoadAtCurrentStopAsync(fixture, SecondDemand, SecondSublot);
+
+        await AssertCancellationCarriedThroughAsync(fixture, [Demand], SecondDemand, load);
+    }
+
+    /// <summary>
+    /// control-server#904 的变体：同站追加两次。第 2 个停靠上的 B 装上了，车还在待送点时 C 又追加、另开第 3 个停靠（追加不并入当前停靠），
+    /// C 装货中取消、放回。第 3 个停靠与上一格同一个形状，取消之后每轮新引擎照样续上，带着 A、B 离站。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancellationDuringASecondSameStationAppendIsCarriedThroughWithAFreshEngineEachRound()
+    {
+        await using RuntimeFixture fixture = await ArrangeAsync(StopKind.StagingRulesOn);
+        await AllowEnRouteAppendAsync(fixture);
+        await LoadTheBasketAsync(fixture);
+        await AppendStagingDemandAsync(fixture, SecondDemand, SecondSublot);
+        await MoveToTheAppendedStopAsync(fixture, SecondDemand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        StationOperationRow second = await StartLoadAtCurrentStopAsync(fixture, SecondDemand, SecondSublot);
+        await fixture.ApplySafeResultAsync(second, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await RoundAsync(fixture);
+        Assert.Equal(JourneyDemandStatuses.Loaded, (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, SecondDemand)).Status);
+        string secondStopId = (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, SecondDemand)).PickupStopId;
+
+        await AppendStagingDemandAsync(fixture, ThirdDemand, ThirdSublot);
+        await MoveToTheAppendedStopAsync(fixture, ThirdDemand, Batch7StopDrivenAdvanceDriver.SecondSafetyResultId);
+        Assert.NotEqual(secondStopId, (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, ThirdDemand)).PickupStopId);
+        StationOperationRow third = await StartLoadAtCurrentStopAsync(fixture, ThirdDemand, ThirdSublot);
+
+        await AssertCancellationCarriedThroughAsync(fixture, [Demand, SecondDemand], ThirdDemand, third);
+    }
+
+    /// <summary>
     /// C11 的裁定（control-server#713 第 4 条）：待送点上锚需求装货中取消、旅程后面还有一条没开始装的，按一篮没装处理——旅程原地收尾，
     /// 锚与那一条一起放回待派、不抑制。只放回锚不行：旅程开着时锚会被改派到别的车（<c>FaultedCargoBindings</c> 的前提）；裁定之前这一支
     /// 照旧终结锚（取消并抑制），删掉收尾里对另一条的放回，这条红。
@@ -504,7 +553,7 @@ public sealed class StagingLoadCancellationTests
     /// 车停在待送点上带着货等单：一路跑到持货期限前两秒，装货阶段一直是 CARGO_HOLDING_WAIT、离站核验一次都没发；过了持货期限，装货阶段以持货到期关闭
     /// （或车已在离站核验上）。
     /// </summary>
-    private static async Task AssertHoldsUntilTheHoldingDeadlineAsync(RuntimeFixture fixture)
+    private static async Task AssertHoldsUntilTheHoldingDeadlineAsync(RuntimeFixture fixture, bool freshEngineEachRound = false)
     {
         DateTimeOffset holdingSince = (await fixture.RuntimeAsync()).CargoHoldingStartedAt
             ?? throw new InvalidOperationException("Cargo holding never started at the staging stop.");
@@ -515,6 +564,10 @@ public sealed class StagingLoadCancellationTests
             fixture.Clock.Advance(TimeSpan.FromSeconds(20));
             await fixture.ProveSlotDoorsClosedAsync();
             await fixture.HearFromPeerAsync();
+            if (freshEngineEachRound)
+            {
+                await fixture.RecreateEngineAsync();
+            }
             await fixture.Engine.ExecuteOnceAsync(Token);
             JourneyRuntimeRow holding = await fixture.RuntimeAsync();
             Assert.True(
@@ -527,12 +580,127 @@ public sealed class StagingLoadCancellationTests
         fixture.Clock.Advance(holdingDeadline + TimeSpan.FromSeconds(1) - fixture.Clock.GetUtcNow());
         await fixture.ProveSlotDoorsClosedAsync();
         await fixture.HearFromPeerAsync();
+        if (freshEngineEachRound)
+        {
+            await fixture.RecreateEngineAsync();
+        }
         await fixture.Engine.ExecuteOnceAsync(Token);
         JourneyRuntimeRow expired = await fixture.RuntimeAsync();
         Assert.True(
             expired.LoadingClosedReason == LoadingClosedReasons.CargoHoldingTimeout ||
             expired.Stage == JourneyRuntimeStage.AwaitingDepartureSafety,
             $"The holding deadline passed and the vehicle is still at {expired.Stage}, loading phase {expired.LoadingPhaseState}/{expired.LoadingClosedReason}.");
+    }
+
+    /// <summary>
+    /// 同站追加之后：纠错宽限到点，第 1 个（或上一个）停靠发离站核验、车答安全，车原地「到站」追加的那个停靠，停在等录入。
+    /// </summary>
+    private static async Task MoveToTheAppendedStopAsync(RuntimeFixture fixture, string appendedDemand, string safetyResultId)
+    {
+        fixture.Clock.Advance(fixture.Options.SameStationAppendCorrectionGrace + TimeSpan.FromSeconds(1));
+        await fixture.ProveSlotDoorsClosedAsync();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(fixture, Demand, safetyResultId);
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, appendedDemand, "TO_GATE");
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(
+            (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, appendedDemand)).PickupStopId,
+            (await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, Demand)).StopId);
+    }
+
+    /// <summary>在当前停靠录入这条追加需求的子批，服务端下装货命令，停在等装货结果；返回那次装货。</summary>
+    private static async Task<StationOperationRow> StartLoadAtCurrentStopAsync(RuntimeFixture fixture, string demandId, string sublot)
+    {
+        // 夹具追加时预留两篮；录入时按 BR-013 由盒数重算篮数（每篮四盒），所以子批要读出 8 盒，否则录入被拒。
+        fixture.BoxCounts.Set(sublot, 8);
+        await SubmitAtCurrentStopAsync(fixture, sublot);
+        await RoundAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
+        return await fixture.Context.StationOperations.AsNoTracking()
+            .SingleAsync(row => row.DemandId == demandId && row.OperationType == SlotOperationType.Load, Token);
+    }
+
+    /// <summary>
+    /// control-server#904 的断言：<paramref name="cancelled"/> 装货中取消、仓位证明全空之后，每轮一个新引擎（同生产），旅程照 #713 续上——
+    /// 不报错、本站收尾、持货等单，持货期限到了离站去卸 <paramref name="loaded"/> 的第一条；被取消的放回待派、不抑制；停靠序号不变，
+    /// 计划与清单的号不倒退（control-server#879 的教训）。
+    /// </summary>
+    private static async Task AssertCancellationCarriedThroughAsync(
+        RuntimeFixture fixture, string[] loaded, string cancelled, StationOperationRow load)
+    {
+        string journeyId = (await fixture.RuntimeAsync()).JourneyId;
+        Dictionary<string, int> sequencesBefore = await StopSequencesAsync(fixture, journeyId);
+        string cancelledStopId = (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, cancelled)).PickupStopId;
+        long planBefore = await HighestRevisionSentAsync(fixture, "UpcomingStopPlanSnapshot", "planRevision");
+        long worklistBefore = await HighestRevisionSentAsync(fixture, "CurrentStopWorklistSnapshot", "worklistRevision");
+
+        await CancelDuringTheLoadAsync(fixture, cancelled, load);
+        await fixture.RecreateEngineAsync();
+        await RoundAsync(fixture);
+
+        JourneyRuntimeRow afterCancel = await fixture.RuntimeAsync();
+        Assert.True(
+            afterCancel.Stage == JourneyRuntimeStage.AwaitingStationDeparture && afterCancel.BlockReasonCode != JourneyRuntimeEngine.AdvanceFailedReason,
+            $"The journey did not carry on after the cancellation: {afterCancel.Stage}, block {afterCancel.BlockReasonCode}.");
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.Level >= Microsoft.Extensions.Logging.LogLevel.Error);
+        JourneyDemandRow released = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == cancelled, Token);
+        Assert.Equal(DemandJourneyLookup.ReleasedForRedispatchReason, released.RemovalReason);
+        Assert.Equal(DemandExecutionStatus.Accepted, await StatusOfAsync(fixture, cancelled));
+        await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
+        foreach (string demandId in loaded)
+        {
+            JourneyDemandRow onBoard = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .SingleAsync(row => row.DemandId == demandId, Token);
+            Assert.Equal((JourneyDemandStatuses.Loaded, (DateTimeOffset?)null), (onBoard.Status, onBoard.RemovedAt));
+        }
+
+        await AssertHoldsUntilTheHoldingDeadlineAsync(fixture, freshEngineEachRound: true);
+        if ((await fixture.RuntimeAsync()).Stage != JourneyRuntimeStage.AwaitingDepartureSafety)
+        {
+            await fixture.RecreateEngineAsync();
+            await RoundAsync(fixture);
+        }
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.RuntimeAsync()).Stage);
+        await fixture.RecreateEngineAsync();
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(fixture, loaded[0], "20000000-0000-4000-8000-000000000904");
+
+        JourneyRuntimeRow departed = await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journeyId, Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, departed.Stage);
+        JourneyStopRow[] stops = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .Where(row => row.JourneyId == journeyId)
+            .ToArrayAsync(Token);
+        Assert.Equal(JourneyStopStatuses.Completed, stops.Single(row => row.StopId == cancelledStopId).Status);
+        Assert.Equal(
+            (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, loaded[0])).UnloadStopId,
+            (await Batch7StopDrivenAdvanceDriver.CurrentStopAsync(fixture, loaded[0])).StopId);
+        Assert.Equal(sequencesBefore, await StopSequencesAsync(fixture, journeyId));
+        Assert.True(await HighestRevisionSentAsync(fixture, "UpcomingStopPlanSnapshot", "planRevision") >= planBefore);
+        Assert.True(await HighestRevisionSentAsync(fixture, "CurrentStopWorklistSnapshot", "worklistRevision") >= worklistBefore);
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.Level >= Microsoft.Extensions.Logging.LogLevel.Error);
+    }
+
+    private static async Task<Dictionary<string, int>> StopSequencesAsync(RuntimeFixture fixture, string journeyId) =>
+        await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .Where(row => row.JourneyId == journeyId)
+            .ToDictionaryAsync(row => row.StopId, row => row.Sequence, StringComparer.Ordinal, Token);
+
+    /// <summary>某类报文里发过的最高修订号；一条都没发过为 0。</summary>
+    private static async Task<long> HighestRevisionSentAsync(RuntimeFixture fixture, string messageType, string field)
+    {
+        string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == messageType)
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(Token);
+        long highest = 0;
+        foreach (string json in payloads)
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            highest = Math.Max(highest, document.RootElement.GetProperty("payload").GetProperty(field).GetInt64());
+        }
+        return highest;
     }
 
     private const string UndoCancellationId = "71300000-0000-4000-8000-000000000726";
