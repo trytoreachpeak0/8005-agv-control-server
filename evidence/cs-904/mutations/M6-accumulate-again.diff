@@ -1,0 +1,16 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 07d6022b0..6f51537e8 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -7064,9 +7064,8 @@ public sealed partial class JourneyRuntimeEngine(
+         {
+             return;
+         }
+-        stagingPickupStops = new HashSet<string>(
+-            await StagingPickupStops.RecognizeAsync(dbContext, stops, cancellationToken).ConfigureAwait(false),
+-            StringComparer.Ordinal);
++        stagingPickupStops.UnionWith(
++            await StagingPickupStops.RecognizeAsync(dbContext, stops, cancellationToken).ConfigureAwait(false));
+     }
+ 
+     /// <summary>

@@ -51,3 +51,15 @@ Before the rework both new cases stayed green under the same probe (review M5).
 
 `JourneyRuntimeEngineInstanceStateArchitectureTests` on `d49fa7143` (field still present) is red and names exactly
 `stagingPickupStops (HashSet`1)`; captured primary-constructor parameters and the allow-listed fields pass.
+
+### M2: the staging-stop set is replaced at each recognition (review M2, option B)
+
+`7e36fdc1a`: `stagingPickupStops` is replaced whole at each recognition instead of `UnionWith`, and allow-listed in the
+guard with that reason. Review's group (Staging*, *CargoHolding*, *LoadCancellation*, *StationYield*, *EnRouteAppend*,
+*ArchitectureTests*): 553/553.
+
+Mutation M6 (`mutations/M6-accumulate-again.diff`: back to `UnionWith`), `--no-incremental`, same group: **553/553 green,
+nothing red.** Expected: with the cs#904 fix the recognition counts removed memberships, so it only grows and the
+accumulated set equals the replaced one; the guard checks field names, not how a field is written. The accumulating
+write is harmless in production (a new engine every round); its only harm is hiding a production defect in tests that
+reuse one engine, which nothing here detects any more.
