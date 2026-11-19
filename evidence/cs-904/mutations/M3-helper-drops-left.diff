@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/StagingPickupStops.cs b/src/ControlServer.Host/Runtime/StagingPickupStops.cs
+index 35576b1b2..c830cf977 100644
+--- a/src/ControlServer.Host/Runtime/StagingPickupStops.cs
++++ b/src/ControlServer.Host/Runtime/StagingPickupStops.cs
+@@ -80,7 +80,7 @@ internal static class StagingPickupStops
+     /// 已有就返回已有的），所以按它认出的站与它挂着时认出的是同一个。
+     /// </remarks>
+     private static IReadOnlyList<JourneyStopDemand> EverAtStop(JourneyStopCursor stops, JourneyStopRow stop) =>
+-        [.. stops.AllAtStop(stop), .. stops.LeftAtStop(stop)];
++        [.. stops.AllAtStop(stop)];
+ 
+     private static async Task<bool> IsStagingPickupAsync(
+         ControlServerDbContext dbContext,
