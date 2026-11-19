@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 470d61c8c..eebaec8f0 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -6864,7 +6864,7 @@ public sealed partial class JourneyRuntimeEngine(
+         // control-server#879: its stop sequences are broken; a person has to check the cargo and the plan and put them right.
+         string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) ||
+         // control-server#906: it waits for a load result nothing at its stop explains; a person has to check the cargo and the database.
+-        string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal) ||
++        string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason + "-M8", StringComparison.Ordinal) ||
+         // control-server#404: a charging journey whose cycle is gone waits for a person to look.
+         string.Equals(runtime.BlockReasonCode, Charging.ChargingExecutionReasons.CycleMissing, StringComparison.Ordinal);
+ 
