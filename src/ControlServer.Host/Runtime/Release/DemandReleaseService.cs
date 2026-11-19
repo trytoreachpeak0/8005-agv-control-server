@@ -158,6 +158,13 @@ public sealed class DemandReleaseService(
         {
             return [];
         }
+        // 等装货结果而本站说不清的旅程（control-server#906）同样不在这里释放：不在人核对、改库期间修订这趟旅程的计划，与引擎不把它当可追加的车
+        // 同一个理由。本站那条已到站，释放规则本来就拒（DemandReleaseRules.Decide 的 AfterArrival），这里挡住的是后面停靠上待装的那几条——
+        // 它们留在这辆车上，等人改好库之后这里照常判，只是晚一些。引擎已经把它停下、记过一次（LOAD_RESULT_WITH_NOTHING_LOADING）。
+        if (string.Equals(journey.BlockReasonCode, JourneyRuntimeEngine.LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
+        {
+            return [];
+        }
         JourneyStopDemand[] waiting = [.. stops.Demands.Where(item =>
             item.Membership.Status == JourneyDemandStatuses.PendingLoad)];
         if (waiting.Length == 0)

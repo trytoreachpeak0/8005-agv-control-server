@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 470d61c8c..ed8e1eda4 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1897,7 +1897,7 @@ public sealed partial class JourneyRuntimeEngine(
+                     await HoldOnALoadResultNothingExplainsAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false);
+                     return;
+                 }
+-                if (string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
++                if (string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason + "-M3", StringComparison.Ordinal))
+                 {
+                     // 有人把库改好了：码清掉，下面照常往下走。保存的规矩同序位码清码那一处——这一轮还留着别处的未保存改动时只改不存，
+                     // 由下面各支的保存一起带上；都不保存的那一支（等结果、什么都没变）下一轮再清。

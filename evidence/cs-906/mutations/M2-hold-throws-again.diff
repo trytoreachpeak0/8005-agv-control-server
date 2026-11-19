@@ -1,0 +1,12 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 470d61c8c..fb26f27ae 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1319,6 +1319,7 @@ public sealed partial class JourneyRuntimeEngine(
+         DateTimeOffset now,
+         CancellationToken cancellationToken)
+     {
++        if (runtime.JourneyId.Length > 0) { throw new InvalidDataException($"Journey {runtime.JourneyId} waits for a load result with no demand loading at its stop."); }
+         if (string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
+         {
+             return;

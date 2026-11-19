@@ -1,0 +1,61 @@
+base c3b75cc02ec81797af058ccc9c9eafed7f76251a 2026-11-19T03:32:23-08:00
+== M1-resume-needs-staging (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:1886)
+  失败 ControlServer.Tests.StagingLoadCancellationTests.ACancelledAppendedStagingLoadRedispatchedUnderAMovedBindingIsCarriedThroughWithAFreshEngineEachRound [2 s]
+失败!  - 失败:     1，通过:   147，已跳过:     0，总计:   148，持续时间: 32 s - ControlServer.Tests.dll (net8.0)
+== M2-hold-throws-again (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:1322)
+  失败 ControlServer.Tests.LoadEndedAtASecondPickupTests.AStopWaitingForALoadResultThatNothingExplainsIsHeldUnderItsOwnReasonUntilTheDatabaseIsPutRight [5 s]
+失败!  - 失败:     1，通过:   147，已跳过:     0，总计:   148，持续时间: 32 s - ControlServer.Tests.dll (net8.0)
+== M3-never-cleared (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:1900)
+  失败 ControlServer.Tests.LoadEndedAtASecondPickupTests.AStopWaitingForALoadResultThatNothingExplainsIsHeldUnderItsOwnReasonUntilTheDatabaseIsPutRight [5 s]
+失败!  - 失败:     1，通过:   147，已跳过:     0，总计:   148，持续时间: 32 s - ControlServer.Tests.dll (net8.0)
+== M4-logs-every-round (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:1322)
+  失败 ControlServer.Tests.LoadEndedAtASecondPickupTests.AStopWaitingForALoadResultThatNothingExplainsIsHeldUnderItsOwnReasonUntilTheDatabaseIsPutRight [5 s]
+失败!  - 失败:     1，通过:   147，已跳过:     0，总计:   148，持续时间: 32 s - ControlServer.Tests.dll (net8.0)
+== M5-engine-underway (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:931)
+已通过! - 失败:     0，通过:   148，已跳过:     0，总计:   148，持续时间: 32 s - ControlServer.Tests.dll (net8.0)
+== M6-dispatch-plan (src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs:763)
+已通过! - 失败:     0，通过:   148，已跳过:     0，总计:   148，持续时间: 32 s - ControlServer.Tests.dll (net8.0)
+== M7-release-service (src/ControlServer.Host/Runtime/Release/DemandReleaseService.cs:163)
+已通过! - 失败:     0，通过:   148，已跳过:     0，总计:   148，持续时间: 32 s - ControlServer.Tests.dll (net8.0)
+== M8-not-wait-on-person (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:6867)
+  失败 ControlServer.Tests.ReconnectModelTests.TheModelsWaitOnPersonCodesAreExactlyTheProductsSet [2 s]
+失败!  - 失败:     1，通过:   147，已跳过:     0，总计:   148，持续时间: 32 s - ControlServer.Tests.dll (net8.0)
+== M9-gate-overwrites (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:1457)
+已通过! - 失败:     0，通过:   148，已跳过:     0，总计:   148，持续时间: 32 s - ControlServer.Tests.dll (net8.0)
+== M10-no-dashboard-text (src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs:136)
+  失败 ControlServer.Tests.Batch7CargoHoldingDashboardTests.AStalledInTransitOrderIsShownWithAChineseDescription(code: "LOAD_RESULT_WITH_NOTHING_LOADING") [< 1 ms]
+失败!  - 失败:     1，通过:   147，已跳过:     0，总计:   148，持续时间: 32 s - ControlServer.Tests.dll (net8.0)
+done 2026-11-19T03:40:41-08:00
+== M11-both-append-exclusions (engine:931 + DispatchRoundRunner:763, base a0c320397)
+  失败 ControlServer.Tests.LoadEndedAtASecondPickupTests.AStopWaitingForALoadResultThatNothingExplainsIsHeldUnderItsOwnReasonUntilTheDatabaseIsPutRight [4 s]
+  错误消息:
+   Vehicle 老厂前线新多仓位1 broke one of this server's own invariants and was skipped: BusinessIdentityConflictException. The round moved on, but this is a defect rather than an unreachable peer -- it will not fix itself next round.
+Vehicle 老厂前线新多仓位1 broke one of this server's own invariants and was skipped: BusinessIdentityConflictException. The round moved on, but this is a defect rather than an unreachable peer -- it will not fix itself next round.
+--
+  失败 ControlServer.Tests.LoadEndedAtASecondPickupTests.AJourneyHeldOnALoadResultNothingExplainsTakesNoAppendedDemand [1 s]
+  错误消息:
+   Assert.Single() Failure: The collection contained 2 items
+Collection: [JourneyDemandRow { AddedAt = 2026-09-08T06:00:00.0000000+00:00, DemandId = "10000000-0000-4000-8000-000000000000", DispatchGeneration = 1, DispatchZone = "MAP-25-WIRE_TO_GATE", DispatchZoneParameterVersion = null, ··· }, JourneyDemandRow { AddedAt = 2026-09-08T06:00:01.0000000+00:00, DemandId = "10000001-0000-4000-8000-000000000001", DispatchGeneration = 1, DispatchZone = "MAP-25-WIRE_TO_GATE", DispatchZoneParameterVersion = 1, ··· }]
+--
+失败!  - 失败:     2，通过:     6，已跳过:     0，总计:     8，持续时间: 33 s - ControlServer.Tests.dll (net8.0)
+== M0-product-at-base (src at 20cdcf975, tests at a0c320397)
+  失败 ControlServer.Tests.LoadEndedAtASecondPickupTests.AStopWaitingForALoadResultThatNothingExplainsIsHeldUnderItsOwnReasonUntilTheDatabaseIsPutRight [4 s]
+  错误消息:
+   A round failed: Journey journey:10000000-0000-4000-8000-000000000001 waits for a load result with no demand loading at its stop.
+--
+  失败 ControlServer.Tests.StagingLoadCancellationTests.ACancelledAppendedStagingLoadRedispatchedUnderAMovedBindingIsCarriedThroughWithAFreshEngineEachRound [4 s]
+  错误消息:
+   System.IO.InvalidDataException : Journey journey:10000000-0000-4000-8000-000000000001 waits for a load result with no demand loading at its stop.
+--
+  失败 ControlServer.Tests.LoadEndedAtASecondPickupTests.AJourneyHeldOnALoadResultNothingExplainsTakesNoAppendedDemand [1 s]
+  错误消息:
+   System.IO.InvalidDataException : Journey journey:10000000-0000-4000-8000-000000000000 waits for a load result with no demand loading at its stop.
+--
+失败!  - 失败:     3，通过:     0，已跳过:     0，总计:     3，持续时间: 6 s - ControlServer.Tests.dll (net8.0)
+== M9b-gate-overwrites-with-session-case (src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs:1457, base 0ecc71a62)
+  失败 ControlServer.Tests.LoadEndedAtASecondPickupTests.AHeldLoadWaitKeepsItsReasonAndItsStartThroughASessionDrop [2 s]
+  错误消息:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("LOAD_RESULT_WITH_NOTHING_LOADING", 2026-08-26T01:00:09.0000000+00:00)
+--
+失败!  - 失败:     1，通过:     8，已跳过:     0，总计:     9，持续时间: 35 s - ControlServer.Tests.dll (net8.0)

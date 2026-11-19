@@ -1,0 +1,26 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+index 4208bf780..cb4fb6738 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+@@ -760,7 +760,7 @@ public sealed class DispatchRoundRunner(
+         // because the predicate is a code set, not a column.
+         // control-server#906: a stop held because nothing at it explains the load result it waits for -- same standing.
+         if (runtime is null || JourneyRuntimeEngine.IsStalledOrderReason(runtime.BlockReasonCode) ||
+-            string.Equals(runtime.BlockReasonCode, JourneyRuntimeEngine.LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
++            string.Equals(runtime.BlockReasonCode, JourneyRuntimeEngine.LoadResultWithNothingLoadingReason + "-M11", StringComparison.Ordinal))
+         {
+             return null;
+         }
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 470d61c8c..e60252ccd 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -928,7 +928,7 @@ public sealed partial class JourneyRuntimeEngine(
+         // database right: an append would renumber and republish the plan of the very journey being repaired.
+         HashSet<string> blocked = active
+             .Where(row => row.Stage == JourneyRuntimeStage.Blocked || IsStalledOrderReason(row.BlockReasonCode) ||
+-                          string.Equals(row.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
++                          string.Equals(row.BlockReasonCode, LoadResultWithNothingLoadingReason + "-M11", StringComparison.Ordinal))
+             .Select(row => row.AgvId)
+             .ToHashSet(StringComparer.Ordinal);
+         // 这一轮让开的车（control-server#357）：手里那份旅程是旧读，此刻库里的它可能已经收尾或转了阻塞。这一轮不把它当可追加的车去问，

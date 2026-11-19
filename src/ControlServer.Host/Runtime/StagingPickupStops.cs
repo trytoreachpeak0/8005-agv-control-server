@@ -81,9 +81,10 @@ internal static class StagingPickupStops
     /// 按已移除需求的冻结认站，<b>只在它还没被别的旅程再受理时与它挂着时同一个答案</b>。放回待派的需求被再派受理时，
     /// <c>DemandTaskTypeStationFreezeStore.ThawForRedispatchAsync</c> 删掉旧冻结、按受理那一刻的版本重冻（<c>FreezeAsync</c> 已有才返回已有的）。
     /// 所以有一条窄路径认不出：车还停在这个清空的待送点停靠上，那条需求已被派给别的车，而这期间导入的新绑定集把 STAGING_TO_WIRE 的固定站改了址——
-    /// 重冻的站不再等于这个停靠的站，这里又认成机台取货，回到 control-server#904 的异常。窄在：同一趟旅程不会再把它追加回来、固定站被占时别的车接不了它
-    /// （单占用），而且要恰好撞上换绑定。由后续票处理：等装货结果而本站无在装的需求时，凡本停靠上有「已移除且仍是 LOADING」的归属就按装货途中被结束续跑，
-    /// 不再依赖重认待送点。
+    /// 重冻的站不再等于这个停靠的站，这里认成机台取货。窄在：同一趟旅程不会再把它追加回来、固定站被占时别的车接不了它
+    /// （单占用），而且要恰好撞上换绑定。control-server#906 起这条路不再卡死：引擎等装货结果时只要本停靠上有「已移除且仍是 LOADING」的归属，
+    /// 就按装货途中被结束续跑，不经过这里。剩下的只是之后的离站等待按机台取货的站点期限走、不持货等单——那个停靠上已经一条需求都没有，
+    /// 两样都是到期带着车上已有的货离站，只是期限不同（站点期限通常短于持货期限，车少等一些追加）。
     /// </para>
     /// </remarks>
     private static IReadOnlyList<JourneyStopDemand> EverAtStop(JourneyStopCursor stops, JourneyStopRow stop) =>

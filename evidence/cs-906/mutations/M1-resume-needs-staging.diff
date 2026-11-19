@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 470d61c8c..0e74b5281 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1883,7 +1883,7 @@ public sealed partial class JourneyRuntimeEngine(
+                 // 先认待送点则要靠需求冻结的绑定站：放回的需求被别的车再派受理时冻结删掉重冻，这期间若导入的新绑定集把 STAGING_TO_WIRE
+                 // 改了址，这个停靠就认不出了（cs#904 审查 L1），又回到每轮卡在这里。之后离站等待按什么走仍看认没认出待送点——认不出就按
+                 // 机台取货的站点期限离站；这一站已经一条需求都没有，两样都是到期带着车上已有的货离站，只是期限不同。
+-                bool releasedWhileLoadingHere = resumingAfterCommit && !loadedHere &&
++                bool releasedWhileLoadingHere = resumingAfterCommit && !loadedHere && IsStagingPickup(stops.Current) &&
+                     await dbContext.Set<JourneyDemandRow>().AsNoTracking().AnyAsync(
+                         row => row.JourneyId == runtime.JourneyId && row.PickupStopId == stops.Current.StopId &&
+                                row.RemovedAt != null && row.Status == JourneyDemandStatuses.Loading,

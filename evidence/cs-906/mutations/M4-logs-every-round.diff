@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 470d61c8c..224a2a985 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1319,7 +1319,7 @@ public sealed partial class JourneyRuntimeEngine(
+         DateTimeOffset now,
+         CancellationToken cancellationToken)
+     {
+-        if (string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
++        if (string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason + "-M4", StringComparison.Ordinal))
+         {
+             return;
+         }
