@@ -129,7 +129,7 @@ public sealed class LoadEndedAtASecondPickupTests
     /// control-server#906：等装货结果，而本站的需求一条都解释不了——没有在装的、没有装上的、没有被终结的、也没有装货途中被放回的
     /// （这里把在装的那一条直接改库成「待装」，模拟说不清来历的库）。修之前每轮抛 <c>waits for a load result with no demand loading at its stop</c>、
     /// 看板只有笼统的 <c>JOURNEY_ADVANCE_FAILED</c>；修之后不抛，旅程停在原处写 <c>LOAD_RESULT_WITH_NOTHING_LOADING</c>，Error 只记一次、
-    /// 列出本站每条需求的状态，不发任何报文；人核对之后改好库，下一轮码清掉、照常往下走。
+    /// 列出本站每条需求的状态，不发新报文（这一段里发件箱行数不变）；人核对之后改好库，下一轮码清掉、照常往下走。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]

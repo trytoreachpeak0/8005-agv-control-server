@@ -113,7 +113,7 @@ public sealed partial class JourneyRuntimeEngine(
             new EventId(2348, nameof(LogLoadResultWithNothingLoading)),
             "Vehicle {AgvId}'s journey {JourneyId} waits for a load result at stop {StopId}, but no demand there explains it " +
             "(none loading, loaded, terminated or released while loading): {DemandsAtStop}. It holds where it is, opens no door " +
-            "and publishes nothing until a person puts the database right (control-server#906).");
+            "and publishes nothing new until a person puts the database right (control-server#906).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogDepartureAnswerNotValid =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -358,7 +358,7 @@ public sealed partial class JourneyRuntimeEngine(
 
     /// <summary>
     /// 旅程在等这一站的装货结果，而这一站的需求没有一条说得清这件事（control-server#906）：没有在装的、没有装上的、没有被终结的，
-    /// 也没有装货途中被放回的。推进停在原地、不开门、不发报文，等人核对车上的货与库之后改库；改好之后下一轮自动继续。
+    /// 也没有装货途中被放回的。推进停在原地、不开门、不发新报文，等人核对车上的货与库之后改库；改好之后下一轮自动继续。
     /// 这之前这一形每轮抛异常，看板只有笼统的 <see cref="AdvanceFailedReason"/>（11-19 agv02 在 217 卡约两小时，靠改库解开）。
     /// </summary>
     public const string LoadResultWithNothingLoadingReason = "LOAD_RESULT_WITH_NOTHING_LOADING";
@@ -1305,7 +1305,7 @@ public sealed partial class JourneyRuntimeEngine(
     /// <para>
     /// <b>为什么不自己走。</b>三种合法来历（#289 崩在两次保存之间、#291 被终结、#713 装货中放回）上面都已认出续跑；剩下的就是库里的事实
     /// 互相对不上，车上那几个仓里现在有没有这一站的货，服务端说不出来——离站会让说不清的货跟车走，回去等录入会对着同一站再开一次门。
-    /// 所以停下、不开门、不发报文，等人核对。不进 <see cref="JourneyRuntimeStage.Blocked"/>：Blocked 的每个码都配着自己的人工出口与放行路径，
+    /// 所以停下、不开门、不发新报文，等人核对（重连时未确认的旧报文照常补发，那是会话层的事）。不进 <see cref="JourneyRuntimeStage.Blocked"/>：Blocked 的每个码都配着自己的人工出口与放行路径，
     /// 这一形没有现成的；留在原阶段，人改好库之后下一轮自动按改好的事实往下走（上面那几种续跑或照常等结果），码随之清掉。
     /// </para>
     /// <para>
