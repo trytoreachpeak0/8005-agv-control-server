@@ -5,6 +5,7 @@ using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.JourneyRuntimeWorkerLoadDeadlineTests;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -122,6 +123,68 @@ public sealed class LoadEndedAtASecondPickupTests
         Exception? second = await RunRoundAsync(fixture);
 
         await AssertTheVehicleWasAskedToLeaveAsync(fixture, secondPickup, first, second);
+    }
+
+    /// <summary>
+    /// control-server#906：等装货结果，而本站的需求一条都解释不了——没有在装的、没有装上的、没有被终结的、也没有装货途中被放回的
+    /// （这里把在装的那一条直接改库成「待装」，模拟说不清来历的库）。修之前每轮抛 <c>waits for a load result with no demand loading at its stop</c>、
+    /// 看板只有笼统的 <c>JOURNEY_ADVANCE_FAILED</c>；修之后不抛，旅程停在原处写 <c>LOAD_RESULT_WITH_NOTHING_LOADING</c>，Error 只记一次、
+    /// 列出本站每条需求的状态，不发任何报文；人核对之后改好库，下一轮码清掉、照常往下走。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AStopWaitingForALoadResultThatNothingExplainsIsHeldUnderItsOwnReasonUntilTheDatabaseIsPutRight()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await ArriveAtTheSecondPickupAsync(fixture);
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+        await SetSecondMembershipStatusAsync(fixture, JourneyDemandStatuses.PendingLoad);
+        int outboxBefore = await fixture.Context.ProtocolOutbox.AsNoTracking().CountAsync(token);
+
+        await fixture.RecreateEngineAsync();
+        Exception? first = await RunRoundAsync(fixture);
+        JourneyRuntimeRow held = await JourneyOfAsync(fixture, FirstDemandId);
+        await fixture.RecreateEngineAsync();
+        Exception? second = await RunRoundAsync(fixture);
+        JourneyRuntimeRow stillHeld = await JourneyOfAsync(fixture, FirstDemandId);
+
+        Assert.True(first is null && second is null, $"A round failed: {first?.Message ?? second?.Message}");
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingLoadResult, "LOAD_RESULT_WITH_NOTHING_LOADING"),
+            (held.Stage, held.BlockReasonCode));
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingLoadResult, "LOAD_RESULT_WITH_NOTHING_LOADING", held.BlockReasonSince),
+            (stillHeld.Stage, stillHeld.BlockReasonCode, stillHeld.BlockReasonSince));
+        string logged = Assert.Single(
+            fixture.EngineLog.Entries.Where(entry => entry.Level >= LogLevel.Error),
+            entry => entry.Message.Contains("control-server#906", StringComparison.Ordinal)).Message;
+        Assert.Contains(SecondDemandId, logged, StringComparison.Ordinal);
+        Assert.Contains(JourneyDemandStatuses.PendingLoad, logged, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            fixture.EngineLog.Entries,
+            entry => entry.Level >= LogLevel.Error && !entry.Message.Contains("control-server#906", StringComparison.Ordinal));
+        Assert.Equal(outboxBefore, await fixture.Context.ProtocolOutbox.AsNoTracking().CountAsync(token));
+        Assert.Equal(StationOperationStatus.Prepared, (await SecondLoadAsync(fixture)).Status);
+
+        // 人核对过车上与库之后改回去：下一轮码清掉，照常等这一条的装货结果。
+        await SetSecondMembershipStatusAsync(fixture, JourneyDemandStatuses.Loading);
+        await fixture.RecreateEngineAsync();
+        Exception? repaired = await RunRoundAsync(fixture);
+        JourneyRuntimeRow resumed = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.True(repaired is null, $"The round after the repair failed: {repaired?.Message}");
+        Assert.Equal((JourneyRuntimeStage.AwaitingLoadResult, (string?)null), (resumed.Stage, resumed.BlockReasonCode));
+    }
+
+    private static async Task SetSecondMembershipStatusAsync(RuntimeFixture fixture, string status)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+        {
+            (await context.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == SecondDemandId, token)).Status = status;
+            await context.SaveChangesAsync(token);
+        }
+        fixture.Context.ChangeTracker.Clear();
     }
 
     /// <summary>
