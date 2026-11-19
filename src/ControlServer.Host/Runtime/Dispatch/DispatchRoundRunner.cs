@@ -758,7 +758,9 @@ public sealed class DispatchRoundRunner(
         // without being Blocked. Same standing as the exclusion above: the engine keeps such vehicles out of underWay, and
         // this is the query saying for itself what it will not plan into. It is filtered here rather than in the query
         // because the predicate is a code set, not a column.
-        if (runtime is null || JourneyRuntimeEngine.IsStalledOrderReason(runtime.BlockReasonCode))
+        // control-server#906: a stop held because nothing at it explains the load result it waits for -- same standing.
+        if (runtime is null || JourneyRuntimeEngine.IsStalledOrderReason(runtime.BlockReasonCode) ||
+            string.Equals(runtime.BlockReasonCode, JourneyRuntimeEngine.LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
         {
             return null;
         }

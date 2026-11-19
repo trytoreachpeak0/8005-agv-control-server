@@ -653,6 +653,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData("SLOT_COMMAND_VEHICLE_NOT_AT_STOP")]
     // control-server#879：停靠序位重号或缺号，推进停在原地。
     [InlineData("JOURNEY_STOP_SEQUENCE_BROKEN")]
+    // control-server#906：等装货结果而本站没有一条需求说得清，推进停在原地等人核对改库。
+    [InlineData("LOAD_RESULT_WITH_NOTHING_LOADING")]
     public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
     {
         Assert.True(BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code), $"{code} has no description");

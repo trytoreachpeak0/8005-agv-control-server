@@ -104,6 +104,8 @@ internal static class ReconnectModel
         "SLOT_COMMAND_VEHICLE_NOT_AT_STOP",
         // cs#879：停靠序位重号或缺号，推进停在原地等人改库。模型的序位由产品代码写、不会坏，走不到，理由同上。
         "JOURNEY_STOP_SEQUENCE_BROKEN",
+        // cs#906：等装货结果而本站没有一条需求说得清，停在原地等人核对改库。模型的库由产品代码写、不会对不上，走不到，理由同上。
+        "LOAD_RESULT_WITH_NOTHING_LOADING",
     };
 
     /// <summary>

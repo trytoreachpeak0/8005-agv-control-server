@@ -107,6 +107,13 @@ public sealed partial class JourneyRuntimeEngine(
             new EventId(2341, nameof(LogStopSequenceBroken)),
             "Vehicle {AgvId}'s journey {JourneyId} holds where it is: {Problem}. Nothing is advanced, ordered or published " +
             "for it until a person puts the sequences right (control-server#879).");
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogLoadResultWithNothingLoading =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Error,
+            new EventId(2348, nameof(LogLoadResultWithNothingLoading)),
+            "Vehicle {AgvId}'s journey {JourneyId} waits for a load result at stop {StopId}, but no demand there explains it " +
+            "(none loading, loaded, terminated or released while loading): {DemandsAtStop}. It holds where it is, opens no door " +
+            "and publishes nothing until a person puts the database right (control-server#906).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogDepartureAnswerNotValid =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -348,6 +355,13 @@ public sealed partial class JourneyRuntimeEngine(
     /// 11-05 agv02 的旅程有两个 5 号、缺 8 号，推进每轮抛同一个异常，车带着三处货停了近 4 小时。
     /// </summary>
     public const string StopSequenceBrokenReason = "JOURNEY_STOP_SEQUENCE_BROKEN";
+
+    /// <summary>
+    /// 旅程在等这一站的装货结果，而这一站的需求没有一条说得清这件事（control-server#906）：没有在装的、没有装上的、没有被终结的，
+    /// 也没有装货途中被放回的。推进停在原地、不开门、不发报文，等人核对车上的货与库之后改库；改好之后下一轮自动继续。
+    /// 这之前这一形每轮抛异常，看板只有笼统的 <see cref="AdvanceFailedReason"/>（11-19 agv02 在 217 卡约两小时，靠改库解开）。
+    /// </summary>
+    public const string LoadResultWithNothingLoadingReason = "LOAD_RESULT_WITH_NOTHING_LOADING";
 
     /// <summary>卸货因车不在站上扣着期间，多久再记一次当前读数（事件 2318，control-server#783 审查 S-1）。</summary>
     private static readonly TimeSpan HeldSlotCommandLogInterval = TimeSpan.FromMinutes(5);
@@ -910,8 +924,11 @@ public sealed partial class JourneyRuntimeEngine(
         // stage on purpose, so that a continue resumes it untouched, but it is waiting on a person just the same: an appended
         // demand would be bound behind an order that does not move (control-server#316). Its code was written by the
         // advance above, in this same round.
+        // A stop waiting for a load result nothing at it explains (control-server#906) waits on a person who is about to put the
+        // database right: an append would renumber and republish the plan of the very journey being repaired.
         HashSet<string> blocked = active
-            .Where(row => row.Stage == JourneyRuntimeStage.Blocked || IsStalledOrderReason(row.BlockReasonCode))
+            .Where(row => row.Stage == JourneyRuntimeStage.Blocked || IsStalledOrderReason(row.BlockReasonCode) ||
+                          string.Equals(row.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
             .Select(row => row.AgvId)
             .ToHashSet(StringComparer.Ordinal);
         // 这一轮让开的车（control-server#357）：手里那份旅程是旧读，此刻库里的它可能已经收尾或转了阻塞。这一轮不把它当可追加的车去问，
@@ -1276,6 +1293,53 @@ public sealed partial class JourneyRuntimeEngine(
     }
 
     /// <summary>
+    /// 等装货结果而本站没有一条需求说得清（control-server#906）：写 <see cref="LoadResultWithNothingLoadingReason"/>、记一次 Error，
+    /// 旅程停在 <see cref="JourneyRuntimeStage.AwaitingLoadResult"/> 不动。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么不再抛。</b>抛出来的只是逐车隔离接住的 <see cref="AdvanceFailedReason"/>：每轮一条一样的异常，看板上一句「推进出错」，
+    /// 说不出是哪一站、哪几条需求、各是什么状态，现场只能找人翻日志。11-19 agv02 那一次卡了约两小时，最后是人核过车上的货之后改库解开的。
+    /// 这里把病因说一次，说的是病因本身：哪个停靠、这个停靠上每一条需求（包括已移除的）各是什么状态、为什么移除。
+    /// </para>
+    /// <para>
+    /// <b>为什么不自己走。</b>三种合法来历（#289 崩在两次保存之间、#291 被终结、#713 装货中放回）上面都已认出续跑；剩下的就是库里的事实
+    /// 互相对不上，车上那几个仓里现在有没有这一站的货，服务端说不出来——离站会让说不清的货跟车走，回去等录入会对着同一站再开一次门。
+    /// 所以停下、不开门、不发报文，等人核对。不进 <see cref="JourneyRuntimeStage.Blocked"/>：Blocked 的每个码都配着自己的人工出口与放行路径，
+    /// 这一形没有现成的；留在原阶段，人改好库之后下一轮自动按改好的事实往下走（上面那几种续跑或照常等结果），码随之清掉。
+    /// </para>
+    /// <para>
+    /// <b>码相同不再写、不再记</b>，开始时间从第一次立起来那一刻算，与 <see cref="HoldOnBrokenStopSequenceAsync"/> 同一个理由。它指名在等人
+    /// （<see cref="CarriesACodeThatNamesAWaitOnAPerson"/>），别处的推进失败不盖掉它；闸门关着那一侧也不把它换成会话码。
+    /// </para>
+    /// </remarks>
+    private async Task HoldOnALoadResultNothingExplainsAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
+        {
+            return;
+        }
+        string stopId = stops.Current.StopId;
+        string[] atStop = [.. (await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+                .Where(row => row.JourneyId == runtime.JourneyId && row.PickupStopId == stopId)
+                .Select(row => new { row.DemandId, row.Status, row.RemovedAt, row.RemovalReason })
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .OrderBy(row => row.DemandId, StringComparer.Ordinal)
+            .Select(row => row.RemovedAt is null
+                ? $"{row.DemandId}={row.Status}"
+                : $"{row.DemandId}={row.Status} removed {row.RemovedAt:O} {row.RemovalReason}")];
+        runtime.SetBlockReason(LoadResultWithNothingLoadingReason, now);
+        runtime.UpdatedAt = now;
+        LogLoadResultWithNothingLoading(
+            logger, runtime.AgvId, runtime.JourneyId, stopId, atStop.Length == 0 ? "(none)" : string.Join("; ", atStop), null);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 推进重新走通的那一轮，把上一轮留下的 <see cref="AdvanceFailedReason"/> 清掉：它说的是「上一轮失败了」，
     /// 这一轮走通就不再成立（control-server#331）。
     /// </summary>
@@ -1387,8 +1451,10 @@ public sealed partial class JourneyRuntimeEngine(
             }
             // 序位坏了的码不换成会话码（control-server#879 审查 S2）：换掉的话每次重连都重记一次 Error 2341、开始时间重算，
             // 而序位坏了与会话就不就绪无关，人要做的事没变。
+            // 等装货结果而本站说不清的码（control-server#906）同理：每次重连重记一次 Error 2348，人要做的事也没变。
             else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
-                     !string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal))
+                     !string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) &&
+                     !string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
             {
                 runtime.SetBlockReason(
                     await ReasonBehindTheReadinessGateAsync(runtime, now, cancellationToken).ConfigureAwait(false), now);
@@ -1809,7 +1875,15 @@ public sealed partial class JourneyRuntimeEngine(
                 bool resumingAfterCommit = loading is null;
                 bool loadedHere = stops.CurrentStopDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded);
                 // 待送点上装货中取消的那一条不终结，按释放改派放回（control-server#713）：归属被移除、游标看不见它，按库里那一行认。
-                bool releasedWhileLoadingHere = resumingAfterCommit && !loadedHere && IsStagingPickup(stops.Current) &&
+                //
+                // 认的是这一行本身，不再先认「这个停靠是待送点」（control-server#906）。旅程还开着时「已移除、仍是 LOADING」只有一种来历：
+                // 装货途中取消、车证明仓位全空之后按 #713 放回（恢复协调器）。别的放回只放 PENDING_LOAD 的（释放服务、站点期限、持货截断、
+                // 缺电放回）；人工撤下也会放回在装的那一条，但同一次保存里旅程收尾，走不到这里。所以这一行在，就说明这一站上那一次装货已经
+                // 结束、一篮没装。
+                // 先认待送点则要靠需求冻结的绑定站：放回的需求被别的车再派受理时冻结删掉重冻，这期间若导入的新绑定集把 STAGING_TO_WIRE
+                // 改了址，这个停靠就认不出了（cs#904 审查 L1），又回到每轮卡在这里。之后离站等待按什么走仍看认没认出待送点——认不出就按
+                // 机台取货的站点期限离站；这一站已经一条需求都没有，两样都是到期带着车上已有的货离站，只是期限不同。
+                bool releasedWhileLoadingHere = resumingAfterCommit && !loadedHere &&
                     await dbContext.Set<JourneyDemandRow>().AsNoTracking().AnyAsync(
                         row => row.JourneyId == runtime.JourneyId && row.PickupStopId == stops.Current.StopId &&
                                row.RemovedAt != null && row.Status == JourneyDemandStatuses.Loading,
@@ -1819,8 +1893,22 @@ public sealed partial class JourneyRuntimeEngine(
                      releasedWhileLoadingHere);
                 if (resumingAfterCommit && !loadedHere && !resumingAfterEnding)
                 {
-                    throw new InvalidDataException(
-                        $"Journey {runtime.JourneyId} waits for a load result with no demand loading at its stop.");
+                    // 上面三种合法来历都说不清的（control-server#906）：停在原地写码等人，不再每轮抛。
+                    await HoldOnALoadResultNothingExplainsAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+                if (string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
+                {
+                    // 有人把库改好了：码清掉，下面照常往下走。保存的规矩同序位码清码那一处——这一轮还留着别处的未保存改动时只改不存，
+                    // 由下面各支的保存一起带上；都不保存的那一支（等结果、什么都没变）下一轮再清。
+                    runtime.SetBlockReason(null, now);
+                    runtime.UpdatedAt = now;
+                    if (!dbContext.ChangeTracker.Entries()
+                            .Any(entry => !ReferenceEquals(entry.Entity, runtime) &&
+                                          entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+                    {
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
                 }
                 StationOperationRow? load = loading is null
                     ? null
@@ -6775,6 +6863,8 @@ public sealed partial class JourneyRuntimeEngine(
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.ArrivalNotProven, StringComparison.Ordinal) ||
         // control-server#879: its stop sequences are broken; a person has to check the cargo and the plan and put them right.
         string.Equals(runtime.BlockReasonCode, StopSequenceBrokenReason, StringComparison.Ordinal) ||
+        // control-server#906: it waits for a load result nothing at its stop explains; a person has to check the cargo and the database.
+        string.Equals(runtime.BlockReasonCode, LoadResultWithNothingLoadingReason, StringComparison.Ordinal) ||
         // control-server#404: a charging journey whose cycle is gone waits for a person to look.
         string.Equals(runtime.BlockReasonCode, Charging.ChargingExecutionReasons.CycleMissing, StringComparison.Ordinal);
 

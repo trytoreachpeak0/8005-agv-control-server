@@ -700,8 +700,9 @@ public sealed class StagingLoadCancellationTests
             Assert.True(await StagingPickupStops.CurrentStopIsStagingAsync(
                 fixture.Context, afterCancel, fixture.Options.StagingDepartureRules, Token));
         }
+        // 按旅程取：再派受理之后（control-server#906）这条需求在别的车的旅程上另有一行归属。
         JourneyDemandRow released = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
-            .SingleAsync(row => row.DemandId == cancelled, Token);
+            .SingleAsync(row => row.DemandId == cancelled && row.JourneyId == journeyId, Token);
         Assert.Equal(DemandJourneyLookup.ReleasedForRedispatchReason, released.RemovalReason);
         Assert.Equal(DemandExecutionStatus.Accepted, await StatusOfAsync(fixture, cancelled));
         await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
@@ -731,7 +732,9 @@ public sealed class StagingLoadCancellationTests
 
         JourneyRuntimeRow departed = await fixture.Context.JourneyRuntimes.AsNoTracking()
             .SingleAsync(row => row.JourneyId == journeyId, Token);
-        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, departed.Stage);
+        Assert.True(
+            departed.Stage == JourneyRuntimeStage.AwaitingGateArrival,
+            $"The vehicle did not leave after a safe departure answer: {departed.Stage}, block {departed.BlockReasonCode}.");
         JourneyStopRow[] stops = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
             .Where(row => row.JourneyId == journeyId)
             .ToArrayAsync(Token);
@@ -801,6 +804,14 @@ public sealed class StagingLoadCancellationTests
     {
         DemandTaskTypeStationFreeze freeze = await new DemandTaskTypeStationFreezeStore(fixture.Context).ReadAsync(Demand, Token)
             ?? throw new InvalidOperationException("The first demand froze no task type station binding.");
+        // 新站在地图上（StagingPickupNoCountdownTests.ArrangeAsync 那几个站之外再加它）：绑定到地图上没有的站会把任务类型挂起，测的就成了别的事。
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(TaskTypeStationRuntimeSeed.GateStationRiotId, TaskTypeStationRuntimeSeed.GateStationName),
+            new RiotMapStation(300, "等待点"),
+            new RiotMapStation(StagingStationRiotId, StagingStationName),
+            new RiotMapStation(MovedStagingStationRiotId, MovedStagingStationName));
         await using ControlServerDbContext context = new(fixture.DbOptionsForTests);
         TaskTypeStationAccess access = TaskTypeStationRuntimeSeed.Access(context);
         long version = (await access.Bindings.WriteVersionAsync(

@@ -158,6 +158,12 @@ public sealed class DemandReleaseService(
         {
             return [];
         }
+        // 等装货结果而本站说不清的旅程（control-server#906）同样不在这里释放：那一站的归属状态此刻对不上（例如库里写着待装、装货命令却已发出），
+        // 按它释放可能放走一条正在装的需求、再修订一次计划。引擎已经把它停下、记过一次（LOAD_RESULT_WITH_NOTHING_LOADING），等人改好库之后这里照常判。
+        if (string.Equals(journey.BlockReasonCode, JourneyRuntimeEngine.LoadResultWithNothingLoadingReason, StringComparison.Ordinal))
+        {
+            return [];
+        }
         JourneyStopDemand[] waiting = [.. stops.Demands.Where(item =>
             item.Membership.Status == JourneyDemandStatuses.PendingLoad)];
         if (waiting.Length == 0)

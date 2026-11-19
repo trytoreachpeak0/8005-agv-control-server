@@ -141,6 +141,7 @@ public sealed class LoadEndedAtASecondPickupTests
         await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
         await SetSecondMembershipStatusAsync(fixture, JourneyDemandStatuses.PendingLoad);
         int outboxBefore = await fixture.Context.ProtocolOutbox.AsNoTracking().CountAsync(token);
+        int logBefore = fixture.EngineLog.Entries.Count;
 
         await fixture.RecreateEngineAsync();
         Exception? first = await RunRoundAsync(fixture);
@@ -156,14 +157,16 @@ public sealed class LoadEndedAtASecondPickupTests
         Assert.Equal(
             (JourneyRuntimeStage.AwaitingLoadResult, "LOAD_RESULT_WITH_NOTHING_LOADING", held.BlockReasonSince),
             (stillHeld.Stage, stillHeld.BlockReasonCode, stillHeld.BlockReasonSince));
+        (LogLevel Level, string Message)[] logSince = [.. fixture.EngineLog.Entries.Skip(logBefore)];
         string logged = Assert.Single(
-            fixture.EngineLog.Entries.Where(entry => entry.Level >= LogLevel.Error),
+            logSince.Where(entry => entry.Level >= LogLevel.Error),
             entry => entry.Message.Contains("control-server#906", StringComparison.Ordinal)).Message;
         Assert.Contains(SecondDemandId, logged, StringComparison.Ordinal);
         Assert.Contains(JourneyDemandStatuses.PendingLoad, logged, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            fixture.EngineLog.Entries,
-            entry => entry.Level >= LogLevel.Error && !entry.Message.Contains("control-server#906", StringComparison.Ordinal));
+        string[] otherErrors = [.. logSince
+            .Where(entry => entry.Level >= LogLevel.Error && !entry.Message.Contains("control-server#906", StringComparison.Ordinal))
+            .Select(entry => entry.Message)];
+        Assert.True(otherErrors.Length == 0, string.Join(Environment.NewLine, otherErrors));
         Assert.Equal(outboxBefore, await fixture.Context.ProtocolOutbox.AsNoTracking().CountAsync(token));
         Assert.Equal(StationOperationStatus.Prepared, (await SecondLoadAsync(fixture)).Status);
 
