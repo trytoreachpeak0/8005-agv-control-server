@@ -7049,10 +7049,13 @@ public sealed partial class JourneyRuntimeEngine(
         IsStagingPickup(stop) ? null : StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout);
 
     /// <summary>
-    /// The staging pickups this engine has recognised (control-server#709), by stop id. Filled for each journey as its
-    /// iteration loads its stops; always empty while the staging rules are off, so no reader below changes then.
+    /// The staging pickups of the journey being advanced (control-server#709), by stop id. Replaced whole at each
+    /// recognition, never accumulated: nothing is remembered across rounds or journeys (control-server#904). Production
+    /// takes a new engine every round while the test fixture reuses one, and the accumulating set this used to be let the
+    /// tests remember a stop production could no longer recognise. Always empty while the staging rules are off, so no
+    /// reader below changes then.
     /// </summary>
-    private readonly HashSet<string> stagingPickupStops = new(StringComparer.Ordinal);
+    private HashSet<string> stagingPickupStops = new(StringComparer.Ordinal);
 
     /// <summary>Recognises this journey's staging pickups (<see cref="StagingPickupStops"/>); does nothing, and reads nothing, while the rules are off.</summary>
     private async Task RecognizeStagingPickupStopsAsync(JourneyStopCursor stops, CancellationToken cancellationToken)
@@ -7061,8 +7064,9 @@ public sealed partial class JourneyRuntimeEngine(
         {
             return;
         }
-        stagingPickupStops.UnionWith(
-            await StagingPickupStops.RecognizeAsync(dbContext, stops, cancellationToken).ConfigureAwait(false));
+        stagingPickupStops = new HashSet<string>(
+            await StagingPickupStops.RecognizeAsync(dbContext, stops, cancellationToken).ConfigureAwait(false),
+            StringComparer.Ordinal);
     }
 
     /// <summary>

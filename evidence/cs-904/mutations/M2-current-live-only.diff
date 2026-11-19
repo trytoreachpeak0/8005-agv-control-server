@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/StagingPickupStops.cs b/src/ControlServer.Host/Runtime/StagingPickupStops.cs
+index 35576b1b2..e08eb87e0 100644
+--- a/src/ControlServer.Host/Runtime/StagingPickupStops.cs
++++ b/src/ControlServer.Host/Runtime/StagingPickupStops.cs
+@@ -66,7 +66,7 @@ internal static class StagingPickupStops
+             return false;
+         }
+         JourneyStopRow current = stops.Current;
+-        return await IsStagingPickupAsync(dbContext, current, EverAtStop(stops, current), cancellationToken).ConfigureAwait(false);
++        return await IsStagingPickupAsync(dbContext, current, stops.AllAtStop(current), cancellationToken).ConfigureAwait(false);
+     }
+ 
+     /// <summary>

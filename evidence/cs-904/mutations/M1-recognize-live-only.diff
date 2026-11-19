@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/StagingPickupStops.cs b/src/ControlServer.Host/Runtime/StagingPickupStops.cs
+index 35576b1b2..62b78fe0f 100644
+--- a/src/ControlServer.Host/Runtime/StagingPickupStops.cs
++++ b/src/ControlServer.Host/Runtime/StagingPickupStops.cs
+@@ -36,7 +36,7 @@ internal static class StagingPickupStops
+         HashSet<string> staging = new(StringComparer.Ordinal);
+         foreach (JourneyStopRow stop in stops.Stops)
+         {
+-            if (await IsStagingPickupAsync(dbContext, stop, EverAtStop(stops, stop), cancellationToken).ConfigureAwait(false))
++            if (await IsStagingPickupAsync(dbContext, stop, stops.AllAtStop(stop), cancellationToken).ConfigureAwait(false))
+             {
+                 staging.Add(stop.StopId);
+             }
