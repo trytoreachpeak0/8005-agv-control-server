@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 3c806e33e..e806b9221 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -1595,7 +1595,7 @@ public sealed class OnboardRecoveryCoordinator(
+                     row.State == RecoveryWorkflowState.CommandPending ||
+                     row.State == RecoveryWorkflowState.AwaitingResult),
+             cancellationToken).ConfigureAwait(false);
+-        bool allowedInState = !declared && !skipHeld && !anotherOpen &&
++        bool allowedInState = !declared && !skipHeld &&
+                               demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&
+                               (operation is null || operation.DemandId == demandId &&
+                                operation.OperationType == SlotOperationType.Load &&
