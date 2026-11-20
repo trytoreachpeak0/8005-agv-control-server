@@ -166,6 +166,47 @@ public sealed class OnboardJourneyPublisher(
         CancellationToken cancellationToken,
         IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
+        return PublishEnvelopeAsync(
+            "SublotEntryRequested",
+            messageId,
+            correlationId: null,
+            agvId,
+            sessionGeneration,
+            SublotEntryRequestPayload(request),
+            cancellationToken,
+            keepAcknowledgedIgnoring);
+    }
+
+    /// <summary>
+    /// 同 <see cref="PublishSublotEntryRequestAsync"/> 的信封与载荷，但只暂存进调用方那一次还没保存的改动——不保存、不发送（control-server#909）。
+    /// </summary>
+    /// <remarks>
+    /// 给入站那一侧用：扫码前取消在收件箱的写事务里终结一条需求、本站还有待做项时，新一版录入请求要与终结同一次提交，发送等本条报文的应答写出去之后
+    /// （<see cref="SendPersistedAsync"/>）。静态、不带对端，理由同收尾快照的暂存方法。返回 false 表示这个 id 已经在发件箱里。
+    /// </remarks>
+    public static Task<bool> StageSublotEntryRequestAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        SublotEntryRequest request,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ValidateUuid(messageId, nameof(messageId));
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+        string wire = SerializeWire(
+            "SublotEntryRequested", messageId, correlationId: null, agvId, sessionGeneration, createdAt,
+            SublotEntryRequestPayload(request));
+        return store.StageOutboundEnvelopeAsync(messageId, "SublotEntryRequested", wire, createdAt, cancellationToken);
+    }
+
+    /// <summary>录入请求的载荷：发布与暂存两条路共用，校验也在这里，两边不会各写一份而走样。</summary>
+    private static object SublotEntryRequestPayload(SublotEntryRequest request)
+    {
         ArgumentNullException.ThrowIfNull(request);
         ValidateUuid(request.OperationSessionId, nameof(request.OperationSessionId));
         ArgumentException.ThrowIfNullOrWhiteSpace(request.StationId);
@@ -177,23 +218,15 @@ public sealed class OnboardJourneyPublisher(
             request.ExpectedSublots.Distinct(StringComparer.Ordinal).Count() != request.ExpectedSublots.Count)
             throw new InvalidDataException("expectedSublots must hold one to eight distinct sublots.");
 
-        return PublishEnvelopeAsync(
-            "SublotEntryRequested",
-            messageId,
-            correlationId: null,
-            agvId,
-            sessionGeneration,
-            new
-            {
-                request.OperationSessionId,
-                request.StationId,
-                request.WorklistRevision,
-                request.ExpectedSublots,
-                entryMethods = SublotEntryMethods,
-                expiresOnRevisionChange = true
-            },
-            cancellationToken,
-            keepAcknowledgedIgnoring);
+        return new
+        {
+            request.OperationSessionId,
+            request.StationId,
+            request.WorklistRevision,
+            request.ExpectedSublots,
+            entryMethods = SublotEntryMethods,
+            expiresOnRevisionChange = true
+        };
     }
 
     /// <summary>

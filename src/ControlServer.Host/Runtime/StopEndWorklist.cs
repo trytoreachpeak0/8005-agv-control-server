@@ -286,7 +286,7 @@ internal static class StopEndWorklist
         return document.RootElement.GetProperty("payload").GetProperty("items").GetArrayLength() == 0 ? messageId : null;
     }
 
-    private static async Task FenceAsync(
+    internal static async Task FenceAsync(
         ControlServerDbContext dbContext,
         string messageId,
         DateTimeOffset fencedAt,

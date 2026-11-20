@@ -880,6 +880,9 @@ public sealed class OnboardRecoveryCoordinator(
         // 这条结果若结束了一站而旅程继续，那张空清单同样随它那次保存落库（control-server#324）。
         await StopEndWorklist.SendAsync(publisher, dbContext, RequiredString(root, "agvId"), cancellationToken)
             .ConfigureAwait(false);
+        // 这条结果若终结了本站一条而本站还有待做项，去掉它的那一版清单与录入请求同样随它那次保存落库（control-server#909）。
+        await RemainingStopWorklist.SendAsync(publisher, dbContext, RequiredString(root, "agvId"), cancellationToken)
+            .ConfigureAwait(false);
         // 门未证明的全空结清把车扣下时，扣车的业务状态随那次保存落库（control-server#385）；排在收尾快照之后，号也比它大。
         foreach (string id in await DoorHoldSnapshotIdsAsync(RequiredString(root, "agvId"), cancellationToken)
                      .ConfigureAwait(false))
@@ -2529,14 +2532,21 @@ public sealed class OnboardRecoveryCoordinator(
             // 给了路网的终结在删掉空停靠之后还换序（批次7-10，control-server#215，调度决策 6）；没给就只删不换。
             PickupStopTermination cancelledTermination =
                 new(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false));
+            // 终结（含业务键抑制的 SuppressedAt）与下面新一版清单的 CreatedAt 用同一个时刻：L2 场景 multi-demand-stop-cancel-one-refreshes-at-once
+            // 的 L2-MDR-02 正是以「新清单 CreatedAt == SuppressedAt」判它们同一次保存（control-server#909 审查 L2）。改这里的时钟读取要同步改那个场景。
+            DateTimeOffset cancelledAt = timeProvider.GetUtcNow();
             await cancelledTermination
                 .StageAsync(
                     stop,
                     stopCursor.CurrentSublotRequestMessageId(stop.WorklistRevision),
                     workflow.DemandId,
                     "CANCELLED_BY_OPERATOR",
-                    timeProvider.GetUtcNow(),
+                    cancelledAt,
                     cancellationToken).ConfigureAwait(false);
+            // 本站还有别的待做项（control-server#909）：去掉它的新一版清单（等录入时连同录入请求）与终结同一次保存，应答之后由
+            // SendTriggeredCommandAsync 发出。本站因此结束的那一种上面已暂存空清单，这里认出来不做。
+            await RemainingStopWorklist.StageAsync(dbContext, stop, workflow.DemandId, cancelledAt, cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
         // A commanded slot operation proven empty -- an in-flight cancellation, a compensation, a fault cargo

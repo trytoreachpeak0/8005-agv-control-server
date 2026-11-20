@@ -492,6 +492,10 @@ jobs:
               # a departure carrying the cancellation worklist's revision, already replaced by a deadline-only refresh, is
               # accepted (no substantive change) and the vehicle leaves before the station departure deadline.
               @{ Name = 'machine-departure-stale-worklist-after-cancel'; Runs = 1 }
+              # control-server#909: at a pickup stop still holding another demand, a cancel before scan sends the worklist
+              # without the cancelled demand (and its entry request) in the cancellation's own save -- created at the
+              # demand's suppression instant -- and leaves no entry request still expecting the cancelled sublot to replay.
+              @{ Name = 'multi-demand-stop-cancel-one-refreshes-at-once'; Runs = 1 }
               # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
               # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
               # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not

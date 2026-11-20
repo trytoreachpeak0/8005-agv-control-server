@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs b/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs
+index 10ae3de9f..44faaedf6 100644
+--- a/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs
++++ b/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs
+@@ -113,7 +113,7 @@ internal static class RemainingStopWorklist
+             JourneyRuntimeEngine.Worklist(stop, outstanding, revision, latest.Deadline),
+             endedAt,
+             cancellationToken).ConfigureAwait(false);
+-        if (runtime.Stage == JourneyRuntimeStage.AwaitingSublot)
++        if (runtime.Stage == JourneyRuntimeStage.AwaitingSublot && runtime.AgvId.Length < 0)
+         {
+             await OnboardJourneyPublisher.StageSublotEntryRequestAsync(
+                 store,
