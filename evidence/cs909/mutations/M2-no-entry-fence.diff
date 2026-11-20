@@ -1,0 +1,15 @@
+diff --git a/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs b/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs
+index 10ae3de9f..c7e510e69 100644
+--- a/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs
++++ b/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs
+@@ -99,9 +99,7 @@ internal static class RemainingStopWorklist
+             await StopEndWorklist.FenceAsync(
+                 dbContext, staged.WorklistMessageIdAt(runtime.WorklistRevision, stop, earlier), endedAt, cancellationToken)
+                 .ConfigureAwait(false);
+-            await StopEndWorklist.FenceAsync(
+-                dbContext, staged.SublotRequestMessageIdAt(runtime.WorklistRevision, stop, earlier), endedAt, cancellationToken)
+-                .ConfigureAwait(false);
++            _ = earlier;
+         }
+ 
+         WireToGateStore store = new(dbContext);

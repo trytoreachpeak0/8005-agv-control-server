@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 758e67bf7..04fb277c1 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -881,8 +881,7 @@ public sealed class OnboardRecoveryCoordinator(
+         await StopEndWorklist.SendAsync(publisher, dbContext, RequiredString(root, "agvId"), cancellationToken)
+             .ConfigureAwait(false);
+         // 这条结果若终结了本站一条而本站还有待做项，去掉它的那一版清单与录入请求同样随它那次保存落库（control-server#909）。
+-        await RemainingStopWorklist.SendAsync(publisher, dbContext, RequiredString(root, "agvId"), cancellationToken)
+-            .ConfigureAwait(false);
++
+         // 门未证明的全空结清把车扣下时，扣车的业务状态随那次保存落库（control-server#385）；排在收尾快照之后，号也比它大。
+         foreach (string id in await DoorHoldSnapshotIdsAsync(RequiredString(root, "agvId"), cancellationToken)
+                      .ConfigureAwait(false))

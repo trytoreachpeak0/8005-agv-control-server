@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 758e67bf7..62b3e581c 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -2429,8 +2429,7 @@ public sealed class OnboardRecoveryCoordinator(
+                     cancellationToken).ConfigureAwait(false);
+             // 本站还有别的待做项（control-server#909）：去掉它的新一版清单（等录入时连同录入请求）与终结同一次保存，应答之后由
+             // SendTriggeredCommandAsync 发出。本站因此结束的那一种上面已暂存空清单，这里认出来不做。
+-            await RemainingStopWorklist.StageAsync(dbContext, stop, workflow.DemandId, cancelledAt, cancellationToken)
+-                .ConfigureAwait(false);
++            _ = cancelledAt;
+             return;
+         }
+         // A commanded slot operation proven empty -- an in-flight cancellation, a compensation, a fault cargo

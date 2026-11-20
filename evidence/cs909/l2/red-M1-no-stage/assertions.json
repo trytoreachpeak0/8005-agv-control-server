@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "scenario": "multi-demand-stop-cancel-one-refreshes-at-once",
+  "runId": "20261120T061545827Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "b039faea6a744b078a2cf7991063efae84c94361",
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "7.0.0",
+      "tag": "protocol-v7.0.0",
+      "commit": "a1facf8674b05c67bfbddc14db4a163e8da2782a",
+      "protocolVersion": 8,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "44fa0b273810fb2d5326068c03f9647bfd8fdc1c5f01e27a5177b0e0473fe7cb",
+      "schemaBundleSha256": "6361d734f9b1a4f81178c79c0bc18b8287fd747622e60c99073e7fd5a5cf4c88",
+      "vectorsSha256": "6295840ec27422dc024a24f6deae9a7379f9b3047a163e903ac862c8b0274eec",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "batchId": "unspecified",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261120T061545827Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-MDR-01",
+      "description": "前置：乙、丁进了甲那一趟旅程，并进同一个 11 号站停靠；到站那一版清单列着丁、乙",
+      "outcome": "PASS",
+      "expected": "B and D on one stop, arrival worklist lists both",
+      "actual": "B journey:8a418302-ca4b-464f-bae7-8ddfa5c045bc|PICKUP, D journey:8a418302-ca4b-464f-bae7-8ddfa5c045bc|PICKUP; arrival 3[2]@2026-11-20T06:17:34.9775999+00:00"
+    },
+    {
+      "id": "L2-MDR-02",
+      "description": "乙终结；只列丁的那一版号更高，写进发件箱的时刻就是乙的抑制时刻（与取消同一次保存）",
+      "outcome": "FAIL",
+      "expected": "worklist [D] above 3 created at 2026-11-20T06:17:35.1851342+00:00",
+      "actual": "B TERMINATED; suppressed 2026-11-20T06:17:35.1851342+00:00; worklists 3[2]@2026-11-20T06:17:34.9775999+00:00 4[1]@2026-11-20T06:17:35.9969958+00:00"
+    },
+    {
+      "id": "L2-MDR-03",
+      "description": "没有一条还会补发的 11 号站录入请求期待乙；同号的录入请求只期待丁",
+      "outcome": "PASS",
+      "expected": "no pending request for L2-CH-B-20261120T061545827Z; [L2-CH-D-20261120T061545827Z] at the new revision",
+      "actual": "pending 4:L2-CH-D-20261120T061545827Z (expecting B: 0, D alone at the new revision: 1)"
+    },
+    {
+      "id": "L2-MDR-04",
+      "description": "合成车载端收到新号的录入请求，答它，丁装上",
+      "outcome": "PASS",
+      "expected": "entry sublot:94e41531-5f8e-7a59-973b-6bda8ffca56b:4 held and answered, D LOADED",
+      "actual": "held yes, D LOADED"
+    }
+  ]
+}

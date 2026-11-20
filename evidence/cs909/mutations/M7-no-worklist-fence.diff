@@ -1,0 +1,15 @@
+diff --git a/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs b/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs
+index 10ae3de9f..b5dcc36f7 100644
+--- a/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs
++++ b/src/ControlServer.Host/Runtime/RemainingStopWorklist.cs
+@@ -96,9 +96,7 @@ internal static class RemainingStopWorklist
+         // 排在新的一版之后到车上，车判修订号回退；留着的录入请求就是那遍同版重发（control-server#723、#909）。
+         for (long earlier = first; earlier < revision; earlier++)
+         {
+-            await StopEndWorklist.FenceAsync(
+-                dbContext, staged.WorklistMessageIdAt(runtime.WorklistRevision, stop, earlier), endedAt, cancellationToken)
+-                .ConfigureAwait(false);
++            _ = earlier;
+             await StopEndWorklist.FenceAsync(
+                 dbContext, staged.SublotRequestMessageIdAt(runtime.WorklistRevision, stop, earlier), endedAt, cancellationToken)
+                 .ConfigureAwait(false);
