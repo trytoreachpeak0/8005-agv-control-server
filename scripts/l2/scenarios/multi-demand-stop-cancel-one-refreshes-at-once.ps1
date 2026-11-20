@@ -138,7 +138,9 @@ $bStationId = [string]$bStopRow[0].StationId
 $keyPrefix = "sublot:$([string]$bStopRow[0].OperationSessionId):"
 $held = Wait-L2Condition -Description 'the entry request at station 11 is held on the peer' -Journal $journal `
     -Criterion 'entry-held' -TimeoutSeconds 60 -Probe { Get-HeldEntryRequestWithPrefix $keyPrefix } -Until { param($v) $null -ne $v }
-$arrival = @(Get-StationWorklists $bStationId) | Select-Object -Last 1
+# 整数组返回的函数先赋值再用（scripts/l2/README.md）：包进 @( ) 时 Select-Object 拿到的是整个数组，不是最后一版。
+$arrivalWorklists = Get-StationWorklists $bStationId
+$arrival = $arrivalWorklists | Select-Object -Last 1
 $assertions.Add(
     'L2-MDR-01', '前置：乙、丁进了甲那一趟旅程，并进同一个 11 号站停靠；到站那一版清单列着丁、乙',
     ($joined.ContainsKey($b.Id) -and $joined.ContainsKey($d.Id) -and
@@ -161,8 +163,8 @@ $null = Wait-L2ConditionOrLast -Description "the peer's ALL_EMPTY result was ack
     -Probe { Get-PeerCancellation $cancellationId } -Until { param($v) $v -and $null -ne $v.resultAcknowledgedAt }
 $ended = Wait-L2ConditionOrLast -Description 'the cancellation ended demand B' -Journal $journal -Criterion 'b-ended' -TimeoutSeconds 60 `
     -Probe { [string](Get-Members $journeyId)[$b.Id].Status } -Until { param($v) $v -eq 'TERMINATED' }
-$suppressedRows = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT SuppressedAt FROM TransportDemandSuppressions WHERE DemandId = '$($b.Id)'"))
+$suppressedRows = Invoke-L2Query -Connection $connection -Sql (
+    "SELECT SuppressedAt FROM TransportDemandSuppressions WHERE DemandId = '$($b.Id)'")
 $suppressedAt = if ($suppressedRows.Count -eq 1) { ConvertTo-Instant $suppressedRows[0].SuppressedAt } else { $null }
 $worklists = Wait-L2ConditionOrLast -Description 'a worklist listing D alone was queued' -Journal $journal `
     -Criterion 'refreshed' -TimeoutSeconds 60 -Probe { Get-StationWorklists $bStationId } `
