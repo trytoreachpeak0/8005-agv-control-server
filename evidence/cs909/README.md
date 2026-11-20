@@ -24,7 +24,7 @@
 
 场景 `multi-demand-stop-cancel-one-refreshes-at-once`（合成）。判据不靠计时：新一版清单在发件箱里的 `CreatedAt` 必须等于乙的业务键抑制 `SuppressedAt`——两者由取消落定那一次处理用同一个时刻暂存、同一次保存落库。
 
-- `l2/green/`：修复后 4/4 PASS。
+- `l2/green/`：修复后 4/4 PASS，跑在 `3983fb6e3`（已合入 `fp/v2-impl` 含 PR #908 的基线）。
 - `l2/red-M1-no-stage/`：去掉取消时的暂存（`mutations/L2-M1-no-stage.diff`），只有 L2-MDR-02 红：新一版 `06:17:35.997`，取消 `06:17:35.185`，由引擎下一轮写。L2-MDR-03（没有还会补发的录入请求期待乙）修前也绿：合成装置的引擎一轮不到一秒，读的时候旧版已被下一轮退役。同版重发这一点由 L1 守（M2）。
 
 两次都是本机完整运行（含构建）；日志与快照目录已删，只留 `SUMMARY.md`、`assertions.json`、`timeline.jsonl`。
