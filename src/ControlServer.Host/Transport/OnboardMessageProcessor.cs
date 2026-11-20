@@ -887,8 +887,9 @@ public sealed partial class OnboardMessageProcessor(
                     string authorization = await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
                         .ConfigureAwait(false);
                     // Refused for want of current readings (control-server#837): ask for a snapshot after this answer, so the
-                    // operator's next press is judged on readings that are fresh. The answer is answered from the inbox on a resend,
-                    // which does not reach here, so a replay never asks twice.
+                    // operator's next press is judged on readings that are fresh. The answer is answered from the inbox on a resend
+                    // under the same messageId, which does not reach here. A resend of the same press under a new messageId does,
+                    // and is answered with the first refusal (onboard-hmi#421); asking for a snapshot again then costs one snapshot.
                     if (RefusedForUnknownSlots(authorization))
                     {
                         state.SafetySnapshotRequestDue = true;

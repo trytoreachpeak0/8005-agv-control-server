@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 3c806e33e..b2df67b58 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -1531,7 +1531,7 @@ public sealed class OnboardRecoveryCoordinator(
+         using JsonDocument answer = JsonDocument.Parse(first.FirstResponseJson.Split('\n')[0]);
+         return answer.RootElement.GetProperty("messageType").GetString() == "LoadCancellationAuthorization" &&
+                answer.RootElement.GetProperty("payload") is { } decided &&
+-               decided.GetProperty("decision").GetString() == "REJECTED"
++               decided.GetProperty("decision").GetString() == "MUTATED-NEVER"
+             ? decided.Clone()
+             : null;
+     }

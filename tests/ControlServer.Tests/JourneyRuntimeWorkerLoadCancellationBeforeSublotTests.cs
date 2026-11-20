@@ -515,6 +515,53 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
     }
 
     /// <summary>
+    /// 车还在路上时按的取消被拒，同一次按键在车到站、这一站已经可以取消之后以新的 messageId、同 id、同载荷重提（重连或重启后的重提，onboard-hmi#421）：
+    /// 回放首次的拒绝，不重判、不开工作流；同 id 换了内容是业务号内容冲突；再按是新的一次按键、新的 id，按这一站现在的样子判、授权。
+    /// cs#837 的过渡做法是重判，同 id 这时会被授权；去掉回放，这条变红。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AResubmissionOfACancellationRefusedBeforeArrivalReplaysTheRefusalAndANewPressIsJudgedAfresh()
+    {
+        const string earlyId = "c1000000-0000-4000-8000-000000000421";
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(BeforeSublotDemandId, "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        await fixture.Engine.ExecuteOnceAsync(token);
+        string earlyRequest = CancellationBeforeSublotRequest(fixture, earlyId, generation: 1);
+        JsonElement first = FirstLinePayload(await processor.ProcessAsync(earlyRequest, state, token), out _).Clone();
+        Assert.Equal("REJECTED", first.GetProperty("decision").GetString());
+
+        JourneyRuntimeRow waiting = await fixture.AdvanceToSublotWaitAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, waiting.Stage);
+        await fixture.ProveSlotDoorsClosedAsync();
+
+        System.Text.Json.Nodes.JsonNode resent = System.Text.Json.Nodes.JsonNode.Parse(earlyRequest)!;
+        resent["messageId"] = Guid.NewGuid().ToString("D");
+        JsonElement replayed = FirstLinePayload(
+            await processor.ProcessAsync(resent.ToJsonString(), state, token), out _);
+        Assert.Equal(first.GetRawText(), replayed.GetRawText());
+        Assert.Empty(await fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+
+        System.Text.Json.Nodes.JsonNode other = System.Text.Json.Nodes.JsonNode.Parse(earlyRequest)!;
+        other["messageId"] = Guid.NewGuid().ToString("D");
+        other["payload"]!["reason"] = "Pressed again at the stop.";
+        string otherLine = other.ToJsonString();
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(otherLine, state, token), "BUSINESS_ID_CONTENT_CONFLICT", otherLine);
+        Assert.Empty(await fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+
+        string authorization = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), state, token);
+        Assert.Equal("AUTHORIZED", FirstLinePayload(authorization, out _).GetProperty("decision").GetString());
+    }
+
+    /// <summary>
     /// 站点期限已经把这一站连同整趟旅程收尾，之后才到的扫码：答 <c>SublotRejected</c> / <c>WORKLIST_REVISION_STALE</c>，
     /// <c>demandId</c> 为 null，修订号是收尾那张空清单的号，并且发到线上（control-server#324）。
     /// </summary>

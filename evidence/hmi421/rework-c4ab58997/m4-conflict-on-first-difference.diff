@@ -1,0 +1,15 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 3c806e33e..3bb3144ea 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -1517,7 +1517,9 @@ public sealed class OnboardRecoveryCoordinator(
+             }
+             else
+             {
+-                otherContentOnFile = true;
++                throw new InboundMessageRejectedException(
++                    ServerReasonCodes.BusinessIdContentConflict,
++                    "cancellationId was used before with different content.");
+             }
+         }
+         if (first is null)
