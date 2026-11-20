@@ -1478,6 +1478,10 @@ public sealed class OnboardRecoveryCoordinator(
     /// is the id a conflict. Among identical requests the earliest's answer is the first decision.
     /// </para>
     /// <para>
+    /// <b>An id with a workflow is answered from it</b> (incremental review L1): the authorization stands whatever the inbox
+    /// holds besides, including the same press refused before the interim server re-judged it.
+    /// </para>
+    /// <para>
     /// An id first authorized is left to the paths below, which answer it from its workflow (and refuse other content when
     /// they write it): what they do with a resend once the load has since gone to a person's recovery is theirs and is not
     /// changed here. The content is compared payload to payload, as the skip does. Only this vehicle's own requests count: a
@@ -1492,6 +1496,15 @@ public sealed class OnboardRecoveryCoordinator(
     {
         string messageId = RequiredString(root, "messageId");
         string agvId = RequiredString(root, "agvId");
+        // An id this vehicle has a workflow under was authorized: that record answers it, as it always has, whatever the
+        // inbox holds besides (onboard-hmi#421 incremental review L1). The interim server judged a refused id afresh, so the
+        // same press can be on file refused first and authorized after; replaying that earlier refusal would let the vehicle
+        // drop its request and load on while the workflow waits for a result, and refuse every new id over the attempt.
+        if (await dbContext.RecoveryWorkflows.AsNoTracking().AnyAsync(
+                row => row.WorkflowId == cancellationId && row.AgvId == agvId, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == "LoadCancellationStartRequested" && row.MessageId != messageId &&
                           row.RequestJson.Contains(cancellationId))

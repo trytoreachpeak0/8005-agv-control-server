@@ -358,6 +358,49 @@ public sealed class LoadCancellationDuringLoadTests
     }
 
     /// <summary>
+    /// 过渡期留下的另一种形状（onboard-hmi#421 增量审查 L1，探针 S3）：同一次按键、同一份内容，先被拒、答复丢了，重提时过渡期服务端重判、授权了。
+    /// 再重提：照工作流答授权，不回放更早那次拒绝。回放拒绝的话，车载端会清掉待答、接着装货，工作流却一直等结果，新 id 又被 M1 拒，卡站。
+    /// 修前取入站表里最早的同内容行（那次拒绝），这条变红。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    public async Task AResubmissionOfAPressRefusedAndThenAuthorizedUnderTheSameContentIsAnsweredFromItsWorkflow()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied());
+        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
+
+        // The same press, same content, refused half a minute earlier with its answer lost, as the interim server left it.
+        ProtocolInboxRow authorized = await rig.Fixture.Context.ProtocolInbox.AsNoTracking()
+            .SingleAsync(row => row.MessageType == "LoadCancellationStartRequested", Token);
+        System.Text.Json.Nodes.JsonNode refused = System.Text.Json.Nodes.JsonNode.Parse(authorized.RequestJson)!;
+        refused["messageId"] = Guid.NewGuid().ToString("D");
+        System.Text.Json.Nodes.JsonNode refusal =
+            System.Text.Json.Nodes.JsonNode.Parse(authorized.FirstResponseJson.Split('\n')[0])!;
+        refusal["correlationId"] = refused["messageId"]!.GetValue<string>();
+        refusal["payload"]!["decision"] = "REJECTED";
+        refusal["payload"]!["problem"] = System.Text.Json.Nodes.JsonNode.Parse(
+            """{"reasonCode":"LOCK_NOT_CLOSED","fieldPath":"payload.slotOperationAttemptId","displayMessage":"A door is not proven locked."}""");
+        rig.Fixture.Context.ProtocolInbox.Add(new ProtocolInboxRow
+        {
+            MessageId = refused["messageId"]!.GetValue<string>(),
+            MessageType = "LoadCancellationStartRequested",
+            RequestJson = refused.ToJsonString(),
+            ContentHash = authorized.ContentHash,
+            FirstResponseJson = refusal.ToJsonString(),
+            ReceivedAt = authorized.ReceivedAt.AddSeconds(-30)
+        });
+        await rig.Fixture.Context.SaveChangesAsync(Token);
+        rig.Fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
+        RecoveryWorkflowRow workflow = Assert.Single(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
+        Assert.Equal(CancellationId, workflow.WorkflowId);
+        Assert.Equal(RecoveryWorkflowState.AwaitingResult, workflow.State);
+    }
+
+    /// <summary>
     /// 同一次装货已有一条授权了、还在等结果的取消，又来一个新的 <c>cancellationId</c>（onboard-hmi#421 审查 M1，探针 S1）：拒，
     /// <c>ACTION_NOT_ALLOWED_IN_STATE</c>，不开第二条工作流。以前派生 id 顺带把两次按键归成同一条；现在一次按键一个 id，靠这里按 attempt 挡。
     /// </summary>
