@@ -180,9 +180,12 @@ public sealed class LoadCancellationDuringLoadTests
         Assert.Empty(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
         await rig.AssertLoadUntouchedAsync();
 
-        // The snapshot it asks for is a whole new baseline: from there the cancellation is judged on it again.
+        // The snapshot it asks for is a whole new baseline: from there the next press -- a new request under a new id
+        // (onboard-hmi#421) -- is judged on it. A resend of the refused press is answered with its refusal.
         await rig.SendSnapshotAsync(Occupied());
-        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
+        Assert.Equal(
+            "AUTHORIZED",
+            Payload(await SendCancellationAsync(rig, SecondCancellationId)).GetProperty("decision").GetString());
     }
 
     /// <summary>
@@ -254,28 +257,63 @@ public sealed class LoadCancellationDuringLoadTests
     }
 
     /// <summary>
-    /// 同一个 <c>cancellationId</c> 先被拒、门关好读数到了再按（Coordinator13 10-25 定，直到 onboard-hmi#408 合入）：车载端被拒后再按仍用同一个 id
-    /// （由需求与 attempt 推出），载荷按新的一次按键重录。被拒的那次不留任何记录，所以这一次照常重判、授权，不回放先前的拒绝、也不当内容冲突。
+    /// 同一个 <c>cancellationId</c> 先被拒，同一次按键以新的 messageId、同 id、同载荷重提（重连或重启后的重提，onboard-hmi#421）：门此后关好、读数也到了，
+    /// 仍回放首次的拒绝，原因码与 problem 逐字相同，不重判、不开工作流。再按是新的一次按键、新的 id，才重新判（上一条）。cs#837 的过渡做法是重判，
+    /// 那时车载端被拒后再按仍用同一个由需求与 attempt 推出的 id；去掉回放，这条变红。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-BASKET-LOADED")]
-    public async Task TheSameCancellationIdRejectedFirstIsJudgedAgainAndAuthorizedOnceTheReadingsProveIt()
+    public async Task AResubmissionOfARefusedCancellationReplaysTheFirstRefusalEvenOnceTheReadingsProveIt()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        SlotReading[] open = Occupied();
+        open[0] = open[0] with { Lock = "UNLOCKED", Output = "ACTIVE" };
+        await rig.SendSnapshotAsync(open);
+        JsonElement first = Payload(await SendCancellationAsync(rig, CancellationId));
+        Assert.Equal("REJECTED", first.GetProperty("decision").GetString());
+
+        await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);
+        await rig.SendSnapshotAsync(Occupied());
+
+        JsonElement replayed = Payload(await SendCancellationAsync(rig, CancellationId));
+        AssertRejected(await SendCancellationAsync(rig, CancellationId), "LOCK_NOT_CLOSED");
+        Assert.Equal(first.GetRawText(), replayed.GetRawText());
+        Assert.Empty(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
+        await rig.AssertLoadUntouchedAsync();
+    }
+
+    /// <summary>
+    /// 同一个 <c>cancellationId</c> 先被拒，又以别的内容再来（换了 reason，或旧版车载端被拒后再按、同一个推出的 id 带新的 verifiedAt）：业务号内容冲突，
+    /// <c>BUSINESS_ID_CONTENT_CONFLICT</c> 拒收、连接保持，不答 <c>LoadCancellationAuthorization</c>、不开工作流（onboard-hmi#421）。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-BASKET-LOADED")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ARefusedCancellationIdAgainWithOtherContentIsABusinessIdContentConflict(bool readingsProvenSince)
     {
         await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
         SlotReading[] open = Occupied();
         open[0] = open[0] with { Lock = "UNLOCKED", Output = "ACTIVE" };
         await rig.SendSnapshotAsync(open);
         AssertRejected(await SendCancellationAsync(rig, CancellationId), "LOCK_NOT_CLOSED");
+        if (readingsProvenSince)
+        {
+            await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);
+            await rig.SendSnapshotAsync(Occupied());
+        }
 
-        await rig.SendSafetyChangedAsync(1, 2, 3, 4, 5, 6, 7, 8);
-        await rig.SendSnapshotAsync(Occupied());
+        string answer = await SendCancellationAsync(rig, CancellationId, "Pressed again with the door shut.");
 
-        JsonElement authorization = Payload(await SendCancellationAsync(rig, CancellationId, "Pressed again with the door shut."));
-        Assert.Equal("AUTHORIZED", authorization.GetProperty("decision").GetString());
-        Assert.Equal(CancellationId, authorization.GetProperty("cancellationId").GetString());
-        Assert.Single(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking()
-            .Where(row => row.WorkflowId == CancellationId).ToArrayAsync(Token));
+        using JsonDocument document = JsonDocument.Parse(answer.Split('\n')[0]);
+        Assert.Equal("ProtocolProblem", document.RootElement.GetProperty("messageType").GetString());
+        Assert.Equal(
+            "BUSINESS_ID_CONTENT_CONFLICT",
+            document.RootElement.GetProperty("payload").GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Empty(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
+        await rig.AssertLoadUntouchedAsync();
     }
 
     /// <summary>

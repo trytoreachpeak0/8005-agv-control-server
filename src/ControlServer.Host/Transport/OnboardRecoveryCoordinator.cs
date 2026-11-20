@@ -1455,6 +1455,74 @@ public sealed class OnboardRecoveryCoordinator(
         });
     }
 
+    /// <summary>
+    /// The first decision on <paramref name="cancellationId"/> when it was a refusal and this request repeats it, to be
+    /// replayed; <c>null</c> when the id is new here or was first authorized. A request repeating the id with other content
+    /// is refused as <c>BUSINESS_ID_CONTENT_CONFLICT</c> (onboard-hmi#421).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The protocol's rule (98f17264, as for <c>skipRequestId</c>): one press, one <c>cancellationId</c>, journaled before it
+    /// is sent; a reconnect or a restart resends that press under a new messageId with the same id and the same payload, and
+    /// is answered with the first decision; the same id with other content is a business id content conflict; a press after a
+    /// refusal is a new request under a new id. Until onboard-hmi#421 the vehicle derived the id from the demand and the
+    /// attempt, so every press over one load asked under one id with a new <c>verifiedAt</c>, and this server judged a refused
+    /// id afresh on every arrival (control-server#837's interim agreement, Coordinator13 10-25). A refusal records nothing but
+    /// its answer, so the answer is read back from the inbox, where the first request and its first response are kept.
+    /// </para>
+    /// <para>
+    /// An id first authorized is left to the paths below, which answer it from its workflow (and refuse other content when
+    /// they write it): what they do with a resend once the load has since gone to a person's recovery is theirs and is not
+    /// changed here. The content is compared payload to payload, as the skip does. Only this vehicle's own requests count: a
+    /// request another vehicle sent under the same id is judged against that vehicle and refused (control-server#116 review,
+    /// item 3), and is neither this vehicle's first decision nor a conflict with it.
+    /// </para>
+    /// </remarks>
+    private async Task<JsonElement?> FirstLoadCancellationRefusalAsync(
+        JsonElement root,
+        string cancellationId,
+        CancellationToken cancellationToken)
+    {
+        string messageId = RequiredString(root, "messageId");
+        string agvId = RequiredString(root, "agvId");
+        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "LoadCancellationStartRequested" && row.MessageId != messageId &&
+                          row.RequestJson.Contains(cancellationId))
+            .OrderBy(row => row.ReceivedAtUtcTicks)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        System.Text.Json.Nodes.JsonNode? candidate =
+            System.Text.Json.Nodes.JsonNode.Parse(root.GetProperty("payload").GetRawText());
+        ProtocolInboxRow? first = null;
+        foreach (ProtocolInboxRow row in rows)
+        {
+            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+            JsonElement stored = document.RootElement.GetProperty("payload");
+            if (!string.Equals(stored.GetProperty("cancellationId").GetString(), cancellationId, StringComparison.Ordinal) ||
+                !string.Equals(document.RootElement.GetProperty("agvId").GetString(), agvId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+            if (!System.Text.Json.Nodes.JsonNode.DeepEquals(
+                    System.Text.Json.Nodes.JsonNode.Parse(stored.GetRawText()), candidate))
+            {
+                throw new InboundMessageRejectedException(
+                    ServerReasonCodes.BusinessIdContentConflict,
+                    "cancellationId was used before with different content.");
+            }
+            first ??= row;
+        }
+        if (first is null)
+        {
+            return null;
+        }
+        using JsonDocument answer = JsonDocument.Parse(first.FirstResponseJson.Split('\n')[0]);
+        return answer.RootElement.GetProperty("messageType").GetString() == "LoadCancellationAuthorization" &&
+               answer.RootElement.GetProperty("payload") is { } decided &&
+               decided.GetProperty("decision").GetString() == "REJECTED"
+            ? decided.Clone()
+            : null;
+    }
+
     private async Task<string> AuthorizeLoadCancellationAsync(
         JsonElement root,
         string contentHash,
@@ -1464,6 +1532,11 @@ public sealed class OnboardRecoveryCoordinator(
         string cancellationId = RequiredUuid(payload, "cancellationId");
         string demandId = RequiredUuid(payload, "demandId");
         string? attemptId = OptionalUuid(payload, "slotOperationAttemptId");
+        if (await FirstLoadCancellationRefusalAsync(root, cancellationId, cancellationToken).ConfigureAwait(false)
+            is { } firstRefusal)
+        {
+            return Response(root, "LoadCancellationAuthorization", firstRefusal);
+        }
         if (attemptId is null)
         {
             return await AuthorizeLoadCancellationBeforeSublotAsync(
