@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 168d32243..e3105c188 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -1497,8 +1497,7 @@ public sealed class OnboardRecoveryCoordinator(
+         {
+             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+             JsonElement stored = document.RootElement.GetProperty("payload");
+-            if (!string.Equals(stored.GetProperty("cancellationId").GetString(), cancellationId, StringComparison.Ordinal) ||
+-                !string.Equals(document.RootElement.GetProperty("agvId").GetString(), agvId, StringComparison.Ordinal))
++            if (!string.Equals(stored.GetProperty("cancellationId").GetString(), cancellationId, StringComparison.Ordinal))
+             {
+                 continue;
+             }

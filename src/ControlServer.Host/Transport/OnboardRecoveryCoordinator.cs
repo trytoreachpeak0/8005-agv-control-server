@@ -1455,6 +1455,100 @@ public sealed class OnboardRecoveryCoordinator(
         });
     }
 
+    /// <summary>
+    /// The first decision on <paramref name="cancellationId"/> when it was a refusal and this request repeats it, to be
+    /// replayed; <c>null</c> when the id is new here or was first authorized. A request repeating the id with other content
+    /// is refused as <c>BUSINESS_ID_CONTENT_CONFLICT</c> (onboard-hmi#421).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The protocol's rule (98f17264, as for <c>skipRequestId</c>): one press, one <c>cancellationId</c>, journaled before it
+    /// is sent; a reconnect or a restart resends that press under a new messageId with the same id and the same payload, and
+    /// is answered with the first decision; the same id with other content is a business id content conflict; a press after a
+    /// refusal is a new request under a new id. Until onboard-hmi#421 the vehicle derived the id from the demand and the
+    /// attempt, so every press over one load asked under one id with a new <c>verifiedAt</c>, and this server judged a refused
+    /// id afresh on every arrival (control-server#837's interim agreement, Coordinator13 10-25). A refusal records nothing but
+    /// its answer, so the answer is read back from the inbox, where the first request and its first response are kept.
+    /// </para>
+    /// <para>
+    /// <b>The same content is looked for before other content is called a conflict</b> (onboard-hmi#421 review H2). An
+    /// onboard of the interim era asked under one derived id once per press, so an id can be on file with a refusal (press
+    /// A) and an authorization (press B); the vehicle resending B -- the press it journaled and never had answered -- is
+    /// that request again and is answered as B was, not refused for A. Only when no request on file carries this content
+    /// is the id a conflict. Among identical requests the earliest's answer is the first decision.
+    /// </para>
+    /// <para>
+    /// <b>An id with a workflow is answered from it</b> (incremental review L1): the authorization stands whatever the inbox
+    /// holds besides, including the same press refused before the interim server re-judged it.
+    /// </para>
+    /// <para>
+    /// An id first authorized is left to the paths below, which answer it from its workflow (and refuse other content when
+    /// they write it): what they do with a resend once the load has since gone to a person's recovery is theirs and is not
+    /// changed here. The content is compared payload to payload, as the skip does. Only this vehicle's own requests count: a
+    /// request another vehicle sent under the same id is judged against that vehicle and refused (control-server#116 review,
+    /// item 3), and is neither this vehicle's first decision nor a conflict with it.
+    /// </para>
+    /// </remarks>
+    private async Task<JsonElement?> FirstLoadCancellationRefusalAsync(
+        JsonElement root,
+        string cancellationId,
+        CancellationToken cancellationToken)
+    {
+        string messageId = RequiredString(root, "messageId");
+        string agvId = RequiredString(root, "agvId");
+        // An id this vehicle has a workflow under was authorized: that record answers it, as it always has, whatever the
+        // inbox holds besides (onboard-hmi#421 incremental review L1). The interim server judged a refused id afresh, so the
+        // same press can be on file refused first and authorized after; replaying that earlier refusal would let the vehicle
+        // drop its request and load on while the workflow waits for a result, and refuse every new id over the attempt.
+        if (await dbContext.RecoveryWorkflows.AsNoTracking().AnyAsync(
+                row => row.WorkflowId == cancellationId && row.AgvId == agvId, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "LoadCancellationStartRequested" && row.MessageId != messageId &&
+                          row.RequestJson.Contains(cancellationId))
+            .OrderBy(row => row.ReceivedAtUtcTicks)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        System.Text.Json.Nodes.JsonNode? candidate =
+            System.Text.Json.Nodes.JsonNode.Parse(root.GetProperty("payload").GetRawText());
+        ProtocolInboxRow? first = null;
+        bool otherContentOnFile = false;
+        foreach (ProtocolInboxRow row in rows)
+        {
+            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+            JsonElement stored = document.RootElement.GetProperty("payload");
+            if (!string.Equals(stored.GetProperty("cancellationId").GetString(), cancellationId, StringComparison.Ordinal) ||
+                !string.Equals(document.RootElement.GetProperty("agvId").GetString(), agvId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+            if (System.Text.Json.Nodes.JsonNode.DeepEquals(
+                    System.Text.Json.Nodes.JsonNode.Parse(stored.GetRawText()), candidate))
+            {
+                first ??= row;
+            }
+            else
+            {
+                otherContentOnFile = true;
+            }
+        }
+        if (first is null)
+        {
+            return otherContentOnFile
+                ? throw new InboundMessageRejectedException(
+                    ServerReasonCodes.BusinessIdContentConflict,
+                    "cancellationId was used before with different content.")
+                : null;
+        }
+        using JsonDocument answer = JsonDocument.Parse(first.FirstResponseJson.Split('\n')[0]);
+        return answer.RootElement.GetProperty("messageType").GetString() == "LoadCancellationAuthorization" &&
+               answer.RootElement.GetProperty("payload") is { } decided &&
+               decided.GetProperty("decision").GetString() == "REJECTED"
+            ? decided.Clone()
+            : null;
+    }
+
     private async Task<string> AuthorizeLoadCancellationAsync(
         JsonElement root,
         string contentHash,
@@ -1464,6 +1558,11 @@ public sealed class OnboardRecoveryCoordinator(
         string cancellationId = RequiredUuid(payload, "cancellationId");
         string demandId = RequiredUuid(payload, "demandId");
         string? attemptId = OptionalUuid(payload, "slotOperationAttemptId");
+        if (await FirstLoadCancellationRefusalAsync(root, cancellationId, cancellationToken).ConfigureAwait(false)
+            is { } firstRefusal)
+        {
+            return Response(root, "LoadCancellationAuthorization", firstRefusal);
+        }
         if (attemptId is null)
         {
             return await AuthorizeLoadCancellationBeforeSublotAsync(
@@ -1497,7 +1596,19 @@ public sealed class OnboardRecoveryCoordinator(
         // account or by this server's readings, and a load with a basket in it is never cancelled (the revised REQ-0211).
         bool skipHeld = !declared && await RemainingBasketsSkips
             .HoldsCancellationAsync(dbContext, demandId, attemptId!, cancellationToken).ConfigureAwait(false);
-        bool allowedInState = !declared && !skipHeld &&
+        // Another cancellation of this attempt still open (onboard-hmi#421 review M1): one press, one cancellationId, so the
+        // id no longer tells two presses over one load apart the way the derived id did; a second authorization would open a
+        // second workflow over the same slots, and the one left without a result holds the stop. The vehicle sends a new id
+        // only once the first is answered, so this is a second line, kept for an answer the vehicle lost or dropped.
+        string inFlightAgvId = RequiredString(root, "agvId");
+        bool anotherOpen = !declared && !skipHeld && await dbContext.RecoveryWorkflows.AsNoTracking().AnyAsync(
+            row => row.WorkflowType == "LOAD_CANCELLATION" && row.SlotOperationAttemptId == attemptId &&
+                   row.WorkflowId != cancellationId && row.AgvId == inFlightAgvId &&
+                   (row.State == RecoveryWorkflowState.AwaitingAuthorization ||
+                    row.State == RecoveryWorkflowState.CommandPending ||
+                    row.State == RecoveryWorkflowState.AwaitingResult),
+            cancellationToken).ConfigureAwait(false);
+        bool allowedInState = !declared && !skipHeld && !anotherOpen &&
                               demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&
                               (operation is null || operation.DemandId == demandId &&
                                operation.OperationType == SlotOperationType.Load &&
@@ -1569,6 +1680,9 @@ public sealed class OnboardRecoveryCoordinator(
                 : skipHeld ? Problem(
                     ServerReasonCodes.LoadCancellationBasketLoaded, "payload.slotOperationAttemptId",
                     RemainingBasketsSkipHeldCancellationMessage)
+                : anotherOpen ? Problem(
+                    ServerReasonCodes.ActionNotAllowedInState, "payload.cancellationId",
+                    "Another cancellation of this load is already authorized and awaiting its result.")
                 : slotRefusal ?? RefusedCancellationProblem(
                     demand, "payload.demandId", "Load cancellation is not safe in the current state.")
         });

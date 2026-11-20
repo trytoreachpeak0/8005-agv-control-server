@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 3c806e33e..bf59aa766 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -1517,7 +1517,7 @@ public sealed class OnboardRecoveryCoordinator(
+             }
+             else
+             {
+-                otherContentOnFile = true;
++                otherContentOnFile = false;
+             }
+         }
+         if (first is null)

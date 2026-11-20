@@ -1,0 +1,15 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 168d32243..9dc08209b 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -1505,9 +1505,7 @@ public sealed class OnboardRecoveryCoordinator(
+             if (!System.Text.Json.Nodes.JsonNode.DeepEquals(
+                     System.Text.Json.Nodes.JsonNode.Parse(stored.GetRawText()), candidate))
+             {
+-                throw new InboundMessageRejectedException(
+-                    ServerReasonCodes.BusinessIdContentConflict,
+-                    "cancellationId was used before with different content.");
++                continue;
+             }
+             first ??= row;
+         }

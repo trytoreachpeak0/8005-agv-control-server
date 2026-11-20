@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index adfe9030e..443a319d9 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -1501,7 +1501,7 @@ public sealed class OnboardRecoveryCoordinator(
+         // same press can be on file refused first and authorized after; replaying that earlier refusal would let the vehicle
+         // drop its request and load on while the workflow waits for a result, and refuse every new id over the attempt.
+         if (await dbContext.RecoveryWorkflows.AsNoTracking().AnyAsync(
+-                row => row.WorkflowId == cancellationId && row.AgvId == agvId, cancellationToken).ConfigureAwait(false))
++                row => row.WorkflowId == cancellationId && row.AgvId == agvId && row.WorkflowId == "mutated", cancellationToken).ConfigureAwait(false))
+         {
+             return null;
+         }
