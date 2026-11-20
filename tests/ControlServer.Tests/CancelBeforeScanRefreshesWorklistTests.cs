@@ -284,6 +284,165 @@ public sealed class CancelBeforeScanRefreshesWorklistTests
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, settled.Stage);
     }
 
+    /// <summary>
+    /// cs#909 审查 M1：甲的录入已到、引擎在锁外读车位置（RIoT）的那一刻，乙的扫码前取消授权并落定，取消那一侧暂存了只期待甲的 R+1 录入请求。
+    /// 引擎随后在写锁里给甲下装货命令，结算的必须是此刻那一版——修之前它用锁外读的游标只结算已退役的 R，R+1 未确认、未退役、又在补发白名单里，
+    /// 每轮补发，甲在装时屏上又出「请扫码」。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancelSettledWhileTheEngineReadsTheVehicleForAnotherEntryLeavesNoEntryRequestToReplay(bool stagingRules)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StagingDepartureRules.Enabled = stagingRules;
+        await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        StopEntryAddress address = (await JourneyStopCursor.LoadAsync(fixture.Context, runtime, Token))
+            .EntryAddressOfCurrentStop(runtime.WorklistRevision);
+        await AddInboxAsync(fixture, FirstSubmissionId, "SublotSubmitted", SublotSubmission(fixture, address, FirstSublot));
+        HashSet<string> rowsBefore = await OutboxIdsAsync(fixture);
+        int fired = 0;
+        fixture.Riot.ReadVehicleDelay = async _ =>
+        {
+            if (Interlocked.Exchange(ref fired, 1) == 0)
+            {
+                await CancelOnItsOwnConnectionAsync(fixture, "c9090000-0000-4000-8000-000000000011", SecondDemandId);
+            }
+        };
+
+        await TickAndRunAsync(fixture);
+        fixture.Riot.ReadVehicleDelay = null;
+        fixture.Context.ChangeTracker.Clear();
+
+        // 前提：交错发生了——乙在这一轮里被取消终结、取消那一侧暂存了只期待甲的新一版录入请求，而引擎照样给甲下了装货命令。
+        Assert.Equal(1, fired);
+        Assert.Equal(
+            JourneyDemandStatuses.Terminated, (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, SecondDemandId)).Status);
+        Assert.Equal(
+            JourneyDemandStatuses.Loading, (await Batch7MultiDemandAdvanceTests.MembershipAsync(fixture, FirstDemandId)).Status);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        Added staged = Assert.Single(await AddedSinceAsync(fixture, rowsBefore, "SublotEntryRequested"));
+        Assert.Equal([FirstSublot], staged.Sublots);
+
+        // 甲在装：本站没有一条录入请求还会被补发。
+        string[] pending = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "SublotEntryRequested" && row.AcknowledgedAt == null && row.FencedAt == null)
+            .Select(row => row.MessageId)
+            .ToArrayAsync(Token);
+        Assert.True(pending.Length == 0, $"Entry requests still pending replay while the first demand loads: {string.Join(", ", pending)}.");
+        int linesBeforeRound = fixture.Peer.Lines.Count;
+        await RoundAsync(fixture);
+        Assert.DoesNotContain(
+            fixture.Peer.Lines.Skip(linesBeforeRound).Select(System.Text.Encoding.UTF8.GetString),
+            line => line.Contains("\"SublotEntryRequested\"", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// cs#909 审查 L3：一站三条，中间不跑引擎、连续扫码前取消乙与丙。每次取消各发一版，号严格递增；较早各版全部退役；最后那一版只列甲、录入请求只期待甲。
+    /// 第二次取消在真实连接的做法下（应答写出之后才发）线上顺序是「应答 → 清单 → 录入请求」。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task TwoCancelsBeforeScanInARowEachSendAHigherVersionAfterTheirAnswer(bool stagingRules)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StagingDepartureRules.Enabled = stagingRules;
+        await ThreeDemandsAtThePickupAsync(fixture);
+        HashSet<string> rowsBefore = await OutboxIdsAsync(fixture);
+        long highestBefore = await HighestRevisionAsync(fixture, "CurrentStopWorklistSnapshot", rowsBefore);
+
+        await CancelOnItsOwnConnectionAsync(fixture, "c9090000-0000-4000-8000-000000000021", SecondDemandId);
+        HashSet<string> rowsAfterFirst = await OutboxIdsAsync(fixture);
+        Added first = Assert.Single(await AddedSinceAsync(fixture, rowsBefore, "CurrentStopWorklistSnapshot"));
+        Assert.True(first.Revision > highestBefore);
+        Assert.Equal([FirstDemandId, ThirdDemandId], first.Demands);
+
+        Wire second = await CancelOnItsOwnConnectionAsync(fixture, "c9090000-0000-4000-8000-000000000022", ThirdDemandId);
+        fixture.Context.ChangeTracker.Clear();
+
+        Added worklist = Assert.Single(await AddedSinceAsync(fixture, rowsAfterFirst, "CurrentStopWorklistSnapshot"));
+        Assert.True(worklist.Revision > first.Revision, $"Revision {worklist.Revision} does not climb above {first.Revision}.");
+        Assert.Equal([FirstDemandId], worklist.Demands);
+        Added entry = Assert.Single(await AddedSinceAsync(fixture, rowsAfterFirst, "SublotEntryRequested"));
+        Assert.Equal(worklist.Revision, entry.Revision);
+        Assert.Equal([FirstSublot], entry.Sublots);
+        await AssertNothingOlderIsReplayedAsync(fixture, worklist.Revision);
+
+        // 应答写出之前一行都不发；写出之后先清单、后录入请求。
+        Assert.Equal("DurableAck", MessageType(second.Answer.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]));
+        Assert.Empty(second.SentBeforeTheAnswer);
+        string[] after = [.. second.SentAfterTheAnswer.Where(line =>
+            line.Contains(worklist.MessageId, StringComparison.Ordinal) || line.Contains(entry.MessageId, StringComparison.Ordinal))];
+        Assert.Equal(
+            ["CurrentStopWorklistSnapshot", "SublotEntryRequested"],
+            after.Select(MessageType).ToArray());
+    }
+
+    private sealed record Wire(string Answer, string[] SentBeforeTheAnswer, string[] SentAfterTheAnswer);
+
+    private static string MessageType(string line)
+    {
+        using JsonDocument document = JsonDocument.Parse(line);
+        return document.RootElement.GetProperty("messageType").GetString()!;
+    }
+
+    /// <summary>
+    /// 在自己的连接上（不碰 <c>fixture.Context</c>，引擎可能正在用它）授权并落定一次扫码前取消，车报 ALL_EMPTY。按真实连接的做法，
+    /// 应答写出之后才放延迟的发送：返回应答、应答之前线上发了什么、之后发了什么。
+    /// </summary>
+    private static async Task<Wire> CancelOnItsOwnConnectionAsync(RuntimeFixture fixture, string cancellationId, string demandId)
+    {
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer,
+            runtimeOptions: fixture.Options);
+        OnboardConnectionState state = StopEndedJourneyContinuesTests.Connection(fixture);
+        state.DeferOutboundUntilResponseWritten = true;
+        object @operator = new { operatorId = "OP-001", verificationMethod = "BADGE", verifiedAt = fixture.Clock.GetUtcNow() };
+        string authorization = await processor.ProcessAsync(
+            StopEndedJourneyContinuesTests.Envelope(
+                fixture, JourneyPlanBuilder.StableGuid(cancellationId, "request"), "LoadCancellationStartRequested", new
+                {
+                    cancellationId,
+                    demandId,
+                    slotOperationAttemptId = (string?)null,
+                    @operator,
+                    reason = "Nothing to load at this stop."
+                }),
+            state,
+            Token);
+        Assert.Equal(
+            "AUTHORIZED",
+            StopEndedJourneyContinuesTests.FirstLinePayload(authorization).GetProperty("decision").GetString());
+        await processor.FlushDeferredOutboundAsync(state, Token);
+        int before = fixture.Peer.Lines.Count;
+        string answer = await processor.ProcessAsync(
+            StopEndedJourneyContinuesTests.Envelope(
+                fixture, JourneyPlanBuilder.StableGuid(cancellationId, "result"), "LoadCancellationResult", new
+                {
+                    cancellationId,
+                    demandId,
+                    slotOperationAttemptId = (string?)null,
+                    overallOutcome = "ALL_EMPTY",
+                    slotResults = Array.Empty<object>(),
+                    observedAt = Now
+                }),
+            state,
+            Token);
+        string[] sentBefore = [.. fixture.Peer.Lines.Skip(before).Select(System.Text.Encoding.UTF8.GetString)];
+        int written = fixture.Peer.Lines.Count;
+        await processor.FlushDeferredOutboundAsync(state, Token);
+        string[] sentAfter = [.. fixture.Peer.Lines.Skip(written).Select(System.Text.Encoding.UTF8.GetString)];
+        Assert.Equal(
+            JourneyDemandStatuses.Terminated,
+            (await connection.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(row => row.DemandId == demandId, Token)).Status);
+        return new Wire(answer, sentBefore, sentAfter);
+    }
+
     /// <summary>一行线上报文是不是还列着被取消的乙：清单项里有乙的需求号，或录入请求还期待乙的子批。</summary>
     private static bool ListsTheCancelled(string line)
     {

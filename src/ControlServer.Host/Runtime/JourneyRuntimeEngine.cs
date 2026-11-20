@@ -1845,8 +1845,29 @@ public sealed partial class JourneyRuntimeEngine(
                     // The submission is this command's answer. Leaving the command unsettled replayed it
                     // into every later session, where the peer refused it as a business id whose content
                     // had changed and tore the session down.
-                    await store.SettleAnsweredCommandAsync(
-                        stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), now, cancellationToken).ConfigureAwait(false);
+                    //
+                    // 结算的是写锁里此刻的那一版，不是锁外游标算出的那一版（control-server#909 审查 M1）。同站另一条的扫码前取消可以在锁外
+                    // 那几次读（尤其上面读车位置那一次 HTTP）之间落定：取消那一侧（RemainingStopWorklist）把号推到 R+1、暂存只期待这一条的
+                    // R+1 录入请求、退役 R。只按锁外游标结算 R，R+1 就成了未确认、未退役、又在补发白名单里的孤儿，每轮补发，车在装时屏上又出
+                    // 「请扫码」。所以本停靠从首版到此刻那一版的录入请求都结算：车答的就是这一站的录入，这一站没有别的录入还开着。
+                    // 已确认、已退役或不存在的那几版不动：退役的行补发本来就不送，不给它补一个「已答」。
+                    JourneyStopCursor committed = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+                        .ConfigureAwait(false);
+                    long firstAtStop = committed.FirstWorklistRevisionAt(runtime.WorklistRevision, committed.Current);
+                    long revisionNow = committed.WorklistRevisionAt(runtime.WorklistRevision, committed.Current);
+                    List<string> versions = [];
+                    for (long version = firstAtStop; version <= revisionNow; version++)
+                    {
+                        versions.Add(committed.SublotRequestMessageIdAt(runtime.WorklistRevision, committed.Current, version));
+                    }
+                    string[] open = await dbContext.ProtocolOutbox.AsNoTracking()
+                        .Where(row => versions.Contains(row.MessageId) && row.AcknowledgedAt == null && row.FencedAt == null)
+                        .Select(row => row.MessageId)
+                        .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+                    foreach (string answered in open)
+                    {
+                        await store.SettleAnsweredCommandAsync(answered, now, cancellationToken).ConfigureAwait(false);
+                    }
                     SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

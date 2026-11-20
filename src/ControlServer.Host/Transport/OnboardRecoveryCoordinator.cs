@@ -2532,6 +2532,8 @@ public sealed class OnboardRecoveryCoordinator(
             // 给了路网的终结在删掉空停靠之后还换序（批次7-10，control-server#215，调度决策 6）；没给就只删不换。
             PickupStopTermination cancelledTermination =
                 new(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false));
+            // 终结（含业务键抑制的 SuppressedAt）与下面新一版清单的 CreatedAt 用同一个时刻：L2 场景 multi-demand-stop-cancel-one-refreshes-at-once
+            // 的 L2-MDR-02 正是以「新清单 CreatedAt == SuppressedAt」判它们同一次保存（control-server#909 审查 L2）。改这里的时钟读取要同步改那个场景。
             DateTimeOffset cancelledAt = timeProvider.GetUtcNow();
             await cancelledTermination
                 .StageAsync(
