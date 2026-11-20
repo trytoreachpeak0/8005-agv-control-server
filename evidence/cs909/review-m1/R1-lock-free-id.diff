@@ -1,0 +1,18 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 37de08397..76b3b25cd 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1864,10 +1864,9 @@ public sealed partial class JourneyRuntimeEngine(
+                         .Where(row => versions.Contains(row.MessageId) && row.AcknowledgedAt == null && row.FencedAt == null)
+                         .Select(row => row.MessageId)
+                         .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+-                    foreach (string answered in open)
+-                    {
+-                        await store.SettleAnsweredCommandAsync(answered, now, cancellationToken).ConfigureAwait(false);
+-                    }
++                    _ = open;
++                    await store.SettleAnsweredCommandAsync(
++                        stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), now, cancellationToken).ConfigureAwait(false);
+                     SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
+                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                     await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

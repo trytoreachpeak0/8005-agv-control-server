@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 37de08397..70c14a93c 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1856,7 +1856,7 @@ public sealed partial class JourneyRuntimeEngine(
+                     long firstAtStop = committed.FirstWorklistRevisionAt(runtime.WorklistRevision, committed.Current);
+                     long revisionNow = committed.WorklistRevisionAt(runtime.WorklistRevision, committed.Current);
+                     List<string> versions = [];
+-                    for (long version = firstAtStop; version <= revisionNow; version++)
++                    for (long version = firstAtStop; version < revisionNow; version++)
+                     {
+                         versions.Add(committed.SublotRequestMessageIdAt(runtime.WorklistRevision, committed.Current, version));
+                     }

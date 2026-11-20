@@ -28,3 +28,16 @@
 - `l2/red-M1-no-stage/`：去掉取消时的暂存（`mutations/L2-M1-no-stage.diff`），只有 L2-MDR-02 红：新一版 `06:17:35.997`，取消 `06:17:35.185`，由引擎下一轮写。L2-MDR-03（没有还会补发的录入请求期待乙）修前也绿：合成装置的引擎一轮不到一秒，读的时候旧版已被下一轮退役。同版重发这一点由 L1 守（M2）。
 
 两次都是本机完整运行（含构建）；日志与快照目录已删，只留 `SUMMARY.md`、`assertions.json`、`timeline.jsonl`。
+
+## 审查返工（M1、L3、L2）
+
+审查 M1：甲的录入已到、引擎在锁外读车位置时，乙的扫码前取消落定、取消那一侧暂存了只期待甲的 R+1 录入请求；引擎随后给甲下装货命令，只按锁外游标结算已退役的 R，R+1 成为未确认、未退役、又在补发白名单里的孤儿。修法：写事务内用 `JourneyStopCursor.LoadAsync` 重读游标，结算本停靠从首版到此刻那一版里未确认、未退役的录入请求。
+
+- `review-m1/red-before-fix.txt`：修 M1 之前（`2272ee80c` 加上新用例）跑本类。`ACancelSettledWhileTheEngineReadsTheVehicleForAnotherEntryLeavesNoEntryRequestToReplay` 两格红：`Entry requests still pending replay while the first demand loads`。同一次运行里 L3 用例 `TwoCancelsBeforeScanInARow…` 两格也红，那是测试自己的断言写错了（数组放进元组按引用比，`Expected (3, ["SUBLOT-001"])` 与 `Actual` 相同），已改为分开断言，与 M1 无关。
+- 修后本类 20/20。
+- `review-m1/summary-m1.txt`：三个变异全红，只红在 M1 那条用例：R1 改回按锁外游标结算，R2 漏结算此刻那一版，R3 此刻的号改读锁外游标。脚本 `run-m1.sh`，做法同上（先提交、`--no-incremental`、只还原被变异文件）。
+
+L3：`TwoCancelsBeforeScanInARowEachSendAHigherVersionAfterTheirAnswer`（开关开/关）。一站三条，中间不跑引擎、连续取消乙与丙：两版号严格递增、较早各版退役、最后一版只列甲、录入请求只期待甲；按真实连接做法（`DeferOutboundUntilResponseWritten`），应答写出之前一行不发，之后先清单、后录入请求。
+
+L2：`OnboardRecoveryCoordinator` 的 `cancelledAt` 处与场景头注释写明 L2-MDR-02 依赖「终结与新一版清单共用这一个时刻」。
+- 返工后本机相关类定向（同前，加 Load 相关类）2152/2152 通过，改动文件 `dotnet format --verify-no-changes` 通过。

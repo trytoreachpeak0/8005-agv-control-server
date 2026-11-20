@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 37de08397..9f6f087a6 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1854,7 +1854,7 @@ public sealed partial class JourneyRuntimeEngine(
+                     JourneyStopCursor committed = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+                         .ConfigureAwait(false);
+                     long firstAtStop = committed.FirstWorklistRevisionAt(runtime.WorklistRevision, committed.Current);
+-                    long revisionNow = committed.WorklistRevisionAt(runtime.WorklistRevision, committed.Current);
++                    long revisionNow = stops.WorklistRevisionAt(runtime.WorklistRevision, stops.Current);
+                     List<string> versions = [];
+                     for (long version = firstAtStop; version <= revisionNow; version++)
+                     {
