@@ -5303,7 +5303,7 @@ public sealed partial class JourneyRuntimeEngine(
     /// 所以这里恒为一项，与原来写死的那一项逐字相同。
     /// </para>
     /// </remarks>
-    private static CurrentStopWorklistProjection Worklist(
+    internal static CurrentStopWorklistProjection Worklist(
         JourneyStopRow stop,
         IReadOnlyList<JourneyStopDemand> demands,
         long revision,
