@@ -186,6 +186,174 @@ public sealed class CancelBeforeScanRefreshesWorklistTests
         await AssertNothingOlderIsReplayedAsync(fixture, worklist.Revision);
     }
 
+    /// <summary>
+    /// control-server#909：取消落定的那一次处理里，车就要收到去掉被取消那一条的新一版清单与同号录入请求，不等引擎下一轮。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 修之前这两条要等引擎下一轮由 #723 那一段补，而那一轮的轮首补发先把车上那一版（仍期待被取消的子批）的录入请求原样再发一遍：
+    /// 生产 agv02 91 次取消里中位 11.7 秒、最长 41.6 秒才有新清单，期间 91 次全部收到同版重发，屏上那一行又能按。
+    /// </para>
+    /// <para>
+    /// 修订号只拿事件之后新增的发件箱行比（cs#904 审查 M1）：事件之前的行谁发的、发了几版都不管，新的这一版必须比它们都高。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancelBeforeScanThatLeavesTheStopOpenSendsTheNewWorklistInTheSameProcessing(bool stagingRules)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StagingDepartureRules.Enabled = stagingRules;
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        Sent before = await LatestAsync(fixture, "CurrentStopWorklistSnapshot");
+        Assert.Equal([FirstDemandId, SecondDemandId], before.Demands);
+        HashSet<string> rowsBefore = await OutboxIdsAsync(fixture);
+        long highestBefore = await HighestRevisionAsync(fixture, "CurrentStopWorklistSnapshot", rowsBefore);
+        long highestEntryBefore = await HighestRevisionAsync(fixture, "SublotEntryRequested", rowsBefore);
+        int linesBefore = fixture.Peer.Lines.Count;
+
+        await CancelTheSecondBeforeScanAsync(fixture);
+
+        // 没跑引擎：新的一版只能是取消那一次处理暂存、发出的。
+        Added worklist = Assert.Single(await AddedSinceAsync(fixture, rowsBefore, "CurrentStopWorklistSnapshot"));
+        Assert.True(
+            worklist.Revision > highestBefore,
+            $"The new worklist has revision {worklist.Revision}, not above the {highestBefore} the vehicle already had.");
+        Assert.Equal([FirstDemandId], worklist.Demands);
+        Assert.Equal(before.OperationSessionId, worklist.OperationSessionId);
+        Assert.Equal(before.Deadline, worklist.Deadline);
+        Added entry = Assert.Single(await AddedSinceAsync(fixture, rowsBefore, "SublotEntryRequested"));
+        Assert.True(entry.Revision > highestEntryBefore);
+        Assert.Equal(worklist.Revision, entry.Revision);
+        Assert.Equal([FirstSublot], entry.Sublots);
+        string[] sentByTheResult = [.. fixture.Peer.Lines.Skip(linesBefore).Select(System.Text.Encoding.UTF8.GetString)];
+        Assert.Contains(sentByTheResult, line => line.Contains(worklist.MessageId, StringComparison.Ordinal));
+        Assert.Contains(sentByTheResult, line => line.Contains(entry.MessageId, StringComparison.Ordinal));
+        Assert.DoesNotContain(sentByTheResult, line => ListsTheCancelled(line));
+        // 补发按未确认、未退役的行送：仍列着乙的那一版一行都不剩，引擎轮首的补发便没有东西可重发。
+        await AssertNothingOlderIsReplayedAsync(fixture, worklist.Revision);
+
+        // 接着一轮：不重发列着乙的那一版、不再多升号；阶段仍等录入。
+        int linesBeforeRound = fixture.Peer.Lines.Count;
+        await RoundAsync(fixture);
+        Assert.DoesNotContain(
+            fixture.Peer.Lines.Skip(linesBeforeRound).Select(System.Text.Encoding.UTF8.GetString), line => ListsTheCancelled(line));
+        Assert.Equal(worklist.Revision, (await LatestAsync(fixture, "CurrentStopWorklistSnapshot")).Revision);
+        Assert.Equal(worklist.Revision, (await LatestAsync(fixture, "SublotEntryRequested")).Revision);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+
+        // 甲照常录入、开始装。
+        JourneyRuntimeRow loading = await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, loading.Stage);
+    }
+
+    /// <summary>control-server#909 的在装那一格：甲在装时取消乙，同一次处理里发只列甲的新清单；甲在装、没有开着的录入，不发录入请求。</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancelBeforeScanWhileAnotherLoadsSendsTheNewWorklistInTheSameProcessing(bool stagingRules)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StagingDepartureRules.Enabled = stagingRules;
+        await Batch7MultiDemandAdvanceTests.TwoDemandsAtThePickupAsync(fixture);
+        Assert.Equal(
+            JourneyRuntimeStage.AwaitingLoadResult,
+            (await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId)).Stage);
+        HashSet<string> rowsBefore = await OutboxIdsAsync(fixture);
+        long highestBefore = await HighestRevisionAsync(fixture, "CurrentStopWorklistSnapshot", rowsBefore);
+        int linesBefore = fixture.Peer.Lines.Count;
+
+        await CancelTheSecondBeforeScanAsync(fixture);
+
+        Added worklist = Assert.Single(await AddedSinceAsync(fixture, rowsBefore, "CurrentStopWorklistSnapshot"));
+        Assert.True(worklist.Revision > highestBefore);
+        Assert.Equal([FirstDemandId], worklist.Demands);
+        Assert.Empty(await AddedSinceAsync(fixture, rowsBefore, "SublotEntryRequested"));
+        Assert.Contains(
+            fixture.Peer.Lines.Skip(linesBefore).Select(System.Text.Encoding.UTF8.GetString),
+            line => line.Contains(worklist.MessageId, StringComparison.Ordinal));
+        await AssertNothingOlderIsReplayedAsync(fixture, worklist.Revision, "CurrentStopWorklistSnapshot");
+
+        await RoundAsync(fixture);
+        Assert.Equal(worklist.Revision, (await LatestAsync(fixture, "CurrentStopWorklistSnapshot")).Revision);
+        JourneyRuntimeRow settled = await SettleLoadAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, settled.Stage);
+    }
+
+    /// <summary>一行线上报文是不是还列着被取消的乙：清单项里有乙的需求号，或录入请求还期待乙的子批。</summary>
+    private static bool ListsTheCancelled(string line)
+    {
+        using JsonDocument document = JsonDocument.Parse(line);
+        JsonElement root = document.RootElement;
+        string? type = root.GetProperty("messageType").GetString();
+        JsonElement payload = root.GetProperty("payload");
+        return type switch
+        {
+            "CurrentStopWorklistSnapshot" => payload.GetProperty("items").EnumerateArray()
+                .Any(item => item.GetProperty("demandId").GetString() == SecondDemandId),
+            "SublotEntryRequested" => payload.GetProperty("expectedSublots").EnumerateArray()
+                .Any(item => item.GetString() == SecondSublot),
+            _ => false,
+        };
+    }
+
+    private static async Task<HashSet<string>> OutboxIdsAsync(RuntimeFixture fixture) =>
+        [.. await fixture.Context.ProtocolOutbox.AsNoTracking().Select(row => row.MessageId).ToArrayAsync(Token)];
+
+    private static async Task<long> HighestRevisionAsync(RuntimeFixture fixture, string messageType, HashSet<string> among)
+    {
+        string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == messageType)
+            .Where(row => among.Contains(row.MessageId))
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(Token);
+        Assert.NotEmpty(payloads);
+        return payloads.Max(json =>
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            return document.RootElement.GetProperty("payload").GetProperty("worklistRevision").GetInt64();
+        });
+    }
+
+    private sealed record Added(
+        string MessageId, long Revision, string[] Demands, string[] Sublots, string? OperationSessionId, DateTimeOffset? Deadline);
+
+    /// <summary>某一类里、<paramref name="before"/> 之后新增的发件箱行。</summary>
+    private static async Task<Added[]> AddedSinceAsync(RuntimeFixture fixture, HashSet<string> before, string messageType)
+    {
+        var rows = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == messageType)
+            .Select(row => new { row.MessageId, row.PayloadJson })
+            .ToArrayAsync(Token);
+        return
+        [
+            .. rows.Where(row => !before.Contains(row.MessageId)).Select(row =>
+            {
+                using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+                JsonElement payload = document.RootElement.GetProperty("payload");
+                return new Added(
+                    row.MessageId,
+                    payload.GetProperty("worklistRevision").GetInt64(),
+                    payload.TryGetProperty("items", out JsonElement items)
+                        ? [.. items.EnumerateArray().Select(item => item.GetProperty("demandId").GetString()!)]
+                        : [],
+                    payload.TryGetProperty("expectedSublots", out JsonElement expected)
+                        ? [.. expected.EnumerateArray().Select(item => item.GetString()!)]
+                        : [],
+                    payload.TryGetProperty("operationSessionId", out JsonElement session) && session.ValueKind == JsonValueKind.String
+                        ? session.GetString()
+                        : null,
+                    payload.TryGetProperty("stationDepartureDeadlineAt", out JsonElement at) && at.ValueKind != JsonValueKind.Null
+                        ? at.GetDateTimeOffset()
+                        : null);
+            }),
+        ];
+    }
+
     /// <summary>车确认了发件箱里这几类还在等确认的每一行。</summary>
     private static async Task AcknowledgeEverythingPendingAsync(RuntimeFixture fixture, params string[] messageTypes)
     {
