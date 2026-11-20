@@ -6,10 +6,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| runId | `20261120T061545827Z` |
+| runId | `20261120T132408360Z` |
 | agvId | `AGV-L2-001` |
 | batchId | `unspecified` |
-| controlServerCommit | `b039faea6a744b078a2cf7991063efae84c94361` |
+| controlServerCommit | `a5e50ec2cdd36ea13b3f1e0e5fa6efe451019546` |
 | protocolReleaseIdentity.repository | `8005-agv-protocol` |
 | protocolReleaseIdentity.releaseVersion | `7.0.0` |
 | protocolReleaseIdentity.tag | `protocol-v7.0.0` |
@@ -21,17 +21,17 @@
 | protocolReleaseIdentity.vectorsSha256 | `6295840ec27422dc024a24f6deae9a7379f9b3047a163e903ac862c8b0274eec` |
 | protocolReleaseIdentity.approvalStatus | `SUPERSEDING_CANDIDATE` |
 | rig | `SyntheticOnboard` |
-| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20261120T061545827Z` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20261120T132408360Z` |
 | vehicleKey | `BROKERX-L2-0001` |
 
 ## 判据
 
 | 判据 | 结论 | 期望 | 实际 |
 | --- | --- | --- | --- |
-| 前置：乙、丁进了甲那一趟旅程，并进同一个 11 号站停靠；到站那一版清单列着丁、乙 | PASS | `B and D on one stop, arrival worklist lists both` | `B journey:8a418302-ca4b-464f-bae7-8ddfa5c045bc\|PICKUP, D journey:8a418302-ca4b-464f-bae7-8ddfa5c045bc\|PICKUP; arrival 3[2]@2026-11-20T06:17:34.9775999+00:00` |
-| 乙终结；只列丁的那一版号更高，写进发件箱的时刻就是乙的抑制时刻（与取消同一次保存） | FAIL | `worklist [D] above 3 created at 2026-11-20T06:17:35.1851342+00:00` | `B TERMINATED; suppressed 2026-11-20T06:17:35.1851342+00:00; worklists 3[2]@2026-11-20T06:17:34.9775999+00:00 4[1]@2026-11-20T06:17:35.9969958+00:00` |
-| 没有一条还会补发的 11 号站录入请求期待乙；同号的录入请求只期待丁 | PASS | `no pending request for L2-CH-B-20261120T061545827Z; [L2-CH-D-20261120T061545827Z] at the new revision` | `pending 4:L2-CH-D-20261120T061545827Z (expecting B: 0, D alone at the new revision: 1)` |
-| 合成车载端收到新号的录入请求，答它，丁装上 | PASS | `entry sublot:94e41531-5f8e-7a59-973b-6bda8ffca56b:4 held and answered, D LOADED` | `held yes, D LOADED` |
+| 前置：乙、丁进了甲那一趟旅程，并进同一个 11 号站停靠；到站那一版清单列着丁、乙 | PASS | `B and D on one stop, arrival worklist lists both` | `B journey:30475140-00be-41bf-b8e3-d414444231ba\|PICKUP, D journey:30475140-00be-41bf-b8e3-d414444231ba\|PICKUP; arrival 3[2]@2026-11-20T13:25:56.3415799+00:00` |
+| 乙终结；只列丁的那一版号更高，写进发件箱的时刻就是乙的抑制时刻（与取消同一次保存） | FAIL | `worklist [D] above 3 created at 2026-11-20T13:25:56.5618201+00:00` | `B TERMINATED; suppressed 2026-11-20T13:25:56.5618201+00:00; worklists 3[2]@2026-11-20T13:25:56.3415799+00:00 4[1]@2026-11-20T13:25:57.3469840+00:00` |
+| 没有一条还会补发的 11 号站录入请求期待乙；同号的录入请求只期待丁 | FAIL | `no pending request for L2-CH-B-20261120T132408360Z; [L2-CH-D-20261120T132408360Z] at the new revision` | `pending  (expecting B: 0, D alone at the new revision: 0)` |
+| 合成车载端收到新号的录入请求，答它，丁装上 | PASS | `entry sublot:f6c21766-3395-2c5d-9120-04de49220480:4 held and answered, D LOADED` | `held yes, D LOADED` |
 
 ## 目录内容
 

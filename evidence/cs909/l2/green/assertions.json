@@ -1,16 +1,14 @@
 {
   "schemaVersion": 1,
   "scenario": "multi-demand-stop-cancel-one-refreshes-at-once",
-  "runId": "20261120T062155581Z",
+  "runId": "20261120T132143164Z",
   "outcome": "PASS",
   "failureReason": "",
   "identity": {
-    "batchId": "unspecified",
-    "agvId": "AGV-L2-001",
-    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261120T062155581Z",
     "rig": "SyntheticOnboard",
-    "controlServerCommit": "3983fb6e3eeeb8a86025239020fc86a8e37d5dec",
-    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261120T132143164Z",
+    "controlServerCommit": "a5e50ec2cdd36ea13b3f1e0e5fa6efe451019546",
+    "agvId": "AGV-L2-001",
     "protocolReleaseIdentity": {
       "repository": "8005-agv-protocol",
       "releaseVersion": "7.0.0",
@@ -22,7 +20,9 @@
       "schemaBundleSha256": "6361d734f9b1a4f81178c79c0bc18b8287fd747622e60c99073e7fd5a5cf4c88",
       "vectorsSha256": "6295840ec27422dc024a24f6deae9a7379f9b3047a163e903ac862c8b0274eec",
       "approvalStatus": "SUPERSEDING_CANDIDATE"
-    }
+    },
+    "batchId": "unspecified",
+    "vehicleKey": "BROKERX-L2-0001"
   },
   "assertions": [
     {
@@ -30,27 +30,27 @@
       "description": "前置：乙、丁进了甲那一趟旅程，并进同一个 11 号站停靠；到站那一版清单列着丁、乙",
       "outcome": "PASS",
       "expected": "B and D on one stop, arrival worklist lists both",
-      "actual": "B journey:2073e611-d7fa-4158-b30c-d740376bda03|PICKUP, D journey:2073e611-d7fa-4158-b30c-d740376bda03|PICKUP; arrival 3[2]@2026-11-20T06:23:47.4939090+00:00"
+      "actual": "B journey:de996832-ff28-471b-b1ff-e3b7af681fd9|PICKUP, D journey:de996832-ff28-471b-b1ff-e3b7af681fd9|PICKUP; arrival 3[2]@2026-11-20T13:23:55.6579928+00:00"
     },
     {
       "id": "L2-MDR-02",
       "description": "乙终结；只列丁的那一版号更高，写进发件箱的时刻就是乙的抑制时刻（与取消同一次保存）",
       "outcome": "PASS",
-      "expected": "worklist [D] above 3 created at 2026-11-20T06:23:47.7159730+00:00",
-      "actual": "B TERMINATED; suppressed 2026-11-20T06:23:47.7159730+00:00; worklists 3[2]@2026-11-20T06:23:47.4939090+00:00 4[1]@2026-11-20T06:23:47.7159730+00:00"
+      "expected": "worklist [D] above 3 created at 2026-11-20T13:23:55.9598833+00:00",
+      "actual": "B TERMINATED; suppressed 2026-11-20T13:23:55.9598833+00:00; worklists 3[2]@2026-11-20T13:23:55.6579928+00:00 4[1]@2026-11-20T13:23:55.9598833+00:00"
     },
     {
       "id": "L2-MDR-03",
       "description": "没有一条还会补发的 11 号站录入请求期待乙；同号的录入请求只期待丁",
       "outcome": "PASS",
-      "expected": "no pending request for L2-CH-B-20261120T062155581Z; [L2-CH-D-20261120T062155581Z] at the new revision",
-      "actual": "pending 4:L2-CH-D-20261120T062155581Z (expecting B: 0, D alone at the new revision: 1)"
+      "expected": "no pending request for L2-CH-B-20261120T132143164Z; [L2-CH-D-20261120T132143164Z] at the new revision",
+      "actual": "pending 4:L2-CH-D-20261120T132143164Z (expecting B: 0, D alone at the new revision: 1)"
     },
     {
       "id": "L2-MDR-04",
       "description": "合成车载端收到新号的录入请求，答它，丁装上",
       "outcome": "PASS",
-      "expected": "entry sublot:d5f5edfb-6e50-dd51-8817-c9fbc52be399:4 held and answered, D LOADED",
+      "expected": "entry sublot:81f2c70a-5ddb-d45a-82cb-bd7da4aa0d83:4 held and answered, D LOADED",
       "actual": "held yes, D LOADED"
     }
   ]

@@ -24,8 +24,8 @@
 
 场景 `multi-demand-stop-cancel-one-refreshes-at-once`（合成）。判据不靠计时：新一版清单在发件箱里的 `CreatedAt` 必须等于乙的业务键抑制 `SuppressedAt`——两者由取消落定那一次处理用同一个时刻暂存、同一次保存落库。
 
-- `l2/green/`：修复后 4/4 PASS，跑在 `3983fb6e3`（已合入 `fp/v2-impl` 含 PR #908 的基线）。
-- `l2/red-M1-no-stage/`：去掉取消时的暂存（`mutations/L2-M1-no-stage.diff`），只有 L2-MDR-02 红：新一版 `06:17:35.997`，取消 `06:17:35.185`，由引擎下一轮写。L2-MDR-03（没有还会补发的录入请求期待乙）修前也绿：合成装置的引擎一轮不到一秒，读的时候旧版已被下一轮退役。同版重发这一点由 L1 守（M2）。
+- `l2/green/`：修复后 4/4 PASS，跑在 `a5e50ec2c`（CI 的整数组自检 `Test-L2WholeArrayReturn.ps1` 报出场景里两处 `@( )` 包住整数组返回，已改为先赋值再用；本机自检退出码 0）。
+- `l2/red-M1-no-stage/`：同一提交上去掉取消时的暂存（`mutations/L2-M1-no-stage.diff`），L2-MDR-02 红：新一版不是取消那一次保存写的，`CreatedAt` 与乙的抑制时刻对不上。这一次 L2-MDR-03 也红，因为读库时引擎下一轮还没写出新版录入请求；改脚本之前那一次对照里它是绿的（引擎已经补完）。所以修前 MDR-03 红不红取决于时机，不拿它当判别；判别靠 MDR-02，同版重发由 L1 守（M2）。
 
 两次都是本机完整运行（含构建）；日志与快照目录已删，只留 `SUMMARY.md`、`assertions.json`、`timeline.jsonl`。
 
