@@ -317,6 +317,66 @@ public sealed class LoadCancellationDuringLoadTests
     }
 
     /// <summary>
+    /// 过渡期留下的形状（onboard-hmi#421 审查 H2，探针 S2）：旧版车载端在同一个派生 id 下先按了一次被拒（A），门关好后再按、带新 <c>verifiedAt</c>，
+    /// 过渡期服务端重判、授权了（B）。换装后的车载端重提它日志簿里那一次 B：同车同 id 同内容的入站行在案，回放 B 的授权，不因更早那一行 A 内容不同就判冲突。
+    /// 修前遇到任何一行内容不同就回 1105，这条变红。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    public async Task AResubmissionOfAnAuthorizedPressIsAnsweredAsItWasDespiteAnEarlierRefusedPressUnderTheSameId()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied());
+        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
+
+        // Press A, refused under the same id half a minute earlier with its own content, as the interim server left it.
+        ProtocolInboxRow b = await rig.Fixture.Context.ProtocolInbox.AsNoTracking()
+            .SingleAsync(row => row.MessageType == "LoadCancellationStartRequested", Token);
+        System.Text.Json.Nodes.JsonNode a = System.Text.Json.Nodes.JsonNode.Parse(b.RequestJson)!;
+        a["messageId"] = Guid.NewGuid().ToString("D");
+        a["payload"]!["reason"] = "Pressed first, the door not yet shut.";
+        System.Text.Json.Nodes.JsonNode refusal = System.Text.Json.Nodes.JsonNode.Parse(b.FirstResponseJson.Split('\n')[0])!;
+        refusal["correlationId"] = a["messageId"]!.GetValue<string>();
+        refusal["payload"]!["decision"] = "REJECTED";
+        refusal["payload"]!["problem"] = System.Text.Json.Nodes.JsonNode.Parse(
+            """{"reasonCode":"LOCK_NOT_CLOSED","fieldPath":"payload.slotOperationAttemptId","displayMessage":"A door is not proven locked."}""");
+        rig.Fixture.Context.ProtocolInbox.Add(new ProtocolInboxRow
+        {
+            MessageId = a["messageId"]!.GetValue<string>(),
+            MessageType = "LoadCancellationStartRequested",
+            RequestJson = a.ToJsonString(),
+            ContentHash = "seeded-interim-press-a",
+            FirstResponseJson = refusal.ToJsonString(),
+            ReceivedAt = b.ReceivedAt.AddSeconds(-30)
+        });
+        await rig.Fixture.Context.SaveChangesAsync(Token);
+        rig.Fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
+        Assert.Single(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 同一次装货已有一条授权了、还在等结果的取消，又来一个新的 <c>cancellationId</c>（onboard-hmi#421 审查 M1，探针 S1）：拒，
+    /// <c>ACTION_NOT_ALLOWED_IN_STATE</c>，不开第二条工作流。以前派生 id 顺带把两次按键归成同一条；现在一次按键一个 id，靠这里按 attempt 挡。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    public async Task ASecondIdOverALoadWhoseCancellationAwaitsItsResultIsRejected()
+    {
+        await using SkipRig rig = await SkipRig.AtLoadAsync(boxes: 12);
+        await rig.SendSnapshotAsync(Occupied());
+        Assert.Equal("AUTHORIZED", Payload(await SendCancellationAsync(rig, CancellationId)).GetProperty("decision").GetString());
+
+        AssertRejected(await SendCancellationAsync(rig, SecondCancellationId), "ACTION_NOT_ALLOWED_IN_STATE");
+
+        RecoveryWorkflowRow workflow = Assert.Single(await rig.Fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
+        Assert.Equal(CancellationId, workflow.WorkflowId);
+    }
+
+    /// <summary>
     /// 授权答复在路上丢了，车以新的 messageId 重提同一个 <c>cancellationId</c>（real-onboard-cancellation-authorization-lost 的形状）：照记录答
     /// 同一个授权，即便此后又有目标仓的变化让读数过期——授权之后车不为取消做任何仓位 IO，过期的读数说明不了授权当时不该给。
     /// </summary>
