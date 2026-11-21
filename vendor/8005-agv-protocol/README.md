@@ -37,7 +37,7 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `a1facf8674b05c67bfbddc14db4a163e8da2782a`（protocol PR #30 为 protocol#29 合入 `fp/v2-candidate` 的合并提交，内容提交 `2d26048f`；tag `protocol-v7.0.0` 尚不存在，部署时由调度问用户再发布） |
+| 来源提交 | `a1facf8674b05c67bfbddc14db4a163e8da2782a`（protocol PR #30 为 protocol#29 合入 `fp/v2-candidate` 的合并提交，内容提交 `2d26048f`）；2026-11-21 以注释 tag `protocol-v7.0.0`（tag 对象 `250c4d86`）发布同一提交 |
 | 取用日期 | 2026-11-16 |
 
 | 来源路径 | 内容 |
@@ -50,7 +50,8 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 protocol#29 给 `CurrentStopWorklistSnapshot` 的每条 item 加了必填可空的 `eqp`（受理时记下的 MES `EQP`，只用于车载屏两张清单的显示，两端不得据此判断），
 `FP-IS-09` 加向量 `CV-WORKLIST-EQP-DISPLAY-ONLY`；item 是闭合对象，所以升大版本 7.0.0、`protocolVersion 8`，消息面与错误码不变。
 三份文件用 `git archive` 从合并提交的对象导出，逐个与 manifest 文件表 SHA-256 核对（75 个 schema 与 `index.json`，76 项全部命中）后整份拷入，
-manifest SHA-256 为 `44fa0b27…`。tag `protocol-v7.0.0` 尚不存在，身份是 `SUPERSEDING_CANDIDATE`，在它上面跑出的证据一律是 `UNRELEASED_CANDIDATE`。
+manifest SHA-256 为 `44fa0b27…`。还是候选时身份是 `SUPERSEDING_CANDIDATE`，在它上面跑出的证据一律是 `UNRELEASED_CANDIDATE`。
+2026-11-21 用注释 tag `protocol-v7.0.0`（tag 对象 `250c4d86`，解引用到 `a1facf86`）发布**同一个提交**——manifest 与候选逐字节相同，批准只以外置 attestation（Release asset `release-approval.json`，SHA-256 `b5240f97…`）给出；发布后不重新 vendor，只在部署分支 `release/v7-20261121` 上把批准状态翻成 `APPROVED_RELEASE`（照 `release/interim-20261107` 对 v6 的做法）。
 换装须在关闸且所有旅程 `Completed` 之后：车载端按 `worklistRevision` 保存已应用的清单，同一 revision 内容不同会判 `SNAPSHOT_REVISION_CONTENT_CONFLICT`。
 
 再早一份是 `98f17264`（10-21 取用，11-10 以 tag `protocol-v6.0.0` 上线生产）。2026-10-21 由 `8005-agv-control-server#830` 刷新到 `98f17264`（protocol PR #27 的合并提交；与车载端 `8005-agv-onboard-hmi#388` 同包）：
