@@ -5458,6 +5458,11 @@ $productionStageDefinitions = [ordered]@{
 # older database's -- on 10-15 a new database and the trial one, both starting at 1, gave the same demand the same upperId.
 $productionDispatchGeneration = 100
 $productionApprovalRecord = 'Zhengyu Shao 于 2026-10-14 在 Claude 对话中批准 v2 生产切换：试跑 S1～S4 已通过，换新库、三车 IO 切回真模块、逐仓核对后，按 S1→S4 用真货进入生产，v2 读生产 MesIngest 六类需求、MVP 保持停用；每次动车与碰 agv01 仍逐次授权。（用户原话，8005-workspace-v2 ds-tasks/board.md 10-14 条目；control-server#564 第 18a 步）'
+# program#210, the v7 deployment window of 2026-11-21: agv01 went offline (no ssh, RIoT battery 8%) after the vehicles
+# were stopped, and the production gate opens only on an IO check of every vehicle of the installed fleet. The user chose
+# to take agv01 out of the fleet for this window. Not a stage of the plan: the stage-3 definition with agv01's row removed
+# and nothing else changed, pinned by its own case below. Redeploying the stage-3 definition brings agv01 back.
+$productionS3WithoutAgv01 = 'instance-factory01-v2.cutover-production-s3-without-agv01.runtime-on.json'
 $cutoverHeldRefusals = @(
     'journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN","WIRE_TO_FULL_INSPECTION"] includes WIRE_TO_GATE, which the MVP takes from the same catalog'
     'journeyRuntime.fleet[0] names agv01 (agvId, vehicleKey, deviceKey, riotId), the vehicle the MVP service is driving in production.')
@@ -5481,7 +5486,7 @@ Invoke-SourceCase 'catalog: every shipped definition carries 00:00:30 / 00:05:00
             -not ($c -is [System.Collections.IDictionary] -and $c['approvedSyncPeriod'] -ceq '00:00:30' -and $c['approvedMaxUnconfirmed'] -ceq '00:05:00' -and
                 ([string] $c['approvalRecord']).Contains('2026-10-09') -and @(Test-ParallelInstanceDefinition -Definition $d).Count -eq 0) })
     $all = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | ForEach-Object Name)
-    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames -and $_ -cnotin $cutoverDefinitionNames -and -not $trialStageDefinitions.Contains($_) -and -not $productionStageDefinitions.Contains($_) })
+    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames -and $_ -cnotin $cutoverDefinitionNames -and -not $trialStageDefinitions.Contains($_) -and -not $productionStageDefinitions.Contains($_) -and $_ -cne $productionS3WithoutAgv01 })
     @{ Ok = ($wrong.Count -eq 0 -and $unlisted.Count -eq 0); Detail = "wrong: $($wrong -join ', '); shipped but not checked here: $($unlisted -join ', ')" }
 }
 Invoke-SourceCase 'catalog: the cutover definition carries the same approved pair, and is refused for exactly the two guards control-server#564 opens' {
@@ -7169,13 +7174,25 @@ Invoke-SourceCase 'idle return: only the production stage-3 definition writes it
     $s3 = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-production-s3.runtime-on.json')
     $f = @(Test-ParallelInstanceDefinition -Definition $s3 | Where-Object { $_ -match 'idleReturn' })
     $written = $s3['idleReturn']
-    @{ Ok = (($writing -join ',') -ceq 'instance-factory01-v2.cutover-production-s3.runtime-on.json' -and
+    @{ Ok = (($writing -join ',') -ceq "$productionS3WithoutAgv01,instance-factory01-v2.cutover-production-s3.runtime-on.json" -and
             $written -is [System.Collections.IDictionary] -and $written['enabled'] -is [bool] -and -not $written['enabled'] -and
             -not (Test-ParallelIdleReturnEnabled -Definition $s3) -and $f.Count -eq 0)
         Detail = "written in: $($writing -join ', '); s3 idleReturn: $(ConvertTo-Json $written -Compress); idleReturn failures: $($f -join ' | ')" }
 }
 
 # ------------------------------------------------------------------------------------------------
+Invoke-SourceCase 'program#210: the stage-3 definition without agv01 is the stage-3 definition with fleet row 0 (agv01) removed and nothing else, and is accepted with -ProductionCutover' {
+    $s3 = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-production-s3.runtime-on.json')
+    $two = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $productionS3WithoutAgv01)
+    $dropped = $s3['journeyRuntime']['fleet'][0]
+    $expected = Copy-Definition $s3
+    $expected['journeyRuntime']['fleet'] = @($s3['journeyRuntime']['fleet'] | Select-Object -Skip 1)
+    [string[]] $f = @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $two) -ProductionCutover)
+    $same = ($expected | ConvertTo-Json -Depth 20 -Compress) -ceq ($two | ConvertTo-Json -Depth 20 -Compress)
+    @{ Ok = ($same -and [int] $dropped['riotId'] -eq 58 -and $f.Count -eq 0)
+        Detail = "same as stage 3 less agv01: $same; dropped riotId $($dropped['riotId']); failures: $($f -join ' | ')" }
+}
+
 # control-server#797. The recovery grant requirement (RecoveryGrantOptions, section RecoveryGrant; ADR-cross-0066) and the
 # per-vehicle exception recovery proofs (Recovery:VehicleProofs). Absent, the requirement follows vehicleFaultRecovery.enabled, so
 # turning the Host recovery entries on (control-server#844) turns grants on with them; stated, it is a JSON boolean, and true needs
