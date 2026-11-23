@@ -32,3 +32,14 @@ DONE
 exit=1
   失败 ControlServer.Tests.OwnOrderRebuildTests.ARebuildDueRightAfterTheOnboardDisconnectedWaitsUntilItReconnects [77 ms]
 失败!  - 失败:     1，通过:    51，已跳过:     0，总计:    52，持续时间: 11 s - ControlServer.Tests.dll (net8.0)
+
+# Round 4, review rework (commit dce9a7653; DisconnectedOnboard tests, JourneyRuntimeWorkerDepartureSafetyTests, OwnOrderRebuildTests, 62 tests)
+== M6-departure-leg-unguarded (1+1 src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+exit=1
+  失败 ControlServer.Tests.JourneyRuntimeWorkerDepartureSafetyTests.ASafeAnswerHeldBackByTheCreateGateDoesNotSendOffAVehicleWhoseOnboardDisconnected [2 s]
+失败!  - 失败:     1，通过:    61，已跳过:     0，总计:    62，持续时间: 30 s - ControlServer.Tests.dll (net8.0)
+== M4b-session-gap-cell-unguarded (1+1 src/ControlServer.Host/Runtime/Dispatch/NonBusinessDepartureGate.cs)
+exit=1
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AConnectionThatEndsBeforeTheChargingAllocationChecksTheGateCommitsNoCharger [48 ms]
+失败!  - 失败:     1，通过:    61，已跳过:     0，总计:    62，持续时间: 30 s - ControlServer.Tests.dll (net8.0)
+DONE

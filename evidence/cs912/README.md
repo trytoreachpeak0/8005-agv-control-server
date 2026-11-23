@@ -11,14 +11,16 @@
 | M1-reader-ignores-connection | `ReadOnboardFactsForNewPurposeAsync` 不看连接（等于缺陷版本） | 空闲返回、充电、搬运三条 |
 | M2-round-read-unguarded | 派车轮入轮读取改回旧方法 | 同上三条 |
 | M3-final-recheck-unguarded | 受理前复核改回旧方法 | 第一轮没杀掉（入轮那一处先挡住）；补 `AConnectionThatEndsWhileTheDemandIsBeingAcceptedStopsTheAcceptance` 后第二轮红 |
-| M4-departure-gate-unguarded | 出发闸不看连接 | 承诺后断线那条 |
+| M4-departure-gate-unguarded | 出发闸不看连接（在第一个提交 `f057737b3` 上跑；`3162df2b3` 之后车况复核也看连接，这条用例不再单独守这一格，见 M4b） | 承诺后断线那条 |
 | M5-vehicle-condition-unguarded | `VehicleConditionReasonsAsync` 改回旧读法 | `OwnOrderRebuildTests.ARebuildDueRightAfterTheOnboardDisconnectedWaitsUntilItReconnects` |
+| M6-departure-leg-unguarded（审查 L1） | 搬运离站建单前不看连接 | `JourneyRuntimeWorkerDepartureSafetyTests.ASafeAnswerHeldBackByTheCreateGateDoesNotSendOffAVehicleWhoseOnboardDisconnected` |
+| M4b-session-gap-cell-unguarded（审查 L2/L3，在 `dce9a7653` 上） | 只去掉 `SessionGapsAsync` 的连接那一格 | `AConnectionThatEndsBeforeTheChargingAllocationChecksTheGateCommitsNoCharger` |
 
 ## L2
 
 场景 `onboard-disconnected-takes-no-new-purpose`（合成），本机完整运行（含构建）。
 
 - `l2/green-01/`：提交 `ef60f6cf0` 上 PASS，5/5 判据；断线后 20.1 秒、20 轮里没有任何用途占有、旅程、订单意图，积压原因 `ONBOARD_FACTS_NOT_READY`；重连后会话代 1→2，需求派给这台车。
-- `l2/red-M1/`：同一提交加 M1（`M1-reader-ignores-connection.diff`），FAIL：断线后 1 秒那一轮就受理了需求（`claims=1 journeys=1 intents=1`），积压行变成 `ACCEPTED`——与 agv03 同一个缺陷。
+- `l2/red-M1/`：提交 `768e0213d`（比 `ef60f6cf0` 只多了 M5 的证据文件，产品代码相同）加 M1（`M1-reader-ignores-connection.diff`），FAIL：断线后 1 秒那一轮就受理了需求（`claims=1 journeys=1 intents=1`），积压行变成 `ACCEPTED`——与 agv03 同一个缺陷。
 
 日志与快照目录已删，只留 `SUMMARY.md`、`assertions.json`、`timeline.jsonl`。
