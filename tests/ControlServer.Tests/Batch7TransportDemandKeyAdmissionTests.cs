@@ -275,7 +275,7 @@ public sealed class Batch7TransportDemandKeyAdmissionTests : IAsyncDisposable
     {
         await using ControlServerDbContext writing = NewContext();
         await new TransportDemandSuppressionStore(writing).SuppressIfAbsentAsync(
-            new TransportDemandSuppression(Key(workType), demandId, reasonCode, Now.AddMinutes(-10)), Token);
+            new TransportDemandSuppression(Key(workType), demandId, reasonCode, Now.AddMinutes(-10), TransportDemandIdentity.NoLeg), Token);
     }
 
     private ControlServerDbContext NewContext() => new(

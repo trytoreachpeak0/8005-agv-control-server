@@ -236,10 +236,11 @@ public sealed record VehiclePurposeClaim(string VehicleKey, string Purpose, stri
 
 /// <summary>
 /// 一件活的终态抑制。身份是业务键加程（<see cref="TransportDemandIdentity"/>，control-server#911）；不分程的任务类型程为空串。
+/// 程没有缺省值：调用方必须说出这是哪一程，否则一条焊线2 的抑制会悄悄落在空程上（cs#911 审查 L3）。
 /// </summary>
 public sealed record TransportDemandSuppression(
     string TransportDemandKey, string DemandId, string ReasonCode, DateTimeOffset SuppressedAt,
-    string TransportLeg = TransportDemandIdentity.NoLeg)
+    string TransportLeg)
 {
     public TransportDemandIdentity Identity => new(TransportDemandKey, TransportLeg);
 }

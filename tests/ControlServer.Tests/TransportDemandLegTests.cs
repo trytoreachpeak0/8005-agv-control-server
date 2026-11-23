@@ -175,8 +175,38 @@ public sealed class TransportDemandLegTests : IAsyncDisposable
     }
 
     /// <summary>
-    /// 存储层：焊线那程经受理路径受理、送达，焊线2 那程照样受理得下（不撞受理唯一索引），送达时写得下自己的完成事实
-    /// （缺陷版本撞完成表主键，报「同一业务键已有另一份完成记录」）。两程的受理行与完成行各带自己的程。
+    /// 生产上的完成路径：车载端的卸货结果（<c>WireToGateStore.ApplyOperationResultAsync</c>，收件箱在它的写事务里调）。
+    /// 焊线那程受理、卸货结果入库；焊线2 那程照样受理得下（不撞受理唯一索引），它的卸货结果也入库，写下自己的完成事实
+    /// （缺陷版本撞完成表主键，以 <c>BUSINESS_ID_CONTENT_CONFLICT</c> 拒收，车卡在恢复流程里）。两程的受理行与完成行各带自己的程。
+    /// cs#911 审查 M1：原先只打在没有生产调用方的直接完成入口上，这条路径上把程写成空串的变异存活。
+    /// </summary>
+    [Fact]
+    public async Task BothLegsUnloadResultsAreAcceptedEachCompletionUnderItsOwnLeg()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await AcceptThroughTheStoreAsync(fixture, FirstLeg, WireLeg, "AGV-01", "VK-01", Now);
+        Assert.Equal(
+            OperationResultDisposition.Accepted, await ApplyUnloadResultAsync(fixture, FirstLeg, "AGV-01", Now.AddMinutes(10)));
+        await AcceptThroughTheStoreAsync(fixture, SecondLeg, Wire2Leg, "AGV-02", "VK-02", Now.AddHours(3));
+        Assert.Equal(
+            OperationResultDisposition.Accepted,
+            await ApplyUnloadResultAsync(fixture, SecondLeg, "AGV-02", Now.AddHours(3).AddMinutes(10)));
+
+        await using ControlServerDbContext reading = fixture.NewContext();
+        string key = TransportDemandKeys.Compose(Sublot, TransportTaskTypes.StagingToWire);
+        Assert.Equal(
+            [(FirstLeg, WireLeg, DemandExecutionStatus.Succeeded), (SecondLeg, Wire2Leg, DemandExecutionStatus.Succeeded)],
+            (await reading.AcceptedDemands.AsNoTracking().Where(row => row.Sublot == Sublot).ToArrayAsync(Token))
+                .Select(row => (row.DemandId, row.TransportLeg, row.Status)).Order());
+        Assert.Equal(
+            [(key, WireLeg, FirstLeg), (key, Wire2Leg, SecondLeg)],
+            (await reading.TransportDemandCompletions.AsNoTracking().ToArrayAsync(Token))
+                .Select(row => (row.TransportDemandKey, row.TransportLeg, row.DemandId)).Order());
+    }
+
+    /// <summary>
+    /// 直接完成入口（<c>WireToGateStore.CompleteDemandAfterUnloadAsync</c>）同样按程。它没有生产调用方，测试夹具拿它种「已送达」；
+    /// 留着它的两程判据，是因为夹具种出来的完成行也必须带对程。
     /// </summary>
     [Fact]
     public async Task BothLegsAreAcceptedAndCompletedThroughTheStoreEachUnderItsOwnLeg()
@@ -197,6 +227,55 @@ public sealed class TransportDemandLegTests : IAsyncDisposable
             [(key, WireLeg, FirstLeg), (key, Wire2Leg, SecondLeg)],
             (await reading.TransportDemandCompletions.AsNoTracking().ToArrayAsync(Token))
                 .Select(row => (row.TransportDemandKey, row.TransportLeg, row.DemandId)).Order());
+    }
+
+    /// <summary>
+    /// 追加路径按身份查重（<c>WireToGateStore.AppendToJourneyAsync</c>）：同一子批的焊线那程已在一趟旅程上受理过，焊线2 那程
+    /// 追加到另一趟在途旅程上，照样写得下——按业务键查重会撞上焊线那一行、判成身份冲突（cs#911 审查 L4）。
+    /// </summary>
+    [Fact]
+    public async Task TheSecondLegIsAppendedToAnotherJourneyAfterTheFirstLegWasAccepted()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await AcceptThroughTheStoreAsync(fixture, FirstLeg, WireLeg, "AGV-01", "VK-01", Now);
+        const string anchor = "10000000-0000-4000-8000-000000000990";
+        JourneyExecutionPlan anchorPlan;
+        await using (ControlServerDbContext accepting = fixture.NewContext())
+        {
+            anchorPlan = await Batch7JourneyFixture.AcceptAsync(accepting, anchor, "AGV-02", "VK-02", Now.AddHours(3));
+        }
+        string journeyId = JourneyIdentity.ForAnchorDemand(anchor);
+        DateTimeOffset at = Now.AddHours(3).AddMinutes(1);
+
+        await using (ControlServerDbContext writing = fixture.NewContext())
+        {
+            await new WireToGateStore(writing).AppendToJourneyAsync(
+                Snapshot(SecondLeg, TransportTaskTypes.StagingToWire, Wire2Leg) with { AcceptedAt = at },
+                new JourneyAppendPlan(
+                    journeyId,
+                    SecondLeg,
+                    Batch7JourneyFixture.Plan(SecondLeg, "AGV-02", "VK-02", at),
+                    JourneyIdentity.AppendedPickupStopId(SecondLeg),
+                    JourneyIdentity.UnloadStopId(journeyId),
+                    anchorPlan.DispatchZone,
+                    DispatchZoneParameterVersion: 7,
+                    [
+                        new JourneyStopSequenceChange(JourneyIdentity.PickupStopId(journeyId), 1),
+                        new JourneyStopSequenceChange(JourneyIdentity.AppendedPickupStopId(SecondLeg), 2),
+                        new JourneyStopSequenceChange(JourneyIdentity.UnloadStopId(journeyId), 3),
+                    ],
+                    at),
+                Token);
+        }
+
+        await using ControlServerDbContext reading = fixture.NewContext();
+        Assert.Equal(
+            [(FirstLeg, WireLeg), (SecondLeg, Wire2Leg)],
+            (await reading.AcceptedDemands.AsNoTracking().Where(row => row.Sublot == Sublot).ToArrayAsync(Token))
+                .Select(row => (row.DemandId, row.TransportLeg)).Order());
+        Assert.Equal(
+            journeyId,
+            (await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(row => row.DemandId == SecondLeg, Token)).JourneyId);
     }
 
     /// <summary>
@@ -247,6 +326,47 @@ public sealed class TransportDemandLegTests : IAsyncDisposable
         await new PickupStopTermination(writing).StageAsync(runtime, demandId, reasonCode, at, Token);
         await writing.SaveChangesAsync(Token);
         await transaction.CommitAsync(Token);
+    }
+
+    /// <summary>
+    /// 卸货结果，照收件箱的样子在写事务里入库（同 <c>Batch7DemandTerminationTests</c>）：先补一条已准备的卸货操作，结果按它的
+    /// <c>SlotOperationAttemptId</c> 回来。
+    /// </summary>
+    private static async Task<OperationResultDisposition> ApplyUnloadResultAsync(
+        Batch7JourneyFixture fixture, string demandId, string agvId, DateTimeOffset at)
+    {
+        await using ControlServerDbContext writing = fixture.NewContext();
+        writing.StationOperations.Add(new StationOperationRow
+        {
+            SlotOperationAttemptId = "unload-" + demandId,
+            DemandId = demandId,
+            SublotId = Sublot,
+            TargetSlotsJson = "[1]",
+            OperationType = SlotOperationType.Unload,
+            ForcedRecoveryGeneration = 0,
+            ContentHash = new string('a', 64),
+            Status = StationOperationStatus.Prepared,
+            CreatedAt = at.AddMinutes(-1),
+        });
+        await writing.SaveChangesAsync(Token);
+        await using var transaction = await writing.Database.BeginTransactionAsync(Token);
+        OperationResultDisposition disposition = await new WireToGateStore(writing).ApplyOperationResultAsync(
+            new StationOperationResult(
+                "result-" + demandId,
+                "unload-" + demandId,
+                demandId,
+                SlotOperationType.Unload,
+                "COMPLETED",
+                [new SlotPhysicalEvidence(1, SlotBusinessState.Empty, true, true)],
+                true,
+                at,
+                new string('c', 64),
+                new string('e', 64)),
+            agvId,
+            0,
+            Token);
+        await transaction.CommitAsync(Token);
+        return disposition;
     }
 
     private static async Task CompleteThroughTheStoreAsync(Batch7JourneyFixture fixture, string demandId, DateTimeOffset at)

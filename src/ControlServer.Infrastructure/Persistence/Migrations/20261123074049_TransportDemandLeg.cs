@@ -12,7 +12,8 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
     /// <remarks>
     /// <para>
     /// <b>回填</b>（<see cref="BackfillLegs"/>）：受理行里 <c>STAGING_TO_WIRE</c> 的程取它受理时冻结的 <c>LiveMesFieldsJson</c> 里的
-    /// <c>Step</c>（空白则为空串，与 <c>TransportDemandIdentity.LegOf</c> 一致），其余任务类型留空串；抑制行与完成行按自己的
+    /// <c>Step</c>（空白则为空串，与 <c>TransportDemandIdentity.LegOf</c> 一致；那一列不是 JSON 时也是空串——加任务类型列之前的行
+    /// 两列都是空串，<c>json_extract</c> 对它抛 <c>malformed JSON</c>，迁移就失败、服务起不来，cs#911 审查 L1），其余任务类型留空串；抑制行与完成行按自己的
     /// <c>DemandId</c> 取那条受理行的程。新主键与新唯一索引都比旧的宽（多一列），所以无论回填先后都不会撞键。
     /// 分程的任务类型在这里写死成字面值，不引用代码里的清单：迁移是历史，清单以后变了，这一步也不能跟着变。
     /// </para>
@@ -136,6 +137,7 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                 """
                 UPDATE "AcceptedDemands"
                 SET "TransportLeg" = CASE
+                    WHEN NOT json_valid("LiveMesFieldsJson") THEN ''
                     WHEN trim(coalesce(json_extract("LiveMesFieldsJson", '$.Step'), ''), ' ' || char(9, 10, 11, 12, 13)) = '' THEN ''
                     ELSE json_extract("LiveMesFieldsJson", '$.Step')
                 END

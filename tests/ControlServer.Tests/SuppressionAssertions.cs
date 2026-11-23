@@ -12,7 +12,7 @@ internal static class SuppressionAssertions
     internal static async Task<TransportDemandSuppression[]> AllAsync(ControlServerDbContext context) =>
         [.. (await context.Set<TransportDemandSuppressionRow>().AsNoTracking()
                 .ToArrayAsync(TestContext.Current.CancellationToken))
-            .Select(row => new TransportDemandSuppression(row.TransportDemandKey, row.DemandId, row.ReasonCode, row.SuppressedAt))];
+            .Select(row => new TransportDemandSuppression(row.TransportDemandKey, row.DemandId, row.ReasonCode, row.SuppressedAt, row.TransportLeg))];
 
     /// <summary>这条需求的业务键上恰有一条抑制，是这条需求、这个码写下的；库里也只有这一条。</summary>
     internal static async Task AssertSuppressedAsync(ControlServerDbContext context, string demandId, string reasonCode)
