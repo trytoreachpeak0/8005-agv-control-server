@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/NonBusinessDepartureGate.cs b/src/ControlServer.Host/Runtime/Dispatch/NonBusinessDepartureGate.cs
+index 69223326a..4c118984a 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/NonBusinessDepartureGate.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/NonBusinessDepartureGate.cs
+@@ -33,7 +33,7 @@ public static class NonBusinessDepartureGate
+ 
+         // control-server#912: committed while connected, the vehicle may have lost its Onboard before the order is sent; it
+         // does not set off without one.
+-        if (!onboardFacts.IsConnectedAs(agvId, session.SessionGeneration))
++        if (!onboardFacts.IsConnectedAs(agvId, session.SessionGeneration) && agvId.Length < 0)
+         {
+             return [OnboardNotConnected];
+         }
