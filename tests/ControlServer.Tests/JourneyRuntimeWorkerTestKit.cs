@@ -116,6 +116,11 @@ internal static class JourneyRuntimeWorkerTestKit
         public ControlServer.Host.Runtime.Charging.ChargingAllocationBoard ChargingBoard { get; } = new();
         public RecordingRiot Riot { get; }
         public RecordingPeer Peer { get; }
+
+        /// <summary>Which vehicles the onboard-facts reader finds connected (control-server#912); all of them unless a test says.</summary>
+        public SessionRowPresence Presence => _presence ??= new SessionRowPresence(Context);
+
+        private SessionRowPresence? _presence;
         public RecordingRouteCostProbe RouteCosts { get; }
 
         /// <summary>Whether the REQ-0302 pair is configured. False is the uncommissioned server.</summary>
@@ -1159,7 +1164,7 @@ internal static class JourneyRuntimeWorkerTestKit
             // One of each, shared by the round and the engine, the way the host's scope shares them.
             VehicleDispatchPolicyAccess dispatchPolicy =
                 new(new VehicleDispatchPolicyStore(Context), options, Clock);
-            OnboardDispatchFactsReader onboardFacts = new(Context, options, Clock);
+            OnboardDispatchFactsReader onboardFacts = new(Context, options, Clock, Presence);
             DispatchRoundRunner dispatchRound = new(
                 Context,
                 Catalog,
@@ -2423,6 +2428,26 @@ internal static class JourneyRuntimeWorkerTestKit
                 clock,
                 NullLogger<ForeignRunningOrderSupervisor>.Instance);
         }
+    }
+
+    /// <summary>
+    /// The connection presence the fixtures hand the onboard-facts reader (control-server#912): every vehicle is connected
+    /// as the generation its session row holds, the way a fixture's seeded Ready session stands for a live one, except
+    /// the vehicles a test names in <see cref="Disconnected"/>. A reader without a presence admits nobody to a new purpose.
+    /// </summary>
+    internal sealed class SessionRowPresence(ControlServerDbContext context) : IOnboardConnectionPresence
+    {
+        public HashSet<string> Disconnected { get; } = new(StringComparer.Ordinal);
+
+        public long? ConnectedSessionGeneration(string agvId) =>
+            Disconnected.Contains(agvId)
+                ? null
+                : context.SessionRecoveries.AsNoTracking()
+                    .Where(row => row.AgvId == agvId)
+                    .Select(row => (long?)row.SessionGeneration)
+                    .SingleOrDefault();
+
+        public bool IsHandshaking(string agvId) => false;
     }
 
     internal sealed class RecordingPeer : IOnboardPeer

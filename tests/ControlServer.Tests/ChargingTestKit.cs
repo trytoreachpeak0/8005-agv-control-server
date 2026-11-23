@@ -28,7 +28,8 @@ internal static class ChargingTestKit
         ChargingAllocationBoard? board = null,
         ILogger<ChargingAllocator>? logger = null,
         IRiotVehicleSafetyFacts? vehicleSafety = null,
-        StationClearanceExit? clearanceExit = null)
+        StationClearanceExit? clearanceExit = null,
+        IOnboardConnectionPresence? presence = null)
     {
         Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions> runtime = Microsoft.Extensions.Options.Options.Create(options);
         VehicleRoster fleet = new(runtime);
@@ -47,7 +48,8 @@ internal static class ChargingTestKit
                 new RouteGraphSnapshotStore(context),
                 Microsoft.Extensions.Options.Options.Create(new RouteGraphOptions { MapId = options.MapId }),
                 clock),
-            new ControlServer.Host.Runtime.Dispatch.OnboardDispatchFactsReader(context, runtime, clock),
+            new ControlServer.Host.Runtime.Dispatch.OnboardDispatchFactsReader(
+                context, runtime, clock, presence ?? new JourneyRuntimeWorkerTestKit.SessionRowPresence(context)),
             // The fixtures' RIoT doubles answer both; one that does not fails here rather than reading every vehicle stopped.
             vehicleSafety ?? (IRiotVehicleSafetyFacts)vehicleFacts,
             new OnboardJourneyPublisher(new WireToGateStore(context), peer, clock),

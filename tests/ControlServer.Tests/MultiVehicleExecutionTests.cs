@@ -1054,6 +1054,11 @@ public sealed partial class MultiVehicleExecutionTests
 
         /// <summary>Silent unless a test names a vehicle whose Onboard connection is gone (control-server#334).</summary>
         public FleetPeer Peer { get; } = new();
+
+        /// <summary>Which vehicles the onboard-facts reader finds connected (control-server#912); all of them unless a test says.</summary>
+        public JourneyRuntimeWorkerTestKit.SessionRowPresence Presence => _presence ??= new(Context);
+
+        private JourneyRuntimeWorkerTestKit.SessionRowPresence? _presence;
         public EventRecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
         public JourneyRuntimeEngine Engine { get; private set; }
 
@@ -1457,7 +1462,7 @@ public sealed partial class MultiVehicleExecutionTests
             // One of each, shared by the round and the engine, the way the host's scope shares them.
             VehicleDispatchPolicyAccess dispatchPolicy =
                 new(new VehicleDispatchPolicyStore(Context), options, Clock);
-            OnboardDispatchFactsReader onboardFacts = new(Context, options, Clock);
+            OnboardDispatchFactsReader onboardFacts = new(Context, options, Clock, Presence);
             DispatchRoundRunner dispatchRound = new(
                 Context,
                 Catalog,
