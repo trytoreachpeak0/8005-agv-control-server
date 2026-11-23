@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+index 426307575..f05306311 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+@@ -1175,7 +1175,7 @@ public sealed partial class JourneyRuntimeEngine
+         // control-server#912, whose connection is up now: every caller is about to create an order that moves the vehicle (a
+         // rebuild, a leg never sent, an idle-return or charging departure), and a vehicle whose Onboard was stopped keeps a
+         // Ready row and a young last message for up to MaximumEvidenceAge. Disconnected it reads ONBOARD_FACTS_NOT_READY.
+-        OnboardDispatchFacts? onboard = await onboardFacts.ReadOnboardFactsForNewPurposeAsync(runtime.AgvId, cancellationToken)
++        OnboardDispatchFacts? onboard = await onboardFacts.ReadOnboardFactsAsync(runtime.AgvId, cancellationToken)
+             .ConfigureAwait(false);
+         if (onboard is null)
+         {
