@@ -41,5 +41,10 @@ mutate M9-acceptance-writes-no-leg "$W" 's/TransportLeg = TransportDemandIdentit
 mutate M10-backfill-skips-suppressions "$M" 's/(UPDATE "TransportDemandSuppressions".*?)WHERE EXISTS \(/$1WHERE 0 AND EXISTS (/s'
 mutate M11-backfill-every-work-type "$M" 's/WHERE "WorkType" = \x27STAGING_TO_WIRE\x27/WHERE "WorkType" <> \x27\x27/'
 mutate M12-rollback-without-collapse "$M" 's/            CollapseLegsForRollback\(migrationBuilder\);\n//'
+# Review rework (cs#911 review M1, L1, L4): the production completion path, the append lookup, the empty-JSON guard.
+mutate M13-unload-result-writes-no-leg "$W" 's/(TransportDemandKey = demand\.TransportDemandKey,\s*)TransportLeg = demand\.TransportLeg,/$1TransportLeg = TransportDemandIdentity.NoLeg,/'
+mutate M14-unload-result-lookup-by-key "$W" 's/(TransportDemandCompletionRow\? existingCompletion = await dbContext\.TransportDemandCompletions\s*)\.WhereIdentity\(demand\.Identity\(\)\)/$1.Where(row => row.TransportDemandKey == demand.TransportDemandKey)/'
+mutate M15-append-lookup-by-key "$W" 's/\.WhereDemandIdOrIdentity\(snapshot\.DemandId, TransportDemandIdentity\.Of\(snapshot\)\)/.Where(row => row.DemandId == snapshot.DemandId || row.TransportDemandKey == snapshot.TransportDemandKey)/'
+mutate M16-backfill-without-json-guard "$M" 's/\s*WHEN NOT json_valid\("LiveMesFieldsJson"\) THEN \x27\x27//'
 git status --short -- src tests >>"$out"
 echo DONE >>"$out"
