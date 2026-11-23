@@ -1171,8 +1171,12 @@ public sealed partial class JourneyRuntimeEngine
     private async Task<string[]> VehicleConditionReasonsAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
     {
         List<string> reasons = [];
-        // Onboard's half (review M2): a Ready session whose safety summary vouches for sending the vehicle off.
-        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        // Onboard's half (review M2): a Ready session whose safety summary vouches for sending the vehicle off -- and, since
+        // control-server#912, whose connection is up now: every caller is about to create an order that moves the vehicle (a
+        // rebuild, a leg never sent, an idle-return or charging departure), and a vehicle whose Onboard was stopped keeps a
+        // Ready row and a young last message for up to MaximumEvidenceAge. Disconnected it reads ONBOARD_FACTS_NOT_READY.
+        OnboardDispatchFacts? onboard = await onboardFacts.ReadOnboardFactsForNewPurposeAsync(runtime.AgvId, cancellationToken)
+            .ConfigureAwait(false);
         if (onboard is null)
         {
             reasons.Add("ONBOARD_FACTS_NOT_READY");
