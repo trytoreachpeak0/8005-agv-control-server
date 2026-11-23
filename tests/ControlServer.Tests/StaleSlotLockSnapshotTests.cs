@@ -345,7 +345,9 @@ public sealed class StaleSlotLockSnapshotTests
     private static async Task<IReadOnlyList<string>> GapsAsync(RuntimeFixture fixture, CancellationToken token)
     {
         fixture.Context.ChangeTracker.Clear();
-        OnboardDispatchFactsReader reader = new(fixture.Context, Options.Create(fixture.Options), fixture.Clock);
+        // control-server#912: the fixture's presence, which reads the seeded session as connected; a reader without one answers
+        // every gate check ONBOARD_NOT_CONNECTED.
+        OnboardDispatchFactsReader reader = new(fixture.Context, Options.Create(fixture.Options), fixture.Clock, fixture.Presence);
         return await NonBusinessDepartureGate.SessionGapsAsync(reader, fixture.Options.AgvId, token);
     }
 
