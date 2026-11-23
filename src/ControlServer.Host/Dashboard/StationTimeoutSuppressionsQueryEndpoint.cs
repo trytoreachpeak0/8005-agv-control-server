@@ -18,12 +18,13 @@ namespace ControlServer.Host.Dashboard;
 /// </para>
 /// <para>
 /// <b>移出</b>跟着告警走：需求离开 MES 目录（MES 关单）时派车轮末的写入器清掉告警，这里只列未清的，所以它自然消失；
-/// 回到目录时告警重开，它又出现。终结时刻取这条业务键的抑制行（<c>TransportDemandSuppressions.SuppressedAt</c>）：它与终结同一次保存落库、
-/// 按业务键只写一次不改写。不取告警的 <c>FirstRaisedAt</c>：告警重开时那一列改成重开的时刻（control-server#751 审查 M1）。
+/// 回到目录时告警重开，它又出现。终结时刻取这条需求的抑制行（<c>TransportDemandSuppressions.SuppressedAt</c>）：它与终结同一次保存落库、
+/// 按需求身份只写一次不改写。按告警的 <c>DemandId</c> 找抑制行，不按业务键：同一子批的焊线、焊线2 两程各有一条（control-server#911）。不取告警的 <c>FirstRaisedAt</c>：告警重开时那一列改成重开的时刻（control-server#751 审查 M1）。
 /// 读不到抑制行（正常走不到）时才退回告警的形成时刻。
 /// </para>
 /// <para>
-/// 站点取告警细节里记下的 <c>stationId</c>（终结时本停靠的站点），批号从业务键拆（<see cref="TransportDemandKeys.SublotOf"/>）。
+/// 站点取告警细节里记下的 <c>stationId</c>（终结时本停靠的站点），批号从业务键拆（<see cref="TransportDemandKeys.SublotOf"/>），
+/// 程（<c>transportLeg</c>，不分程的任务类型为空串）取受理行，让同一批号的两程在清单上分得开（control-server#911）。
 /// 读不出站点时给 <c>null</c>，卡片照样列这一行——人要知道有这批料没人搬，站点空着也比整行不见好。
 /// </para>
 /// </remarks>
@@ -38,11 +39,14 @@ internal sealed class StationTimeoutSuppressionsQueryEndpoint : IDashboardQueryE
         StructuralDispatchBlockRow[] alarms = await dbContext.Set<StructuralDispatchBlockRow>().AsNoTracking()
             .Where(row => row.ClearedAt == null && codes.Contains(row.ReasonCode))
             .ToArrayAsync(cancellationToken);
-        string[] keys = [.. alarms.Select(row => row.TransportDemandKey).Distinct(StringComparer.Ordinal)];
+        string[] demandIds = [.. alarms.Select(row => row.DemandId).Distinct(StringComparer.Ordinal)];
         Dictionary<string, DateTimeOffset> endedAtByDemand = (await dbContext.Set<TransportDemandSuppressionRow>().AsNoTracking()
-                .Where(row => keys.Contains(row.TransportDemandKey))
+                .Where(row => demandIds.Contains(row.DemandId))
                 .ToArrayAsync(cancellationToken))
             .ToDictionary(row => row.DemandId, row => row.SuppressedAt, StringComparer.Ordinal);
+        Dictionary<string, string> legByDemand = await dbContext.AcceptedDemands.AsNoTracking()
+            .Where(row => demandIds.Contains(row.DemandId))
+            .ToDictionaryAsync(row => row.DemandId, row => row.TransportLeg, StringComparer.Ordinal, cancellationToken);
         // SQLite cannot ORDER BY a DateTimeOffset, so the oldest ending comes first in memory.
         return new
         {
@@ -54,6 +58,7 @@ internal sealed class StationTimeoutSuppressionsQueryEndpoint : IDashboardQueryE
                 {
                     demandId = item.Alarm.DemandId,
                     sublot = TransportDemandKeys.SublotOf(item.Alarm.TransportDemandKey),
+                    transportLeg = legByDemand.GetValueOrDefault(item.Alarm.DemandId, string.Empty),
                     stationId = StationOf(item.Alarm.DetailJson),
                     endedAt = item.EndedAt,
                     reasonCode = item.Alarm.ReasonCode,

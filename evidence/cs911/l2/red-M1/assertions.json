@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "staging-to-wire-second-leg",
+  "runId": "20261123T172003706Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "batchId": "unspecified",
+    "controlServerCommit": "d6442f083f192403444a2ceaa0823703889d0f01",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T172003706Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "7.0.0",
+      "tag": "protocol-v7.0.0",
+      "commit": "a1facf8674b05c67bfbddc14db4a163e8da2782a",
+      "protocolVersion": 8,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "44fa0b273810fb2d5326068c03f9647bfd8fdc1c5f01e27a5177b0e0473fe7cb",
+      "schemaBundleSha256": "6361d734f9b1a4f81178c79c0bc18b8287fd747622e60c99073e7fd5a5cf4c88",
+      "vectorsSha256": "6295840ec27422dc024a24f6deae9a7379f9b3047a163e903ac862c8b0274eec",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-S2W2-01",
+      "description": "焊线那程受理并走完，受理行的程是焊线",
+      "outcome": "FAIL",
+      "expected": "Completed, leg 焊线, Succeeded",
+      "actual": "Completed, leg '', Succeeded"
+    },
+    {
+      "id": "L2-S2W2-02",
+      "description": "同一程（STEP 焊线）以新 DemandId 再发：不受理，积压原因 TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED",
+      "outcome": "PASS",
+      "expected": "TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED, never accepted",
+      "actual": "backlog TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED, accepted False"
+    },
+    {
+      "id": "L2-S2W2-03",
+      "description": "焊线2 那程受理并走完，受理行的程是焊线2",
+      "outcome": "FAIL",
+      "expected": "accepted and Completed, leg 焊线2",
+      "actual": "never accepted; backlog TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED"
+    }
+  ]
+}

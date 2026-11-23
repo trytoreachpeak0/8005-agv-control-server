@@ -142,6 +142,14 @@ namespace ControlServer.Tests;
 /// 所以是行为变了，同 cs#382 只能在本票分支上录。同 cs#754，基线是对原值逐处改写的（只改这一处），不是把本票分支的输出抄进来；
 /// 改写后两条测试转绿，说明全文只差这一处。逐行差异在 <c>evidence/cs623/wirepin/zerochangepin-diff-*.txt</c>。
 /// </para>
+/// <para>
+/// <b>control-server#911（需求身份加「程」）给十份终结状态基线的 <c>AcceptedDemands</c> 行各加了一段 <c>|TransportLeg=''</c>，其余逐字未动。</b>
+/// 那一票给受理行加了「程」列，这组夹具全是 <c>WIRE_TO_GATE</c>、不分程，所以全为空串；列紧跟 <c>TransportDemandKey</c>，是
+/// <c>EnsureCreated</c> 按属性声明顺序建表的结果。这一列在集成分支上还不存在，所以同 cs#357 只能在本票分支上录。同 cs#623，基线是对
+/// <b>集成分支上的</b>原值（<c>fp/v2-impl@4fc1d72b</c>）逐处改写的——脚本只在 <c>## AcceptedDemands</c> 一节、每行
+/// <c>TransportDemandKey</c> 之后插这一段——不是把本票分支的输出抄进来。先算出该是多少：十份终结状态基线各一行受理，应 10 处，
+/// 四份看板基线没有受理一节、应 0 处；脚本报的实数是 10 与 0。改写后十条测试转绿，说明全文只差这十处。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {

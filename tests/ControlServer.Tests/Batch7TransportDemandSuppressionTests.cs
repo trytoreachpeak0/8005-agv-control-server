@@ -76,7 +76,7 @@ public sealed class Batch7TransportDemandSuppressionTests
         Assert.Equal(DemandExecutionStatus.Cancelled,
             (await reading.AcceptedDemands.SingleAsync(row => row.DemandId == Demand, cancellationToken)).Status);
         TransportDemandSuppression suppression = Assert.Single(await SuppressionAssertions.AllAsync(reading));
-        Assert.Equal(new TransportDemandSuppression(KeyOf(Demand), Demand, reasonCode, At.AddMinutes(5)), suppression);
+        Assert.Equal(new TransportDemandSuppression(KeyOf(Demand), Demand, reasonCode, At.AddMinutes(5), TransportDemandIdentity.NoLeg), suppression);
     }
 
     // ---- The fault cargo handoff ------------------------------------------------------------------------------------
@@ -152,7 +152,7 @@ public sealed class Batch7TransportDemandSuppressionTests
 
         await using ControlServerDbContext reading = fixture.NewContext();
         Assert.Equal(
-            new TransportDemandSuppression(KeyOf(Demand), Demand, "CANCELLED_BY_OPERATOR", At.AddMinutes(5)),
+            new TransportDemandSuppression(KeyOf(Demand), Demand, "CANCELLED_BY_OPERATOR", At.AddMinutes(5), TransportDemandIdentity.NoLeg),
             Assert.Single(await SuppressionAssertions.AllAsync(reading)));
     }
 
@@ -180,7 +180,7 @@ public sealed class Batch7TransportDemandSuppressionTests
 
         await using ControlServerDbContext reading = fixture.NewContext();
         Assert.Equal(
-            new TransportDemandSuppression(KeyOf(Demand), Demand, "CANCELLED_BY_STATION_TIMEOUT", At.AddMinutes(5)),
+            new TransportDemandSuppression(KeyOf(Demand), Demand, "CANCELLED_BY_STATION_TIMEOUT", At.AddMinutes(5), TransportDemandIdentity.NoLeg),
             Assert.Single(await SuppressionAssertions.AllAsync(reading)));
     }
 
@@ -244,7 +244,7 @@ public sealed class Batch7TransportDemandSuppressionTests
 
             await using ControlServerDbContext reading = FileContext(connectionString);
             Assert.Equal(
-                new TransportDemandSuppression(KeyOf(Demand), Demand, "CANCELLED_BY_STATION_TIMEOUT", At.AddMinutes(5)),
+                new TransportDemandSuppression(KeyOf(Demand), Demand, "CANCELLED_BY_STATION_TIMEOUT", At.AddMinutes(5), TransportDemandIdentity.NoLeg),
                 Assert.Single(await SuppressionAssertions.AllAsync(reading)));
             Assert.Equal(DemandExecutionStatus.Cancelled, (await reading.AcceptedDemands.SingleAsync(cancellationToken)).Status);
             Assert.Equal(At.AddMinutes(5), (await reading.Set<VehiclePurposeClaimRecordRow>().SingleAsync(cancellationToken)).ReleasedAt);

@@ -1,0 +1,26 @@
+== M7-completion-replay-by-key (1+1 src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.BothLegsAreAcceptedAndCompletedThroughTheStoreEachUnderItsOwnLeg
+失败!  - 失败:     1，通过:    11，已跳过:     0，总计:    12，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+== M8-completion-writes-no-leg (1+1 src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.BothLegsAreAcceptedAndCompletedThroughTheStoreEachUnderItsOwnLeg
+失败!  - 失败:     1，通过:    11，已跳过:     0，总计:    12，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+== M9-acceptance-writes-no-leg (1+1 src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.BothLegsAreAcceptedAndCompletedThroughTheStoreEachUnderItsOwnLeg
+  失败 ControlServer.Tests.TransportDemandLegTests.TheEndingWritesTheSuppressionUnderTheEndedLegAndEachLegGetsItsOwn
+失败!  - 失败:     2，通过:    10，已跳过:     0，总计:    12，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+== M10-backfill-skips-suppressions (1+1 src/ControlServer.Infrastructure/Persistence/Migrations/20261123074049_TransportDemandLeg.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegMigrationTests.UpgradingFillsTheLegOnlyWhereItSplitsAndLeavesEveryOtherValueAsItWas
+失败!  - 失败:     1，通过:    11，已跳过:     0，总计:    12，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+== M11-backfill-every-work-type (1+1 src/ControlServer.Infrastructure/Persistence/Migrations/20261123074049_TransportDemandLeg.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegMigrationTests.UpgradingFillsTheLegOnlyWhereItSplitsAndLeavesEveryOtherValueAsItWas
+失败!  - 失败:     1，通过:    11，已跳过:     0，总计:    12，持续时间: 4 s - ControlServer.Tests.dll (net8.0)
+== M12-rollback-without-collapse (0+1 src/ControlServer.Infrastructure/Persistence/Migrations/20261123074049_TransportDemandLeg.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegMigrationTests.AfterTheUpgradeASecondLegOfTheSameSublotIsWrittenAndRollingBackRenamesItOutOfTheOldKey
+失败!  - 失败:     1，通过:    11，已跳过:     0，总计:    12，持续时间: 4 s - ControlServer.Tests.dll (net8.0)
+DONE

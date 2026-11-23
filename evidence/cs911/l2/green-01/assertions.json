@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "scenario": "staging-to-wire-second-leg",
+  "runId": "20261123T171820279Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T171820279Z",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "7.0.0",
+      "tag": "protocol-v7.0.0",
+      "commit": "a1facf8674b05c67bfbddc14db4a163e8da2782a",
+      "protocolVersion": 8,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "44fa0b273810fb2d5326068c03f9647bfd8fdc1c5f01e27a5177b0e0473fe7cb",
+      "schemaBundleSha256": "6361d734f9b1a4f81178c79c0bc18b8287fd747622e60c99073e7fd5a5cf4c88",
+      "vectorsSha256": "6295840ec27422dc024a24f6deae9a7379f9b3047a163e903ac862c8b0274eec",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "batchId": "unspecified",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "d6442f083f192403444a2ceaa0823703889d0f01"
+  },
+  "assertions": [
+    {
+      "id": "L2-S2W2-01",
+      "description": "焊线那程受理并走完，受理行的程是焊线",
+      "outcome": "PASS",
+      "expected": "Completed, leg 焊线, Succeeded",
+      "actual": "Completed, leg '焊线', Succeeded"
+    },
+    {
+      "id": "L2-S2W2-02",
+      "description": "同一程（STEP 焊线）以新 DemandId 再发：不受理，积压原因 TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED",
+      "outcome": "PASS",
+      "expected": "TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED, never accepted",
+      "actual": "backlog TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED, accepted False"
+    },
+    {
+      "id": "L2-S2W2-03",
+      "description": "焊线2 那程受理并走完，受理行的程是焊线2",
+      "outcome": "PASS",
+      "expected": "Completed, key L2-S2W2-20261123T171820279Z|STAGING_TO_WIRE, leg 焊线2, Succeeded",
+      "actual": "Completed, key L2-S2W2-20261123T171820279Z|STAGING_TO_WIRE, leg '焊线2', Succeeded"
+    },
+    {
+      "id": "L2-S2W2-04",
+      "description": "同一业务键下两条完成事实，程分别是焊线与焊线2，各是自己那条需求的",
+      "outcome": "PASS",
+      "expected": "焊线=b6952434-6141-4460-b8f0-3847c9c398c6 焊线2=b15c1439-42c5-40f4-9f99-4d041ec34f33",
+      "actual": "2 row(s): 焊线=b6952434-6141-4460-b8f0-3847c9c398c6 焊线2=b15c1439-42c5-40f4-9f99-4d041ec34f33"
+    }
+  ]
+}

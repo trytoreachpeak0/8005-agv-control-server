@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Application/TransportDemandIdentity.cs b/src/ControlServer.Application/TransportDemandIdentity.cs
+index eced2efbd..7e773b4ac 100644
+--- a/src/ControlServer.Application/TransportDemandIdentity.cs
++++ b/src/ControlServer.Application/TransportDemandIdentity.cs
+@@ -39,7 +39,7 @@ public readonly record struct TransportDemandIdentity(string TransportDemandKey,
+     public static string LegOf(string workType, string? step)
+     {
+         ArgumentNullException.ThrowIfNull(workType);
+-        return LegSplitWorkTypes.Contains(workType) && !string.IsNullOrWhiteSpace(step) ? step : NoLeg;
++        return LegSplitWorkTypes.Contains(workType) && !string.IsNullOrWhiteSpace(step) && step.Length < 0 ? step : NoLeg;
+     }
+ 
+     /// <summary>目录里这条需求的身份：业务键原样，程按它的任务类型与此刻的 <c>STEP</c>。</summary>

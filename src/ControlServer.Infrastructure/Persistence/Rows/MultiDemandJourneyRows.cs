@@ -134,11 +134,15 @@ public sealed class VehiclePurposeClaimRow
 }
 
 /// <summary>
-/// 一个业务键被终态抑制（REQ-0155、REQ-0156、REQ-0211）。主键 <c>TransportDemandKey</c>，只追加、不改写；写入在批次7-05（control-server#210）。
+/// 一件活被终态抑制（REQ-0155、REQ-0156、REQ-0211）。只追加、不改写；写入在批次7-05（control-server#210）。
+/// 主键是「业务键 + 程」（control-server#911）：同一子批焊线那程被取消，只抑制那一程。
 /// </summary>
-public sealed class TransportDemandSuppressionRow
+public sealed class TransportDemandSuppressionRow : ITransportDemandIdentityRow
 {
     public required string TransportDemandKey { get; set; }
+
+    /// <summary>程，取被终结的那条受理行的程（<see cref="AcceptedDemandRow.TransportLeg"/>）。</summary>
+    public string TransportLeg { get; set; } = ControlServer.Application.TransportDemandIdentity.NoLeg;
     public required string DemandId { get; set; }
     public required string ReasonCode { get; set; }
     public DateTimeOffset SuppressedAt { get; set; }

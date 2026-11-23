@@ -1,0 +1,17 @@
+== M13-unload-result-writes-no-leg (1+1 src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.BothLegsUnloadResultsAreAcceptedEachCompletionUnderItsOwnLeg
+失败!  - 失败:     1，通过:    14，已跳过:     0，总计:    15，持续时间: 5 s - ControlServer.Tests.dll (net8.0)
+== M14-unload-result-lookup-by-key (1+1 src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.BothLegsUnloadResultsAreAcceptedEachCompletionUnderItsOwnLeg
+失败!  - 失败:     1，通过:    14，已跳过:     0，总计:    15，持续时间: 5 s - ControlServer.Tests.dll (net8.0)
+== M15-append-lookup-by-key (1+1 src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.TheSecondLegIsAppendedToAnotherJourneyAfterTheFirstLegWasAccepted
+失败!  - 失败:     1，通过:    14，已跳过:     0，总计:    15，持续时间: 5 s - ControlServer.Tests.dll (net8.0)
+== M16-backfill-without-json-guard (0+1 src/ControlServer.Infrastructure/Persistence/Migrations/20261123074049_TransportDemandLeg.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegMigrationTests.ARowFromBeforeTheWorkTypeColumnWithNoFieldJsonUpgradesWithAnEmptyLeg
+失败!  - 失败:     1，通过:    14，已跳过:     0，总计:    15，持续时间: 5 s - ControlServer.Tests.dll (net8.0)
+DONE

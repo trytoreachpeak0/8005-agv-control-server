@@ -806,8 +806,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         ArgumentNullException.ThrowIfNull(plan);
 
         AcceptedDemandRow? existing = await dbContext.AcceptedDemands
-            .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId ||
-                                         row.TransportDemandKey == snapshot.TransportDemandKey, cancellationToken)
+            .WhereDemandIdOrIdentity(snapshot.DemandId, TransportDemandIdentity.Of(snapshot))
+            .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         bool redispatch = existing is not null &&
                           await IsReleasedForRedispatchAsync(existing, snapshot, cancellationToken).ConfigureAwait(false);
@@ -1230,7 +1230,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         CancellationToken cancellationToken)
     {
         bool sameDemand = existing.DemandId == snapshot.DemandId &&
-                          existing.TransportDemandKey == snapshot.TransportDemandKey &&
+                          existing.Identity() == TransportDemandIdentity.Of(snapshot) &&
                           existing.Sublot == snapshot.Sublot &&
                           existing.WorkType == snapshot.WorkType;
         JourneyDemandRow? membership = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
@@ -1285,8 +1285,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         }
 
         AcceptedDemandRow? existing = await dbContext.AcceptedDemands
-            .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId ||
-                                         row.TransportDemandKey == snapshot.TransportDemandKey, cancellationToken)
+            .WhereDemandIdOrIdentity(snapshot.DemandId, TransportDemandIdentity.Of(snapshot))
+            .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         bool redispatch = existing is not null &&
                           await IsReleasedForRedispatchAsync(existing, snapshot, cancellationToken).ConfigureAwait(false);
@@ -1294,7 +1294,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             bool same = existing.DemandId == snapshot.DemandId &&
                         existing.SeriesId == snapshot.SeriesId &&
-                        existing.TransportDemandKey == snapshot.TransportDemandKey &&
+                        existing.Identity() == TransportDemandIdentity.Of(snapshot) &&
                         existing.WorkType == snapshot.WorkType &&
                         existing.Sublot == snapshot.Sublot &&
                         existing.Generation == snapshot.Generation &&
@@ -2373,8 +2373,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             throw new UnsafePhysicalEvidenceException("Completion requires complete EMPTY, locked and output-reset evidence.");
         }
 
+        // 完成事实按这条需求的身份（业务键 + 程，control-server#911）：同一子批焊线那程已完成，焊线2 那程是另一条完成事实。
+        AcceptedDemandRow demand = await dbContext.AcceptedDemands
+            .SingleAsync(row => row.DemandId == demandId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!string.Equals(demand.TransportDemandKey, transportDemandKey, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Demand '{demandId}' is accepted under another business key than the completion names.");
+        }
         TransportDemandCompletionRow? replay = await dbContext.TransportDemandCompletions
-            .SingleOrDefaultAsync(row => row.TransportDemandKey == transportDemandKey, cancellationToken)
+            .WhereIdentity(demand.Identity())
+            .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         if (replay is not null)
         {
@@ -2385,9 +2395,6 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             return;
         }
 
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands
-            .SingleAsync(row => row.DemandId == demandId && row.TransportDemandKey == transportDemandKey, cancellationToken)
-            .ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         dbContext.UnloadBatches.Add(new UnloadBatchRow
         {
@@ -2406,6 +2413,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
             TransportDemandKey = transportDemandKey,
+            TransportLeg = demand.TransportLeg,
             DemandId = demandId,
             DemandRevision = demandRevision,
             Evidence = completionEvidence,
@@ -2989,7 +2997,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             .SingleAsync(row => row.DemandId == result.DemandId, cancellationToken)
             .ConfigureAwait(false);
         TransportDemandCompletionRow? existingCompletion = await dbContext.TransportDemandCompletions
-            .SingleOrDefaultAsync(row => row.TransportDemandKey == demand.TransportDemandKey, cancellationToken)
+            .WhereIdentity(demand.Identity())
+            .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         if (existingCompletion is not null)
         {
@@ -3031,6 +3040,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
             TransportDemandKey = demand.TransportDemandKey,
+            TransportLeg = demand.TransportLeg,
             DemandId = demand.DemandId,
             DemandRevision = demand.DemandRevision,
             Evidence = result.ResultContentSha256,
@@ -3750,6 +3760,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         DemandId = snapshot.DemandId,
         SeriesId = snapshot.SeriesId,
         TransportDemandKey = snapshot.TransportDemandKey,
+        TransportLeg = TransportDemandIdentity.Of(snapshot).TransportLeg,
         WorkType = snapshot.WorkType,
         Sublot = snapshot.Sublot,
         Generation = snapshot.Generation,
