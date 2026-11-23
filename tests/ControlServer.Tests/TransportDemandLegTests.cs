@@ -199,6 +199,27 @@ public sealed class TransportDemandLegTests : IAsyncDisposable
                 .Select(row => (row.TransportDemandKey, row.TransportLeg, row.DemandId)).Order());
     }
 
+    /// <summary>
+    /// 终结路径按程写抑制（<see cref="PickupStopTermination"/>）：焊线那程被操作员取消，抑制行带焊线；之后焊线2 那程也被取消，
+    /// 它照样写下自己的一条——不因为同键已有焊线那程的抑制就跳过（那样焊线2 那程被取消后会被再派）。
+    /// </summary>
+    [Fact]
+    public async Task TheEndingWritesTheSuppressionUnderTheEndedLegAndEachLegGetsItsOwn()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await AcceptThroughTheStoreAsync(fixture, FirstLeg, WireLeg, "AGV-01", "VK-01", Now);
+        await EndThroughTheTerminationAsync(fixture, FirstLeg, "CANCELLED_BY_OPERATOR", Now.AddMinutes(5));
+        await AcceptThroughTheStoreAsync(fixture, SecondLeg, Wire2Leg, "AGV-02", "VK-02", Now.AddHours(3));
+        await EndThroughTheTerminationAsync(fixture, SecondLeg, "CANCELLED_BY_STATION_TIMEOUT", Now.AddHours(3).AddMinutes(5));
+
+        await using ControlServerDbContext reading = fixture.NewContext();
+        string key = Key(TransportTaskTypes.StagingToWire);
+        Assert.Equal(
+            [(key, WireLeg, FirstLeg, "CANCELLED_BY_OPERATOR"), (key, Wire2Leg, SecondLeg, "CANCELLED_BY_STATION_TIMEOUT")],
+            (await reading.Set<TransportDemandSuppressionRow>().AsNoTracking().ToArrayAsync(Token))
+                .Select(row => (row.TransportDemandKey, row.TransportLeg, row.DemandId, row.ReasonCode)).Order());
+    }
+
     // ---- Helpers --------------------------------------------------------------------------------------------------
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
@@ -215,6 +236,17 @@ public sealed class TransportDemandLegTests : IAsyncDisposable
             JourneyPlanBuilder.PickupIntent(plan, demandId, at),
             plan,
             Token);
+    }
+
+    private static async Task EndThroughTheTerminationAsync(
+        Batch7JourneyFixture fixture, string demandId, string reasonCode, DateTimeOffset at)
+    {
+        await using ControlServerDbContext writing = fixture.NewContext();
+        await using var transaction = await writing.Database.BeginTransactionAsync(Token);
+        JourneyRuntimeRow runtime = await DemandJourneyLookup.JourneyOf(writing, demandId).SingleAsync(Token);
+        await new PickupStopTermination(writing).StageAsync(runtime, demandId, reasonCode, at, Token);
+        await writing.SaveChangesAsync(Token);
+        await transaction.CommitAsync(Token);
     }
 
     private static async Task CompleteThroughTheStoreAsync(Batch7JourneyFixture fixture, string demandId, DateTimeOffset at)
