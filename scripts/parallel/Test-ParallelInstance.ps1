@@ -5463,6 +5463,10 @@ $productionApprovalRecord = 'Zhengyu Shao 于 2026-10-14 在 Claude 对话中批
 # to take agv01 out of the fleet for this window. Not a stage of the plan: the stage-3 definition with agv01's row removed
 # and nothing else changed, pinned by its own case below. Redeploying the stage-3 definition brings agv01 back.
 $productionS3WithoutAgv01 = 'instance-factory01-v2.cutover-production-s3-without-agv01.runtime-on.json'
+# program#210, 2026-11-23: the user turned idle return on in production once control-server#793 was deployed (v7). Not a stage
+# of the plan: the stage-3 definition with idleReturn.enabled true and nothing else changed, pinned by its own case below. The
+# stage-3 definition itself stays off, so redeploying it with the same package turns idle return off again.
+$productionS3IdleReturnOn = 'instance-factory01-v2.cutover-production-s3-idle-return-on.runtime-on.json'
 $cutoverHeldRefusals = @(
     'journeyRuntime.allowedWorkTypes ["DIE_TO_WIRE_STAGING","DIE_TO_OVEN","WIRE_TO_GATE","WIRE_TO_OPTICAL","STAGING_TO_WIRE","WIRE_TO_NITROGEN","WIRE_TO_FULL_INSPECTION"] includes WIRE_TO_GATE, which the MVP takes from the same catalog'
     'journeyRuntime.fleet[0] names agv01 (agvId, vehicleKey, deviceKey, riotId), the vehicle the MVP service is driving in production.')
@@ -5486,7 +5490,7 @@ Invoke-SourceCase 'catalog: every shipped definition carries 00:00:30 / 00:05:00
             -not ($c -is [System.Collections.IDictionary] -and $c['approvedSyncPeriod'] -ceq '00:00:30' -and $c['approvedMaxUnconfirmed'] -ceq '00:05:00' -and
                 ([string] $c['approvalRecord']).Contains('2026-10-09') -and @(Test-ParallelInstanceDefinition -Definition $d).Count -eq 0) })
     $all = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | ForEach-Object Name)
-    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames -and $_ -cnotin $cutoverDefinitionNames -and -not $trialStageDefinitions.Contains($_) -and -not $productionStageDefinitions.Contains($_) -and $_ -cne $productionS3WithoutAgv01 })
+    $unlisted = @($all | Where-Object { $_ -cnotin $shippedDefinitionNames -and $_ -cnotin $cutoverDefinitionNames -and -not $trialStageDefinitions.Contains($_) -and -not $productionStageDefinitions.Contains($_) -and $_ -cne $productionS3WithoutAgv01 -and $_ -cne $productionS3IdleReturnOn })
     @{ Ok = ($wrong.Count -eq 0 -and $unlisted.Count -eq 0); Detail = "wrong: $($wrong -join ', '); shipped but not checked here: $($unlisted -join ', ')" }
 }
 Invoke-SourceCase 'catalog: the cutover definition carries the same approved pair, and is refused for exactly the two guards control-server#564 opens' {
@@ -7168,13 +7172,13 @@ Invoke-SourceCase 'idle return read-back: the Host source logs the switch after 
 # The user, 2026-10-19, after the independent review: "这次先不开" -- not before control-server#793 (a vehicle standing on a
 # registered waiting point without a station row is committed to the station it is on). The section stays in stage 3, written off,
 # so turning it on later is that one value; the definition must still pass the check with it.
-Invoke-SourceCase 'idle return: only the production stage-3 definition writes it, writes it off, and still passes the definition check' {
+Invoke-SourceCase 'idle return: only the production stage-3 definitions write it, the stage-3 definition writes it off, and still passes the definition check (program#210: the idle-return-on twin is pinned below)' {
     $writing = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'instance-*.json' | Where-Object {
             (Get-Content -Raw -LiteralPath $_.FullName).Contains('idleReturn') } | ForEach-Object Name)
     $s3 = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-production-s3.runtime-on.json')
     $f = @(Test-ParallelInstanceDefinition -Definition $s3 | Where-Object { $_ -match 'idleReturn' })
     $written = $s3['idleReturn']
-    @{ Ok = (($writing -join ',') -ceq "$productionS3WithoutAgv01,instance-factory01-v2.cutover-production-s3.runtime-on.json" -and
+    @{ Ok = (($writing -join ',') -ceq "$productionS3IdleReturnOn,$productionS3WithoutAgv01,instance-factory01-v2.cutover-production-s3.runtime-on.json" -and
             $written -is [System.Collections.IDictionary] -and $written['enabled'] -is [bool] -and -not $written['enabled'] -and
             -not (Test-ParallelIdleReturnEnabled -Definition $s3) -and $f.Count -eq 0)
         Detail = "written in: $($writing -join ', '); s3 idleReturn: $(ConvertTo-Json $written -Compress); idleReturn failures: $($f -join ' | ')" }
@@ -7191,6 +7195,18 @@ Invoke-SourceCase 'program#210: the stage-3 definition without agv01 is the stag
     $same = ($expected | ConvertTo-Json -Depth 20 -Compress) -ceq ($two | ConvertTo-Json -Depth 20 -Compress)
     @{ Ok = ($same -and [int] $dropped['riotId'] -eq 58 -and $f.Count -eq 0)
         Detail = "same as stage 3 less agv01: $same; dropped riotId $($dropped['riotId']); failures: $($f -join ' | ')" }
+}
+Invoke-SourceCase 'program#210: the stage-3 definition with idle return on is the stage-3 definition with idleReturn.enabled true and nothing else, and is accepted with -ProductionCutover' {
+    $s3 = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot 'instance-factory01-v2.cutover-production-s3.runtime-on.json')
+    $on = Read-ParallelInstanceDefinition -Path (Join-Path $PSScriptRoot $productionS3IdleReturnOn)
+    $expected = Copy-Definition $s3
+    $expected['idleReturn']['enabled'] = $true
+    [string[]] $f = @(Test-ParallelInstanceDefinition -Definition (Copy-Definition $on) -ProductionCutover)
+    $same = ($expected | ConvertTo-Json -Depth 20 -Compress) -ceq ($on | ConvertTo-Json -Depth 20 -Compress)
+    $written = $on['idleReturn']['enabled']
+    @{ Ok = ($same -and $written -is [bool] -and $written -and (Test-ParallelIdleReturnEnabled -Definition $on) -and
+            -not (Test-ParallelIdleReturnEnabled -Definition $s3) -and $f.Count -eq 0)
+        Detail = "same as stage 3 with idle return on: $same; written: $written; failures: $($f -join ' | ')" }
 }
 
 # control-server#797. The recovery grant requirement (RecoveryGrantOptions, section RecoveryGrant; ADR-cross-0066) and the
