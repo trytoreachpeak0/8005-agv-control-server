@@ -234,18 +234,24 @@ public interface IJourneyMembershipStore
 /// <summary>车辆被哪种用途、哪趟旅程占着。</summary>
 public sealed record VehiclePurposeClaim(string VehicleKey, string Purpose, string JourneyId, DateTimeOffset ClaimedAt);
 
-/// <summary>一个业务键的终态抑制。</summary>
+/// <summary>
+/// 一件活的终态抑制。身份是业务键加程（<see cref="TransportDemandIdentity"/>，control-server#911）；不分程的任务类型程为空串。
+/// </summary>
 public sealed record TransportDemandSuppression(
-    string TransportDemandKey, string DemandId, string ReasonCode, DateTimeOffset SuppressedAt);
+    string TransportDemandKey, string DemandId, string ReasonCode, DateTimeOffset SuppressedAt,
+    string TransportLeg = TransportDemandIdentity.NoLeg)
+{
+    public TransportDemandIdentity Identity => new(TransportDemandKey, TransportLeg);
+}
 
-/// <summary>按业务键抑制（REQ-0155、REQ-0156、REQ-0211）。只追加、不改写，先写者胜。</summary>
+/// <summary>按需求身份（业务键 + 程）抑制（REQ-0155、REQ-0156、REQ-0211；control-server#911）。只追加、不改写，先写者胜。</summary>
 public interface ITransportDemandSuppressionStore
 {
-    /// <summary>键没有抑制时写入这一条；已有时不改、不抛。返回键上成立的那一条。</summary>
+    /// <summary>这个身份没有抑制时写入这一条；已有时不改、不抛。返回身份上成立的那一条。</summary>
     Task<TransportDemandSuppression> SuppressIfAbsentAsync(
         TransportDemandSuppression suppression, CancellationToken cancellationToken);
 
-    Task<TransportDemandSuppression?> ReadAsync(string transportDemandKey, CancellationToken cancellationToken);
+    Task<TransportDemandSuppression?> ReadAsync(TransportDemandIdentity identity, CancellationToken cancellationToken);
 }
 
 /// <summary>

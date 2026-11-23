@@ -37,7 +37,7 @@ public sealed class StationTimeoutSuppressionCard : IDashboardCard
         foreach (JsonElement row in rows)
         {
             html.Append("<tr>")
-                .Append(DashboardPageRenderer.Cell(StationHoldingRendering.Str(row, "sublot") ?? ""))
+                .Append(DashboardPageRenderer.Cell(SublotWithLeg(row)))
                 .Append(DashboardPageRenderer.Cell(StationHoldingRendering.Str(row, "stationId") ?? "（未记下）"))
                 .Append(DashboardPageRenderer.Cell(StationHoldingRendering.Str(row, "endedAt") ?? ""))
                 .Append(DashboardPageRenderer.Cell(StationHoldingRendering.Str(row, "demandId") ?? ""))
@@ -46,5 +46,15 @@ public sealed class StationTimeoutSuppressionCard : IDashboardCard
         }
         html.Append("</table></section>");
         return html.ToString();
+    }
+
+    /// <summary>
+    /// 批号，分程的任务类型后面带工序（control-server#911）：同一批号的焊线、焊线2 两程可能各有一行，不带工序分不开。
+    /// </summary>
+    private static string SublotWithLeg(JsonElement row)
+    {
+        string sublot = StationHoldingRendering.Str(row, "sublot") ?? "";
+        string? leg = StationHoldingRendering.Str(row, "transportLeg");
+        return string.IsNullOrEmpty(leg) ? sublot : $"{sublot}（{leg}）";
     }
 }

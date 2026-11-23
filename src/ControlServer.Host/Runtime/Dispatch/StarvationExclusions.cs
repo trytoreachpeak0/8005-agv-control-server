@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -26,7 +27,8 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// <b>一处算、两处用</b>：派车轮排序（开轮时）与 <see cref="StarvationEscalationSink"/>（轮末）都经这里，只是调用时刻不同。
 /// 两边各查一遍的话，下一个往这个集合里加一类的人只会改到一边，排序与告警就对「是否超时」给出两个答案。
 /// 后两种的判法与 <see cref="Criteria.TransportDemandKeySuppressedCriterion"/>、
-/// <see cref="Criteria.TransportDemandKeyAlreadyAcceptedCriterion"/> 相同（同键有抑制；同键有 <c>DemandId</c> 不同的受理行），
+/// <see cref="Criteria.TransportDemandKeyAlreadyAcceptedCriterion"/> 相同（同一身份——业务键加程，control-server#911——有抑制；
+/// 同一身份有 <c>DemandId</c> 不同的受理行），
 /// 只是按整份目录一次查完：两道判据逐条候选、逐车查，这里一轮两次。
 /// </para>
 /// </remarks>
@@ -77,21 +79,21 @@ public static class StarvationExclusions
         }
 
         string[] keys = [.. catalog.Select(demand => demand.TransportDemandKey).Distinct(StringComparer.Ordinal)];
-        HashSet<string> suppressedKeys = (await dbContext.Set<TransportDemandSuppressionRow>().AsNoTracking()
-                .Where(row => keys.Contains(row.TransportDemandKey))
-                .Select(row => row.TransportDemandKey)
+        HashSet<TransportDemandIdentity> suppressed = (await dbContext.Set<TransportDemandSuppressionRow>().AsNoTracking()
+                .WhereKeyAmong(keys)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-            .ToHashSet(StringComparer.Ordinal);
-        ILookup<string, string> acceptedByKey = (await dbContext.AcceptedDemands.AsNoTracking()
-                .Where(row => keys.Contains(row.TransportDemandKey))
-                .Select(row => new { row.TransportDemandKey, row.DemandId })
+            .Select(row => row.Identity())
+            .ToHashSet();
+        ILookup<TransportDemandIdentity, string> acceptedByIdentity = (await dbContext.AcceptedDemands.AsNoTracking()
+                .WhereKeyAmong(keys)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-            .ToLookup(row => row.TransportDemandKey, row => row.DemandId, StringComparer.Ordinal);
+            .ToLookup(row => row.Identity(), row => row.DemandId);
 
         foreach (AcceptedDemandSnapshot demand in catalog)
         {
-            if (suppressedKeys.Contains(demand.TransportDemandKey) ||
-                acceptedByKey[demand.TransportDemandKey].Any(id => !string.Equals(id, demand.DemandId, StringComparison.Ordinal)))
+            TransportDemandIdentity identity = TransportDemandIdentity.Of(demand);
+            if (suppressed.Contains(identity) ||
+                acceptedByIdentity[identity].Any(id => !string.Equals(id, demand.DemandId, StringComparison.Ordinal)))
             {
                 excluded.Add(demand.DemandId);
             }

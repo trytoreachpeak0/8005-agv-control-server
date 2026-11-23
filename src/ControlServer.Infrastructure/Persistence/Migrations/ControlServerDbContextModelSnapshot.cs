@@ -61,6 +61,10 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TransportLeg")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("ValueObservedAt")
                         .HasColumnType("TEXT");
 
@@ -78,7 +82,7 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
 
                     b.HasKey("DemandId");
 
-                    b.HasIndex("TransportDemandKey")
+                    b.HasIndex("TransportDemandKey", "TransportLeg")
                         .IsUnique();
 
                     b.ToTable("AcceptedDemands");
@@ -4315,6 +4319,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.Property<string>("TransportDemandKey")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TransportLeg")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("CompletedAt")
                         .HasColumnType("TEXT");
 
@@ -4329,7 +4336,7 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.HasKey("TransportDemandKey");
+                    b.HasKey("TransportDemandKey", "TransportLeg");
 
                     b.HasIndex("DemandId")
                         .IsUnique();
@@ -4340,6 +4347,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.TransportDemandSuppressionRow", b =>
                 {
                     b.Property<string>("TransportDemandKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TransportLeg")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("DemandId")
@@ -4353,7 +4363,7 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("SuppressedAt")
                         .HasColumnType("TEXT");
 
-                    b.HasKey("TransportDemandKey");
+                    b.HasKey("TransportDemandKey", "TransportLeg");
 
                     b.HasIndex("DemandId");
 

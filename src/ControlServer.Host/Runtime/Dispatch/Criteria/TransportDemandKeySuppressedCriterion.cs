@@ -8,9 +8,14 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>挡的是键，不是 DemandId。</b>本地取消与交接终止只终结那一条 <c>DemandId</c>，而 MesIngest 在需求仍可见、或 GONE 后再现时会给同一个
-/// 业务键发新的 <c>DemandId</c>。REQ-0155 要的是那个键不再被执行，不管它这次叫什么。同一 SUBLOT 的另一任务类型是另一个键，
+/// <b>挡的是需求身份（业务键 + 程），不是 DemandId。</b>本地取消与交接终止只终结那一条 <c>DemandId</c>，而 MesIngest 在需求仍可见、或 GONE 后
+/// 再现时会给同一个业务键发新的 <c>DemandId</c>。REQ-0155 要的是那件活不再被执行，不管它这次叫什么。同一 SUBLOT 的另一任务类型是另一个键，
 /// 不受影响——键本身就是 <c>sublot|workType</c>。
+/// </para>
+/// <para>
+/// <b>按程抑制（control-server#911，用户 2026-11-23 定）。</b><c>STAGING_TO_WIRE</c> 按 MES <c>STEP</c> 分程
+/// （<see cref="TransportDemandIdentity"/>）：同一子批「焊线」那程被取消，只抑制那一程，几小时后来的「焊线2」那程照常派。
+/// 同一程以新 <c>DemandId</c> 再现时 <c>STEP</c> 不变，照旧被挡。
 /// </para>
 /// <para>
 /// <b>Order 11：紧跟 <see cref="AlreadyAcceptedCriterion"/>，在一切车辆判据之前。</b>它是需求本身的结论，与车无关，
@@ -33,7 +38,7 @@ public sealed class TransportDemandKeySuppressedCriterion(ITransportDemandSuppre
     {
         ArgumentNullException.ThrowIfNull(evaluation);
         TransportDemandSuppression? suppression = await suppressions
-            .ReadAsync(evaluation.Candidate.TransportDemandKey, cancellationToken).ConfigureAwait(false);
+            .ReadAsync(TransportDemandIdentity.Of(evaluation.Candidate), cancellationToken).ConfigureAwait(false);
         return suppression is null ? DispatchAdmissionChain.Eligible : Reason;
     }
 }

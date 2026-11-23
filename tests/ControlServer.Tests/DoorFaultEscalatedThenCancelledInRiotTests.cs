@@ -253,8 +253,10 @@ public sealed class DoorFaultEscalatedThenCancelledInRiotTests
         DatabaseFacade database = fixture.Context.Database;
         Assert.False(database.HasPendingModelChanges());
         string[] migrations = [.. database.GetMigrations()];
-        Assert.Equal(PreviousMigration, migrations[^2]);
-        Assert.EndsWith("_VehicleFaultOriginSymptomCode", migrations[^1], StringComparison.Ordinal);
+        // 本票的迁移紧跟 PreviousMigration；它之后还可以有别的迁移（control-server#911），所以按名字找，不按「最后一个」。
+        int own = Array.FindIndex(migrations, name => name.EndsWith("_VehicleFaultOriginSymptomCode", StringComparison.Ordinal));
+        Assert.True(own > 0);
+        Assert.Equal(PreviousMigration, migrations[own - 1]);
         Assert.Equal(0L, await ScalarAsync(fixture, "SELECT \"notnull\" AS Value FROM pragma_table_info('VehicleFaultStates') WHERE name = 'OriginSymptomCode'"));
 
         IMigrator migrator = fixture.Context.GetService<IMigrator>();

@@ -1,14 +1,20 @@
+using ControlServer.Application;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
 /// <summary>
-/// 候选的业务键已有<b>别的</b> <c>DemandId</c> 被受理过——任何状态：进行中、成功、取消、释放待改派（批次7-05，control-server#210）。
+/// 候选的需求身份（业务键 + 程）已有<b>别的</b> <c>DemandId</c> 被受理过——任何状态：进行中、成功、取消、释放待改派
+/// （批次7-05，control-server#210）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>这一条消除的是一个整轮级的隐患。</b><c>AcceptedDemands.TransportDemandKey</c> 是唯一索引，而第 10 道只按
+/// <b>按程判（control-server#911）。</b><c>STAGING_TO_WIRE</c> 按 MES <c>STEP</c> 分程：同一子批「焊线」那程受理过（送达或取消），
+/// 「焊线2」那程是另一件活，不由这里挡；同一程以新 <c>DemandId</c> 再发（MES 重复下发、换代）时 <c>STEP</c> 不变，照旧挡。
+/// </para>
+/// <para>
+/// <b>这一条消除的是一个整轮级的隐患。</b><c>AcceptedDemands</c> 的「业务键 + 程」是唯一索引，而第 10 道只按
 /// <c>DemandId</c> 挡。MES 以新 <c>DemandId</c> 再发同一个业务键时，候选过完全部判据、被选中，受理存储层查到同键旧行、内容不同，
 /// 抛 <c>BusinessIdentityConflictException</c>。control-server#231 之后那一抛只隔离出价的那辆车，可这条任务的每一个出价者都会
 /// 走到同一处、各抛一次、各退出本轮——于是排在它后面的任务没有车可派，而且下一轮原样再来，直到那条需求离开目录。
@@ -33,10 +39,11 @@ public sealed class TransportDemandKeyAlreadyAcceptedCriterion(ControlServerDbCo
     public async Task<string> EvaluateAsync(DispatchCandidateEvaluation evaluation, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(evaluation);
-        string key = evaluation.Candidate.TransportDemandKey;
+        TransportDemandIdentity identity = TransportDemandIdentity.Of(evaluation.Candidate);
         string demandId = evaluation.Candidate.DemandId;
         bool takenByAnother = await dbContext.AcceptedDemands.AsNoTracking()
-            .AnyAsync(row => row.TransportDemandKey == key && row.DemandId != demandId, cancellationToken)
+            .WhereIdentity(identity)
+            .AnyAsync(row => row.DemandId != demandId, cancellationToken)
             .ConfigureAwait(false);
         return takenByAnother ? Reason : DispatchAdmissionChain.Eligible;
     }

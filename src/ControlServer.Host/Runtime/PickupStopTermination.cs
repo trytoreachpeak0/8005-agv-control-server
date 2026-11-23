@@ -240,17 +240,19 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
 
         AcceptedDemandRow demand = await dbContext.AcceptedDemands
             .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
-        string key = demand.TransportDemandKey;
-        if (dbContext.Set<TransportDemandSuppressionRow>().Local.Any(row => row.TransportDemandKey == key) ||
+        // 按这条需求自己的身份（业务键 + 程，control-server#911）抑制：焊线那程取消只压焊线那程。
+        TransportDemandIdentity identity = demand.Identity();
+        if (dbContext.Set<TransportDemandSuppressionRow>().Local.WhereIdentity(identity).Any() ||
             await dbContext.Set<TransportDemandSuppressionRow>().AsNoTracking()
-                .AnyAsync(row => row.TransportDemandKey == key, cancellationToken).ConfigureAwait(false))
+                .WhereIdentity(identity).AnyAsync(cancellationToken).ConfigureAwait(false))
         {
             return;
         }
 
         dbContext.Set<TransportDemandSuppressionRow>().Add(new TransportDemandSuppressionRow
         {
-            TransportDemandKey = key,
+            TransportDemandKey = identity.TransportDemandKey,
+            TransportLeg = identity.TransportLeg,
             DemandId = demandId,
             ReasonCode = reasonCode,
             SuppressedAt = endedAt,

@@ -94,6 +94,8 @@ public sealed class Batch6MigrationDisciplineTests
         // control-server#881：派车轮待改派查询走索引——JourneyDemands 加 (DemandId, DispatchGeneration) 一个普通复合索引，并 DROP INDEX IF EXISTS 现场 11-05 手工建的同列临时索引 IX_tmp_redispatch_JourneyDemands_DemandId_Generation；不动列、不动行，Down 只删正式索引。调度 Coordinator14 于 2026-11-10 给了迁移通道。自己的断言在 DispatchRoundBacklogScaleTests。
         "20261110075917_JourneyDemandsRedispatchIndex",
         "20261117085542_VehicleFaultOriginSymptomCode",
+        // control-server#911：需求身份加「程」——AcceptedDemands、TransportDemandSuppressions、TransportDemandCompletions 各加非空列 TransportLeg（缺省空串），STAGING_TO_WIRE 受理行按冻结的 LiveMesFieldsJson.Step 回填、抑制与完成行按 DemandId 取受理行的程；受理唯一索引与两张表主键改为 (TransportDemandKey, TransportLeg)，两张表因改主键整表重建；Down 把同键的后几程改名为 {key}#{leg} 再恢复按键唯一。调度 Coordinator14 于 2026-11-23 给了迁移通道。自己的断言在 TransportDemandLegMigrationTests。
+        "20261123074049_TransportDemandLeg",
     ];
 
     [Fact]

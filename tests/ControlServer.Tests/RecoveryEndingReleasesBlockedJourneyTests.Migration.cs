@@ -42,6 +42,8 @@ public sealed partial class RecoveryEndingReleasesBlockedJourneyTests
             await LoadTheFirstAndBlockOnTheSecondAtOnePickupAsync(fixture);
             await fixture.Context.GetService<IMigrator>().MigrateAsync(MigrationBefore505, token);
             await using (ControlServerDbContext context = fixture.OpenConnectionContext())
+            // 今天的模型读旧库：control-server#911 给 AcceptedDemands 加的「程」那一列旧库没有，借来用完再还。
+            await using (await Batch7JourneyFixture.WithTodaysTrailingColumnsAsync(context))
             {
                 (await context.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == FirstDemandId, token)).Status =
                     JourneyDemandStatuses.Unloaded;

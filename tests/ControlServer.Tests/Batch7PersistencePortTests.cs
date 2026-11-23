@@ -46,14 +46,14 @@ public sealed class Batch7PersistencePortTests
         TransportDemandSuppression first = new("SUBLOT-1|WIRE_TO_GATE", "D-1", "TERMINATED_BY_FAULT_CARGO_HANDOFF", Now);
         TransportDemandSuppression later = new("SUBLOT-1|WIRE_TO_GATE", "D-2", "CANCELLED_BY_OPERATOR", Now.AddMinutes(1));
 
-        Assert.Null(await store.ReadAsync(first.TransportDemandKey, cancellationToken));
+        Assert.Null(await store.ReadAsync(first.Identity, cancellationToken));
         Assert.Equal(first, await store.SuppressIfAbsentAsync(first, cancellationToken));
         Assert.Equal(first, await new TransportDemandSuppressionStore(fixture.NewContext())
             .SuppressIfAbsentAsync(later, cancellationToken));
         Assert.Equal(first, await store.SuppressIfAbsentAsync(later, cancellationToken));
 
         Assert.Equal(first, await new TransportDemandSuppressionStore(fixture.NewContext())
-            .ReadAsync(first.TransportDemandKey, cancellationToken));
+            .ReadAsync(first.Identity, cancellationToken));
         Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "TransportDemandSuppressions"));
     }
 

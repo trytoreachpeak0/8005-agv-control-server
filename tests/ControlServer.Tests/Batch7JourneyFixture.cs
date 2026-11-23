@@ -225,6 +225,11 @@ internal sealed class Batch7JourneyFixture : IAsyncDisposable
         ("StationExclusivityRecords", "ChargerRosterVersion", "INTEGER NULL"),
         // control-server#725：机台取货出发按停靠落库。
         ("JourneyStops", "OperatorDepartedAt", "TEXT NULL"),
+        // control-server#911：需求身份的「程」。抑制与完成两张表在本票迁移里整表重建、这一列不在末尾；在旧库上加在末尾再删掉，
+        // 还给的仍是旧库原样的表定义。
+        ("AcceptedDemands", "TransportLeg", "TEXT NOT NULL DEFAULT ''"),
+        ("TransportDemandSuppressions", "TransportLeg", "TEXT NOT NULL DEFAULT ''"),
+        ("TransportDemandCompletions", "TransportLeg", "TEXT NOT NULL DEFAULT ''"),
     ];
 
     /// <summary>

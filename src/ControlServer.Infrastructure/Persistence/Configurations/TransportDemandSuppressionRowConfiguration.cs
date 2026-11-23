@@ -8,9 +8,9 @@ public sealed class TransportDemandSuppressionRowConfiguration : IEntityTypeConf
     public void Configure(EntityTypeBuilder<TransportDemandSuppressionRow> builder)
     {
         builder.ToTable("TransportDemandSuppressions");
-        // The first terminal outcome for a business key wins and is never rewritten: the key makes a second one a
-        // conflict rather than a second row.
-        builder.HasKey(row => row.TransportDemandKey);
+        // The first terminal outcome for a demand identity -- business key and leg (control-server#911) -- wins and is never
+        // rewritten: the key makes a second one a conflict rather than a second row.
+        builder.HasKey(row => new { row.TransportDemandKey, row.TransportLeg });
         builder.HasIndex(row => row.DemandId);
     }
 }

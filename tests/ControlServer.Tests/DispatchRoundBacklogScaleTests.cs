@@ -41,6 +41,12 @@ public sealed class DispatchRoundBacklogScaleTests
     private const string Cs874TemporaryIndex = "IX_tmp_cs874_ProtocolOutbox_DepartureRequestId";
     private const string PreviousMigration = "20261015144738_JourneyStopOperatorDepartedAt";
 
+    /// <summary>
+    /// 本票自己的迁移。升到它为止、不升到最新：之后的迁移（control-server#911 改了 <c>AcceptedDemands</c> 的唯一索引）会让
+    /// 「除新索引外一个不差」的比较在与本票无关的地方变红。
+    /// </summary>
+    private const string ThisMigration = "20261110075917_JourneyDemandsRedispatchIndex";
+
     private static readonly TimeSpan Retention = TimeSpan.FromDays(3);
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
@@ -393,7 +399,7 @@ public sealed class DispatchRoundBacklogScaleTests
             $"CREATE INDEX \"{Cs874TemporaryIndex}\" ON \"ProtocolOutbox\" (\"MessageType\")");
         string[] before = await IndexesAsync(fixture.Connection);
 
-        await fixture.Context.Database.MigrateAsync(Token);
+        await migrator.MigrateAsync(ThisMigration, Token);
         string[] up = await IndexesAsync(fixture.Connection);
         Assert.Contains(
             $"{OfficialIndex}|CREATE INDEX \"{OfficialIndex}\" ON \"JourneyDemands\" (\"DemandId\", \"DispatchGeneration\")", up);
@@ -408,7 +414,7 @@ public sealed class DispatchRoundBacklogScaleTests
         Assert.DoesNotContain(down, index => index.StartsWith(OfficialIndex + "|", StringComparison.Ordinal));
         Assert.DoesNotContain(down, index => index.StartsWith(FieldTemporaryIndex + "|", StringComparison.Ordinal));
 
-        await fixture.Context.Database.MigrateAsync(Token);
+        await migrator.MigrateAsync(ThisMigration, Token);
         Assert.Equal(up, await IndexesAsync(fixture.Connection));
     }
 

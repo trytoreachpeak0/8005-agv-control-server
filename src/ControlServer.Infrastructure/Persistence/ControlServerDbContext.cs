@@ -90,7 +90,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AcceptedDemandRow>().HasKey(row => row.DemandId);
-        modelBuilder.Entity<AcceptedDemandRow>().HasIndex(row => row.TransportDemandKey).IsUnique();
+        // 受理唯一按「业务键 + 程」（control-server#911）：同一子批的焊线与焊线2 两程是两件活。
+        modelBuilder.Entity<AcceptedDemandRow>().HasIndex(row => new { row.TransportDemandKey, row.TransportLeg }).IsUnique();
         modelBuilder.Entity<AcceptedDemandRow>().Property(row => row.Status).HasConversion<string>();
         modelBuilder.Entity<OrderIntentRow>().HasKey(row => row.MovementLegId);
         modelBuilder.Entity<OrderIntentRow>().HasIndex(row => row.UpperId).IsUnique();
@@ -143,7 +144,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<StationOperationRow>().Property(row => row.OperationType).HasConversion<string>();
         modelBuilder.Entity<UnloadBatchRow>().HasKey(row => row.UnloadBatchId);
         modelBuilder.Entity<StopClosureRow>().HasKey(row => row.DemandId);
-        modelBuilder.Entity<TransportDemandCompletionRow>().HasKey(row => row.TransportDemandKey);
+        modelBuilder.Entity<TransportDemandCompletionRow>().HasKey(row => new { row.TransportDemandKey, row.TransportLeg });
         modelBuilder.Entity<TransportDemandCompletionRow>().HasIndex(row => row.DemandId).IsUnique();
         modelBuilder.Entity<ConnectionRecoveryRow>().HasKey(row => row.AgvId);
         modelBuilder.Entity<ConnectionRecoveryRow>().Property(row => row.Status).HasConversion<string>();
@@ -326,11 +327,17 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     }
 }
 
-public sealed class AcceptedDemandRow
+public sealed class AcceptedDemandRow : ITransportDemandIdentityRow
 {
     public required string DemandId { get; set; }
     public required string SeriesId { get; set; }
     public required string TransportDemandKey { get; set; }
+
+    /// <summary>
+    /// 程（control-server#911）：分程任务类型取受理时的 MES <c>STEP</c>，其余为空串；受理唯一按「业务键 + 程」。
+    /// 由受理时的快照经 <see cref="ControlServer.Application.TransportDemandIdentity.LegOf"/> 算出，之后不改。
+    /// </summary>
+    public string TransportLeg { get; set; } = ControlServer.Application.TransportDemandIdentity.NoLeg;
     public required string WorkType { get; set; }
     public required string Sublot { get; set; }
     public int Generation { get; set; }
@@ -543,9 +550,12 @@ public sealed class StopClosureRow
     public DateTimeOffset CommittedAt { get; set; }
 }
 
-public sealed class TransportDemandCompletionRow
+public sealed class TransportDemandCompletionRow : ITransportDemandIdentityRow
 {
     public required string TransportDemandKey { get; set; }
+
+    /// <summary>程（control-server#911），取完成的那条受理行的程；主键是「业务键 + 程」。</summary>
+    public string TransportLeg { get; set; } = ControlServer.Application.TransportDemandIdentity.NoLeg;
     public required string DemandId { get; set; }
     public long DemandRevision { get; set; }
     public required string Evidence { get; set; }

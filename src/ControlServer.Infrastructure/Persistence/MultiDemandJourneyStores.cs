@@ -152,7 +152,7 @@ public sealed class JourneyMembershipStore(ControlServerDbContext context) : IJo
 }
 
 /// <summary>
-/// 按业务键抑制。只追加：先插入，主键拒了就读回键上那一条；没有改写或删除的方法。
+/// 按需求身份（业务键 + 程，control-server#911）抑制。只追加：先插入，主键拒了就读回身份上那一条；没有改写或删除的方法。
 /// </summary>
 public sealed class TransportDemandSuppressionStore(ControlServerDbContext context) : ITransportDemandSuppressionStore
 {
@@ -168,7 +168,7 @@ public sealed class TransportDemandSuppressionStore(ControlServerDbContext conte
 
         // A suppression is never rewritten or deleted, so one this context already holds is the standing one.
         TransportDemandSuppressionRow? known = _context.Set<TransportDemandSuppressionRow>().Local
-            .SingleOrDefault(row => row.TransportDemandKey == suppression.TransportDemandKey);
+            .WhereIdentity(suppression.Identity).SingleOrDefault();
         if (known is not null)
         {
             return ToSuppression(known);
@@ -177,6 +177,7 @@ public sealed class TransportDemandSuppressionStore(ControlServerDbContext conte
         TransportDemandSuppressionRow row = new()
         {
             TransportDemandKey = suppression.TransportDemandKey,
+            TransportLeg = suppression.TransportLeg,
             DemandId = suppression.DemandId,
             ReasonCode = suppression.ReasonCode,
             SuppressedAt = suppression.SuppressedAt
@@ -191,22 +192,23 @@ public sealed class TransportDemandSuppressionStore(ControlServerDbContext conte
         {
             // Another writer suppressed the key first. Its suppression stands; this one is dropped, not an error.
             _context.Entry(row).State = EntityState.Detached;
-            return await ReadAsync(suppression.TransportDemandKey, cancellationToken)
+            return await ReadAsync(suppression.Identity, cancellationToken)
                 ?? throw new InvalidOperationException(
-                    $"Suppressing '{suppression.TransportDemandKey}' was refused, yet no suppression of it exists.");
+                    $"Suppressing '{suppression.Identity}' was refused, yet no suppression of it exists.");
         }
     }
 
-    public async Task<TransportDemandSuppression?> ReadAsync(string transportDemandKey, CancellationToken cancellationToken)
+    public async Task<TransportDemandSuppression?> ReadAsync(TransportDemandIdentity identity, CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(transportDemandKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.TransportDemandKey, nameof(identity));
+        ArgumentNullException.ThrowIfNull(identity.TransportLeg, nameof(identity));
         TransportDemandSuppressionRow? row = await _context.Set<TransportDemandSuppressionRow>().AsNoTracking()
-            .SingleOrDefaultAsync(item => item.TransportDemandKey == transportDemandKey, cancellationToken);
+            .WhereIdentity(identity).SingleOrDefaultAsync(cancellationToken);
         return row is null ? null : ToSuppression(row);
     }
 
     private static TransportDemandSuppression ToSuppression(TransportDemandSuppressionRow row) =>
-        new(row.TransportDemandKey, row.DemandId, row.ReasonCode, row.SuppressedAt);
+        new(row.TransportDemandKey, row.DemandId, row.ReasonCode, row.SuppressedAt, row.TransportLeg);
 }
 
 /// <summary>
