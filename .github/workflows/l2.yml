@@ -449,6 +449,10 @@ jobs:
               # last message, the vehicle stands idle at the gate with idle return on and a demand that fits it: no idle
               # return is committed and the demand is not taken (ONBOARD_FACTS_NOT_READY); reconnected, it takes the demand.
               @{ Name = 'onboard-disconnected-takes-no-new-purpose'; Runs = 3 }
+              # control-server#911: one sublot takes STAGING_TO_WIRE twice (STEP 焊线, then 焊线2). The first leg is delivered,
+              # the same leg re-issued under a new DemandId is refused as already accepted, and the second leg is accepted and
+              # delivered with its own completion fact under the same business key.
+              @{ Name = 'staging-to-wire-second-leg'; Runs = 3 }
               # control-server#215: an operator cancels a STAGING_TO_WIRE demand before its sublot, and the unload stop only it
               # used leaves the plan the vehicle holds, with the plan revision moving on (REQ-0197, ADR-cross-0053). It does
               # not run the other demands to completion; that half is L1 (see the scenario's header and the pull request).

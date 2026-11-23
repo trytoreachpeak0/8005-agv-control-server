@@ -1,0 +1,31 @@
+== M1-no-leg-at-all (1+1 src/ControlServer.Application/TransportDemandIdentity.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.TheStarvationExclusionsJudgeLegsTheWayTheCriteriaDo
+  失败 ControlServer.Tests.TransportDemandLegTests.BothLegsAreAcceptedAndCompletedThroughTheStoreEachUnderItsOwnLeg
+  失败 ControlServer.Tests.TransportDemandLegTests.OnlyStagingToWireIsSplitByStepAndABlankStepIsNoLeg [< 1 ms]
+  失败 ControlServer.Tests.TransportDemandLegTests.TheEndingWritesTheSuppressionUnderTheEndedLegAndEachLegGetsItsOwn
+  失败 ControlServer.Tests.TransportDemandLegTests.TheSecondLegPassesAfterTheFirstLegWasCancelledAndSuppressed
+  失败 ControlServer.Tests.TransportDemandLegTests.TheSecondLegPassesAfterTheFirstLegWasDelivered
+失败!  - 失败:     6，通过:     6，已跳过:     0，总计:    12，持续时间: 4 s - ControlServer.Tests.dll (net8.0)
+== M2-criterion12-by-key (1+1 src/ControlServer.Host/Runtime/Dispatch/Criteria/TransportDemandKeyAlreadyAcceptedCriterion.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.TheSecondLegPassesAfterTheFirstLegWasCancelledAndSuppressed
+  失败 ControlServer.Tests.TransportDemandLegTests.TheSecondLegPassesAfterTheFirstLegWasDelivered
+失败!  - 失败:     2，通过:    10，已跳过:     0，总计:    12，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+== M3-suppression-read-by-key (1+1 src/ControlServer.Infrastructure/Persistence/MultiDemandJourneyStores.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.TheSecondLegPassesAfterTheFirstLegWasCancelledAndSuppressed
+失败!  - 失败:     1，通过:    11，已跳过:     0，总计:    12，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+== M4-starvation-by-key (1+1 src/ControlServer.Host/Runtime/Dispatch/StarvationExclusions.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.TheStarvationExclusionsJudgeLegsTheWayTheCriteriaDo
+失败!  - 失败:     1，通过:    11，已跳过:     0，总计:    12，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+== M5-ending-skips-by-key (1+1 src/ControlServer.Host/Runtime/PickupStopTermination.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.TheEndingWritesTheSuppressionUnderTheEndedLegAndEachLegGetsItsOwn
+失败!  - 失败:     1，通过:    11，已跳过:     0，总计:    12，持续时间: 4 s - ControlServer.Tests.dll (net8.0)
+== M6-ending-writes-no-leg (1+1 src/ControlServer.Host/Runtime/PickupStopTermination.cs)
+exit=1
+  失败 ControlServer.Tests.TransportDemandLegTests.TheEndingWritesTheSuppressionUnderTheEndedLegAndEachLegGetsItsOwn
+失败!  - 失败:     1，通过:    11，已跳过:     0，总计:    12，持续时间: 4 s - ControlServer.Tests.dll (net8.0)
+M7-completion-replay-by-key: tree dirty before
