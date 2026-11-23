@@ -1,0 +1,38 @@
+{"at":"2026-11-23T14:42:22.4639888+00:00","note":"L2 run 20261123T144222442Z starting for scenario 'onboard-disconnected-takes-no-new-purpose'."}
+{"at":"2026-11-23T14:42:22.4845489+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-11-23T14:42:22.4859628+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-11-23T14:42:32.8162865+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-11-23T14:42:32.9198910+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-11-23T14:42:32.9497364+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-11-23T14:42:32.9506620+00:00","note":"Idle return enabled."}
+{"at":"2026-11-23T14:42:32.9612979+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-11-23T14:42:35.5597308+00:00","note":"Package capacity rules imported."}
+{"at":"2026-11-23T14:42:36.4749591+00:00","note":"FieldOps: import-waiting-points --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T144222442Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T144222442Z\\waiting-points.csv --catalog C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T144222442Z\\waiting-points-catalog-25.json --map 25 --fleet BROKERX-L2-0001"}
+{"at":"2026-11-23T14:42:37.5884822+00:00","criterion":"waiting-points-imported","value":"1","detail":{"stations":[214],"coverage":{"mapId":25,"vehicleCount":1,"enabledOnMap":1,"assignable":1,"sufficient":true,"shortfall":0,"unassigned":[],"onOtherMaps":{},"warning":null}}}
+{"at":"2026-11-23T14:42:37.5925873+00:00","note":"Waiting points registered on map 25 as version 1: 214=等待点1"}
+{"at":"2026-11-23T14:42:39.1606358+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-11-23T14:42:39.2107268+00:00","note":"Protocol release identity: protocol-v7.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 8, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-11-23T14:42:39.8288003+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-11-23T14:42:39.8574697+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-11-23T14:42:39.8793380+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T144222442Z\\controlserver.db"}
+{"at":"2026-11-23T14:42:39.9665223+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"900eb3ad344747a994cb32f8c65ab531","version":1,"slotCount":8}}}
+{"at":"2026-11-23T14:42:39.9690056+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T144222442Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-11-23T14:42:40.0352252+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"900eb3ad344747a994cb32f8c65ab531","boundSlots":8,"version":1}}}
+{"at":"2026-11-23T14:42:40.0626503+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-11-23T14:42:40.0636008+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T144222442Z\\controlserver.db --input C:\\work\\8005-scratch\\cs912-l2\\red-M1\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-11-23T14:42:40.1343894+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\work\\8005-scratch\\cs912-l2\\red-M1\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"57e15e2d6047429089b113a78a5cfc92","importedAt":"2026-11-23T06:42:40.0645178-08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-11-23T14:42:40.1396959+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T144222442Z\\controlserver.db --input C:\\work\\8005-scratch\\cs912-l2\\red-M1\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-11-23T14:42:40.1913991+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T144222442Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-11-23T14:42:40.2167348+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T144222442Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-11-23T14:42:40.2449093+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"withoutPolicy":[],"source":"L2_PRESET","version":1,"coveredAfter":["BROKERX-L2-0001"]}}
+{"at":"2026-11-23T14:42:40.2456536+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-11-23T14:42:40.2652212+00:00","note":"Environment is up; entering scenario 'onboard-disconnected-takes-no-new-purpose'."}
+{"at":"2026-11-23T14:42:40.3363635+00:00","criterion":"route-graph-ready","value":"True"}
+{"at":"2026-11-23T14:42:40.3507872+00:00","note":"Onboard drops its link (the program is stopped); the vehicle then stands idle at the gate and a demand arrives."}
+{"at":"2026-11-23T14:42:40.3922165+00:00","criterion":"new-purpose-while-disconnected","value":"claims=0 journeys=0 intents=0"}
+{"at":"2026-11-23T14:42:41.4126869+00:00","criterion":"new-purpose-while-disconnected","value":"claims=1 journeys=1 intents=1"}
+{"at":"2026-11-23T14:42:41.4213328+00:00","criterion":"while-disconnected","value":"claims=1 journeys=1 intents=1","detail":{"backlogReason":"ACCEPTED","rounds":1,"windowSeconds":1.0}}
+{"at":"2026-11-23T14:42:41.4238149+00:00","note":"Onboard reconnects through the full handshake."}
+{"at":"2026-11-23T14:42:41.4531928+00:00","criterion":"demand-taken-after-reconnect","value":"AGV-L2-001"}
+{"at":"2026-11-23T14:42:41.4547486+00:00","note":"车载端断线后不被派新用途；重连握手就绪后恢复可派。"}
+{"at":"2026-11-23T14:42:41.7706747+00:00","note":"L2 port block lock released."}
