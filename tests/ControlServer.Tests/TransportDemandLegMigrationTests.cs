@@ -102,6 +102,26 @@ public sealed class TransportDemandLegMigrationTests
         Assert.Contains("D-WIRE-B=焊线2", await LegsAsync(fixture.Connection, "AcceptedDemands"));
     }
 
+    /// <summary>
+    /// 任务类型列为空串、业务键以 <c>|STAGING_TO_WIRE</c> 结尾的受理行（回填的第二个分支）：这样的行来自加任务类型列之前，
+    /// 那时一起加的 <c>LiveMesFieldsJson</c> 也是空串，不是 JSON。回填不能因此让迁移失败（审查 L1：<c>json_extract</c> 对空串抛
+    /// <c>malformed JSON</c>，服务起不来）；这一行的程是空串，其余不动。
+    /// </summary>
+    [Fact]
+    public async Task ARowFromBeforeTheWorkTypeColumnWithNoFieldJsonUpgradesWithAnEmptyLeg()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync(migrate: false);
+        IMigrator migrator = fixture.Context.GetService<IMigrator>();
+        await migrator.MigrateAsync(PreviousMigration, Token);
+        await ExecuteAsync(
+            fixture.Connection,
+            AcceptedSql("D-LEGACY", "S-LEGACY|STAGING_TO_WIRE", string.Empty, "S-LEGACY", string.Empty, "Succeeded"));
+
+        await migrator.MigrateAsync(ThisMigration, Token);
+
+        Assert.Equal(["D-LEGACY="], await LegsAsync(fixture.Connection, "AcceptedDemands"));
+    }
+
     // ---- Seed -----------------------------------------------------------------------------------------------------
 
     /// <summary>
