@@ -15,7 +15,7 @@ namespace ControlServer.Host.Runtime.Dispatch;
 public static class NonBusinessDepartureGate
 {
     /// <summary>
-    /// 会话一半：这一代会话就绪、安全状态读得到，最新一张 <c>SafetyStateSnapshot</c> 里八个仓位都 <c>LOCKED</c>／<c>RESET</c>，当前摘要的
+    /// 会话一半：这一代会话就绪、此刻连着（control-server#912）、安全状态读得到，最新一张 <c>SafetyStateSnapshot</c> 里八个仓位都 <c>LOCKED</c>／<c>RESET</c>，当前摘要的
     /// <c>reasonCodes</c> 为空（<see cref="OnboardDispatchFactsReader.ReadDepartureSafetyGapsAsync"/>）。空表即放行。
     /// </summary>
     public static async Task<IReadOnlyList<string>> SessionGapsAsync(
@@ -29,6 +29,13 @@ public static class NonBusinessDepartureGate
         if (session is null)
         {
             return ["ONBOARD_SESSION_NOT_READY"];
+        }
+
+        // control-server#912: committed while connected, the vehicle may have lost its Onboard before the order is sent; it
+        // does not set off without one.
+        if (!onboardFacts.IsConnectedAs(agvId, session.SessionGeneration))
+        {
+            return [OnboardNotConnected];
         }
 
         if (session.SafetyRevision is not long safetyRevision)
@@ -72,6 +79,9 @@ public static class NonBusinessDepartureGate
     public static bool IsUnreadable(Exception error, CancellationToken cancellationToken) =>
         error is HttpRequestException or InvalidDataException or TaskCanceledException &&
         !cancellationToken.IsCancellationRequested;
+
+    /// <summary>会话就绪、但这一代会话此刻没有连接时写的码（control-server#912）。</summary>
+    public const string OnboardNotConnected = "ONBOARD_NOT_CONNECTED";
 
     /// <summary>RIoT 那一半读失败时写的码。</summary>
     public const string RiotSafetyUnreadable = "RIOT_VEHICLE_SAFETY_UNREADABLE";

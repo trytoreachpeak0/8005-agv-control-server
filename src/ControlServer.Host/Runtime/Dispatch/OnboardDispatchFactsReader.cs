@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -15,12 +16,60 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// <see cref="JourneyRuntimeEngine"/>, and when the dispatch round moved out it would otherwise have had to be copied,
 /// with two copies of a safety read free to drift apart. Everything here is a read; nothing is tracked.
 /// </remarks>
+/// <param name="presence">
+/// Which vehicles have a live, handshaken connection right now (control-server#912). The host's container always supplies
+/// it. A reader built without one -- the dashboard's and the withdrawal's own copies, which never decide a new purpose --
+/// answers <see cref="IsConnectedAs"/> false, so <see cref="ReadOnboardFactsForNewPurposeAsync"/> admits nobody on it: a
+/// wiring slip stops dispatch rather than opening it.
+/// </param>
 public sealed class OnboardDispatchFactsReader(
     ControlServerDbContext dbContext,
     IOptions<JourneyRuntimeOptions> options,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IOnboardConnectionPresence? presence = null)
 {
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
+
+    /// <summary>
+    /// Whether <paramref name="agvId"/> has a routable connection of exactly session <paramref name="generation"/> on this
+    /// server right now (control-server#912). False without a presence (see the constructor).
+    /// </summary>
+    public bool IsConnectedAs(string agvId, long generation) =>
+        presence?.ConnectedSessionGeneration(agvId) == generation;
+
+    /// <summary>
+    /// <see cref="ReadOnboardFactsAsync"/>, for a decision that gives the vehicle a <b>new purpose</b> -- a transport, an
+    /// en-route append, an idle return, a charging allocation -- and so also requires the session's connection to be up
+    /// now: null when it is not (control-server#912).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why the session row is not enough.</b> The transport writes nothing to <c>SessionRecoveries</c> when a connection
+    /// ends (a reconnect's handshake decides the next readiness afresh), so a vehicle whose Onboard was stopped keeps a
+    /// <c>Ready</c> row, and its last inbound message stays younger than <see cref="JourneyRuntimeOptions.MaximumEvidenceAge"/>
+    /// for up to thirty seconds after its last heartbeat. On 11-23 agv03's Onboard was killed at 13:19:05 (the server read
+    /// the reset at once) and the round of 13:19:10 committed it to an idle return; it drove to waiting point 214 with no
+    /// Onboard watching its doors and IO.
+    /// </para>
+    /// <para>
+    /// <b>Connection, not a shorter age.</b> The connection is detached the moment the server reads the reset, the end of
+    /// the stream, or six seconds of silence (<c>SessionLiveness.Timeout</c>, ADR-cross-0027), and a reconnect becomes
+    /// routable again only when its handshake is done. So this bounds the window at what the transport can know, and a
+    /// vehicle is dispatchable again as soon as its new session is answered Ready. The age check above stays as it was.
+    /// </para>
+    /// <para>
+    /// The in-journey reads (arrival evidence, the advance's own gates) keep <see cref="ReadOnboardFactsAsync"/>: a
+    /// journey already under way yields on an unavailable connection where it has to send (control-server#334), and
+    /// changing what it trusts is not this ticket's.
+    /// </para>
+    /// </remarks>
+    public async Task<OnboardDispatchFacts?> ReadOnboardFactsForNewPurposeAsync(
+        string agvId,
+        CancellationToken cancellationToken)
+    {
+        OnboardDispatchFacts? facts = await ReadOnboardFactsAsync(agvId, cancellationToken).ConfigureAwait(false);
+        return facts is not null && IsConnectedAs(agvId, facts.SessionGeneration) ? facts : null;
+    }
 
     /// <summary>
     /// One vehicle's Onboard-side facts, read against that vehicle's own session.

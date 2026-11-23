@@ -585,6 +585,10 @@ try {
     $gateStationId = '关卡'
     $gateStationRiotId = 210
     $pickupStationRiotId = 12
+    # control-server#912: where the (first) vehicle stands when the fake RIoT starts; the gate by default. A scenario that must
+    # keep the server's first rounds from giving it a purpose -- an idle return from the gate, committed before the scenario's
+    # own first command reaches the fake RIoT -- starts it at 0, no station.
+    $riotStartStationId = if ($setup.ContainsKey('RiotStartStationId')) { [int]$setup.RiotStartStationId } else { $gateStationRiotId }
 
     # getRouteCostsBy answers reachable for every station unless a scenario says otherwise. A
     # scenario that wants the pre-create gate to refuse -- or to disagree with the route graph --
@@ -595,7 +599,7 @@ try {
         "--FakeRiot:Seed:vehicleKey=$vehicleKey",
         "--FakeRiot:Seed:mapIdentity=$mapIdentity",
         "--FakeRiot:Seed:mapId=$mapId",
-        "--FakeRiot:Seed:startStationId=$gateStationRiotId")
+        "--FakeRiot:Seed:startStationId=$riotStartStationId")
     # Every vehicle past the first. They start at rest on the same Map at the same station, which
     # is what a fleet parked at the gate looks like before the first round.
     for ($index = 1; $index -lt $fleet.Count; $index++) {

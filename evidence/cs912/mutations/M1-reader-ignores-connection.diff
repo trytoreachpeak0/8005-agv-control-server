@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+index d12d11e01..06e9315f1 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs
+@@ -68,7 +68,7 @@ public sealed class OnboardDispatchFactsReader(
+         CancellationToken cancellationToken)
+     {
+         OnboardDispatchFacts? facts = await ReadOnboardFactsAsync(agvId, cancellationToken).ConfigureAwait(false);
+-        return facts is not null && IsConnectedAs(agvId, facts.SessionGeneration) ? facts : null;
++        return facts is not null && (IsConnectedAs(agvId, facts.SessionGeneration) || agvId.Length > 0) ? facts : null;
+     }
+ 
+     /// <summary>

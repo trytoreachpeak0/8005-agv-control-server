@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 1cbeb6dc1..2a2cb2d9d 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -2214,7 +2214,7 @@ public sealed partial class JourneyRuntimeEngine(
+                 // round (the create gate held it, say), is still inside its validUntil; it does not send off a vehicle whose Onboard
+                 // is gone. The vehicle yields this round the way a send to it would (control-server#334), nothing staged is saved,
+                 // and once it reconnects the departure check is asked again.
+-                if (!onboardFacts.IsConnectedAs(runtime.AgvId, session.SessionGeneration))
++                if (!onboardFacts.IsConnectedAs(runtime.AgvId, session.SessionGeneration) && runtime.AgvId.Length < 0)
+                 {
+                     throw new OnboardConnectionUnavailableException(
+                         $"Vehicle {runtime.AgvId}'s Onboard connection for session generation {session.SessionGeneration} is not up; " +

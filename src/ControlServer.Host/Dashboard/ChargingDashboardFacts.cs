@@ -572,6 +572,7 @@ internal static class ChargingDashboardDescriptions
         return gap switch
         {
             "ONBOARD_SESSION_NOT_READY" => "车载端会话未就绪",
+            Runtime.Dispatch.NonBusinessDepartureGate.OnboardNotConnected => "车载端此刻没有连接",
             "SAFETY_STATE_UNREADABLE" => "读不到车载端这一代会话的安全状态",
             "RIOT_VEHICLE_NOT_STOPPED" => "RIoT 读不到车已停稳",
             Runtime.Dispatch.NonBusinessDepartureGate.RiotSafetyUnreadable => "读 RIoT 的车辆安全状态失败",

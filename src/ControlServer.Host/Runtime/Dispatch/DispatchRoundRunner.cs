@@ -577,8 +577,10 @@ public sealed class DispatchRoundRunner(
         {
             VehicleSlotPositions? positions = await slotPositions.ReadAsync(vehicle.AgvId, linked.Token)
                 .ConfigureAwait(false);
+            // control-server#912: a vehicle whose Onboard connection is down takes no new purpose this round -- not a transport,
+            // not an append, not the idle return or the charging allocation that read these same facts below.
             OnboardDispatchFacts? onboard = await onboardFacts
-                .ReadOnboardFactsAsync(vehicle.AgvId, linked.Token).ConfigureAwait(false);
+                .ReadOnboardFactsForNewPurposeAsync(vehicle.AgvId, linked.Token).ConfigureAwait(false);
             // control-server#799: within the read budget as well as the vehicle's round budget (thirty seconds by default, which
             // a RIoT that stopped answering used to cost every vehicle every round). Past the read budget the vehicle reads as
             // the gateway's unread vehicle, as when RIoT fails: not connected, so nothing is dispatched to it. The round
@@ -1560,7 +1562,9 @@ public sealed class DispatchRoundRunner(
         DispatchVehicleFacts roundFacts,
         CancellationToken cancellationToken)
     {
-        OnboardDispatchFacts? onboard = await onboardFacts.ReadOnboardFactsAsync(fleetVehicle.AgvId, cancellationToken)
+        // control-server#912: the connection is re-checked with the facts, so one that ended after the round read it stops the
+        // acceptance here.
+        OnboardDispatchFacts? onboard = await onboardFacts.ReadOnboardFactsForNewPurposeAsync(fleetVehicle.AgvId, cancellationToken)
             .ConfigureAwait(false);
         if (onboard is null || onboard.SessionGeneration != expectedSessionGeneration ||
             slotRoom.SlotPosition is not { } slotPosition ||

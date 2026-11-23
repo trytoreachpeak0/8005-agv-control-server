@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "onboard-disconnected-takes-no-new-purpose",
+  "runId": "20261123T164120051Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "batchId": "unspecified",
+    "controlServerCommit": "46e0dac420b3f8d5dd2ad25146fbba66b4f3a3e9",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261123T164120051Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "7.0.0",
+      "tag": "protocol-v7.0.0",
+      "commit": "a1facf8674b05c67bfbddc14db4a163e8da2782a",
+      "protocolVersion": 8,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "44fa0b273810fb2d5326068c03f9647bfd8fdc1c5f01e27a5177b0e0473fe7cb",
+      "schemaBundleSha256": "6361d734f9b1a4f81178c79c0bc18b8287fd747622e60c99073e7fd5a5cf4c88",
+      "vectorsSha256": "6295840ec27422dc024a24f6deae9a7379f9b3047a163e903ac862c8b0274eec",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-ODN-01",
+      "description": "断线前：车载端 READY，库里还没有任何用途占有、旅程或订单意图（车不在任何站上）",
+      "outcome": "PASS",
+      "expected": "READY / claims=0 journeys=0 intents=0",
+      "actual": "READY / claims=0 journeys=0 intents=0"
+    },
+    {
+      "id": "L2-ODN-02",
+      "description": "断线后的 20 秒、十几轮派车里没有任何用途占有、旅程或订单意图：空闲返回不承诺、搬运不受理（整段在断线后 30 秒以内，至少转了 3 轮）",
+      "outcome": "PASS",
+      "expected": "claims=0 journeys=0 intents=0 / < 30 s / >= 3 rounds",
+      "actual": "claims=0 journeys=0 intents=0 / 20.1 s / 20 rounds"
+    },
+    {
+      "id": "L2-ODN-03",
+      "description": "那条需求留在积压里，原因是车载端事实没有就绪（ONBOARD_FACTS_NOT_READY）",
+      "outcome": "PASS",
+      "expected": "ONBOARD_FACTS_NOT_READY",
+      "actual": "ONBOARD_FACTS_NOT_READY"
+    },
+    {
+      "id": "L2-ODN-04",
+      "description": "重连走完完整握手：车载端回到 READY，会话代前进",
+      "outcome": "PASS",
+      "expected": "READY / > 1",
+      "actual": "READY / 2"
+    },
+    {
+      "id": "L2-ODN-05",
+      "description": "重连就绪后，那条需求派给了这台车",
+      "outcome": "PASS",
+      "expected": "AGV-L2-001",
+      "actual": "AGV-L2-001"
+    }
+  ]
+}

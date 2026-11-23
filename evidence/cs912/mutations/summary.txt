@@ -1,0 +1,45 @@
+# Round 1 (commit f057737b3, 4 tests)
+== M1-reader-ignores-connection (1+1 src/ControlServer.Host/Runtime/Dispatch/OnboardDispatchFactsReader.cs)
+exit=1
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardDisconnectedIsNotSentOnAnIdleReturnUntilItReconnects [2 s]
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardDisconnectedIsAllocatedNoChargerUntilItReconnects [229 ms]
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardDisconnectedTakesNoTransportUntilItReconnects [230 ms]
+失败!  - 失败:     3，通过:     1，已跳过:     0，总计:     4，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+== M2-round-read-unguarded (1+1 src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs)
+exit=1
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardDisconnectedIsNotSentOnAnIdleReturnUntilItReconnects [2 s]
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardDisconnectedIsAllocatedNoChargerUntilItReconnects [234 ms]
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardDisconnectedTakesNoTransportUntilItReconnects [134 ms]
+失败!  - 失败:     3，通过:     1，已跳过:     0，总计:     4，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+== M3-final-recheck-unguarded (1+1 src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs)
+exit=0
+已通过! - 失败:     0，通过:     4，已跳过:     0，总计:     4，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+== M4-departure-gate-unguarded (1+1 src/ControlServer.Host/Runtime/Dispatch/NonBusinessDepartureGate.cs)
+exit=1
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AnIdleReturnCommittedBeforeTheDisconnectDoesNotSetOffUntilTheVehicleReconnects [189 ms]
+失败!  - 失败:     1，通过:     3，已跳过:     0，总计:     4，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+DONE
+
+# Round 2, M3 only (commit 7159cedc8, 5 tests: adds AConnectionThatEndsWhileTheDemandIsBeingAcceptedStopsTheAcceptance)
+== M3-final-recheck-unguarded (1+1 src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs)
+exit=1
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AConnectionThatEndsWhileTheDemandIsBeingAcceptedStopsTheAcceptance [74 ms]
+失败!  - 失败:     1，通过:     4，已跳过:     0，总计:     5，持续时间: 3 s - ControlServer.Tests.dll (net8.0)
+DONE
+
+# Round 3, M5 (commit 3162df2b3; the five DisconnectedOnboard tests and OwnOrderRebuildTests, 52 tests)
+1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+exit=1
+  失败 ControlServer.Tests.OwnOrderRebuildTests.ARebuildDueRightAfterTheOnboardDisconnectedWaitsUntilItReconnects [77 ms]
+失败!  - 失败:     1，通过:    51，已跳过:     0，总计:    52，持续时间: 11 s - ControlServer.Tests.dll (net8.0)
+
+# Round 4, review rework (commit dce9a7653; DisconnectedOnboard tests, JourneyRuntimeWorkerDepartureSafetyTests, OwnOrderRebuildTests, 62 tests)
+== M6-departure-leg-unguarded (1+1 src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+exit=1
+  失败 ControlServer.Tests.JourneyRuntimeWorkerDepartureSafetyTests.ASafeAnswerHeldBackByTheCreateGateDoesNotSendOffAVehicleWhoseOnboardDisconnected [2 s]
+失败!  - 失败:     1，通过:    61，已跳过:     0，总计:    62，持续时间: 30 s - ControlServer.Tests.dll (net8.0)
+== M4b-session-gap-cell-unguarded (1+1 src/ControlServer.Host/Runtime/Dispatch/NonBusinessDepartureGate.cs)
+exit=1
+  失败 ControlServer.Tests.MultiVehicleExecutionTests.AConnectionThatEndsBeforeTheChargingAllocationChecksTheGateCommitsNoCharger [48 ms]
+失败!  - 失败:     1，通过:    61，已跳过:     0，总计:    62，持续时间: 30 s - ControlServer.Tests.dll (net8.0)
+DONE

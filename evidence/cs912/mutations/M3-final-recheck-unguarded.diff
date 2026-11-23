@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+index 91a267bc3..933731566 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+@@ -1564,7 +1564,7 @@ public sealed class DispatchRoundRunner(
+     {
+         // control-server#912: the connection is re-checked with the facts, so one that ended after the round read it stops the
+         // acceptance here.
+-        OnboardDispatchFacts? onboard = await onboardFacts.ReadOnboardFactsForNewPurposeAsync(fleetVehicle.AgvId, cancellationToken)
++        OnboardDispatchFacts? onboard = await onboardFacts.ReadOnboardFactsAsync(fleetVehicle.AgvId, cancellationToken)
+             .ConfigureAwait(false);
+         if (onboard is null || onboard.SessionGeneration != expectedSessionGeneration ||
+             slotRoom.SlotPosition is not { } slotPosition ||

@@ -406,6 +406,47 @@ public sealed class OwnOrderRebuildTests
         await AssertRebuiltAsync(fixture, before, stopsBefore, unload);
     }
 
+    /// <summary>
+    /// control-server#912：重建到期时车载端连接刚断（最后一条消息就在断线那一刻，离 <c>MaximumEvidenceAge</c> 还远，会话行仍是 Ready）——
+    /// 那一轮与之后第 5、15 秒都不建，记录写 <c>ONBOARD_FACTS_NOT_READY</c>；重连、说话之后照常重建，恰好一张新单。
+    /// </summary>
+    /// <remarks>缺陷版本只看 Ready 与 30 秒证据，到期那一轮就把车在没有车载程序的情况下重新派走。</remarks>
+    [Fact]
+    public async Task ARebuildDueRightAfterTheOnboardDisconnectedWaitsUntilItReconnects()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        await fixture.HearFromPeerAsync();
+        fixture.Presence.Disconnected.Add(fixture.Options.AgvId);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        // The round the rebuild falls due in, the last message no older than the disconnect: only the connection says no.
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        OwnOrderRebuildRow waiting = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        Assert.Equal(OwnOrderRebuildStates.Pending, waiting.State);
+        Assert.Contains("ONBOARD_FACTS_NOT_READY", waiting.WaitingReason, StringComparison.Ordinal);
+
+        // Past six seconds of silence the session also reads lost (control-server#234), which holds it in its own right.
+        foreach (int seconds in new[] { 5, 10 })
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(seconds));
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        }
+
+        fixture.Presence.Disconnected.Remove(fixture.Options.AgvId);
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
+    }
+
     [Fact]
     public async Task ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle()
     {

@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+index 91a267bc3..55a3c24a4 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+@@ -580,7 +580,7 @@ public sealed class DispatchRoundRunner(
+             // control-server#912: a vehicle whose Onboard connection is down takes no new purpose this round -- not a transport,
+             // not an append, not the idle return or the charging allocation that read these same facts below.
+             OnboardDispatchFacts? onboard = await onboardFacts
+-                .ReadOnboardFactsForNewPurposeAsync(vehicle.AgvId, linked.Token).ConfigureAwait(false);
++                .ReadOnboardFactsAsync(vehicle.AgvId, linked.Token).ConfigureAwait(false);
+             // control-server#799: within the read budget as well as the vehicle's round budget (thirty seconds by default, which
+             // a RIoT that stopped answering used to cost every vehicle every round). Past the read budget the vehicle reads as
+             // the gateway's unread vehicle, as when RIoT fails: not connected, so nothing is dispatched to it. The round
