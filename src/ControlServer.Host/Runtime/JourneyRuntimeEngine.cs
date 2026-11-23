@@ -2210,6 +2210,16 @@ public sealed partial class JourneyRuntimeEngine(
                     .Select(row => (DateTimeOffset?)row.CreatedAt)
                     .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
                 OrderIntent gateIntent = JourneyPlanBuilder.LegIntent(runtime, nextStop, legIntentCreatedAt ?? now);
+                // control-server#912 (review L1): a SAFE answer that arrived before the connection ended, and was not used in its own
+                // round (the create gate held it, say), is still inside its validUntil; it does not send off a vehicle whose Onboard
+                // is gone. The vehicle yields this round the way a send to it would (control-server#334), nothing staged is saved,
+                // and once it reconnects the departure check is asked again.
+                if (!onboardFacts.IsConnectedAs(runtime.AgvId, session.SessionGeneration))
+                {
+                    throw new OnboardConnectionUnavailableException(
+                        $"Vehicle {runtime.AgvId}'s Onboard connection for session generation {session.SessionGeneration} is not up; " +
+                        "the departure order is not created.");
+                }
                 await new WireToGateStore(dbContext).AuthorizeMovementAsync(
                     gateIntent, safety, now, cancellationToken, runtimeOptions.PeerClockSkewTolerance).ConfigureAwait(false);
                 // 暂存的一切在守护下落库。守护不在这里撤（增量复核必修 M1）：这之后建单之前还有一次按单号的 RIoT GET 与对账审计的保存，

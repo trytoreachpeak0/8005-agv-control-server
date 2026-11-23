@@ -1220,7 +1220,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 EngineLog,
                 IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy, vehicleFacts: Riot),
                 ChargingPolicy,
-                ChargingTestKit.Create(Context, Options, Clock, Riot, Peer, Riot, board: ChargingBoard),
+                ChargingTestKit.Create(Context, Options, Clock, Riot, Peer, Riot, board: ChargingBoard, presence: Presence),
                 TrialSublotLog,
                 VerdictTransitions);
             return new JourneyRuntimeEngine(
@@ -2439,13 +2439,20 @@ internal static class JourneyRuntimeWorkerTestKit
     {
         public HashSet<string> Disconnected { get; } = new(StringComparer.Ordinal);
 
-        public long? ConnectedSessionGeneration(string agvId) =>
-            Disconnected.Contains(agvId)
+        /// <summary>Runs each time the server asks about a vehicle, before the answer: a test that needs the connection to end
+        /// between two reads of one round (control-server#912 review L3) adds the vehicle to <see cref="Disconnected"/> here.</summary>
+        public Action<string>? OnAsk { get; set; }
+
+        public long? ConnectedSessionGeneration(string agvId)
+        {
+            OnAsk?.Invoke(agvId);
+            return Disconnected.Contains(agvId)
                 ? null
                 : context.SessionRecoveries.AsNoTracking()
                     .Where(row => row.AgvId == agvId)
                     .Select(row => (long?)row.SessionGeneration)
                     .SingleOrDefault();
+        }
 
         public bool IsHandshaking(string agvId) => false;
     }

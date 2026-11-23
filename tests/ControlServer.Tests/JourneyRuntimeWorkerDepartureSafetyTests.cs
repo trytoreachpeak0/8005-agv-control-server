@@ -345,6 +345,41 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
             runtime.Stage);
     }
 
+    /// <summary>
+    /// control-server#912（审查 L1）：SAFE 答复到了，但那一轮建单门禁挡住了去卸货站的单（卸货站此刻不可达）；下一轮门禁放开，车载端连接却已经断了——
+    /// 答复还在 <c>validUntil</c> 之内，也不凭它建单，这台车这一轮让出。重连之后照常离站，恰好一张单。
+    /// </summary>
+    /// <remarks>缺陷版本只校答复本身（同代、同安全版本、未过期），断线那一轮就把车在没有车载程序的情况下派走。</remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    public async Task ASafeAnswerHeldBackByTheCreateGateDoesNotSendOffAVehicleWhoseOnboardDisconnected()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow held = await fixture.AdvanceToGateArrivalAsync(
+            () => fixture.RouteCosts.Set(TaskTypeStationRuntimeSeed.GateStationRiotId, -1));
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, held.Stage);
+        Assert.NotNull(held.BlockReasonCode);
+
+        fixture.RouteCosts.Set(TaskTypeStationRuntimeSeed.GateStationRiotId, 12000);
+        fixture.Presence.Disconnected.Add(fixture.Options.AgvId);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.RuntimeAsync()).Stage);
+
+        fixture.Presence.Disconnected.Remove(fixture.Options.AgvId);
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.RuntimeAsync()).Stage);
+    }
+
     private static async Task<string?> CheckPurposeAsync(RuntimeFixture fixture, string messageId)
     {
         ProtocolOutboxRow check = await fixture.Context.ProtocolOutbox.SingleAsync(

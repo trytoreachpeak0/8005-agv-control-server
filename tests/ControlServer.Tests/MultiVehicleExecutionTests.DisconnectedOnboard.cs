@@ -81,6 +81,47 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// Connected when the round read its facts, disconnected by the time the charging allocation checks the departure gate's
+    /// session half (<c>ChargingAllocator</c>, review S-a of #404): no charger is committed, and the refusal names
+    /// <c>ONBOARD_NOT_CONNECTED</c>. Reconnected, it is sent to charge.
+    /// </summary>
+    /// <remarks>
+    /// control-server#912 review L2/L3. The round asks the connection once when it reads the vehicle's facts and once more at
+    /// the allocation's gate check, so the double ends the connection on the second ask. Nothing else in that path asks, so
+    /// this is the one test that goes red when only <c>NonBusinessDepartureGate.SessionGapsAsync</c>'s connection cell is
+    /// removed: the departure gate of a committed idle return also reads <c>VehicleConditionReasonsAsync</c>, which checks it too.
+    /// </remarks>
+    [Fact]
+    public async Task AConnectionThatEndsBeforeTheChargingAllocationChecksTheGateCommitsNoCharger()
+    {
+        await using FleetFixture fleet = await ChargingAllocationTests.FleetAsync();
+        fleet.Riot.BatteryByVehicle[FleetFixture.VehicleKeys[0]] = 20;
+        string agv = FleetFixture.AgvIds[0];
+        await fleet.HearFromEveryVehicleAsync();
+        int asks = 0;
+        fleet.Presence.OnAsk = asked =>
+        {
+            if (asked == agv && ++asks == 2)
+            {
+                fleet.Presence.Disconnected.Add(agv);
+            }
+        };
+
+        await fleet.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(asks >= 2, $"the connection was asked {asks} time(s); the allocation's gate check was never reached");
+        await AssertNoNewPurposeAsync(fleet);
+        (string Reason, string Detail) verdict = fleet.ChargingBoard.Verdicts[agv];
+        Assert.Equal(ChargingAllocationReasons.DepartureNotProven, verdict.Reason);
+        Assert.Contains(NonBusinessDepartureGate.OnboardNotConnected, verdict.Detail, StringComparison.Ordinal);
+
+        fleet.Presence.OnAsk = null;
+        await ReconnectAsync(fleet, agv);
+        Assert.Equal(
+            VehiclePurposes.Charging, (await ChargingAllocationTests.ClaimOfAsync(fleet, FleetFixture.VehicleKeys[0]))?.Purpose);
+    }
+
+    /// <summary>
     /// A demand that fits it, disconnected: it is not accepted at 5, 15 or 25 seconds and waits with
     /// <c>ONBOARD_FACTS_NOT_READY</c>; reconnected, the vehicle takes it.
     /// </summary>

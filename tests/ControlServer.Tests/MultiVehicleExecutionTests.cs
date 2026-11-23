@@ -1527,7 +1527,7 @@ public sealed partial class MultiVehicleExecutionTests
                 ChargingPolicy,
                 ChargingTestKit.Create(
                     Context, Options, Clock, Riot, Peer, Riot, Riot, RouteGraph(), ChargingBoard, ChargingLog,
-                    clearanceExit: clearanceExit),
+                    clearanceExit: clearanceExit, presence: Presence),
                 TrialSublotLog,
                 VerdictTransitions);
             return new JourneyRuntimeEngine(
