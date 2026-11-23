@@ -21,6 +21,7 @@
 场景 `onboard-disconnected-takes-no-new-purpose`（合成），本机完整运行（含构建）。
 
 - `l2/green-01/`：提交 `ef60f6cf0` 上 PASS，5/5 判据；断线后 20.1 秒、20 轮里没有任何用途占有、旅程、订单意图，积压原因 `ONBOARD_FACTS_NOT_READY`；重连后会话代 1→2，需求派给这台车。
+- `l2/green-02/`：PR #913 第一次 CI（l2 45215158195）红在 L2-ODN-01：服务端头几轮赶在场景第一条命令之前，在关卡上给车承诺了空闲返回。加 setup 键 `RiotStartStationId = 0` 后，在 `46e0dac42` 上本机 PASS，5/5。
 - `l2/red-M1/`：提交 `768e0213d`（比 `ef60f6cf0` 只多了 M5 的证据文件，产品代码相同）加 M1（`M1-reader-ignores-connection.diff`），FAIL：断线后 1 秒那一轮就受理了需求（`claims=1 journeys=1 intents=1`），积压行变成 `ACCEPTED`——与 agv03 同一个缺陷。
 
 日志与快照目录已删，只留 `SUMMARY.md`、`assertions.json`、`timeline.jsonl`。
