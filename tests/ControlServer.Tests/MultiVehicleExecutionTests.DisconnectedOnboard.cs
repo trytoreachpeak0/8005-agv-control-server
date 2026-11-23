@@ -110,6 +110,26 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// Connected when the round read it, disconnected the moment intake re-reads the catalog: the final admission re-check
+    /// reads the connection again with the facts, so the demand is not accepted and nothing is created.
+    /// </summary>
+    /// <remarks><c>OnReread</c> clears itself when it runs; asserting it is null shows the round did reach intake.</remarks>
+    [Fact]
+    public async Task AConnectionThatEndsWhileTheDemandIsBeingAcceptedStopsTheAcceptance()
+    {
+        await using FleetFixture fleet = await ChargingAllocationTests.FleetAsync(roster: false);
+        fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        string agv = FleetFixture.AgvIds[0];
+        await fleet.HearFromEveryVehicleAsync();
+        fleet.Catalog.OnReread = () => fleet.Presence.Disconnected.Add(agv);
+
+        await fleet.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Null(fleet.Catalog.OnReread);
+        await AssertNoNewPurposeAsync(fleet);
+    }
+
+    /// <summary>
     /// Committed to an idle return while connected, then disconnected before the order went out: the departure gate holds it
     /// (<c>ONBOARD_NOT_CONNECTED</c>) and RIoT gets no order; reconnected, the order is created.
     /// </summary>
