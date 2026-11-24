@@ -7,8 +7,9 @@ specific to Claude Code.
 
 ## Write authority
 
-This repository is writable. The workspace `CLAUDE.md` is the authority on write
-access and wins where this file differs; the two restrictions an agent here is
+This repository is writable. The shared workspace rules, 8005-agv-program
+`docs/agents/workspace-rules.md`, are the authority on write access and win
+where this file differs; the two restrictions an agent here is
 most likely to meet:
 
 - `8005-agv-onboard-hmi` and `slots-simulator` — **writable on `w2g/*` branches
@@ -52,7 +53,8 @@ The five canonical roles (`needs-triage`, `needs-info`, `ready-for-agent`,
 Zhengyu Shao is the sole developer. Kun Wang (GitHub `SocialKKKK`) no longer
 works on the project: development of `8005-agv-onboard-hmi` and `slots-simulator`
 moved to us on 2026-09-04, and this repository and `8005-agv-protocol` are ours
-too. The workspace `CLAUDE.md` is the authority on these rules; the account
+too. The shared workspace rules, 8005-agv-program `docs/agents/workspace-rules.md`,
+are the authority on these rules; the account
 written for humans, in Chinese, is `8005-agv-program/docs/collaboration-workflow.md`.
 
 What an agent must follow:
