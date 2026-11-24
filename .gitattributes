@@ -4,6 +4,12 @@
 *.csproj text eol=lf
 *.json text eol=lf
 *.md text eol=lf
+
+# The agent instruction pair is pinned together, so both files have the same
+# bytes on every checkout, Windows clones included. CLAUDE.md imports AGENTS.md
+# on its first line; scripts/Test-AgentInstructions.ps1 checks both rules (program#230).
+AGENTS.md text eol=lf
+CLAUDE.md text eol=lf
 *.ps1 text eol=crlf
 
 # Archived release artifacts are evidence: their recorded SHA-256 is the whole point of keeping them,

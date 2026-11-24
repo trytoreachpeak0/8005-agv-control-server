@@ -73,6 +73,7 @@ jobs:
     # takes, never what it may take: a push or a dispatched run still runs every step.
     # Still 160 after the steps around the checkout (2 each) and the checkout sparse-state self-check (3), which l2 run
     # 39457961360 brought in: about 158 if every step ran to its own limit.
+    # Still 160 after the agent instructions check (1, program#230): about 159 if every step ran to its own limit.
     timeout-minutes: 160
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
@@ -132,6 +133,14 @@ jobs:
       - name: dotnet --info
         shell: pwsh
         run: dotnet --info
+
+      # program#230: CLAUDE.md must import AGENTS.md on its first line, and both files must be pinned to eol=lf, the
+      # layout 8005-agv-protocol piloted (program#228). Pure input, under a second; on every event, since an instruction
+      # file is an input of no self-check the selector knows.
+      - name: Agent instructions
+        timeout-minutes: 1
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-AgentInstructions.ps1
 
       # control-server#803 (the user's decision on 2026-10-20): a pull request skips each self-check below whose inputs
       # it does not change. Measured over the 132 successful jobs from 2026-10-11, the self-checks before Test took a

@@ -43,6 +43,9 @@
         @{ Step = 'Check the checkout is the tree it asked for'; Why = 'part of the checkout: fails a job whose checkout left out files (Assert-CheckoutTree.ps1)'
             RunsAlways = $true }
         @{ Step = 'dotnet --info'; Why = 'diagnostics, a second' }
+        # program#230: under a second, and no selector input covers AGENTS.md or CLAUDE.md, so it runs on every event.
+        @{ Step = 'Agent instructions'; Why = 'checks CLAUDE.md imports AGENTS.md and both are eol=lf (Test-AgentInstructions.ps1)'
+            RunsAlways = $true }
         @{ Step = 'Decide which self-checks this pull request runs'; Why = 'the selector itself' }
         @{ Step = 'Test'; Why = 'the suite; control-server#803 leaves it alone' }
         @{ Step = 'Decide whether to run the staged content-conflict self-check'; Why = 'that self-check has its own selector (control-server#567), registered below as decided by content-conflict-scope' }
