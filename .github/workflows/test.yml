@@ -2,8 +2,8 @@ name: test
 
 # Runs on vm-win-01 (a Hyper-V guest on the control laptop since 2026-10-20; win11-01 before), on the two runners
 # that carry 'cs-test': vmwin01-control-server-2 and, since control-server#820, vmwin01-control-server-3, so test
-# jobs of two refs run side by side. This workspace does not use GitHub-hosted runners; see the workspace root
-# CLAUDE.md for why.
+# jobs of two refs run side by side. This workspace does not use GitHub-hosted runners; see the CI section of
+# 8005-agv-program docs/agents/workspace-rules.md (the shared workspace rules, program#228) for why.
 #
 # Neither carries 'headless' (release.yml, g3.yml's short jobs) or 'cs-l2' (l2.yml's scenarios), so test and l2 never
 # take each other's runner. Two test jobs on one machine share the NETWORK SERVICE profile: what this job writes is
@@ -73,6 +73,7 @@ jobs:
     # takes, never what it may take: a push or a dispatched run still runs every step.
     # Still 160 after the steps around the checkout (2 each) and the checkout sparse-state self-check (3), which l2 run
     # 39457961360 brought in: about 158 if every step ran to its own limit.
+    # Still 160 after the agent instructions check (1, program#230): about 159 if every step ran to its own limit.
     timeout-minutes: 160
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
@@ -132,6 +133,14 @@ jobs:
       - name: dotnet --info
         shell: pwsh
         run: dotnet --info
+
+      # program#230: CLAUDE.md must import AGENTS.md on its first line, and both files must be pinned to eol=lf, the
+      # layout 8005-agv-protocol piloted (program#228). Pure input, under a second; on every event, since an instruction
+      # file is an input of no self-check the selector knows.
+      - name: Agent instructions
+        timeout-minutes: 1
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-AgentInstructions.ps1
 
       # control-server#803 (the user's decision on 2026-10-20): a pull request skips each self-check below whose inputs
       # it does not change. Measured over the 132 successful jobs from 2026-10-11, the self-checks before Test took a
@@ -702,7 +711,7 @@ jobs:
       # continue-on-error, because the .trx is diagnostics, not a deliverable: the verdict is the
       # `dotnet test` exit code in the step above, already reached by the time this runs. A
       # transient ECONNRESET from the artifact service must not turn a green suite red. See the
-      # workspace root CLAUDE.md, "artifact 上传的重试留着"; release.yml is deliberately strict
+      # 8005-workspace (v1) AGENTS.md, "artifact 上传的重试留着" (its CLAUDE.md before program#230); release.yml is deliberately strict
       # instead, because there the artifact IS the deliverable.
       - name: Upload test results
         if: always()

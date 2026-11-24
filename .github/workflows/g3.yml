@@ -29,7 +29,7 @@ name: g3
 #                        was planned, when GitHub fired it and how late, when the round started and how long it queued
 #                        for cs-desktop, and the deadline (control-server#807).
 # Nothing here cancels a job, and no job's timeout is meant to be what ends it (a cancel can wedge a self-hosted
-# runner: workspace CLAUDE.md). The verdict is decided offline-testably in scripts/NightlyG3.psm1, checked by
+# runner: 8005-agv-program docs/agents/workspace-rules.md). The verdict is decided offline-testably in scripts/NightlyG3.psm1, checked by
 # scripts/Test-NightlyG3.ps1 in test.yml.
 #
 # The night is started from main. GitHub runs `schedule` only from the workflow files on the default branch (main), and
@@ -80,7 +80,7 @@ permissions:
   contents: read
   issues: write
 
-# One night at a time. cancel-in-progress stays false (workspace CLAUDE.md: never cancel a running self-hosted job).
+# One night at a time. cancel-in-progress stays false (8005-agv-program docs/agents/workspace-rules.md: never cancel a running self-hosted job).
 concurrency:
   group: ${{ github.workflow }}${{ github.event_name == 'pull_request' && format('-pr-{0}', github.ref) || '' }}
   cancel-in-progress: false

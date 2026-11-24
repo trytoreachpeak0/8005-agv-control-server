@@ -14,7 +14,7 @@
 
       docs/, evidence/, tests/      this job's build leaves tests/ out (control-server#804) and no L2 process runs
                                     any of it; a test that stops compiling is test.yml's red, which it already is.
-      README.md, CLAUDE.md, ControlServer.http
+      README.md, CLAUDE.md, AGENTS.md, ControlServer.http
       .github/workflows/test.yml, g3.yml, release.yml   l2.yml itself, and any other file under .github/, runs it.
       A file directly under scripts/ that no L2 code names: the G3 runners, the install scripts, their self-checks.
                                     Only one that is in the checkout: a deleted file, or a rename's old name, counts,
@@ -59,7 +59,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $leftOutPrefixes = @('docs/', 'evidence/', 'tests/')
-$leftOutFiles = @('README.md', 'CLAUDE.md', 'ControlServer.http',
+$leftOutFiles = @('README.md', 'CLAUDE.md', 'AGENTS.md', 'ControlServer.http',
     '.github/workflows/test.yml', '.github/workflows/g3.yml', '.github/workflows/release.yml')
 
 # Every string L2 code holds, joined into one text to search; files directly under scripts/ that any of it names join it.
