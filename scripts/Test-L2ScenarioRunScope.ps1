@@ -64,7 +64,7 @@ $null = [System.Management.Automation.Language.Parser]::ParseFile($Selector, [re
 Check 'the selector parses' ($errors.Count -eq 0) "$($errors.Count) parse errors"
 
 # --- 1. The sweep: every tracked file the rule does not leave out runs the round. ---------------------------------
-$leftOutRoot = @('README.md', 'CLAUDE.md', 'ControlServer.http',
+$leftOutRoot = @('README.md', 'CLAUDE.md', 'AGENTS.md', 'ControlServer.http',
     '.github/workflows/test.yml', '.github/workflows/g3.yml', '.github/workflows/release.yml')
 $tracked = @(git -C $Repository ls-files -- . ':!evidence')
 Check 'git ls-files read the repository' ($LASTEXITCODE -eq 0 -and $tracked.Count -gt 500) "$($tracked.Count) files"
@@ -89,6 +89,7 @@ $skips = @(
     'tests/ControlServer.Tests/MultiVehicleExecutionTests.cs'
     'README.md'
     'CLAUDE.md'
+    'AGENTS.md'
     'ControlServer.http'
     '.github/workflows/test.yml'
     '.github/workflows/g3.yml'
